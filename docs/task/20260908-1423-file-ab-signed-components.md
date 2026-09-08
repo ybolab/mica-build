@@ -87,3 +87,10 @@ Awaiting implementation approval for the completed file-based A/B proposal.
   as a distributed build input, and kernel certificate expiry/revocation.
   The shipped cx3576 path still boots an unsigned legacy `boot.scr` (P6).
 
+- 2026-09-08 21:06: P2 for x64 dispatched as BKD `ofu05clu`, record `20260908-2105-p2-descriptor-contracts-x64`, branching
+  from `72c3d1e3` (P1-A and P1-B merged). Scope: frozen descriptor schema and
+  content identities, kernel-support ownership, the PKCS#7 root-hash signing
+  tool and Ed25519 descriptor envelope reuse, cross-language golden fixtures
+  with the plan's negatives, plus the two items P1-A handed over (anchor as a
+  distributed build input; kernel certificate expiry/revocation measured).
+

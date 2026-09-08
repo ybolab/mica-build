@@ -529,3 +529,12 @@ Primary references checked during design:
   kernel, the cx3576 signed FIT and virt-arm64. P2 for x64 opens on the
   stage-1 report. P1-B proves its runtime claims on x64 under QEMU and lists
   board differences separately.
+- 2026-09-08 21:06: **P1 complete, feasible as drafted.** Both P1 tasks merged after
+  L1 acceptance by content; no signature or rollback requirement was lowered.
+  Facts P2+ inherit: the vendor cx3576 kernel answers the signature policy
+  exactly as upstream; policy is the boot parameter, not the symbol; the
+  anchor certificate must become a distributed build input or cross-machine
+  kernel reproducibility is lost; systemd-random-seed writes through the
+  inode, so a file bind serves it; `/var/lib/systemd/{linger,timers}` are
+  writers the initial table lacked. P2 dispatched for x64 (`ofu05clu`).
+

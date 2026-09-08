@@ -937,3 +937,8 @@ signature check, the contract reads it back, and the signed-boot lab is on the
 tree. Two shell lints that the P1-B merge had left red on main were fixed in
 the same step. P2 (frozen artifact/descriptor contracts) is dispatched for x64.
 
+## 2026-09-08 21:06 [progress]
+
+P2 (x64) of `20260908-1428-file-ab-signed-components` dispatched: `ofu05clu`,
+record `20260908-2105-p2-descriptor-contracts-x64`. Watchdog cron replaced to watch it.
+
