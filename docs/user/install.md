@@ -123,11 +123,31 @@ The cx3576 boots from eMMC and is written over USB through the Rockchip loader
 1. **Enter loader mode.** Hold the recovery button while powering on. On a
    board already running mos U-Boot, a boot that finds no usable slot falls
    through to rockusb by itself.
-2. **Write the image.** With the board attached over USB, write
-   `cx3576-mos-<epoch>.img` to the eMMC with `rkdeveloptool`; the flash
-   targets in the BSP Makefile are the driven form of that step.
+2. **Write the image.** With the board attached over USB:
+
+   ```sh
+   make -C boards/cx3576/bsp flash-mos
+   ```
+
+   It writes `_out/cx3576/cx3576-mos-latest.img` to the eMMC with
+   `rkdeveloptool wl 0` — pass `MOS_IMAGE=<file>` for a build other than the
+   latest — then **reads the whole image back off the board and compares it
+   byte for byte with the file it wrote**, and only then resets the board.
+   `make flash` and `make flash-maskrom` do the same for the BSP's Alpine
+   demo image.
 3. **Power-cycle.** U-Boot starts from sector 64, walks `BOOT_ORDER` with the
    per-slot attempt counters, and boots slot A.
+
+**What the read-back covers, and what it proves.** Every byte of the file that
+was written, compared against that same file rather than against a checksum
+recomputed from it, and compared before `rkdeveloptool rd` — so a difference
+stops the run with the board still in loader mode, where a re-write is one
+command away. It is there because a flash that reported success once left the
+kernel in the boot partition as a mixture of two builds and the board died in
+`paging_init`; the read-back of the day covered only the first 16 MiB and the
+damage was 22 MiB past it. **No run of it against a board is recorded** — the
+host side is tested against a stub tool, the `rkdeveloptool` calls themselves
+have never been executed from this tree.
 
 If the loader area itself is unbootable — a board flashed with a pre-A/B image,
 or an interrupted loader write — the BootROM presents **maskrom** over USB and
@@ -139,7 +159,7 @@ on a bench unit as part of an installation: the dossier's Recovery method
 section describes them and its qualification matrix carries `Recovery` as
 `not tested`.
 
-> status: board-dependent — evidence: `boards/cx3576/bsp/Makefile`, `boards/cx3576/boot.cmd`, `docs/bsp/cx3576-example.md`
+> status: board-dependent — evidence: `boards/cx3576/bsp/Makefile`, `boards/cx3576/bsp/scripts/verify-flash.sh`, `boards/cx3576/boot.cmd`, `docs/bsp/cx3576-example.md`
 
 ## 6. First boot, and what "it worked" looks like
 
