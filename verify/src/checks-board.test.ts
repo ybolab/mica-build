@@ -122,6 +122,7 @@ describe('the register batch 3 adds', () => {
       ['radio-modules-aic-btlpm', 'radio-module-list-skipped'],
       ['bt-btattach', 'bt-userland-skipped'],
       ['gadget-udev-rule', 'gadget-udev-rule-skipped'],
+      ['mac-udev-rule', 'mac-stable-assignment-skipped'],
       ['led-script', 'led-overlay-skipped'],
       ['status-led-ordering', 'status-led-absent'],
     ] as const) {

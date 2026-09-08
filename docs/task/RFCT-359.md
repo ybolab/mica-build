@@ -1,6 +1,6 @@
 # RFCT-359 cx3576's stable MAC came from the interface name, and never reached the port that probes late
 
-- **status**: in-progress
+- **status**: completed
 - **priority**: P1
 - **owner**: bkd/dx1t7076
 - **createdAt**: 2026-09-08 15:00
@@ -47,8 +47,9 @@ systemd
   no board.
 - A test that fails under the old derivation, and the suite count it moved to.
 - The fleet-visible MAC change stated here and wherever a user would look.
-- `verify/run.sh --verify --board cx3576` at 449 or the move explained;
-  `make docs-verify` green from a `git archive` into an empty directory.
+- `verify/run.sh --verify --board cx3576` at the merged tree's denominator, with the
+  move explained; `make docs-verify` green from a `git archive` into an empty
+  directory.
 - `docs/plan/index.md`, `docs/task/index.md` and `docs/CHANGELOG.md` untouched;
   `rootfs/overlay/usr/lib/mos/mos-health` and `health.conf` untouched.
 
@@ -251,6 +252,18 @@ its subject is a USB NIC with a permanent address, which nothing here writes to.
 and `PERSISTENT` + `NET_ADDR_PERM` is the branch that leaves them alone. The
 file is board payload for that reason, not `mos-system` payload.
 
+**What this did NOT change, stated because the same policy is still in effect
+next to it.** `[Match] OriginalName=eth*` is the scope, so `99-default.link`
+still governs every other interface on this board — `wlan0`, `can0`, `lo` and
+the gadget's `usb0`. If the AIC8800's netdev is `NET_ADDR_RANDOM`, systemd is
+deriving its address from the machine id today, exactly as it was for `eth*`
+before this task. That is the status quo and it is out of this task's scope,
+which is the cx3576 Ethernet ports; it is written down here because "mos owns
+the MAC addresses of this board's Ethernet ports" is a narrower sentence than
+a reader of the `.link` file might take it for. s905x5m, which landed on main
+while this task was open, declares `BOARD_HWINIT_CONFS="wireless audio
+bluetooth"` and no `mac`, so its four checks skip there.
+
 ### 5. What this costs, in the words a release note would use
 
 **Changing the derivation changes the MAC addresses of every already-deployed
@@ -333,4 +346,52 @@ board.
 
 ### 8. Evidence
 
-(pending)
+Measured on the merged tree, `cf6920f0` (`main` at `ee13688c`: the s905x5m
+adaptation and PLAN-089's health gate).
+
+| what | result |
+| --- | --- |
+| `bash verify/run.sh --verify --board cx3576` | **PASS (454/454 checks, 3 skipped)** |
+| the same image with **main's** `verify/src` | **PASS (450/450 checks, 3 skipped)** |
+| the diff of the two conclusion lists | exactly the four new PASS lines; **no verdict moved** |
+| `bash verify/run.sh` | PASS 1474/1474 (main: 1471 — the three cases in section 7) |
+| `make os-mac-test` | PASS, 9 cases |
+| the same with the by-name derivation restored in `hwinit-mac` | FAIL on case 1, by name |
+| `make docs-verify` from a `git archive` into an empty directory | PASS (192 + 488 + 758 + 243 + 97) |
+| `make os-shell-pipefail-lint` | PASS 96/96 |
+| `make os-host-toolchain-lint` | PASS 360/360 |
+| `make os-layout-lint` | PASS 44/44 |
+| the two new files in the built package | `dpkg-deb -c mos-board-cx3576_0.1.0+gitcf6920f0f1f1-1_arm64.deb` lists `./usr/lib/udev/rules.d/60-mos-mac-stable.rules` and `./usr/lib/systemd/network/60-mos-mac-stable.link` |
+
+**The denominator moved twice, and only one of those moves is this task's.**
+The brief said 449. PLAN-089 added `health-gate-required-set-not-empty` on the
+way in, making the merged tree's cx3576 register **450**; s905x5m added nothing
+to this board's register. This task's four checks take it to **454**. The
+450 figure is not taken on trust: it is main's own register run against the
+image this branch built, which is also what makes "no verdict moved" a
+measurement rather than an inference — the two runs differ in the register and
+in nothing else.
+
+**The image.** `_out/cx3576/cx3576-mos-1788885081.img`, verity root
+`f8728cf66e36022e8152833ac719f254d1b42df63f9cf097e17b767b6d0d6a5d`, composed
+from an arm64 pool built at the one stamp `gitcf6920f0f1f1` — the commit that
+carries the code. The pool holds exactly what `rootfs/packages/resolve.sh
+--board cx3576 --profile dev --radios "wifi bluetooth" --without ""` yields and
+nothing else; the s905x5m producers have no BSP on this host, and
+`kernel-virt-arm64`, `board-virt-arm64`, `board-x64` and `mqtt-reference` are
+not installed into a cx3576 image.
+
+Everything committed after those artefacts — this Evidence section, section 4's
+closing paragraph, the dossier's hwinit bullet and the register-coverage entry
+in `checks-board.test.ts` — is documents and one test list. **No package bytes
+move with them**, and the contract run above is the register this branch ships.
+
+**What is still owed to a board.** Three probes in
+[../bsp/cx3576-bench.md](../bsp/cx3576-bench.md), added by this task:
+`mac-derived` (stage 2), `mac-survives-reboot` (stage 3) and `mac-before-lease`
+(stage 4). All three need **a cable in both Ethernet ports**; the third needs
+the DHCPv4 server stage 4 already requires. Nothing here has been seen on
+hardware: the derivation is driven offline, the ordering is read out of systemd
+257.13's and the pinned kernel's sources, and the image contract asserts the
+bytes. That every port on a real board ends up carrying the address this
+produces is the one claim only a board can settle.
