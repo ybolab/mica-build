@@ -1,7 +1,7 @@
 # mos top-level build entry. Heavy lifting stays in each component; this file
 # only routes. Board targets: make <board>-<component>, e.g. cx3576-kernel.
 
-BOARDS := cx3576 virt-arm64 x64
+BOARDS := cx3576 s905x5m virt-arm64 x64
 
 # The <board>-% delegation rules are NOT listed here: .PHONY does not accept
 # patterns, so an entry like `cx3576-%` matches nothing and silently declares
@@ -25,6 +25,11 @@ BOARDS := cx3576 virt-arm64 x64
 	docs-verify docs-verify-test build-env os-rust-gate
 
 help:
+	@echo "  s905x5m-<t>         build the s905x5m BSP (kernel|uboot|userland|emmc-package|emmc-installer)"
+	@echo "  os-rootfs-s905x5m   compose the s905x5m rootfs from the arm64 package pool"
+	@echo "  os-image-s905x5m-sd assemble the SD-only s905x5m image"
+	@echo "  os-verify-s905x5m-sd verify the s905x5m SD image"
+	@echo "  os-emmc-package-s905x5m / os-emmc-installer-s905x5m build eMMC installation artifacts"
 	@echo "mos build targets:"
 	@echo "  os-debian-cache     cache the fixed Debian runtime base (MOS_ARCH=amd64|arm64)"
 	@echo "  os-debian-verify    verify the runtime cache without network access"
@@ -90,6 +95,29 @@ os:
 # file's; see rootfs/build.sh.
 os-rootfs-cx3576:
 	bash rootfs/build.sh
+
+.PHONY: os-rootfs-s905x5m os-image-s905x5m-sd os-verify-s905x5m-sd os-emmc-package-s905x5m os-emmc-installer-s905x5m os-bundle-s905x5m
+
+s905x5m-%:
+	$(MAKE) -C boards/s905x5m/bsp $*
+
+os-rootfs-s905x5m:
+	MOS_BOARD=s905x5m bash rootfs/build.sh
+
+os-image-s905x5m-sd: os-rootfs-s905x5m
+	bash build/run.sh --mkimage-s905x5m-sd
+
+os-verify-s905x5m-sd:
+	bash verify/run.sh --verify --board s905x5m
+
+os-bundle-s905x5m:
+	MOS_BOARD=s905x5m bash build/run.sh --bundle --board s905x5m
+
+os-emmc-package-s905x5m: os-image-s905x5m-sd
+	$(MAKE) s905x5m-emmc-package
+
+os-emmc-installer-s905x5m:
+	$(MAKE) s905x5m-emmc-installer EMMC_INSTALLER_PACKAGE="$(EMMC_INSTALLER_PACKAGE)"
 
 # The shipping assembler: build the rootfs slot image, then write the A/B disk
 # image around it.
@@ -480,6 +508,7 @@ os-bare-host-gate:
 # WAS. No docker and no pool: this reads manifests and runs producers.sh.
 os-rootfs-manifest-test:
 	bash tests/rootfs-manifest-test.sh
+	bash tests/s905x5m-package-test.sh
 
 # THE x64 ROOT. rootfs/build.sh installs the resolved package set out of
 # _out/debs/<arch> and refuses a missing or stale pool by naming `make os-debs`

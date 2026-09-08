@@ -643,6 +643,15 @@ export interface BuildBundleOptions {
   readonly log?: (line: string) => void
 }
 
+/** The board declares the DTB filename that its boot script loads. */
+export function ubootDtbName(geometry: Geometry): string {
+  const names = geometry.require('BOOT_SLOT_REQUIRED_FILES').split(/\s+/).filter(f => f.endsWith('.dtb'))
+  if (names.length !== 1 || !/^[A-Za-z0-9][A-Za-z0-9._-]*\.dtb$/.test(names[0]!)) {
+    throw new Error('a U-Boot bundle requires exactly one plain DTB filename in BOOT_SLOT_REQUIRED_FILES')
+  }
+  return names[0]!
+}
+
 export interface BuildBundleResult {
   readonly bundleOut: string
   readonly payload: PayloadReport
@@ -776,6 +785,7 @@ export async function buildBundle(
       bootAttemptsSeen = requireBootAttempts(geometry, bootCmdText, bootCmdPath).length
 
       const bootScriptName = geometry.require('BOOT_SCRIPT_NAME')
+      const dtbName = ubootDtbName(geometry)
       await makeBootScript(tb, {
         input: bootCmdPath,
         output: join(workDir, bootScriptName),
@@ -812,7 +822,7 @@ export async function buildBundle(
       if (inputs.dtb === undefined || inputs.dtb === '') {
         throw new Error(`no DTB was supplied, and a U-Boot board's boot payload carries one`)
       }
-      await tb.must(['cp', inputs.dtb, join(workDir, 'rk3576-src.dtb')], {
+      await tb.must(['cp', inputs.dtb, join(workDir, dtbName)], {
         note: `could not stage the device tree from ${inputs.dtb}`,
       })
 
@@ -821,11 +831,14 @@ export async function buildBundle(
       // does: these are the bytes mcopy is about to write. Slot-NEUTRAL, unlike
       // the two verity envs above -- a boot payload carries one Image whichever
       // slot it lands in, so a suffixed digest would be two names for one fact.
-      const digestName = geometry.require('BOOT_DIGEST_ENV_NAME')
-      writeFileSync(join(workDir, digestName), bootDigestEnv(
-        BOOT_DIGEST_ARTEFACTS.map(a => ({ ...a, bytes: readFileSync(join(workDir, a.file)) })),
-        join(workDir, digestName),
-      ))
+      // Only a board whose boot script declares this protocol consumes it.
+      const digestName = geometry.board.get('BOOT_DIGEST_ENV_NAME')
+      if (digestName !== undefined) {
+        writeFileSync(join(workDir, digestName), bootDigestEnv(
+          BOOT_DIGEST_ARTEFACTS.map(a => ({ ...a, bytes: readFileSync(join(workDir, a.file)) })),
+          join(workDir, digestName),
+        ))
+      }
 
       await tb.must(
         ['find', workDir, '-maxdepth', '1', '-type', 'f', '-exec', 'touch', '-h', '-d', geometry.ext4.fileMtime, '{}', '+'],
@@ -842,9 +855,9 @@ export async function buildBundle(
         recursive: true,
         sources: [
           join(workDir, 'Image'),
-          join(workDir, 'rk3576-src.dtb'),
+          join(workDir, dtbName),
           join(workDir, bootScriptName),
-          join(workDir, digestName),
+          ...(digestName === undefined ? [] : [join(workDir, digestName)]),
           join(workDir, `${base}-a.env`),
           join(workDir, `${base}-b.env`),
         ],

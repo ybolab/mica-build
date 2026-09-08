@@ -14,7 +14,8 @@
 
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
-import { ARTIFACTS, pinCoverageFaults, unclaimedFaults, type Artifact, type ExecutorLimit } from './smoke-register.ts'
+import { parsePackageInventory } from './installed-packages.ts'
+import { ARTIFACTS, artifactsForPackages, pinCoverageFaults, unclaimedFaults, type Artifact, type ExecutorLimit } from './smoke-register.ts'
 import type { Pin } from './smoke-pins.ts'
 import { REPO_ROOT } from './paths.ts'
 
@@ -1001,6 +1002,9 @@ async function inspectId(
   return r.status === 0 && id !== '' ? id : undefined
 }
 
+/** A valid OCI image that the daemon's archive loader cannot accept. */
+export class OciArchiveLoadUnsupported extends Error {}
+
 /**
  * Load the archive, every run, and hand back the IMAGE -- not the tag.
  *
@@ -1041,9 +1045,15 @@ export async function loadFactoryRoot(
   // patience, which is not evidence that the work was not done -- and is
   // answered below by asking the daemon what it holds.
   if (loaded.status !== 0 && loaded.timedOutAfterMs === undefined) {
-    throw new Error(
-      `docker load -i ${record.archivePath} exited ${loaded.status}: ${loaded.stderr.trim() || loaded.stdout.trim()}`,
-    )
+    const reason = loaded.stderr.trim() || loaded.stdout.trim()
+    const message = `docker load -i ${record.archivePath} exited ${loaded.status}: ${reason}`
+    if (reason.includes('invalid archive: does not contain a manifest.json')) {
+      // The classic image store expects a Docker archive. Confirm this is a
+      // readable OCI image before allowing the existing BuildKit executor.
+      await archiveImageDigests(record, run)
+      throw new OciArchiveLoadUnsupported(message)
+    }
+    throw new Error(message)
   }
 
   let digests: readonly string[] = []
@@ -1399,7 +1409,10 @@ export interface SmokeRunOptions {
  */
 export async function smokeRun(opts: SmokeRunOptions): Promise<{ results: SmokeResult[]; conclusion: Conclusion }> {
   const log = opts.log ?? ((l: string) => console.log(l))
-  const artifacts = opts.artifacts ?? ARTIFACTS
+  const packageRecord = join(outDir(opts.board), 'rootfs-packages.txt')
+  const packages = opts.exec === undefined
+    ? parsePackageInventory(readFileSync(packageRecord, 'utf8'), 5) : undefined
+  const artifacts = opts.artifacts ?? (packages === undefined ? ARTIFACTS : artifactsForPackages(packages))
 
   // Who may go unasked, before what may go unexecuted. Both are questions about
   // the register rather than about the image, and both are answered before a
@@ -1430,29 +1443,10 @@ export async function smokeRun(opts: SmokeRunOptions): Promise<{ results: SmokeR
     const record = readFactoryRoot(opts.board)
     log(`verify smoke: ${opts.board} ${record.ref} (${record.platform}, ${record.bytes} bytes, sha256 ${record.sha256})`)
 
-    // What the build left out, before anything is executed. See declinedFeatures.
-    const manifest = join(outDir(opts.board), STAGE_MANIFEST_NAME)
-    if (!existsSync(manifest)) {
-      throw new Error(
-        `${manifest} does not exist, so this run cannot tell whether the root beside it was built `
-        + `with every feature stage. rootfs/build.sh writes it on every build; an image with `
-        + `no manifest was produced by something else, and the register covers a full-featured root.`,
-      )
-    }
-    const declined = declinedFeatures(readFileSync(manifest, 'utf8'))
-    if (declined.length > 0) {
-      throw new Error(
-        `${opts.board} was built WITHOUT the feature stage(s): ${declined.join(', ')}.\n`
-        + `       The smoke register covers a full-featured root -- seven of its twelve artifacts arrive\n`
-        + `       with stages/31-feature-containers, one with 32-feature-rauc and four with\n`
-        + `       33-feature-mosd -- so every artifact of a declined feature would answer rc=127 and this\n`
-        + `       run would print a handful of failures about binaries when what happened is one decision\n`
-        + `       about one stage. Recorded at ${manifest}.\n`
-        + `       This refuses rather than skipping the affected artifacts: a skip reports the same green\n`
-        + `       as a pass, which is the one outcome a runner that exists to execute everything must not\n`
-        + `       be able to produce.`,
-      )
-    }
+    // A full shared smoke register requires each owning feature package.
+    const required = ['mosd', 'mos-mqttd', 'mos-mqtt-broker', 'mos-rauc', 'mos-podman']
+    const missing = required.filter(p => !packages?.has(p))
+    if (missing.length > 0) throw new Error(`smoke requires the full feature package set; absent from ${packageRecord}: ${missing.join(', ')}`)
 
     // The build fact, read and printed whether or not it is there. A run that
     // asserted nothing about the commit must say so on its own first lines
@@ -1468,21 +1462,18 @@ export async function smokeRun(opts: SmokeRunOptions): Promise<{ results: SmokeR
     // it only in messages: the tag is daemon-global and another worktree on this
     // host loading its own `:x64` mid-run would otherwise re-point what these
     // containers execute. See loadFactoryRoot.
-    let image = record.ref
-    if (opts.load !== false) {
-      const loaded = await loadFactoryRoot(record, capture, log)
-      image = loaded.id
-      log(
-        `verify smoke: executing image ${loaded.id}, identified by `
-        + `${loaded.source === 'content' ? `the digest ${record.archive} carries` : `the tag ${loaded.ref}`}`,
-      )
-    }
-    // The control gets the START budget, because starting a container is the
-    // only thing `/bin/true` can spend one on, and what it costs is then what
-    // sizes every artifact's. A run that had to guess would get the floor; this
-    // one measured the host it is about to judge on. See execTimeoutMs.
-    const control = dockerExec(image, EXEC_STARTUP_BUDGET_MS)
     try {
+      let image = record.ref
+      if (opts.load !== false) {
+        const loaded = await loadFactoryRoot(record, capture, log)
+        image = loaded.id
+        log(
+          `verify smoke: executing image ${loaded.id}, identified by `
+          + `${loaded.source === 'content' ? `the digest ${record.archive} carries` : `the tag ${loaded.ref}`}`,
+        )
+      }
+      // Measure container startup before assigning the per-program budget.
+      const control = dockerExec(image, EXEC_STARTUP_BUDGET_MS)
       const startupMs = await preflight(control, record.platform)
       const budget = execTimeoutMs(startupMs)
       log(
@@ -1492,20 +1483,17 @@ export async function smokeRun(opts: SmokeRunOptions): Promise<{ results: SmokeR
       )
       exec = dockerExec(image, budget)
     } catch (e) {
-      // The daemon cannot execute this platform. That is a fact about the
-      // host, not about the root, and a builder that bundles its emulator can
-      // still execute every artifact; the register and the judging are the
-      // same, only the executor moves. Anything other than the exec-format
-      // refusal is passed through: a root that cannot run /bin/true for
-      // another reason is a broken root, and a second executor would only
-      // report it twice.
+      // Only an unsupported OCI load or platform can select another executor.
+      // Corrupt archives and other load/start failures remain hard failures.
       const said = String((e as Error).message ?? e)
+      const unsupportedOci = e instanceof OciArchiveLoadUnsupported
       const builder = opts.builder ?? (await builderExists(containerBuilderFor(record.platform))
         ? containerBuilderFor(record.platform)
         : undefined)
-      if (!/exec format error/i.test(said) || builder === undefined) throw e
+      if ((!unsupportedOci && !/exec format error/i.test(said)) || builder === undefined) throw e
       const layout = await extractLayout(record.archivePath, join(outDir(opts.board), 'factory-root.layout'))
-      log(`verify smoke: this host cannot execute ${record.platform}; executing inside buildkit on builder '${builder}' (${layout})`)
+      const limitation = unsupportedOci ? 'load OCI archives' : `execute ${record.platform}`
+      log(`verify smoke: this host cannot ${limitation}; executing inside buildkit on builder '${builder}' (${layout})`)
       exec = buildkitExec({ ref: record.ref, layout, builder, platform: record.platform })
       await preflight(exec, record.platform)
     }

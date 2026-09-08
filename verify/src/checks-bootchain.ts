@@ -32,7 +32,7 @@ import { readFileSync, existsSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { crc32 } from 'node:zlib'
 import type { Board } from './board.ts'
-import { boardsWhere, hasLed, isUBoot, SHIPPED } from './board-scope.ts'
+import { boardsWhere, hasLed, hasRawBlob, isUBoot, SHIPPED } from './board-scope.ts'
 import { PER_SLOT, SLOTS, slotOffsetBytes, type BootSlot } from './boot-slots.ts'
 import type { CheckCase, ImageContext } from './checks.ts'
 import { imageLayout } from './image-layout.ts'
@@ -53,6 +53,7 @@ import { skipped, verdict } from './verdict.ts'
 
 const UBOOT = boardsWhere(isUBoot)
 const NOT_UBOOT = boardsWhere(b => !isUBoot(b))
+const NOT_RAW_BLOB = boardsWhere(b => !hasRawBlob(b))
 const LED = boardsWhere(hasLed)
 const NOT_LED = boardsWhere(b => !hasLed(b))
 
@@ -137,7 +138,7 @@ function bytesEqual(image: string, offset: number, file: string): boolean {
  * per-slot files and M4f for the ELF architecture.
  */
 function rawBlobChecks(board: Board): CheckCase[] {
-  if (!isUBoot(board)) return []
+  if (!hasRawBlob(board)) return []
   const sector = intKey(board, 'UBOOT_SEEK_SECTOR')
   const offset = sector * intKey(board, 'SECTOR_SIZE')
   const variant = key(board, 'UBOOT_VARIANT_DIR')
@@ -259,11 +260,11 @@ function rawBlobChecks(board: Board): CheckCase[] {
 const RAW_BLOB_SKIP: readonly CheckCase[] = [
   {
     id: 'uboot-blob-skipped',
-    boards: NOT_UBOOT,
+    boards: NOT_RAW_BLOB,
     shell: { skip: 'the raw pre-GPT loader area (' },
     run: async (ctx): Promise<readonly CheckResult[]> => [skipped('uboot-blob-skipped',
-      `the raw pre-GPT loader area (bootloader=${ctx.board.bootloader}): there is no idbloader at `
-      + `sector 64 on a board whose firmware lives in flash, so there is nothing to compare against `
+      `the raw pre-GPT loader area (bootloader=${ctx.board.bootloader}): the layout declares no raw-blob `
+      + `partition and the boot firmware lives outside the GPT, so there is nothing to compare against `
       + `the BSP build`)],
   },
 ]
@@ -311,7 +312,6 @@ async function slotCopy(
 ): Promise<string | undefined> {
   const fat: FatSlot = { image: ctx.image, offsetBytes: slotOffsetBytes(ctx.board, slot.layout) }
   const dest = join(ctx.workDir, `boot-${slot.letter}-${file}`)
-  if (existsSync(dest)) return dest
   return (await fatCopyOut(ctx.tools, fat, file, dest)) ? dest : undefined
 }
 

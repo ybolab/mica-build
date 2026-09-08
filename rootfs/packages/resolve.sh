@@ -40,7 +40,7 @@ done
 }
 
 usage() {
-    echo "usage: bash rootfs/packages/resolve.sh --board <board> --profile <profile> --radios \"<radios>\" --without \"<features>\"" >&2
+    echo "usage: bash rootfs/packages/resolve.sh --board <board> --profile <profile> --radios \"<radios>\" --without \"<features>\" [--components \"<components>\"]" >&2
 }
 
 in_list() {
@@ -71,6 +71,7 @@ BOARD=""
 PROFILE=""
 RADIOS=""
 WITHOUT=""
+COMPONENTS=""
 HAVE_BOARD=0
 HAVE_PROFILE=0
 HAVE_RADIOS=0
@@ -95,6 +96,11 @@ while [ "$#" -gt 0 ]; do
     --without)
         WITHOUT="${2-}"
         HAVE_WITHOUT=1
+        shift 2
+        ;;
+    --components)
+        [ "$#" -ge 2 ] || { echo 'error: --components needs a value' >&2; exit 1; }
+        COMPONENTS=$2
         shift 2
         ;;
     *)
@@ -155,6 +161,7 @@ BOARDS=()
 PROFILES=()
 KNOWN_RADIOS=()
 FEATURES=()
+SCOPED_MANIFESTS=()
 for file in "${MANIFEST_FILES[@]}"; do
     base="$(basename "${file}" .pkgs)"
     names=""
@@ -183,6 +190,7 @@ for file in "${MANIFEST_FILES[@]}"; do
     # never reaches an image and never fails a build either.
     case "${base}" in
     common) ;;
+    board-radio-* | component-*) SCOPED_MANIFESTS+=("${base}") ;;
     board-*) BOARDS+=("${base#board-}") ;;
     profile-*) PROFILES+=("${base#profile-}") ;;
     radio-*) KNOWN_RADIOS+=("${base#radio-}") ;;
@@ -192,6 +200,21 @@ for file in "${MANIFEST_FILES[@]}"; do
         exit 1
         ;;
     esac
+done
+
+# A scoped manifest extends one existing board; it never defines another board.
+for scoped in ${SCOPED_MANIFESTS[@]+"${SCOPED_MANIFESTS[@]}"}; do
+    matched=0
+    for board in "${BOARDS[@]}"; do
+        case "$scoped" in
+        board-radio-"$board"-*)
+            radio=${scoped#board-radio-"$board"-}
+            in_list "$radio" "${KNOWN_RADIOS[@]}" && matched=1
+            ;;
+        component-"$board"-?*) matched=1 ;;
+        esac
+    done
+    [ "$matched" = 1 ] || { echo "error: $scoped has no matching board/radio declaration" >&2; exit 1; }
 done
 
 # Each RADIO NAME is a decline token of its own -- there is no umbrella
@@ -247,14 +270,37 @@ RESOLVED="${MANIFEST[common]:-}"
 RESOLVED="${RESOLVED}${MANIFEST[profile-${PROFILE}]:-}"
 RESOLVED="${RESOLVED}${MANIFEST[board-${BOARD}]:-}"
 for radio in ${RADIOS}; do
-    declined "${radio}" || RESOLVED="${RESOLVED}${MANIFEST[radio-${radio}]:-}"
+    if ! declined "${radio}"; then
+        RESOLVED="${RESOLVED}${MANIFEST[radio-${radio}]:-}${MANIFEST[board-radio-${BOARD}-${radio}]:-}"
+    fi
 done
+
+for component in $COMPONENTS; do
+    key="component-${BOARD}-${component}"
+    [ -n "${MANIFEST[$key]+present}" ] || {
+        echo "error: component '$component' is unavailable for board '$BOARD'" >&2
+        exit 1
+    }
+    RESOLVED="${RESOLVED}${MANIFEST[$key]}"
+done
+
 for feature in "${FEATURES[@]}"; do
     # A radio token has no feature-<name>.pkgs; the loop above already read its
     # radio-<name>.pkgs, gated on the board declaring it.
     declined "${feature}" || RESOLVED="${RESOLVED}${MANIFEST[feature-${feature}]:-}"
 done
 
+case " $RESOLVED " in
+*' mos-mqtt-reference '*)
+    [ "$PROFILE" != prod ] || { echo 'error: mqtt-reference is forbidden in production' >&2; exit 1; }
+    for required in mosd mos-mqttd mos-mqtt-broker; do
+        case " $RESOLVED " in
+        *" $required "*) ;;
+        *) echo "error: mqtt-reference requires selected $required" >&2; exit 1 ;;
+        esac
+    done
+    ;;
+esac
 # An empty resolution composes a root holding nothing but Debian, and every
 # check downstream of it is a check over an image with no mos in it.
 RESOLVED_N=0

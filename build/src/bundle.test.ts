@@ -24,6 +24,7 @@ import {
   BUNDLE_BOOT_FAT_LABEL,
   BUNDLE_SLOT_IMAGES,
   buildBundle,
+  ubootDtbName,
   bundleMountsFor,
   bundleVerityEnvText,
   checkBundleInfo,
@@ -816,6 +817,25 @@ describe('buildBundle end to end, against a real rauc', () => {
     expect(r.info.version).toBe('0.0.0-e2e')
     expect(r.payload.payloadSha256).toMatch(/^[0-9a-f]{64}$/)
     expect(r.payload.bundleBytes).toBeGreaterThan(r.payload.payloadBytes)
+  }, OPEN_TIMEOUT_MS)
+
+  test('s905x5m bundles retain the DTB name its boot script loads', async () => {
+    const geometry = loadGeometry('s905x5m')
+    expect(ubootDtbName(geometry)).toBe('s7d_s905x5m_m100.dtb')
+    const a = join(work, 's905-cmdline-a.txt')
+    const b = join(work, 's905-cmdline-b.txt')
+    writeFileSync(a, cmdlineFor(geometry, 'ROOTFS_A_GUID'))
+    writeFileSync(b, cmdlineFor(geometry, 'ROOTFS_B_GUID'))
+    const out = join(work, 's905x5m.raucb')
+    await buildBundle({ ...inputs, board: 's905x5m', bootCmdlineA: a, bootCmdlineB: b, bundleOut: out },
+      { toolbox: tb, log: () => {} })
+    const extracted = join(work, 's905-extracted')
+    await tb.must(['unsquashfs', '-n', '-d', extracted, out, 'boot.vfat'])
+    const listed = await tb.must(['mdir', '-/', '-b', '-i', join(extracted, 'boot.vfat'), '::/'])
+    expect(listed.stdout).toContain('s7d_s905x5m_m100.dtb')
+    expect(listed.stdout).not.toContain('rk3576-src.dtb')
+    expect(listed.stdout).toContain('mos-verity-a.env')
+    expect(listed.stdout).toContain('mos-verity-b.env')
   }, OPEN_TIMEOUT_MS)
 
   test('THE PAYLOAD IS A PURE FUNCTION OF THE INPUTS: a second build hashes the same', async () => {

@@ -42,6 +42,8 @@ usage() {
 usage: bash build/run.sh [--help] [bun-test-args...]
        bash build/run.sh --build-rootfs [driver-args...]
        bash build/run.sh --mkimage-cx3576 [assembler-args...]
+       bash build/run.sh --mkimage-s905x5m-sd [assembler-args...]
+       bash build/run.sh --extract-s905x5m-emmc-payloads [extractor-args...]
        bash build/run.sh --mkimage-uefi --board B [assembler-args...]
        bash build/run.sh --bundle [bundle-args...]
        bash build/run.sh --release [release-args...]
@@ -57,6 +59,10 @@ local image tag the previous one was written to. rootfs/build.sh calls it with
 the build arguments it computed; try --build-rootfs --help. Same install, same
 typecheck, same bun; only the last step differs. The flag has to come first so
 that it can never be mistaken for a `bun test` filter.
+
+With --mkimage-s905x5m-sd FIRST, it assembles the board's SD-only image
+from the selected package exports. With --extract-s905x5m-emmc-payloads FIRST,
+it extracts package inputs from that SD image; neither mode writes a device.
 
 With --mkimage-cx3576 FIRST, it assembles the cx3576 image instead. Its remaining
 arguments are the assembler's own; try --mkimage-cx3576 --help. The same
@@ -121,6 +127,8 @@ case "${1:-}" in
 --help | -h) usage; exit 0 ;;
 --build-rootfs) MODE=build-rootfs; shift ;;
 --mkimage-cx3576) MODE=mkimage-cx3576; shift ;;
+--mkimage-s905x5m-sd) MODE=mkimage-s905x5m-sd; shift ;;
+--extract-s905x5m-emmc-payloads) MODE=extract-s905x5m-emmc-payloads; shift ;;
 --mkimage-uefi) MODE=mkimage-uefi; shift ;;
 # The spelling this replaced, refused BY NAME rather than falling through to
 # `bun test` as an unknown filter. It worked until PLAN-085 and the tree carries
@@ -135,6 +143,13 @@ case "${1:-}" in
 --release) MODE=release; shift ;;
 --compare-roots) MODE=compare-roots; shift ;;
 esac
+for arg in "$@"; do
+    case "${arg}" in
+    --mkimage-s905x5m-sd | --extract-s905x5m-emmc-payloads)
+        echo "error: ${arg} has to be the FIRST argument" >&2
+        exit 1 ;;
+    esac
+done
 for arg in "$@"; do
     case "${arg}" in --build-rootfs) ;; *) continue ;; esac
     echo "error: --build-rootfs has to be the FIRST argument; here it came after '$1'." >&2
@@ -196,6 +211,23 @@ for arg in "$@"; do
 done
 
 # --- how bun is invoked, and the only place in this package that decides ------
+# Preserve caller-relative paths before run_bun enters build/.
+case "${MODE}" in mkimage-s905x5m-sd | extract-s905x5m-emmc-payloads)
+    ABS=()
+    take_path=0
+    for arg in "$@"; do
+        if [ "$take_path" = 1 ]; then
+            take_path=0
+            case "$arg" in /* | -*) ABS+=("$arg") ;; *) ABS+=("$PWD/$arg") ;; esac
+        else
+            ABS+=("$arg")
+            case "$arg" in --image | --out-dir) take_path=1 ;; esac
+        fi
+    done
+    set -- "${ABS[@]}"
+    ;;
+esac
+
 ROUTE=host
 WHY=""
 BUN="${MOS_BUILD_BUN:-}"
@@ -493,6 +525,15 @@ if [ "${MODE}" = mkimage-cx3576 ]; then
     rc=0
     run_bun run src/mkimage-cx3576-cli.ts "$@" || rc=$?
     exit "${rc}"
+fi
+
+if [ "${MODE}" = mkimage-s905x5m-sd ]; then
+    run_bun run src/mkimage-s905x5m-sd-cli.ts "$@"
+    exit $?
+fi
+if [ "${MODE}" = extract-s905x5m-emmc-payloads ]; then
+    run_bun run src/s905x5m-emmc-payloads-cli.ts "$@"
+    exit $?
 fi
 
 # The UEFI assembler. Everything the block above says applies unchanged: it

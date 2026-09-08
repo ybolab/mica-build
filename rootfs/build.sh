@@ -988,7 +988,8 @@ RESOLVED=$(bash "$REPO_ROOT/rootfs/packages/resolve.sh" \
     --board "$MOS_BOARD" \
     --profile "$MOS_PROFILE" \
     --radios "$BOARD_RADIOS" \
-    --without "$WITHOUT_ARG")
+    --without "$WITHOUT_ARG" \
+    --components "${MOS_ROOTFS_COMPONENTS:-}")
 resolved_n=$(printf '%s\n' "$RESOLVED" | { grep -c . || true; })
 [ "$resolved_n" -gt 0 ] ||
     { echo "error: rootfs/packages/resolve.sh printed no package and exited 0" >&2; exit 1; }

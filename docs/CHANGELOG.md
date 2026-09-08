@@ -4,6 +4,20 @@ Campaign-level record, one entry per plan, newest first. Details live in the
 plan file and the task records it names; this file holds the one-paragraph
 history a reader can scan without opening either.
 
+## PLAN-922 — S905X5M package integration on current mainline (2026-09-08)
+
+Added the S905X5M/BM201 BSP to the top-level layout and package-based rootfs
+pipeline, with resolved kernel configuration exports, independent radio
+selection, and default-off front-panel and MQTT reference packages. SD images
+and RAUC bundles consume the selected package's boot export; eMMC packages and
+installer cards keep their separate media contracts. Runtime checks follow
+mainline configuration and package inventories. The port retains mainline's
+cx3576 boot-digest protocol and supports the x64 GRUB toolset on arm64 builders.
+Factory-root smoke checks can use the existing BuildKit executor when Docker's
+classic image store rejects a validated OCI archive.
+Build evidence is recorded in RFCT-942. Existing-device configuration migration
+and qualification of the new image on hardware remain separate work.
+
 ## PLAN-084 — Per-package JSON manifests and independent cache updates (2026-09-06)
 
 Debian runtime pins now live in 172 individual JSON files with explicit target

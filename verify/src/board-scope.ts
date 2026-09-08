@@ -42,3 +42,6 @@ export const hasFirmware = (board: Board): boolean => (board.firmwareFiles ?? []
 
 /** `[ "${BOARD_HAS_STATUS_LED}" = "1" ]`. A string compare, as the oracle spells it. */
 export const hasLed = (board: Board): boolean => board.hasStatusLed === '1'
+
+/** A GPT loader region, independent of the firmware interface. */
+export const hasRawBlob = (board: Board): boolean => board.partitions.some(p => p.role === 'raw-blob')
