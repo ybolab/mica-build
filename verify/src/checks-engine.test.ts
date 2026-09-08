@@ -773,3 +773,26 @@ describe('the trust store was generated', () => {
     }
   })
 })
+
+describe('the packed root is read INSIDE the root, never against the host', () => {
+  // RFCT-358's discriminating case for this file's readers: an ABSOLUTE symlink
+  // whose target exists on the machine running the suite and not in the image.
+  // Host resolution -- what `statSync(join(root, path))` did -- answers PASS on
+  // it; resolving inside the root answers FAIL, which is the only true answer
+  // about the image. A test that exercised only the new helper could not tell
+  // the two implementations apart.
+
+  test('nft pointing at a host regular file is nft ABSENT', async () => {
+    const fx = await mutated('container-engine-nft', (root) => {
+      rmSync(join(root, '/usr/sbin/nft'))
+      symlinkSync('/proc/version', join(root, '/usr/sbin/nft'))
+    })
+    try {
+      expect(await verdictOf(fx, 'container-engine-nft')).toBe('fail')
+      expect(await messageOf(fx, 'container-engine-nft')).toContain('nft is not in the image')
+    }
+    finally {
+      fx.dispose()
+    }
+  })
+})

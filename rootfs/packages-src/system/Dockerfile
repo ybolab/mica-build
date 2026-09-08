@@ -199,6 +199,37 @@ RUN set -eu; \
     printf '%s\n' '[Journal]' 'Storage=volatile' \
         >"${R}/etc/systemd/journald.conf.d/00-volatile.conf"; \
     chmod 0644 "${R}/etc/systemd/journald.conf.d/00-volatile.conf"; \
+    # GPT AUTO-DISCOVERY IS OFF, and it is masked rather than left to be
+    # harmless. `systemd-gpt-auto-generator` mounts partitions it recognises by
+    # GPT TYPE, and every mos boot slot is typed ESP -- so on cx3576 it writes
+    # an `efi.automount` for a RAUC-owned boot partition, picked by disk order
+    # rather than by which slot is running, read-WRITE, on a device where /boot
+    # is deliberately not a mountpoint. Nothing in this tree asked for that
+    # unit, and nothing has ever failed because of it for an accident: the
+    # kernel builds no CONFIG_AUTOFS_FS, so the unit is refused as unsupported.
+    #
+    # The UEFI boards are not exposed today for a second accident, which is why
+    # this mask is not board-scoped: `process_loader_partitions()` mounts
+    # unconditionally on a non-EFI boot and, on an EFI boot, only when the boot
+    # loader set LoaderDevicePartUUID. systemd-boot sets it; GRUB, which x64
+    # and virt-arm64 boot through, does not. The exposure follows the BOOT PATH,
+    # so it moves without anyone editing a mount.
+    #
+    # A symlink to /dev/null in /etc/systemd/system-generators is systemd's own
+    # masking mechanism: generators are enumerated with
+    # CONF_FILES_FILTER_MASKED (src/shared/exec-util.c), which stats through
+    # the link, sees the null device and drops the name for every
+    # lower-priority directory -- /etc beats /usr/lib in
+    # `system_generator_paths` (src/libsystemd/sd-path/path-lookup.c).
+    #
+    # Nothing here loses a mount by it: the verity root comes from the kernel
+    # command line, /mnt/{data,state,meta}, /var and /tmp come from /etc/fstab,
+    # and the ESP on the two UEFI boards comes from their own boot.mount unit.
+    # The generator's other subjects -- /home, /srv, /var, swap and root-rw --
+    # are all keyed on discoverable-partition type GUIDs that no mos layout
+    # uses. What is bought is that the guarantee stops being a kernel symbol.
+    install -d -m 0755 "${R}/etc/systemd/system-generators"; \
+    ln -s /dev/null "${R}/etc/systemd/system-generators/systemd-gpt-auto-generator"; \
     install -d -m 0755 "${R}/usr/lib/systemd/system-preset"; \
     printf '%s\n' 'disable ssh.service' \
         >"${R}/usr/lib/systemd/system-preset/50-mos-ssh.preset"; \

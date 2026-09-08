@@ -563,14 +563,30 @@ image with a test that drives it (`make os-gadget-test`). If it still fails
 `rockchip-usb2phy … IRQ index 0 not found` line becomes worth pursuing.
 
 **`no-efi-automount` (stage 2).** `systemctl list-units --all '*.automount'`,
-`findmnt /efi`, and `systemctl status efi.automount`. **Pass:** `efi.automount`
-is present (systemd-gpt-auto-generator writes it for the ESP-typed BOOT-A) and
-**not running**, with `Starting of efi.automount … unsupported` in the journal,
-and nothing is mounted at `/efi`. **Fail:** BOOT-A mounted anywhere. This is
-the observable side of the decision that cx3576's kernel builds no autofs
-(`verify/src/checks-kernel.ts`, `EXCLUDED_BY_BOARD`), and it is worth a probe
-because the failing direction is a writable mount of a RAUC-owned partition
-chosen by disk order rather than by which slot is running.
+`systemctl cat efi.automount`, `ls /run/systemd/generator/`, and
+`findmnt /efi`. **Pass:** the only automount subject is
+`proc-sys-fs-binfmt_misc.automount`; `systemctl cat efi.automount` reports no
+files; `/run/systemd/generator/` carries nothing
+`systemd-gpt-auto-generator` would have written; and nothing is mounted at
+`/efi`. **Fail:** `efi.automount` exists at all — which means the mask
+(`/etc/systemd/system-generators/systemd-gpt-auto-generator -> /dev/null`,
+RFCT-358) did not take effect and the only thing still holding the automount
+off is `CONFIG_AUTOFS_FS` being unset.
+
+**What this probe is for, since the image contract already asserts the mask.**
+The contract reads a symlink; this reads the outcome. Before RFCT-358 the unit
+was generated on every boot and inert for a reason nobody chose, so the
+question the bench answers is whether masking a generator actually stops one on
+this board — not whether the file is in the image. The failing direction is a
+writable mount of a RAUC-owned partition chosen by disk order rather than by
+which slot is running.
+
+The MECHANISM is not what is open here: a virt-arm64 QEMU boot on 2026-09-08
+showed `systemd-gpt-auto-generator` in the manager's executed-generator list
+without the mask and dropped from it with the mask, on the same systemd 257.13 arm64
+binary this board runs. What only this board can answer is whether the unit
+that is actually generated here — virt-arm64 boots through GRUB, which sets no
+`LoaderDevicePartUUID`, so its generator writes nothing — is gone.
 
 ## 5. The power-cut window
 
