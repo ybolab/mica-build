@@ -1,10 +1,10 @@
-# file-ab-signed-components-20260908T1423Z Design and implement file-based A/B with independently signed components
+# 20260908-1423-file-ab-signed-components Design and implement file-based A/B with independently signed components
 
 - **status**: pending
 - **priority**: P1
 - **owner**: (unassigned)
 - **createdAt**: 2026-09-08 14:23
-- **relatedPlan**: [file-ab-signed-components-20260908T1428Z](../plan/file-ab-signed-components-20260908T1428Z.md)
+- **relatedPlan**: [20260908-1428-file-ab-signed-components](../plan/20260908-1428-file-ab-signed-components.md)
 
 ## Description
 

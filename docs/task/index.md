@@ -35,7 +35,7 @@ their own records said in progress or pending). Read the record, not the row.
 
 - Update or delete task entries and their detail files as needed; keep them
   consistent.
-- Record change history and deletion reasons in `docs/CHANGELOG.md`; update
+- Record change history and deletion reasons in `docs/changelog.md`; update
   affected task and plan references.
 - New tasks append to the end.
 - **New records are named `<timestamp>-<feature-slug>.md`** — the creation
@@ -100,7 +100,7 @@ thing about the tree. Both indexes now say the same thing.
 
 - [-] [**cx3576-reproducible-bsp-20260907T1356Z Make CX3576 BSP builds reproducible and extract Dockerfile logic**](cx3576-reproducible-bsp-20260907T1356Z.md) `P1`
 
-- [ ] [**file-ab-signed-components-20260908T1423Z Design and implement file-based A/B with independently signed components**](file-ab-signed-components-20260908T1423Z.md) `P1`
+- [ ] [**20260908-1423-file-ab-signed-components Design and implement file-based A/B with independently signed components**](20260908-1423-file-ab-signed-components.md) `P1`
 - [x] [**RFCT-910 Make the s905x5m kernel meet the shared floor**](RFCT-910.md) `P1`
 - [x] [**RFCT-911 Establish whether vendor U-Boot can automatically roll back**](RFCT-911.md) `P1`
 - [x] [**RFCT-912 Build the s905x5m U-Boot and assert the shared contract**](RFCT-912.md) `P1`
@@ -140,3 +140,4 @@ thing about the tree. Both indexes now say the same thing.
 - [-] [**RFCT-945 Verify managed Wi-Fi connectivity on the S905X5M SD system**](RFCT-945.md) `P1`
 - [x] [**RFCT-946 Permit the built-in Wi-Fi client switch through the settings API**](RFCT-946.md) `P1`
 - [x] [**RFCT-359 cx3576 stable MAC derives from the port topology, and reaches every port**](RFCT-359.md) `P1`
+- [x] [**20260908-1702-pma-project-injection Wire the repository into the PMA workflow**](20260908-1702-pma-project-injection.md) `P1`

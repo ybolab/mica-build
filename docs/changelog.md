@@ -858,3 +858,16 @@ The five defect clusters, by outcome:
 - **Test honesty**: dotted keys' missing item objects are certain rather
   than theoretical (RFCT-094), and "0 skipped" no longer hides skips
   (RFCT-096).
+
+## 2026-09-08 17:02 [decision]
+
+Repository wired into the PMA workflow per the skill as of 2026-09-08 15:42
+UTC. `docs/CHANGELOG.md` renamed to `docs/changelog.md` (18 references
+rewritten). Two records renamed from the interim slug-first form to the
+`<timestamp>-<feature-slug>` form, IDs stable in meaning:
+`file-ab-signed-components-20260908T1423Z` → `20260908-1423-file-ab-signed-components`
+(task) and `file-ab-signed-components-20260908T1428Z` →
+`20260908-1428-file-ab-signed-components` (plan); their four cross-references
+updated. Added `AGENTS.md` (+ `CLAUDE.md` symlink), `docs/decisions/`,
+`.gitattributes`, `.editorconfig`, `.env.example`. Fast path stays
+enabled. Record: `docs/plan/20260908-1702-pma-project-injection.md`.

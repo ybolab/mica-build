@@ -50,7 +50,7 @@ and moving every A/B contract claim that said a failed unit rolls the device bac
 
 Out of scope by dispatch: `boards/cx3576/hwinit/` (RFCT-359), the regdb unit
 itself (RFCT-361), and `docs/plan/index.md` / `docs/task/index.md` /
-`docs/CHANGELOG.md` (L1 owns those).
+`docs/changelog.md` (L1 owns those).
 
 Verified: `tests/health-test.sh` 57 -> 94 checks, green; `verify/run.sh`
 1428 -> 1431 tests, green; `make docs-verify` green from a `git archive` into

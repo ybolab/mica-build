@@ -59,7 +59,7 @@ and testing the toolchain hypothesis by layout comparison
 - The four reproducibility pins and `kernel/patches/0003` still working.
 - `verify/run.sh --verify --board cx3576` at 426/426 or the change explained;
   `make docs-verify` green from a `git archive` into an empty directory.
-- `docs/plan/index.md`, `docs/task/index.md` and `docs/CHANGELOG.md` untouched.
+- `docs/plan/index.md`, `docs/task/index.md` and `docs/changelog.md` untouched.
 
 ## Notes
 

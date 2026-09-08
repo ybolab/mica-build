@@ -45,7 +45,7 @@ generated ESP automount independently of a kernel symbol
   images built here; every verdict that moved reported with its cause.
 - `verify/run.sh` and `make docs-verify` green, the latter from a `git archive`
   into an empty directory.
-- `docs/plan/index.md`, `docs/task/index.md` and `docs/CHANGELOG.md` untouched;
+- `docs/plan/index.md`, `docs/task/index.md` and `docs/changelog.md` untouched;
   nothing display- or kernel-config-related, and neither the factory-root gate
   nor the smoke build record.
 

@@ -574,7 +574,7 @@ Explicitly **out of scope**: fixing arm64 compose (RFCT-334); writing x64's
 missing dossier; promoting `virt-arm64` to a product/release target; tightening
 the firmware pin from apt to a digest (an x64 problem first); U-Boot or
 non-UEFI arm64 boot; secure boot and key enrolment; `docs/plan/index.md`,
-`docs/task/index.md` and `docs/CHANGELOG.md`, which L1 owns.
+`docs/task/index.md` and `docs/changelog.md`, which L1 owns.
 
 ## Alternatives
 

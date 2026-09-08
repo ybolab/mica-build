@@ -84,7 +84,7 @@ forbade it
   L1's ordering was right -- the deletions removed most of the work. 91 links
   dangled after the two deletions, but 79 of them were index rows deleted in
   the same pass. The 12 real ones became plain text, name kept, link gone:
-  `docs/CHANGELOG.md` 4 (PLAN-079/081/083/084 in `See PLAN-084.` sentences),
+  `docs/changelog.md` 4 (PLAN-079/081/083/084 in `See PLAN-084.` sentences),
   `docs/plan/PLAN-037.md` 4 distinct targets across 6 occurrences (the open
   roadmap's rows for PLAN-045 and PLAN-051), `docs/plan/PLAN-078.md` 1
   (RFCT-308), `docs/plan/PLAN-080.md` 1 (PLAN-074). No sentence was removed.
@@ -123,13 +123,13 @@ forbade it
   history is still fresh -- the design doc is where a reason belongs anyway,
   and a plan was never a durable home for one.
 
-- **Two dead bare paths remain, both deliberate**: `docs/CHANGELOG.md:762`
+- **Two dead bare paths remain, both deliberate**: `docs/changelog.md:762`
   narrates a past bug in which the wrong document was shown and quotes
   `docs/task/RFCT-210.md` as part of that history (RFCT-210 was pruned long
   before this task), and `docs/task/RFCT-344.md` quotes a gate failure message
   verbatim as evidence. Both are quotations of a past state, not pointers.
 
-- **`docs/CHANGELOG.md`, normally L1's, was edited** under the ruling's explicit
+- **`docs/changelog.md`, normally L1's, was edited** under the ruling's explicit
   permission, and only to de-link: four `[PLAN-NNN](plan/PLAN-NNN.md)` became
   `PLAN-NNN`. No entry, heading, date or claim was touched.
 

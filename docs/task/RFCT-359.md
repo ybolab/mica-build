@@ -50,7 +50,7 @@ systemd
 - `verify/run.sh --verify --board cx3576` at the merged tree's denominator, with the
   move explained; `make docs-verify` green from a `git archive` into an empty
   directory.
-- `docs/plan/index.md`, `docs/task/index.md` and `docs/CHANGELOG.md` untouched;
+- `docs/plan/index.md`, `docs/task/index.md` and `docs/changelog.md` untouched;
   `rootfs/overlay/usr/lib/mos/mos-health` and `health.conf` untouched.
 
 ## Notes
