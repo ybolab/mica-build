@@ -20,6 +20,9 @@ QDIR="$REPO/_out/${MOS_BOARD:-x64}/.qemu"
 [ "$#" -gt 0 ] || { echo "usage: $0 <path-inside-DATA> [...]" >&2; exit 2; }
 
 IMAGE="$(bash "$REPO/build-env/from.sh" --ref IMAGE_DEBIAN_TRIXIE)"
+# mos-build-side: container-block -- sgdisk and debugfs read the DATA partition out of the
+# disk copy inside the pinned image; a loop mount on the host would need privileges a test
+# should not want
 docker run --rm --label ai-agent=true --name "ai-agent-iku9ubdw-readdata-$$" \
     -v "$QDIR:/d:ro" -e "DATA_PARTNUM=${DATA_PARTNUM}" -e "WANT=$*" \
     "$IMAGE" bash -c '
@@ -40,3 +43,4 @@ docker run --rm --label ai-agent=true --name "ai-agent-iku9ubdw-readdata-$$" \
         debugfs -R "cat ${p}" /tmp/data.img 2>/dev/null | sha256sum | sed "s/^/  /"
     done
 '
+# mos-build-side: host

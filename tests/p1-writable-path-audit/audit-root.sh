@@ -76,7 +76,7 @@ done | sort
 echo "### login-accounting: libwtmpdb consumers"
 find "$R" -type f \( -name '*.so*' -o -perm -u+x \) 2>/dev/null | while read -r f; do
     case "$f" in *libwtmpdb*) continue ;; esac
-    readelf -d "$f" 2>/dev/null | grep -q libwtmpdb && echo "  ${f#"$R"}"
+    readelf -d "$f" 2>/dev/null | grep -c libwtmpdb >/dev/null && echo "  ${f#"$R"}"
 done
 
 echo "### pam modules referenced"
@@ -88,5 +88,5 @@ readelf -W --dyn-syms "$R/usr/lib/systemd/systemd-random-seed" 2>/dev/null \
 
 echo "### absent daemons"
 for x in cron crond anacron atd rsyslogd logrotate systemd-update-utmp systemd-coredump wtmpdb; do
-    if find "$R" -name "$x" -type f 2>/dev/null | grep -q .; then echo "  PRESENT $x"; else echo "  absent  $x"; fi
+    if find "$R" -name "$x" -type f 2>/dev/null | grep -c . >/dev/null; then echo "  PRESENT $x"; else echo "  absent  $x"; fi
 done

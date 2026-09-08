@@ -33,6 +33,9 @@ while [ "$#" -gt 0 ]; do
 done
 
 IMAGE="$(bash "$REPO/build-env/from.sh" --ref IMAGE_DEBIAN_TRIXIE)"
+# mos-build-side: container-block -- sgdisk and debugfs write the DATA partition of the
+# disk copy inside the pinned image; a loop mount on the host would need privileges a test
+# should not want
 docker run --rm --label ai-agent=true --name "ai-agent-iku9ubdw-seeddata-$$" \
     -v "$WORK:/w" -v "$OUT_DIR/.qemu:/d" \
     -e "DATA_PARTNUM=${DATA_PARTNUM}" \
@@ -65,4 +68,5 @@ docker run --rm --label ai-agent=true --name "ai-agent-iku9ubdw-seeddata-$$" \
     e2fsck -fp data.img >/dev/null 2>&1 || true
     dd if=data.img of=/d/disk.img bs=512 seek="${start}" conv=notrunc status=none
 '
+# mos-build-side: host
 echo "DATA seeded in ${DISK##*/}"
