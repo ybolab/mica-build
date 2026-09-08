@@ -25,13 +25,18 @@ The installer writes only the rootfs and boot slots ([storage.md](storage.md)).
   the other slot. The state machine is exercised against a real U-Boot binary
   by `make os-uboot-handshake-test`. On x64, GRUB reads the equivalent state
   from `grubenv` on the ESP.
-- **The health gate.** On every boot, `mos-health` probes systemd's overall
-  state, mosd and apid, and only when all pass runs the confirmation that
-  refills the booted slot's credits. On failure it deliberately does nothing:
-  no confirmation, no remediation — rollback belongs to the bootloader's
-  counters, and a health gate that rebooted the device itself would break that
-  contract. Tolerated-failure and threshold policy is a config file,
-  `/etc/mos/health.conf`.
+- **The health gate.** On every boot, `mos-health` asks one question: **can
+  this slot be recovered?** It requires a named set — the boot transaction
+  finished, mosd answers on the bus, apid answers on HTTPS — and only when all
+  of them pass runs the confirmation that refills the booted slot's credits.
+  Anything else it sees, including a unit that failed, is **reported and not
+  fatal**: a device you can still reach and still update does not get rolled
+  into a slot that may not run. On failure it deliberately does nothing: no
+  confirmation, no remediation — rollback belongs to the bootloader's counters,
+  and a health gate that rebooted the device itself would break that contract.
+  The required set and the thresholds are a config file inside the read-only
+  root, `/etc/mos/health.conf`; a conf with no required set is refused rather
+  than read as "confirm anything".
 
 > status: shipped — evidence: `make os-bundle-cx3576`, `make os-uboot-handshake-test`, `rootfs/overlay/usr/lib/mos/mos-health`
 
@@ -197,7 +202,8 @@ is not an installable path.
   of a factory flash that wrote both slots at once, where the alternate has
   never run.
 - **The raw mark** remains beside it for the case the health gate cannot
-  decide — a failed unit an operator has judged acceptable: `POST
+  decide — a slot an operator has judged good or bad on evidence the gate does
+  not have, such as an application that is up but wrong: `POST
   /api/v1/update/mark` with `good`/`bad` on the booted or the other slot.
   Activation and concrete slot names are refused on both surfaces; activation
   is the installer's job.

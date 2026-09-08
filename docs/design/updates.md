@@ -633,9 +633,11 @@ deliberately unequal:
   report or an administrator overrides. The contract is the existing
   `ReportHealth` surface: a component that must not be interrupted reports
   `ReportHealth(component, "blocking", why)` and reports again (any other
-  status) when done. `mos-health`'s `degraded` (disk pressure) deliberately
-  does not block — a reboot neither worsens nor is worsened by a full
-  `/var`. The status list is the policy's `blockingStatuses`.
+  status) when done. `mos-health`'s `degraded` deliberately
+  does not block — a reboot neither worsens nor is worsened by a full `/var`,
+  and the same holds for the failed units it reports at `health.units`
+  (PLAN-089 generalises this precedent into the boot gate's own criterion).
+  The status list is the policy's `blockingStatuses`.
 
 **The override** (`SetRebootOverride(seconds)`; HTTP `POST
 /api/v1/update/reboot-override`) is the judgement call "I know what this
@@ -1047,7 +1049,8 @@ and §2 make and a reader checking those claims needs to find the answer.
   `/mos/updates/{downloads,verified,staging}` on DATA (PLAN-063), and the
   quota behind `maxBytes` stays PLAN-049's.
 - `mos-health` reporting `health.boot` after its mark-good, which is what
-  lights up `validating`/`succeeded` (§1). It reports `var` today and
-  nothing else, so a healthy converged system reads plain `idle`.
+  lights up `validating`/`succeeded` (§1). It reports `var` and — since
+  PLAN-089 — `units`, and neither is the boot verdict, so a healthy converged
+  system still reads plain `idle`.
 The write route of §3.4 and the automatic path's audit events (§3.5) were on
 this list and are not any more.

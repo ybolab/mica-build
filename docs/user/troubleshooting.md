@@ -62,11 +62,14 @@ escalation carrying the board identity, never a green result.
 - **Service state:** `systemctl status <unit>`, `systemctl is-system-running`,
   and `journalctl -u <unit>`. The journal is volatile — it does not survive a
   reboot, so capture it before power-cycling a sick device.
-- **Boot health:** the health gate logs each probe and its verdict
-  (`journalctl -u mos-health`). A slot that keeps rolling back after an
-  update failed one of: systemd settling, mosd answering, or apid listening —
-  the log names which. A unit you have judged acceptable can be tolerated via
-  `/etc/mos/health.conf`.
+- **Boot health:** the health gate logs its required set, each member's
+  verdict, and every failed unit it saw (`journalctl -u mos-health`). A slot
+  that keeps rolling back after an update failed one of the required members —
+  the boot transaction settling, mosd answering, or apid listening — and the
+  log names which. A failed unit on its own does **not** roll a slot back; it
+  is reported at live-state `health.units` and read with `GET
+  /api/v1/state/health` or out of a diagnostic snapshot. What the gate requires
+  is `/etc/mos/health.conf`, inside the read-only root.
 - **Update state:** RAUC's slot status (booted slot, per-slot state, last
   install error) is readable through the management daemon's state and with
   `rauc status` in a shell.

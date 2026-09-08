@@ -1,11 +1,28 @@
 #!/bin/sh
 # mos health gate -- the PENDING_CONFIRM -> CONFIRMED edge.
 #
-# Probes the system in order (systemd state, mosd, apid), reports /var
-# pressure to mosd, and on success runs `rauc status mark-good` to confirm the
-# booted slot. On failure it does NOTHING: no mark-good, no reboot, no
-# remediation. Rollback is the U-Boot BOOT_x_LEFT counter's job and stealing it
-# would break the rollback contract.
+# THE QUESTION THIS GATE ASKS IS "CAN THIS SLOT BE RECOVERED", NOT "IS THIS
+# DEVICE HEALTHY". A rollback buys back exactly one thing: a slot an operator or
+# the fleet can reach and update. If the booted slot can be reached and updated,
+# rolling back gains nothing and spends the boot credits that protect the device
+# from a genuinely dead update.
+#
+# So the gate asserts a REQUIRED set -- named in /etc/mos/health.conf as
+# `require=<member>` lines, one probe each -- and everything else it observes is
+# REPORTED rather than fatal. It used to be the other way round: deny-by-default
+# over every failed unit on the system with a `tolerate-failed` allowlist that
+# shipped empty, so every unit in the image held a veto over the device's boot
+# credits and nobody had decided that for any of them. On 2026-09-08 a cx3576
+# lost a boot credit every boot to a oneshot that governs nothing on that SKU.
+# That rule was also too LAX in the other direction: a daemon that owns its bus
+# name and has stopped answering is `active (running)`, not `failed`, so the
+# sweep confirmed slots that could not take an update. PLAN-089 has the set, the
+# justification for each member and the price of its absence.
+#
+# On success it runs `rauc status mark-good` to confirm the booted slot. On
+# failure it does NOTHING: no mark-good, no reboot, no remediation. Rollback is
+# the U-Boot BOOT_x_LEFT counter's job and stealing it would break the rollback
+# contract.
 #
 # No-op (exit 0) when rauc is absent or reports no booted slot — a v1 image or
 # a container. Idempotent: mark-good on an already-confirmed slot is not an
@@ -62,6 +79,10 @@ report_health() {
 #
 # Case 3 must never look like case 1: "I could not read rauc" is a broken gate,
 # not an absent one.
+#
+# rauc is deliberately NOT a member of the required set. This runs first and
+# decides whether there is a slot to confirm at all; requiring it would be
+# circular, because with no booted slot there is no credit to spend.
 have rauc || {
     log "rauc not installed - no A/B slot to confirm (v1 image or container); exiting 0"
     exit 0
@@ -108,7 +129,52 @@ have systemctl || {
 }
 log "booted slot bootname: $BOOTED"
 
-# --- probe a: systemd ------------------------------------------------------
+# --- the required set -------------------------------------------------------
+#
+# What this slot must be able to do for the boot to be confirmed. Read from the
+# conf and NOT defaulted: there is no compiled-in set to fall back to, because a
+# gate that silently substitutes its own criterion when the image supplied none
+# is a gate whose criterion cannot be read off the image.
+#
+# TWO VACUITY GUARDS, and both are reachable in production rather than only from
+# a test:
+#
+#   * an EMPTY set is "always mark good" -- the empty `tolerate-failed`
+#     allowlist read from the other side. /etc/mos/health.conf missing from the
+#     overlay, unreadable, or shipped with its `require=` lines deleted all
+#     produce it, and all three REFUSE.
+#   * an UNKNOWN member name is the empty set arriving by instalments: one typo
+#     and the set silently shrinks. It REFUSES and names the vocabulary.
+#
+# A third case follows from the same rule and is a deliberate change of
+# behaviour: a required member the gate cannot PROBE is a refusal, not a skip.
+# `require=apid` on an image with no apid.service, or with neither curl nor
+# wget, means the gate was told to establish something it has no way to
+# establish. The skip that used to be logged there was a hole; the image
+# contract's `health-gate-http-client` check exists because of it.
+REQUIRED=$(conf_all require)
+[ -n "$REQUIRED" ] || fail "no \`require=\` line in $CONF, so this gate has no criterion" \
+    "to confirm the booted slot against. An empty required set means \"always mark good\";" \
+    "refusing rather than confirming a slot nothing was checked on."
+for member in $REQUIRED; do
+    case "$member" in
+    boot-settled | mosd | apid) ;;
+    *)
+        fail "$CONF requires \`$member\`, which this gate does not implement." \
+            "The members are: boot-settled, mosd, apid. Ignoring an unrecognised name" \
+            "would shrink the required set silently."
+        ;;
+    esac
+done
+requires() {
+    for m in $REQUIRED; do
+        [ "$m" = "$1" ] && return 0
+    done
+    return 1
+}
+log "required set: $(printf '%s ' $REQUIRED)"
+
+# --- required member: boot-settled -----------------------------------------
 #
 # THIS GATE CANNOT WAIT FOR `is-system-running` TO SAY `running`, and the first
 # version of this probe did exactly that.
@@ -126,9 +192,13 @@ log "booted slot bootname: $BOOTED"
 # handed the state it wanted and the suite stayed green for as long as nobody
 # booted the thing.
 #
-# WHAT THE GATE ACTUALLY WANTS TO KNOW is "did anything fail", and that is
-# answered directly by enumerating failed units -- which the `degraded` branch
-# below already did. `is-system-running` was only ever a rollup of it.
+# WHAT THIS MEMBER ASKS is "did the boot transaction FINISH" -- was
+# multi-user.target reached. It is not "did anything fail": `degraded` differs
+# from `running` only in that some unit failed, and a failed unit is reported
+# below rather than confirmed against. What `maintenance` means is that the
+# system is in the emergency path with no multi-user.target, therefore no mosd,
+# no apid, no sshd and no network -- there is no route in of any kind, and none
+# of the other members could even be evaluated.
 #
 # So `starting` is resolved rather than trusted: if the only job still RUNNING
 # is this gate, nothing else is going to change and the boot is finished as far
@@ -147,6 +217,9 @@ other_running_jobs() {
         tr '\n' ' '
 }
 
+# The poll runs whether or not boot-settled is required: it is how this gate
+# waits for the system to stop moving before it probes anything. Only the
+# VERDICT below is conditional.
 waited=0
 while :; do
     sysstate=$(run systemctl is-system-running 2>/dev/null)
@@ -165,73 +238,116 @@ while :; do
 done
 log "systemd is-system-running = ${sysstate:-unknown} (settled after ${waited}s)"
 
-# The substantive check, shared by every state that reaches it.
-check_failed_units() {
-    failed=$(run systemctl list-units --state=failed --no-legend --plain --full 2>/dev/null |
-        awk '{print $1}')
-    for unit in $failed; do
-        tolerated=0
-        for allowed in $(conf_all tolerate-failed); do
-            [ "$unit" = "$allowed" ] && tolerated=1
-        done
-        [ "$tolerated" = 1 ] || fail "failed unit outside the allowlist: $unit"
-        log "tolerated failed unit: $unit"
-    done
-}
-
+# Computed once, then judged: empty means the boot transaction finished,
+# otherwise the sentence saying why it did not.
 case "$sysstate" in
-running)
-    log "probe systemd: OK"
-    ;;
-degraded)
-    check_failed_units
-    log "probe systemd: OK (degraded, every failed unit allowlisted)"
+running | degraded)
+    settled_why=
     ;;
 initializing | starting)
     others=$(other_running_jobs)
-    [ -z "$others" ] ||
-        fail "systemd is still ${sysstate} after ${waited}s with jobs running that are not this gate: ${others}"
-    check_failed_units
-    log "probe systemd: OK (${sysstate}, but this gate is the only job left running; every failed unit allowlisted)"
+    if [ -n "$others" ]; then
+        settled_why="systemd is still ${sysstate} after ${waited}s with jobs running that are not this gate: ${others}"
+    else
+        settled_why=
+    fi
     ;;
 *)
-    fail "systemd is-system-running = ${sysstate:-unknown}"
+    settled_why="systemd is-system-running = ${sysstate:-unknown}"
     ;;
 esac
 
-# --- probe b: mosd ---------------------------------------------------------
-# GetState("") is the cheapest existing call on com.mos.mosd1; reaching it
-# proves the daemon owns its bus name and is answering.
-if ! have busctl; then
-    log "probe mosd: SKIP (busctl not available)"
-elif ! unit_present mosd.service; then
-    log "probe mosd: SKIP (mosd.service not installed)"
-elif run busctl --system --quiet call com.mos.mosd /com/mos/mosd \
-    com.mos.mosd1 GetState s "" >/dev/null 2>&1; then
-    log "probe mosd: OK"
+if requires boot-settled; then
+    [ -z "$settled_why" ] || fail "required member boot-settled: $settled_why"
+    log "required member boot-settled: OK (${sysstate:-unknown})"
 else
-    fail "mosd did not answer com.mos.mosd1.GetState on the system bus"
+    log "member boot-settled not required${settled_why:+ - would have failed: $settled_why}"
 fi
 
-# --- probe c: apid ---------------------------------------------------------
+# --- report: failed units (never fatal) ------------------------------------
+#
+# The blanket sweep this replaces was the defect PLAN-089 exists for. Losing it
+# must not mean nobody learns a unit failed, so the same enumeration now
+# REPORTS: one journal line per unit, and one live-state entry at health.units
+# that reaches `GET /api/v1/state/health` and the diagnostic snapshot's
+# `failures.health` with no redaction-allowlist change.
+#
+# `degraded` is the status on purpose. It inherits the existing guarantee that
+# mos-health's `degraded` is not in the reboot gate's `blockingStatuses`
+# (pkgs/mosd/mosd/src/bus.rs), so a reported failed unit can no more block a
+# reboot than a full /var can. This runs BEFORE the remaining members so the
+# list is in the journal even when the gate goes on to fail.
+failed=$(run systemctl list-units --state=failed --no-legend --plain --full 2>/dev/null |
+    awk '{print $1}')
+failed_count=0
+failed_names=
+for unit in $failed; do
+    failed_count=$((failed_count + 1))
+    log "note: failed unit: $unit"
+    # The detail string is capped by mosd at 1024 bytes; the journal above and
+    # the snapshot's own `failures.units` reader carry the complete list.
+    [ "$failed_count" -le 10 ] && failed_names="${failed_names:+$failed_names }$unit"
+done
+if [ "$failed_count" = 0 ]; then
+    log "no failed units"
+    report_health units ok "no failed units"
+else
+    detail="$failed_count failed: $failed_names"
+    [ "$failed_count" -gt 10 ] && detail="$detail (+$((failed_count - 10)) more)"
+    log "$failed_count failed unit(s) - REPORTED, not fatal: $failed_names"
+    report_health units degraded "$detail"
+fi
+
+# --- required member: mosd -------------------------------------------------
+#
+# GetState("") is the cheapest existing call on com.mos.mosd1; reaching it
+# proves the daemon owns its bus name and is ANSWERING, which is the part a
+# unit-state sweep cannot see.
+#
+# Required because mosd is the only process in the system that talks to RAUC's
+# D-Bus installer: apid's update routes are a proxy onto InstallUpdate,
+# GetUpdateState and MarkUpdate (pkgs/mosd/apid/src/bus_client.rs). With mosd
+# down the device is reachable and unfixable, which is the state rollback
+# exists to escape.
+if requires mosd; then
+    have busctl ||
+        fail "required member mosd: busctl is not in this image, so the gate cannot" \
+            "establish that mosd answers. Ship busctl or drop \`require=mosd\` from $CONF."
+    unit_present mosd.service ||
+        fail "required member mosd: mosd.service is not installed in this image." \
+            "$CONF requires something this image does not ship."
+    run busctl --system --quiet call com.mos.mosd /com/mos/mosd \
+        com.mos.mosd1 GetState s "" >/dev/null 2>&1 ||
+        fail "required member mosd: mosd did not answer com.mos.mosd1.GetState on the" \
+            "system bus, so no update can be installed by any route."
+    log "required member mosd: OK"
+fi
+
+# --- required member: apid -------------------------------------------------
+#
 # apid serves HTTPS with a self-signed certificate, so the probe skips
 # verification; /healthz is apid's existing endpoint and bypasses its auth gate.
-if ! unit_present apid.service; then
-    log "probe apid: SKIP (apid.service not installed)"
-elif have curl; then
-    if run curl -sS -k -o /dev/null -f https://127.0.0.1/healthz; then
-        log "probe apid: OK"
+#
+# Required because apid is the only NETWORK route in: the `prod` image profile
+# seeds SSH off (pkgs/mosd/mosd/src/provisioning.rs), so with apid down mosd
+# would take a bundle that nothing can deliver without physical access to the
+# serial console. An image that genuinely ships no apid drops the line.
+if requires apid; then
+    unit_present apid.service ||
+        fail "required member apid: apid.service is not installed in this image." \
+            "$CONF requires something this image does not ship."
+    if have curl; then
+        run curl -sS -k -o /dev/null -f https://127.0.0.1/healthz ||
+            fail "required member apid: apid did not answer https://127.0.0.1/healthz"
+    elif have wget; then
+        run wget -q --no-check-certificate -O /dev/null https://127.0.0.1/healthz ||
+            fail "required member apid: apid did not answer https://127.0.0.1/healthz"
     else
-        fail "apid did not answer https://127.0.0.1/healthz"
+        fail "required member apid: neither curl nor wget is in this image, so the gate" \
+            "cannot establish that apid answers. A SKIP here would confirm a slot with no" \
+            "remote route into it."
     fi
-elif have wget; then
-    if run wget -q --no-check-certificate -O /dev/null https://127.0.0.1/healthz; then
-        log "probe apid: OK"
-    else
-        fail "apid did not answer https://127.0.0.1/healthz"
-    fi
-else
-    log "probe apid: SKIP (no curl or wget in the image)"
+    log "required member apid: OK"
 fi
 
 # --- report: /var pressure (never fatal) -----------------------------------
