@@ -19,13 +19,13 @@
 // invented. A fabricated seam would only test the fabrication.
 
 import { describe, expect, test } from 'bun:test'
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { loadBoard } from './board.ts'
 import { packedRootFixture, type RootFixture } from './checks-fixture.ts'
-import { DISPLAY_CHECKS } from './checks-display.ts'
+import { consoleArgsOf, DISPLAY_CHECKS } from './checks-display.ts'
 import { assertRegisterWellFormed, CHECKS, type CheckCase } from './checks.ts'
-import { boardEnvPath } from './paths.ts'
+import { boardEnvPath, REPO_ROOT } from './paths.ts'
 import type { CheckResult, Verdict } from './parity.ts'
 
 const cx3576 = loadBoard(boardEnvPath('cx3576'))
@@ -41,9 +41,26 @@ const x64 = loadBoard(boardEnvPath('x64'))
  */
 const SHIPPED_ARGS = cx3576.cmdlineArgs ?? ''
 
-/** A compiled boot script's text: the uImage header is NULs, which uImageText strips. */
+/**
+ * A compiled boot script's text: the uImage header is NULs, which uImageText strips.
+ *
+ * THE COMMENT BLOCK IS PART OF THE FIXTURE, and it is the regression test for
+ * the defect that made the first real-image run fail two of these checks on
+ * `boot.cmd`'s own documentation. The shipped file explains at length that
+ * `quiet` must not be set and what the `fbcon=` options are for, and a check
+ * that scans the whole script finds those words and reports on the PROSE. The
+ * lines below reproduce that shape -- the forbidden token in a sentence
+ * forbidding it, and an `fbcon=` value ending in a full stop -- so a reader who
+ * "simplifies" the extractor back to a whole-text scan gets a red test rather
+ * than a red image.
+ */
 function bootScr(args: string): string {
-  return `\0\0\0\0mos boot\0\nsetenv consoleargs "${args}"\n`
+  return `\0\0\0\0mos boot\0\n`
+    + `# loglevel=5, and NOT quiet: quiet sets exactly CONSOLE_LOGLEVEL_QUIET and\n`
+    + `# fbcon suppresses the logo at or below it. loglevel=0 is worse still.\n`
+    + `# fbcon=logo-pos:center,logo-count:1. One logo, centred.\n`
+    + `# console=ttyS0,115200 would be the wrong console to put last.\n`
+    + `setenv consoleargs "${args}"\n`
     + `setenv bootargs "\${rootargs} \${verity_args} \${raucargs} \${consoleargs}"\n`
 }
 
@@ -146,6 +163,38 @@ describe('the display family is in the register and can be diffed', () => {
     finally {
       fx.dispose()
     }
+  })
+})
+
+describe('the extractor reads the assignment and not the documentation', () => {
+  // The defect this file exists to keep closed. Measured on the first real
+  // image: `quiet` appeared in a comment saying quiet is forbidden, and
+  // `fbcon=...,logo-count:1.` appeared with a sentence-ending full stop, and
+  // two checks went red on a correct image.
+  test('comment lines are discarded, whatever they mention', () => {
+    const script = '# do not set quiet; use fbcon=logo-pos:center,logo-count:1. Ever.\n'
+      + '#   console=nowhere console=alsonowhere\n'
+      + 'setenv consoleargs "console=tty1 console=ttyFIQ0,1500000 loglevel=5"\n'
+    expect(consoleArgsOf(script)).toBe('console=tty1 console=ttyFIQ0,1500000 loglevel=5')
+  })
+
+  test('an indented comment is still a comment', () => {
+    expect(consoleArgsOf('    # quiet\nsetenv consoleargs "loglevel=5"\n')).toBe('loglevel=5')
+  })
+
+  test('a script with no assignment yields the empty string, not the script', () => {
+    // Empty must not be "the whole text": every check here treats '' as "found
+    // nothing" and reports a specific failure, and returning the prose would
+    // make those failures describe the comments.
+    expect(consoleArgsOf('# setenv consoleargs "console=tty1"\n')).toBe('')
+  })
+
+  test('the SHIPPED boot.cmd still yields its console list through the extractor', () => {
+    // Not a fixture: the real file, so this cannot pass against a boot.cmd the
+    // tree stopped shipping or a spelling the extractor stopped matching.
+    const shipped = readFileSync(join(REPO_ROOT, 'boards/cx3576/boot.cmd'), 'utf8')
+    const args = consoleArgsOf(shipped)
+    expect(args).toBe(SHIPPED_ARGS.replace(' net.ifnames=0', ''))
   })
 })
 

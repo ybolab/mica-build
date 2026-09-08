@@ -156,6 +156,28 @@ RUN --mount=type=bind,source=rootfs/scripts,target=/mos-scripts \
 RUN --mount=type=bind,source=rootfs/scripts,target=/mos-scripts \
     sh /mos-scripts/hwdb-remove.sh
 
+# Reconcile the enablement links with the preset policy this root SHIPS
+# (PLAN-088). Here, in `closed`, and above the purge, for the same reasons the
+# hwdb removal is: it is a decision about the device root, TOTAL_MB is measured
+# below over the root that ships, and the purge takes /var/lib/dpkg with it.
+#
+# WHAT IT IS FOR, and it is not a duplicate of the preset files. A preset
+# prevents a link from being WRITTEN, and mos-system's ssh rule works because
+# apt unpacks that package before it configures openssh-server. cx3576's
+# getty@tty1 rule cannot work that way: systemd is configured before the board
+# package carrying the rule is unpacked, so the assembled image shipped the
+# preset AND the link -- measured, on the first image built with it. The preset
+# remains the decision that survives a `systemctl preset-all`; this step removes
+# the link the decision was too late to prevent.
+#
+# It reads the policy rather than naming a unit, so it is board-agnostic code
+# with a board-specific effect: cx3576 ships a `disable getty@.service` rule and
+# x64 does not, and x64's VC getty is therefore untouched. Measured on the
+# composed cx3576 root: 37 rules, 104 enablement links examined, exactly 1
+# removed.
+RUN --mount=type=bind,source=rootfs/scripts,target=/mos-scripts \
+    sh /mos-scripts/preset-enforce.sh
+
 # Remove package management from the packed root. Nothing can install a
 # package on this device: the root is a read-only dm-verity squashfs and
 # updates arrive as whole RAUC slots, so apt, dpkg and the perl-base dpkg

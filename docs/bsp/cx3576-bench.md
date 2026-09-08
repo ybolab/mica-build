@@ -702,40 +702,78 @@ reboot cannot recover the evidence of the boot before it. That is also why the
 reboot-spanning stages accumulate one cycle per run rather than trying to
 observe several reboots from inside one invocation.
 
-## 10. The display rows (PLAN-088), which nothing off-hardware can settle
+## 10. The display rows (PLAN-088), and the sink they all depend on
 
 PLAN-088 makes HDMI show a boot logo instead of a login prompt, and keeps the
-display reachable as a console. Every mechanism it uses was read out of the
-pinned kernel source and every resulting byte is asserted against the assembled
-image by `verify/src/checks-display.ts` — but **no board has ever displayed
-it**. The image contract can say that the kernel config carries `CONFIG_LOGO`,
-that the console list puts `tty1` before the serial console, and that
-`getty@tty1` resolves to disabled. It cannot say that a monitor lit up.
+display reachable as a console. Every mechanism was read out of the pinned
+kernel source and every resulting byte is asserted against the assembled image
+by `verify/src/checks-display.ts` — but **no board has ever displayed it**.
 
-These five rows are that gap, and they are `not tested` until a bench session
-with a real HDMI monitor attached fills them. They need no new collector stage:
-four of them are things a person looks at, which is exactly the half
-[qualification.md](qualification.md) reserves for an operator answer.
+### 10.1 Record whether a monitor was attached. Every row, every time.
+
+The first bench dmesg (`_out/cx3576/a.txt`) is the reason this is a rule and not
+a nicety. It shows the display pipeline coming up healthy —
+
+```
+rockchip-hdptx-phy-hdmi 2b000000.hdmiphy: hdptx phy init success
+rockchip-vop2 27d00000.vop: Adding to iommu group 11
+dwhdmi-rockchip 27da0000.hdmi: registered ddc I2C bus driver
+[drm] Initialized rockchip 4.0.0 20140818 for display-subsystem on minor 0
+```
+
+— and then failing to produce a framebuffer:
+
+```
+rockchip-drm display-subsystem: [drm] Cannot find any crtc or sizes
+```
+
+**That log cannot distinguish "no monitor was plugged in" from "a monitor was
+plugged in and its EDID did not read."** They are different faults with
+different owners — the first is the operator's setup, the second is a board or
+cable defect — and no amount of re-reading the file will separate them. So the
+run directory must record, per boot: whether a sink was connected, what it was,
+and on which HDMI connector. Without that, every row below is uninterpretable
+and the next reader is where this one started.
+
+Capture alongside each result:
+
+- `for c in /sys/class/drm/card*-HDMI-A-*; do echo "$c $(cat $c/status)"; done`
+- `cat /sys/class/drm/card*-HDMI-A-*/modes` (empty means no EDID modes)
+- `ls /sys/class/graphics/` — **whether `fb0` exists at all is the single most
+  discriminating fact on the whole page**, because it separates the dark state
+  from both the logo and the console state.
+
+### 10.2 Three states, and rows that say which one they saw
+
+A result cell of `fail` is ambiguous unless it names the state observed, because
+"no logo" is true of both a broken logo and an absent framebuffer:
+
+| State | Test | Meaning |
+|---|---|---|
+| **dark** | `/sys/class/graphics/fb0` absent | no fbdev; nothing is driving the output. Not a logo defect |
+| **logo** | `fb0` present, board splash on screen | the intended healthy state |
+| **console** | `fb0` present, text on screen | fbcon bound and something is writing to the VT |
 
 | Row | What a `pass` is | Why no gate can decide it |
 |---|---|---|
-| D1 — logo appears | The board splash is on the monitor before the login-less prompt-free console settles, at the negotiated mode | Nothing here renders. The 720x405 geometry was chosen from `fb_prepare_logo`'s height test and `fb_show_logo_line`'s width test, but which mode the monitor negotiates is an EDID fact of the attached panel |
-| D2 — exactly one, centred | One logo, centred, not a row of them | `fbcon=logo-count:1` is asserted in the image; that the option took effect is a pixel fact. `fb_logo_count` otherwise defaults to one copy per online CPU |
-| D3 — no login prompt | No `login:` on HDMI at any point in a normal boot, and none after several minutes | The preset resolution is asserted; that no other mechanism spawns a getty on tty1 is a claim about the running system. systemd 257's getty-generator skips virtual consoles by design, which is the reading this rests on |
-| D4 — a panic reaches the screen | With `loglevel=5`, force a crash (`echo c > /proc/sysrq-trigger`) and read the trace **on the monitor** | This is the property that justifies letting a logo own the display, and it is the one most worth distrusting. It depends on `console_verbose()` raising the level on the oops path, which is source-verified and never observed on this board |
-| D5 — the console comes back | `systemctl start getty@tty1` yields a usable login prompt on HDMI, and `systemctl stop` gives the screen back | A disabled unit being startable is systemd behaviour, not an image fact |
+| D1 — logo appears | Sink attached at boot: the splash is on the monitor, at the negotiated mode, with no login prompt at any point | Nothing here renders. The 720x405 geometry follows `fb_prepare_logo`'s height test and `fb_show_logo_line`'s width test, but the negotiated mode is an EDID fact of the attached panel |
+| D2 — exactly one, centred | One logo, centred, not a row of them | `fbcon=logo-count:1` is asserted in the image; that it took effect is a pixel fact. `fb_logo_count` otherwise defaults to one copy per online CPU |
+| D3 — no login prompt | No `login:` on HDMI during a normal boot, nor after several idle minutes | The preset resolution and the link's absence are both asserted; that nothing else spawns a getty on tty1 is a claim about the running system |
+| D4 — a panic reaches the screen | **With a monitor attached before the crash**, `echo c > /proc/sysrq-trigger` and read the trace on the monitor | The property that justifies letting a logo own the display, and the one most worth distrusting. It rests on `console_verbose()` raising the level on the oops path — source-verified, never observed here |
+| D5 — the console comes back | `systemctl start getty@tty1` yields a usable login prompt on HDMI; `systemctl stop` gives the screen back | A disabled unit being startable is systemd behaviour, not an image fact |
+| D6 — **hotplug** | Boot with **no** monitor, confirm `fb0` is absent, then attach one: `fb0` appears and the logo is drawn without a reboot | The common case for this product. The path is `output_poll_changed` -> `drm_fb_helper_hotplug_event` -> the `deferred_setup` branch (PLAN-088 §2.4), and all three of its conditions were verified in source and in the boot log. Whether HPD actually fires on this board's connector is not something any of that establishes |
+| D7 — dark is dark | Boot with no monitor and **leave it unplugged**: nothing is expected on HDMI, and a panic is expected to be invisible there | Recorded as a row because it is a real product state, not a defect, and because a reader who finds a blank screen needs it written down that this is the designed behaviour rather than a regression. Serial carries the panic in this state |
 
-**D4 is the row to run first if time is short.** D1 through D3 failing leaves a
-blank or ugly screen; D4 failing means a technician with no serial cable has no
-way to see why a unit is dead, which is the regression this design was chosen
-to avoid. It is also the only row whose failure would argue for reverting the
-console policy rather than adjusting the artwork.
+**D4 and D6 are the rows to run first if time is short.** D1-D3 failing leaves an
+ugly screen; D4 failing means a technician with no serial cable cannot see why a
+unit is dead, and D6 failing means a device that booted headless can never show
+anything without a reboot. Both argue for revisiting the design rather than the
+artwork.
 
-**A `fail` on D1 with a `pass` on D4 is a coherent outcome, not a contradiction**
-— it is what a monitor negotiating a mode narrower than 720 pixels looks like,
-and the fix is the logo geometry rather than the console design. Record the
-negotiated mode (`/sys/class/drm/card*/modes` and the chosen one from
-`dmesg | grep -i mode`) with either result, because without it neither row can
-be acted on.
+**A `fail` on D1 with a `pass` on D6 is coherent**, not a contradiction — it is
+what a monitor whose EDID reads only after HPD looks like. **A `fail` on D6 with
+`fb0` still absent** is the case that would put `video=HDMI-A-1:...e` on the
+table (PLAN-088 §2.4 names it and declines it); record the connector status and
+`modes` output with that result or it cannot be acted on.
 
 > status: proposed — evidence: `docs/plan/PLAN-088.md`

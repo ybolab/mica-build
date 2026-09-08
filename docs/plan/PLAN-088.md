@@ -45,22 +45,52 @@ that can bind to this SoC's display controller** — no framebuffer, no output,
 and `drm-logo@0` still arriving at `base 0, size 0`. It would be a config change
 that looks like the feature and is not.
 
-**The kernel half of the handover does exist**, which is worth recording because
-it is what makes the route sound in principle. `armbian/linux-rockchip` at
-`c6157104418d012823413c02f9222f3fe123dd25` ships
-`drivers/gpu/drm/rockchip/rockchip_drm_logo.c`, and the adoption is DT-driven
-exactly as predicted — no Kconfig symbol gates it:
+**The kernel half of the handover exists, is reached at boot, and fails for
+exactly one measurable reason.** This is no longer inference: bench dmesg from
+the first successful boot (`_out/cx3576/a.txt`, 1009 lines, real hardware) shows
 
-- `rockchip_drm_logo.c:251-255` resolves the framebuffer through
-  `memory-region-names` = `"drm-logo"` (falling back to a `logo-memory-region`
-  phandle), and `:298-302` does the same for `"drm-cubic-lut"`;
-- `:468-523` parses each `route` subnode — a `connect` phandle plus
-  `video,clock`, `video,hdisplay`, `video,vdisplay`, `video,vrefresh` and the
-  `post-csc,*` group — and builds a mode set from it.
+```
+[    7.517069] rockchip-drm display-subsystem: failed to parse loader memory
+```
 
-So the kernel is ready to adopt a framebuffer that a bootloader filled in. On
-this tree nothing fills it, which is precisely why `drm-logo@0` and
-`drm-cubic-lut@0` arrive empty.
+`rockchip_drm_show_logo()` does two things in order, and **which** warning
+appears identifies which one failed:
+
+1. `of_get_child_by_name(np, "route")` — on failure prints *"failed to parse
+   resources for logo display"*. **That line is absent**, so the `route` subtree
+   is present and correct.
+2. `init_loader_memory()` — on failure prints the line above.
+
+`init_loader_memory` (`rockchip_drm_logo.c:241-296`) matches
+`memory-region-names` against `"drm-logo"`, takes the corresponding
+`memory-region` phandle (falling back to `logo-memory-region`), calls
+`of_address_to_resource`, and then **`if (!size) return -ENOMEM;`**.
+
+Parsed out of the shipped `rk3576-src.dtb` rather than assumed from another
+Rockchip generation, everything that function looks for is already wired:
+
+```
+/display-subsystem
+    memory-region-names = "drm-logo", "drm-cubic-lut"
+    memory-region       = <&drm_logo>, <&drm_cubic_lut>
+/display-subsystem/route/route-hdmi
+    status = "okay"      connect = <0x32>
+    logo,uboot = "logo.bmp"     logo,kernel = "logo_kernel.bmp"
+    logo,mode  = "center"       charge_logo,mode = "center"
+/reserved-memory/drm-logo@0
+    compatible = "rockchip,drm-logo"
+    reg = <0x0 0x0 0x0 0x0>          <- the only hole
+```
+
+So the failure is precisely the `!size` branch, and the boot log says so one
+line earlier: *"Reserved memory: failed to reserve memory for node
+'drm-logo@0': base 0x0, size 0 MiB"*. The DT even names the file the bootloader
+would load. The single missing actor is a bootloader that allocates the
+framebuffer and writes its base and size into that `reg` — which upstream U-Boot
+cannot be, for the reason above: it has no VOP2 driver to allocate one with.
+
+The route is therefore **real and unreachable on this tree**, which is a
+stronger statement than "not implemented" and a different one from "expensive".
 
 **What taking the route anyway would cost.** Not "HDMI PHY bring-up and a bigger
 U-Boot" — that is the cost of *writing* the drivers. The realistic path is
@@ -193,16 +223,47 @@ already ships exactly this shape (`console=tty0 console=ttyS0,115200` in
 `boards/x64/board.env`), so this is the tree's existing convention, not a new
 one.
 
-**The getty is disabled by a file, not by an absence.** It is enabled today by
+**The getty is disabled by a file, not by an absence — and it took two files,
+which the first assembled image is what proved.** It is enabled today by
 `90-systemd.preset:18` (`enable getty@.service`) plus `DefaultInstance=tty1` in
 `getty@.service`, which is what materialises
 `etc/systemd/system/getty.target.wants/getty@tty1.service` in the packed root.
 `mos-board-cx3576` ships `50-mos-getty.preset` with `disable getty@.service`;
 `50-` sorts before `90-`, preset rules are read in basename order and the first
-match wins, so the resolution is *disabled*. Same shape and same reason as the
-`50-mos-ssh.preset` and `50-mos-nftables.preset` already in the image: an
-unenabled unit is one `systemctl preset-all` away from being enabled, and that
-is an absence rather than a decision.
+match wins, so the *policy* resolves to disabled.
+
+**The policy alone did not remove the link.** This plan predicted it would, by
+analogy with `50-mos-ssh.preset`, whose own packaging notes explain that it
+works because "apt unpacks this package's data before it configures
+openssh-server". `rootfs/debian/packages/systemd.json` names `mos-system` and
+`mos-bluetooth` as systemd's consumers, which made the same ordering look likely
+here. It does not hold: the first image built with the preset shipped **both**
+the preset and the link, and `display-getty-tty1-disabled` went red on it —
+
+```
+FAIL: getty@tty1 is not disabled by a preset:
+  /etc/systemd/system/getty.target.wants/getty@tty1.service enable(s) it
+```
+
+systemd is configured before the board package carrying the rule is unpacked, so
+the rule is the right decision arriving too late to prevent the link.
+
+So both halves ship, and they do different jobs:
+
+- the **preset** is the decision, and it is what makes the state survive a
+  `systemctl preset-all`, a new preset file, or an upstream packaging change;
+- `rootfs/scripts/preset-enforce.sh`, run from the pack stage, is the
+  **reconciliation**: it reads the merged preset set in systemd's own
+  precedence order and unlinks the enablement links whose first matching rule
+  says `disable`.
+
+Shipping only the second would be an absence rather than a decision — the exact
+failure the preset exists to prevent. Shipping only the first is what was
+measured to leave a login prompt on the screen. The enforcer reads the policy
+rather than naming a unit, so it is board-agnostic code with a board-specific
+effect: measured on the composed cx3576 root, **37 rules, 104 enablement links
+examined, exactly 1 removed**, and x64 — which ships no such rule — keeps its VC
+getty.
 
 `console=tty1` does not smuggle one back in. systemd 257.13's getty-generator
 skips virtual consoles — *"We assume that gettys on virtual terminals are started
@@ -260,6 +321,98 @@ copy per online CPU* (`fbmem.c:695`) — eight side-by-side logos on this SoC.
 `logo-count:1` pins a single copy and `logo-pos:center` places it
 (`fbcon.c:476-487`, `fbmem.c:504-513`, `:681-682`).
 
+## 2.4 Three display states, not two — and hotplug
+
+The brief this plan was written against said HDMI shows a login prompt today.
+The bench dmesg shows that is true only when a sink is attached and its EDID
+reads. On that boot it showed **nothing**:
+
+```
+[    7.517119] rockchip-drm display-subsystem: [drm] Cannot find any crtc or sizes
+```
+
+That is `drm_fb_helper_single_fb_probe` (`drm_fb_helper.c:1745`) failing the
+sizing step, and its consequence is the part that matters: it returns `-EAGAIN`,
+the caller turns that into `fb_helper->deferred_setup = true` and **returns 0**
+(`:1943-1949`), so `rockchip_drm_fbdev_init` sees success and **no fbdev is
+created**. The dmesg confirms it from the other side: across 1009 lines there
+are **zero** occurrences of `fb`, `fbcon` or `fbdev` — no `fb0`, no
+`Console: switching to colour frame buffer device`.
+
+So there are three states, and every claim in this plan has to say which one it
+is about:
+
+| | what is on the screen |
+|---|---|
+| **logo** | an fbdev exists, fbcon bound, `CONFIG_LOGO` drew the board's PPM |
+| **console** | an fbdev exists, fbcon bound, and something is writing text to the VT |
+| **dark** | no fbdev exists — nothing is driving the output at all |
+
+**In the dark state `console=tty1` is not a diagnostic path either.** VT output
+goes to `dummy_con` and is never rendered, so an oops or panic is invisible on
+HDMI however the console list is ordered. This is the honest limit of §2.2's
+argument: the display is a diagnostic path *when a sink is attached and its EDID
+reads*, and not otherwise. Nothing in this plan changes that, and nothing in it
+can — a framebuffer cannot be conjured for a mode DRM could not find.
+
+### Hotplug, which the deferral makes work
+
+A device that boots headless and gets a monitor later must still show something,
+and it does. The recovery is already in the driver, wired in a third file —
+`rockchip_drm_fb.c:363`:
+
+```c
+static void rockchip_drm_output_poll_changed(struct drm_device *dev)
+{
+	struct rockchip_drm_private *private = dev->dev_private;
+	struct drm_fb_helper *fb_helper = private->fbdev_helper;
+
+	if (fb_helper && dev->mode_config.poll_enabled && !private->loader_protect)
+		drm_fb_helper_hotplug_event(fb_helper);
+}
+```
+
+installed as `.output_poll_changed` in `rockchip_drm_mode_config_funcs`
+(`:389-394`). `drm_fb_helper_hotplug_event` checks `deferred_setup` **first** and
+re-runs the full initial config (`drm_fb_helper.c:2063-2075`). All three
+conditions hold on this board:
+
+- `private->fbdev_helper` is assigned at `rockchip_drm_fbdev.c:124`, **before**
+  `drm_fb_helper_initial_config`, and the deferred path returns 0 so the error
+  path is not taken. The dmesg carries **zero** occurrences of *"Failed to set
+  initial hw config"*, which is the positive evidence that the helper is still
+  installed.
+- `mode_config.poll_enabled` is set by `drm_kms_helper_poll_init`
+  (`rockchip_drm_drv.c:1944`).
+- `loader_protect` is false precisely *because* the handover failed.
+
+So: HPD → `output_poll_changed` → `drm_fb_helper_hotplug_event` → the
+`deferred_setup` branch → fbdev created → fbcon binds → the logo is drawn *at
+that moment*, because `logo_shown` is still `FBCON_LOGO_CANSHOW` (nothing in this
+configuration sets `DONTSHOW`: deferred takeover is off, and `loglevel=5` clears
+the `fbcon.c:1009` threshold).
+
+### What each scenario produces
+
+| Scenario | Before this plan | After |
+|---|---|---|
+| Sink present at U-Boot time | **dark** until DRM probe — U-Boot drives no display | **dark** until DRM probe, then **logo**. The seamless case is not on offer; §1 says why |
+| Sink present, EDID reads at probe | **console** (login prompt) | **logo** |
+| No sink at boot, attached later | **dark**, then **console** on HPD | **dark**, then **logo** on HPD |
+| Sink attached but sizing still fails | **dark** | **dark** — unchanged, and unchangeable from here |
+
+`CONFIG_FRAMEBUFFER_CONSOLE_DEFERRED_TAKEOVER` is irrelevant to every row: it
+governs *when* fbcon takes over a framebuffer, not whether one exists. It is off
+for the unrelated reason in §2.1(c), and it must not be read as an answer here.
+
+**The known lever for the dark state, named and not taken.** `video=HDMI-A-1:1920x1080@60e`
+forces a connector enabled regardless of detect status, which would manufacture
+a CRTC and therefore an fbdev with no sink. It is rejected for now on two
+grounds: it pins one mode on a product whose monitor is unknown, and it would
+make the *hotplug* case worse by committing to that mode before the real EDID
+arrives. If the dark state turns out to be common on the bench, this is the
+lever to price — not a change to the logo or the console list.
+
 ## 3. What changes
 
 | File | Change |
@@ -273,6 +426,8 @@ copy per online CPU* (`fbmem.c:695`) — eight side-by-side logos on this SoC.
 | `boards/x64/board.env`, `boards/virt-arm64/board.env` | declare `BOARD_HAS_DISPLAY=0` |
 | `boards/cx3576/overlay/.../50-mos-getty.preset` | new: `disable getty@.service` |
 | `boards/cx3576/deb/board-cx3576/Dockerfile` | ship the board's presets, and refuse a build that staged none |
+| `rootfs/scripts/preset-enforce.sh` | new: reconcile enablement links with the shipped preset policy |
+| `rootfs/compose/90-pack.Dockerfile` | run it, beside the hwdb removal |
 | `verify/src/lint.ts` | `BOARD_HAS_DISPLAY` joins `REQUIRED_BOARD_KEYS`, with the same 0-or-1 rule as `BOARD_HAS_STATUS_LED` |
 | `verify/src/board.ts`, `board-scope.ts` | model the key, and the `hasDisplay` predicate the checks are scoped by |
 | `verify/src/unit-state.ts` | new: the preset-resolution reader, lifted whole out of `checks-firewall.ts` so there is one implementation |

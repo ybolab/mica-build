@@ -33,8 +33,18 @@ Two halves, and the second is the requirement rather than the nicety:
   the screen, and `systemctl start getty@tty1` turns it into a login terminal at
   runtime with no second boot path and no rebuild.
 
-PLAN-088 carries the route decision, the evidence for it, and the two places
-where the dispatched design was measured to be wrong.
+PLAN-088 carries the route decision, the evidence for it, and the four places
+where a prediction was measured to be wrong — three in the dispatched design
+(`quiet` and `loglevel=0` both suppress the logo; deferred takeover would too)
+and one of this task's own (a `disable` preset does not remove a link systemd
+had already written, so the pack stage reconciles it).
+
+Bench dmesg from the first successful boot then added a third display state:
+with no EDID-readable sink at probe, `Cannot find any crtc or sizes` defers the
+fbdev and **none is created**, so the screen is dark and `console=tty1` renders
+nothing either. Hotplug recovers it without a reboot. PLAN-088 §2.4 has the
+state matrix; the bench rows record whether a monitor was attached, because the
+dmesg cannot distinguish "no sink" from "EDID failed".
 
 ## ActiveForm
 

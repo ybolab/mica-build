@@ -92,6 +92,20 @@ arrives at from the outside.
   ENABLE, and `90-systemd.preset` says `enable getty@.service`. It remains
   startable: `systemctl start getty@tty1` turns the display into a login
   terminal at runtime, with no second boot path and no rebuild.
+- **There is a THIRD state, and it is not "logo or console".** Bench dmesg shows
+  `[drm] Cannot find any crtc or sizes` when no EDID-readable sink is present at
+  probe: that returns `-EAGAIN`, the fbdev setup is **deferred**, and **no fbdev
+  is created at all** — so the screen is dark and `console=tty1` renders nothing
+  either, because VT output goes to `dummy_con`. HDMI is a diagnostic path *when
+  a sink is attached and its EDID reads*, and not otherwise.
+  - **Hotplug recovers it without a reboot.** `rockchip_drm_output_poll_changed`
+    (`rockchip_drm_fb.c:363`) calls `drm_fb_helper_hotplug_event`, which takes
+    the `deferred_setup` branch and creates the fbdev then; fbcon binds and the
+    logo is drawn at that moment. A device that boots headless and gets a
+    monitor later shows the logo, not a blank screen.
+  - A panic is **not** recoverable by plugging in afterwards — a panicked kernel
+    does not run the hotplug work item. An oops is, because the VT buffer still
+    holds the text and fbcon redraws it on bind.
 - **No plymouth and no userspace splash.** The kiosk takes DRM master when
   `mos-gui` starts; nothing else paints.
 - Console channels (access.md): wizard tty2 / debug shell tty3 live on

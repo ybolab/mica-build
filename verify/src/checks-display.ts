@@ -68,16 +68,49 @@ const GETTY_UNIT = 'getty@tty1.service'
 const LOGLEVEL_FLOOR = 5
 
 /**
- * The effective kernel command line for slot A, as text.
+ * The value `setenv consoleargs "<...>"` assigns, with comment lines discarded.
  *
- * The whole boot script rather than the extracted `consoleargs` value, because
- * every token this file looks for is a literal in it and the NUL-stripped text
- * is what `checks-bootchain.ts` already reads the script's variables out of.
+ * THE EXTRACTION IS THE FIX FOR A REAL DEFECT, and it is worth the words. This
+ * read the WHOLE boot script text first, on the reasoning that every token
+ * looked for here is a literal in it. It is -- and so is every token in
+ * `boot.cmd`'s PROSE. That file documents at length why `quiet` must not be set
+ * and what `fbcon=logo-pos:center,logo-count:1` is for, and the first run
+ * against a real image failed two checks on its own comments: the loglevel
+ * check found the word `quiet` in a sentence explaining that `quiet` is
+ * forbidden, and the logo-count check parsed `fbcon=logo-pos:center,logo-count:1.`
+ * out of a sentence that ended in a full stop, so the option came out as
+ * `logo-count:1.` and did not match.
+ *
+ * Both were the check reading documentation as configuration -- green or red
+ * according to how the file is WORDED rather than what it sets. So the value is
+ * extracted from the assignment, and lines whose first non-space character is
+ * `#` are dropped before anything is matched.
+ *
+ * `consoleargs` by name, which is `boot.cmd`'s own spelling, for the same
+ * reason `checks-bootchain.ts` reads `bootpart` and `rootpart` by name. A board
+ * that moved these tokens elsewhere makes every check here report "no console="
+ * -- loudly wrong rather than quietly green.
+ */
+export function consoleArgsOf(script: string): string {
+  for (const raw of script.split('\n')) {
+    const line = raw.trim()
+    if (line.startsWith('#')) continue
+    const m = /^setenv[ \t]+consoleargs[ \t]+"([^"]*)"/.exec(line)
+    if (m !== null) return m[1] as string
+  }
+  return ''
+}
+
+/**
+ * The effective console arguments for slot A.
+ *
+ * On a U-Boot board they are composed inside the compiled boot script; on a
+ * grub board the bootloader's own command line carries them.
  */
 async function cmdlineText(ctx: ImageContext): Promise<string> {
   if (!isUBoot(ctx.board)) return boardCmdline(ctx, SLOTS[0] as BootSlot)
   const file = await bootScript(ctx, SLOTS[0] as BootSlot)
-  return file === undefined ? '' : uImageText(file)
+  return file === undefined ? '' : consoleArgsOf(uImageText(file))
 }
 
 /**

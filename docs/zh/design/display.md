@@ -75,6 +75,17 @@ kiosk:
   而不是靠"缺少软链接" —— 未被任何规则匹配的单元 preset 结果是 ENABLE，
   而 `90-systemd.preset` 写的正是 `enable getty@.service`。它仍然可以随时启动：
   `systemctl start getty@tty1` 让屏幕在运行时变成登录终端，无需第二条启动路径、无需重新构建。
+- **存在第三种状态，不只是"logo 或控制台"。** 实测的 bench dmesg 在探测时没有可读
+  EDID 的显示器时打印 `[drm] Cannot find any crtc or sizes`：该路径返回 `-EAGAIN`，
+  fbdev 建立被**推迟**，于是**根本没有创建 fbdev** —— 屏幕是黑的，`console=tty1`
+  也什么都不渲染，因为 VT 输出走的是 `dummy_con`。也就是说：**只有接上显示器且
+  EDID 可读时**，HDMI 才是一条诊断通路。
+  - **热插拔可以在不重启的情况下恢复。** `rockchip_drm_output_poll_changed`
+    （`rockchip_drm_fb.c:363`）调用 `drm_fb_helper_hotplug_event`，后者走
+    `deferred_setup` 分支并在此时创建 fbdev；fbcon 随即绑定并绘制 logo。
+    先无显示器开机、之后再插上显示器的设备会显示 logo，而不是黑屏。
+  - panic **无法**靠事后插显示器恢复 —— 已经 panic 的内核不会再运行热插拔工作项。
+    oops 可以，因为 VT 缓冲区里仍有文本，fbcon 绑定时会重绘。
 - **不引入 plymouth，也不引入任何用户态开机动画。** kiosk 在 `mos-gui` 启动时接管
   DRM master；除此之外没有别的东西绘制屏幕。
 - **控制台通道**：向导 tty2 / 调试 shell tty3 都在**串口**上；生产镜像中禁用从 kiosk 切换 VT。
