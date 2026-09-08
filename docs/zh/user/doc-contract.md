@@ -79,7 +79,9 @@ em dash，每个证据引用放在反引号里，多个引用以 `, ` 分隔：
 
 - `shipped` 与 `board-dependent` 必须引用一个存在的仓库路径（文件或
   目录），或顶层 `Makefile` 中存在的 `make <target>`。
-- `proposed` 必须引用一个存在的 `docs/plan/PLAN-0xx.md`。
+- `proposed` 必须引用 `docs/plan/` 下一个存在的计划记录——该目录下任一
+  记录文件，无论是 `<timestamp>-<feature-slug>.md` 还是较早的编号
+  `PLAN-NNN.md`；索引不算记录。
 - `unsupported` 不携带证据；缺席本身就是声明。
 - 证据在被引用之前先验证其存在。死掉的证据引用是坏掉的声明，不是外观
   缺陷。
@@ -90,8 +92,8 @@ em dash，每个证据引用放在反引号里，多个引用以 `, ` 分隔：
 ### 提案内容与 TODO 标记
 
 当一页描述某个计划仍在构建的能力时，它陈述计划中的契约，以该计划为证据
-标注 `proposed`，并用一行 `TODO(PLAN-0xx): revisit after this plan
-merges` 形式的标记标出该节，以便计划落地时清扫并重新标注。每节至多一个
+标注 `proposed`，并用一行 `TODO(<plan record>): revisit after
+this plan merges` 形式的标记标出该节，以便计划落地时清扫并重新标注。每节至多一个
 此类标记。
 
 ## 4. 版本化

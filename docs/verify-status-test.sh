@@ -45,6 +45,8 @@ new_fixture() {
     cp "${VERIFIER}" "${dir}/docs/"
     : >"${dir}/pkgs/artifact.json"
     printf '# PLAN-001 fixture plan\n' >"${dir}/docs/plan/PLAN-001.md"
+    printf '# 20260101-0000-fixture-plan\n' >"${dir}/docs/plan/20260101-0000-fixture-plan.md"
+    printf '# Plan index\n' >"${dir}/docs/plan/index.md"
     cat >"${dir}/Makefile" <<'EOF'
 fixture-check other-target:
 	true
@@ -63,6 +65,8 @@ EOF
 EOF
     cat >"${dir}/docs/bsp/page.md" <<'EOF'
 # fixture bsp page
+
+> status: proposed — evidence: `docs/plan/20260101-0000-fixture-plan.md`
 
 > status: proposed — evidence: `docs/plan/PLAN-001.md`
 EOF
@@ -184,23 +188,36 @@ expect_fail "evidence citing an undefined make target" 1 \
     "evidence 'make no-such-target' does not exist"
 
 # --- 7. proposed without a plan ref ------------------------------------------
-# The cited path exists, but it is not a docs/plan/PLAN-NNN.md.
+# The cited path exists, but it is not a record under docs/plan/. The
+# baseline carries both record shapes -- `<timestamp>-<slug>.md` and the
+# older numbered `PLAN-NNN.md` -- so a verifier that still accepts only one
+# of them fails the positive control, not this case.
 FIX="${WORK}/proposed-no-plan"
 new_fixture "${FIX}"
-replace_line "${FIX}/docs/bsp/page.md" '`docs/plan/PLAN-001.md`' \
+replace_line "${FIX}/docs/bsp/page.md" '`docs/plan/20260101-0000-fixture-plan.md`' \
     '> status: proposed — evidence: `pkgs/artifact.json`'
 expect_fail "proposed citing no plan record" 1 \
-    "proposed requires an existing docs/plan/PLAN-NNN.md ref"
+    "proposed requires an existing docs/plan/ record ref"
+
+# --- 7b. proposed citing the plan index -------------------------------------
+# docs/plan/index.md always exists, so it would satisfy a bare "any file
+# under docs/plan/" reading forever; it is the list, not a record.
+FIX="${WORK}/proposed-index-only"
+new_fixture "${FIX}"
+replace_line "${FIX}/docs/bsp/page.md" '`docs/plan/20260101-0000-fixture-plan.md`' \
+    '> status: proposed — evidence: `docs/plan/index.md`'
+expect_fail "proposed citing only the plan index" 1 \
+    "proposed requires an existing docs/plan/ record ref"
 
 # --- 8. proposed citing a plan that does not exist ---------------------------
 # Two assertions fire, and both are wanted: the ref is dead, AND no existing
 # plan ref remains to satisfy the proposed clause.
 FIX="${WORK}/proposed-dead-plan"
 new_fixture "${FIX}"
-rm "${FIX}/docs/plan/PLAN-001.md"
+rm "${FIX}/docs/plan/20260101-0000-fixture-plan.md"
 expect_fail "proposed citing a deleted plan record" 2 \
-    "evidence 'docs/plan/PLAN-001.md' does not exist" \
-    "proposed requires an existing docs/plan/PLAN-NNN.md ref"
+    "evidence 'docs/plan/20260101-0000-fixture-plan.md' does not exist" \
+    "proposed requires an existing docs/plan/ record ref"
 
 # --- 9. unsupported carrying evidence ----------------------------------------
 FIX="${WORK}/unsupported-evidence"

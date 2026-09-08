@@ -381,7 +381,7 @@ Use the same tests for interrupted ESP updates on UEFI. Both A/B entries share F
 
 ## Implementation sequence and verification
 
-Execute sequentially unless the user later requests parallel work. Each phase begins with the smallest failing behavioral test available in the existing test setup, then implementation and relevant-suite verification. Do not build new test infrastructure solely for planning.
+Execute sequentially unless the user later requests parallel work. Amended 2026-09-08 17:19 by user direction: phases with disjoint files run in parallel, and each phase completes and is verified on x64 under QEMU before the same layout is applied to cx3576 and the other boards. Each phase begins with the smallest failing behavioral test available in the existing test setup, then implementation and relevant-suite verification. Do not build new test infrastructure solely for planning.
 
 | Phase | Changes | Required evidence before proceeding |
 |---|---|---|
@@ -520,3 +520,12 @@ Primary references checked during design:
   kernel families, cx3576 signed FIT, UEFI shared-UKI Type #1 entries) and
   the writable-path writer audit — because their evidence rows are separate
   and a combined task would serialise ~4 h of builds behind a document audit.
+- 2026-09-08 17:19: **User direction: parallel, x64 first.** Parallel
+  execution is confirmed. x64 completes each phase first and is verified
+  under QEMU (the existing OVMF harness); the same layout is then applied to
+  cx3576 and the other boards. P1-A is re-ordered accordingly: stage 1 is
+  x64 only (signed verity, two signed roots, veritysetup, systemd-boot/UKI
+  Type #1 entries on OVMF) and is reported on its own; stage 2 is the cx3576
+  kernel, the cx3576 signed FIT and virt-arm64. P2 for x64 opens on the
+  stage-1 report. P1-B proves its runtime claims on x64 under QEMU and lists
+  board differences separately.
