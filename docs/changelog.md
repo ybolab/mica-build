@@ -920,3 +920,11 @@ loaded on first boot), `20260908-2011-ssh-generator-vs-image-policy` (port 22 co
 and `AuthorizedKeysFile` override) and `20260908-2011-wtmp-unbounded-append`. Recorded
 pending; not dispatched from the P1 watchdog.
 
+## 2026-09-08 20:22 [progress]
+
+P1-B of `20260908-1428-file-ab-signed-components` merged: the x64 writable-path
+contract (14 leaves, 25 paths with no writer), the random-seed file bind proven
+across start, shutdown and reboot, the container-network destination under
+`/mos`, and the change list P5 inherits. L1 reproduced the static audit and one
+candidate boot before merging. Record `20260908-1712-p1-writable-path-audit`.
+
