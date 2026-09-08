@@ -942,3 +942,16 @@ the same step. P2 (frozen artifact/descriptor contracts) is dispatched for x64.
 P2 (x64) of `20260908-1428-file-ab-signed-components` dispatched: `ofu05clu`,
 record `20260908-2105-p2-descriptor-contracts-x64`. Watchdog cron replaced to watch it.
 
+
+## 2026-09-08 21:50 [progress]
+
+P2 of `20260908-1428-file-ab-signed-components` is complete locally after the
+user resumed work following P1 review. Rust and Bun share strict signed
+component contracts and golden negatives; support identity binds all verity
+metadata. The server's Ed25519 signer is shared with build tooling, root hashes
+use pinned RSA/SHA-256 PKCS#7 signing, and BSPs require explicit public trust
+inputs instead of silently minting keys. x64 QEMU accepts the anchor before
+validity and after expiry; built-in-key revocation returns EACCES. Replacement
+kernel rotation remains P9. Build 1,028, focused contracts/signing 42, Rust 68
+and server 36 tests passed, along with the compiled server, docs and relevant
+shell/trust gates. Record `20260908-2115-p2-descriptor-contracts-x64`; P3 is next.

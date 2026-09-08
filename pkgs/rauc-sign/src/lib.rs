@@ -20,8 +20,11 @@
 //! split, and mosd's install orchestration (the `--install` handoff shells out
 //! to `rauc install`; mosd's D-Bus route is documented, not linked).
 
+#![forbid(unsafe_code)]
+
 mod anchor;
 pub mod client;
+pub mod components;
 pub mod http;
 pub mod keys;
 pub mod repo;

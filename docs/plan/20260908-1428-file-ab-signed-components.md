@@ -17,7 +17,9 @@ The user requests a complete design before implementation, with these requiremen
 6. Consolidate persistent state, update metadata, required disk-backed writable paths, and application/user data into one DATA filesystem, using directory mappings instead of separate writable partitions.
 7. Keep `/var` itself on the read-only rootfs. Expose only explicitly required writable subdirectories or file paths; do not mount, overlay, or make the whole `/var` tree writable.
 
-This is a full-tier proposal. The requested deliverable is this plan; implementation is not approved yet. All mechanisms below are proposed unless explicitly described as current evidence.
+This is a full-tier implementation plan, approved on 2026-09-08 at 17:11.
+P1 is complete; the user resumed the remaining work after reviewing its merge
+report. Mechanisms below remain proposed until their phase has passed acceptance.
 
 ### Current evidence
 
@@ -439,6 +441,44 @@ Run applicable existing gates after the affected phases: `make os-build-test`, `
 
 ## Scope
 
+### P2 implementation detail
+
+Resume sequentially on x64 using the existing Rust signing workspace and Bun
+build suite. Share golden inputs between the two readers. Reuse the server's
+`mos/update-envelope/v1` envelope and Ed25519 signing bytes; introduce a distinct
+`mos/deployment/v1` payload, with no legacy reader. Payload JSON is compact,
+recursively key-sorted UTF-8 with safe unsigned integers and a 16 KiB limit.
+Reject duplicate/unknown fields, unsafe identifiers, unsupported algorithms,
+invalid geometry, component identity substitution and mismatched boot identity.
+
+Content IDs are SHA-256 over canonical component metadata excluding its own ID;
+the deployment ID hashes its complete payload. Boot artifact digests are measured
+after signing. The authenticated kernel build identity binds `supportId`, the
+hash of the complete support metadata (including its verity root hash, geometry
+and signatures), and the kernel release. The early reader checks both before
+selecting modules. Binding only the claimed image digest would let a signed
+descriptor substitute another root hash while retaining that digest.
+Rootfs owns no modules; support owns `modules/<release>` and kernel-coupled
+firmware. Fixed paths are derived from validated IDs, never supplied in metadata.
+
+Keep verity version 1, SHA-256, 4096-byte blocks, a 32-byte salt, an appended
+tree with no superblock and exact image length. Sign precisely the 64 lowercase
+ASCII root-hash bytes with RSA-2048/SHA-256 detached DER PKCS#7, without embedded
+certificates or signed attributes. Use the existing pinned OpenSSL container.
+
+Replace implicit BSP key generation with an explicit public certificate input
+and a public-only staged context. Record the certificate bytes' digest so the
+same distributed input can be used on every builder; private keys stay external.
+Measure x64 expiry and anchor-removal behavior in the existing QEMU proof lab;
+do not infer kernel policy from userspace certificate verification. Runtime
+revocation permission is measured; kernel replacement and overlap rotation
+remain P9 acceptance work.
+
+Verification order: shared negative fixtures (RED), minimal readers/signers
+(GREEN), focused Rust/Bun tests, actual signing and QEMU lifecycle experiments,
+then the affected existing quality gates and documentation checks. Later phases
+retain their existing acceptance gates.
+
 Expected implementation areas:
 
 - `boards/*/board.env`, kernel configs/producers, cx3576 U-Boot producer and boot policy, and UEFI boot asset packaging.
@@ -537,4 +577,13 @@ Primary references checked during design:
   kernel reproducibility is lost; systemd-random-seed writes through the
   inode, so a file bind serves it; `/var/lib/systemd/{linger,timers}` are
   writers the initial table lacked. P2 dispatched for x64 (`ofu05clu`).
-
+- 2026-09-08 21:50: **P2 complete locally after the user's resumption.**
+  `20260908-2115-p2-descriptor-contracts-x64` records the strict shared
+  contracts, complete support-metadata binding, signing and explicit public
+  trust inputs. x64 QEMU accepts the content certificate before `notBefore`
+  and after `notAfter`; root cannot revoke the built-in anchor (`EACCES`).
+  Do not use expiry or runtime revocation as a withdrawal mechanism. P9 must
+  prove replacement-kernel overlap/removal with a usable fallback. Build
+  tests (1,028), focused contracts/signing (42), Rust (68), server (36),
+  compiled server, docs and relevant lints passed. P3 producer separation is
+  next; P3-P10 remain incomplete.

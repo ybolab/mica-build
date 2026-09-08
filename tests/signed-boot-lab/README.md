@@ -33,9 +33,18 @@ container is labelled `ai-agent=true` and named `ai-agent-signed-boot-lab-*`.
 | `cx3576-control-fdt.sh` | the board's own U-Boot control FDT takes that key, and by how many bytes it grows | the cx3576 U-Boot artefact |
 | `uefi-uki.sh` | two Type #1 entries share one signed UKI; boot counting spends one entry and falls to the other; `LoaderEntrySelected` reaches early init without the counter suffix; the entry's `options` do not reach the command line under Secure Boot; a modified UKI is refused | QEMU with development keys enrolled and Secure Boot on (OVMF or AAVMF) |
 | `image-boot.sh` | the assembled image still boots through firmware, GRUB and its `dm-mod.create=` line to a login prompt, with the anchor in the running kernel's keyring | QEMU, Secure Boot off |
+| `key-lifecycle.sh` | P2: signed verity before certificate validity and after expiry; root's attempt to revoke the built-in content key; missing/untrusted signatures still refused | x64 QEMU, using a P1 kernel/initramfs and its public development certificate |
 
 Each script's own header says the same thing at length, including what it does
 NOT prove. Read it before quoting a run.
+
+For the P2 lifecycle probe, build its host image with
+`bash tests/signed-boot-lab/images.sh --lifecycle`, then run
+`bash tests/signed-boot-lab/key-lifecycle.sh KERNEL INITRAMFS CERTIFICATE` under
+tmux. The initramfs must contain P1's signed payload and `init-matrix.sh`.
+The probe uses guest dates 2020-01-01 and 2045-01-01; the development
+certificate must start after the former and expire before the latter.
+Outputs and console logs are kept in a fresh `_out/p2-lifecycle.*` directory.
 
 ## The two things a reader will trip over
 

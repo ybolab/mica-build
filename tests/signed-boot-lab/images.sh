@@ -42,6 +42,11 @@ build() {  # build <tag> <dockerfile> [extra args...]
         "$@" "${LAB_DIR}"
 }
 
+if [ "${1-}" = --lifecycle ]; then
+    build ai-agent/mos-p2-lab Dockerfile.lab
+    exit 0
+fi
+
 build "${LAB_IMAGE}" Dockerfile.lab
 build "${GUEST_IMAGE}" Dockerfile.guest
 

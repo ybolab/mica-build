@@ -14,14 +14,28 @@ Acceptance for this phase: a reviewable plan covering current evidence, trust bo
 
 ## ActiveForm
 
-Awaiting implementation approval for the completed file-based A/B proposal.
+P2 contracts are complete; P3 producer separation is the next phase.
 
 ## Dependencies
 
-- **blocked by**: (none for design; implementation requires approval)
+- **blocked by**: (none; implementation approved and P1 completed)
 - **blocks**: (none)
 
 ## Notes
+
+- 2026-09-08: the user resumed work after reviewing P1 and reconfirmed that
+  development requires no backward compatibility. Local P2 work is tracked in
+  [20260908-2115-p2-descriptor-contracts-x64](20260908-2115-p2-descriptor-contracts-x64.md).
+  The historical execution service remains stopped; the current work proceeds
+  sequentially in this checkout. Older pending-approval notes below describe
+  the proposal's history, not its current authorization.
+- 2026-09-08 21:50: P2 completed locally. Strict Rust/Bun component contracts,
+  shared Ed25519 envelopes, PKCS#7 signing, public-only distributed build
+  inputs and x64 certificate lifecycle evidence are accepted in
+  `20260908-2115-p2-descriptor-contracts-x64`. Gates: build 1,028; focused
+  contracts/signing 42; Rust 68; server 36; docs and shell/trust lints passed.
+  P3 opens. The P1 report's automatic key-generation and unmeasured-expiry
+  notes below are superseded by P2; other hardware and later-phase gaps remain.
 
 - Coordinate at implementation time with the active runtime composition and trust-provisioning work. This task does not change their records or implementation.
 - Investigation and the complete draft proposal are delivered. The original five-partition draft has been revised to three partitions following the user's writable-DATA consolidation request. It covers independent component updates, signed root/support images, key lifecycle, trial/rollback transactions, RAUC replacement, UEFI bootloader selection, ten implementation phases, and a fault-acceptance matrix.
@@ -149,4 +163,3 @@ No shipped boot path (cx3576 `boot.scr` + `booti`; UEFI GRUB with an unauthentic
 ### Open, handed forward
 
 Kernel certificate expiry and revocation unmeasured (P2); ECDSA content signatures unmeasured (RSA-2048 is what every proof used); cx3576 bench: a signed FIT booted by the installed U-Boot, the watchdog rows, the `rfkill` and `ConfigurationDirectoryMode` rows; `/var/tmp` on a cold first boot; the P1-B harness's third-boot SSH refusal is an open question, not a diagnosis.
-

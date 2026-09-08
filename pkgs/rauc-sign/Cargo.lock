@@ -711,6 +711,7 @@ dependencies = [
  "hex",
  "ring",
  "rustix",
+ "serde",
  "serde_json",
  "tempfile",
  "tokio",
