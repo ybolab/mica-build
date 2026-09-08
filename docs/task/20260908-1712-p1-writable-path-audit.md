@@ -1,6 +1,6 @@
 # 20260908-1712-p1-writable-path-audit P1-B: audit the enabled writers and produce the writable-path contract
 
-- **status**: in_progress
+- **status**: completed
 - **priority**: P1
 - **owner**: l3/iku9ubdw
 - **createdAt**: 2026-09-08 17:12
@@ -19,7 +19,7 @@ This record is that audit. It produces the writer contract (section 4), the
 negative list (section 5), the random-seed resolution (section 6), the
 container-network destination and its reset rule (section 7), the `/var/tmp`
 resolution (section 8), what P5 must change beyond the leaf mounts (section 9),
-the board differences (section 10), and three defects the audit surfaced that
+the board differences (section 10), and four findings the audit surfaced that
 are not P5's to fix (section 11).
 
 Acceptance: every contract row sourced observed / declared / inferred; the
@@ -29,7 +29,7 @@ docs-verify` green from a `git archive` into an empty directory.
 
 ## ActiveForm
 
-Auditing the enabled writers and producing the writable-path contract.
+Completed the enabled-writer audit and the writable-path contract.
 
 ## Dependencies
 
@@ -61,7 +61,9 @@ MOS_BOARD=x64 bash rootfs/build.sh && bash build/run.sh --mkimage-uefi --board x
 MOS_BOARD=x64 bun run pkgs/mosd/tests/apid-api/src/qemu.ts --prepare-only
 bash tests/p1-writable-path-audit/boot.sh observe   observe
 bash tests/p1-writable-path-audit/boot.sh candidate candidate
-bash tests/p1-writable-path-audit/boot.sh verify    verify
+
+# reboot survival, read off the disk with the guest powered down
+bash tests/p1-writable-path-audit/read-data.sh /p1-audit.log /p1-random-seed
 
 make docs-verify
 ```
@@ -306,7 +308,14 @@ unit could start before DATA was mounted.
 | **shutdown write** (`ExecStop=save`) | `stop rc=0`, `success 0 inactive`; content changed `f66aebaa01d59892` → `597431c459b38981` |
 | **the mount-point inode is not replaced** | `after stop: MP ino=35 was=35`, and `BINDAFTERSAVE` still shows the bind — a renaming writer would have detached it |
 | **start** (`ExecStart=load`) | `start rc=0`, `success 0 active`; content changed `597431c459b38981` → `5aef1fc8fd9ff4af` |
-| **reboot survival** | REBOOT_SURVIVAL_PLACEHOLDER |
+| **reboot survival** | measured from the disk after the guest powered down, with `read-data.sh`: DATA still holds `/p1-random-seed`, **inode 35** — the same inode recorded at bind time — mode 0600, size 32, content `a1b0da94d99375ad…`, which differs from the `5aef1fc8fd9ff4af` the probe recorded as pre-shutdown. The shutdown `ExecStop=save` wrote new bytes **through the mount point onto DATA**, and they survived the power cycle |
+
+Reboot survival is measured from the *host*, not from inside a later guest, and
+that is the stronger form: after boot 2 powered down, boots that followed had no
+bind in place, so their `systemd-random-seed` wrote to the real
+`/var/lib/systemd/random-seed` on EPHEMERAL and left the DATA file alone. What
+`read-data.sh` reads is therefore exactly the bytes boot 2's shutdown save
+wrote, still on DATA, in the same inode.
 
 The file is 32 bytes, which is `/proc/sys/kernel/random/poolsize / 8` on this
 kernel — the capacity limit for row 7 is fixed by the kernel, not a policy
@@ -470,7 +479,7 @@ cx3576 is the one board that adds rows, all from `BOARD_RADIOS="wifi bluetooth"`
 0755. Whether systemd tolerates that on a read-only `/etc` is **not measured**
 and is owed to the bench.
 
-## 11. Three defects the audit surfaced, none of them P5's
+## 11. Four things the audit surfaced, none of them P5's
 
 These are recorded here because the audit measured them; they are not part of
 the writable-path contract and are not fixed on this branch.
@@ -516,3 +525,44 @@ to 768 and then to 2304 bytes. The active writer is the classic append-only
 is therefore the one member of section 5's list that does have a writer; it is
 an unbounded append with no rotation (no `logrotate` is installed), so P5 should
 either mask it or accept a growing file on a DATA leaf. Recorded, not repaired.
+
+**11.4 The generated `sshd@.service` overrides `AuthorizedKeysFile`, and mosd
+owns the path the image config names.** Two separate facts, both worth
+recording because together they make "write the key to the obvious file" fail.
+
+`systemd-ssh-generator`'s `sshd@.service` starts sshd with
+
+```text
+ExecStart=-… -i -o "AuthorizedKeysFile ${CREDENTIALS_DIRECTORY}/ssh.ephemeral-authorized_keys-all .ssh/authorized_keys"
+```
+
+A command-line `-o` is parsed before the configuration file and OpenSSH keeps
+the first value obtained, so under that generator the effective
+`AuthorizedKeysFile` is the credential file plus `~/.ssh/authorized_keys` —
+**not** `/etc/ssh/authorized_keys.d/%u`, which is what the image's own
+`sshd_config.d/05-mos-authorized-keys.conf` sets. Confirmed here: seeding a
+`01-`-prefixed drop-in naming a third path changed nothing, which is what
+`-o` winning predicts.
+
+Separately, `pkgs/mosd/mosd/src/reconciler/sshd.rs` **renders**
+`/etc/ssh/authorized_keys.d/<account>` from `settings.access.ssh.keys` on every
+reconcile, and `Profile::ssh_enabled_default()` returns `false` for **both**
+`dev` and `prod`, so a factory device renders an empty file there. Writing that
+file directly is therefore futile on the normal boot path too — the settings
+tree is the source of truth, which is the intended design and is recorded here
+only so a later harness does not rediscover it.
+
+**An open question this audit did not close.** The harness authenticated on
+boots 1 and 2 and was refused on boot 3 with `Permission denied (publickey)`,
+after answering the readiness probe on the same boot. `read-data.sh` shows
+`/mos/root/.ssh/authorized_keys` on DATA at mode 0600, 89 bytes, byte-identical
+to the harness public key, so the file sshd's `-o` names was present and correct
+when the refusal happened. **I did not isolate the cause**, and the earlier
+draft of this section blamed mosd's reconciler — that claim is withdrawn: the
+reconciler does not touch `~/.ssh`, and the drop-in experiment that would have
+confirmed it did not behave as the theory required. Recorded as an open
+question, not a diagnosis.
+
+It cost this audit nothing: the one claim boot 3 was to carry — reboot survival
+of the DATA-backed seed file — is measured from the disk instead (section 6),
+which does not need a login and is the stronger measurement.

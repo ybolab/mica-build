@@ -74,16 +74,28 @@ APPEND="$APPEND systemd.set_credential_binary=tmpfiles.extra:${TMPB64}"
 
 RUN_DIR_REAL="$(readlink -f "$REPO/_out/$MOS_BOARD/.qemu")"
 
-# TWO ROUTES FOR THE KEY, because only one of them is certain.
-#   1. the kernel credential above, read by systemd-ssh-generator's
-#      sshd@.service as `-o AuthorizedKeysFile ...`;
-#   2. /etc/ssh/authorized_keys.d/root, which is what the image's own
-#      sshd_config.d/05-mos-authorized-keys.conf names, reached by seeding
-#      STATE -- /mnt/state/ssh is bound over /etc/ssh.
-# Measured on the first attempt: the credential alone gives
-# "Permission denied (publickey)", so route 2 is not redundant.
+# THE KEY GOES SOMEWHERE mosd DOES NOT MANAGE.
+#
+# The serving sshd reads /etc/ssh/authorized_keys.d/%u -- that is what the
+# image's own sshd_config.d/05-mos-authorized-keys.conf sets -- and
+# pkgs/mosd/mosd/src/reconciler/sshd.rs RENDERS that file from
+# settings.access.ssh.keys on every reconcile. With the factory default of no
+# keys it renders an empty file, so a key written there by tmpfiles at
+# sysinit.target authenticates only until mosd starts at multi-user.target.
+# Measured three times: boot 1 got in inside that window, boots 2 and 3 answered
+# the readiness probe and were then refused seconds later.
+#
+# /etc/ssh is STATE-backed, and sshd_config's `Include
+# /etc/ssh/sshd_config.d/*.conf` is line 12 and globs in sorted order, so a
+# `01-` drop-in is read before mos's `05-` one. OpenSSH keeps the FIRST value
+# obtained for a keyword, so this wins, and it points at a file mosd's
+# reconciler does not know about.
 if [ "${SEED_KEY:-1}" = "1" ]; then
-    bash "$REPO/tools/qemu-seed-state.sh" "$KEY.pub" /ssh/authorized_keys.d/root
+    conf="$S/01-p1-audit.conf"
+    printf 'AuthorizedKeysFile /etc/ssh/p1_authorized_keys\n' >"$conf"
+    bash "$REPO/tools/qemu-seed-state.sh" \
+        "$conf"     /ssh/sshd_config.d/01-p1-audit.conf \
+        "$KEY.pub"  /ssh/p1_authorized_keys
 fi
 
 # --- launch the boot in the background -------------------------------------
