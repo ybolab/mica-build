@@ -414,13 +414,19 @@ binaries this image does not carry. Absent is a state the smoke runner already
 handles -- it prints that nothing was asserted, on its own first lines -- and
 stale is one nothing could catch.
 
-**What the smoke run's commit assertion is worth.** Both sides of it descend
-from one `MOS_BUILD_COMMIT` in one `build-deb.sh` run: the string compiled into
-the binary, and the string written into this record. It is therefore not a check
-that the commit is *correct*. It is a check on the transport -- that the `mosd`
-and `apid` executed inside the packed root are the ones that build produced --
-and what it catches is a pool archive left from an earlier commit, or a root
-composed from a pool the last producer run never re-indexed.
+**What the smoke run's commit assertion is worth.** The two sides are the string
+compiled *into* the binary in the packed root, read back by executing it, and the
+string that producer run wrote to disk — and both descend from one
+`MOS_BUILD_COMMIT` in one invocation. It is therefore **not** a check that the
+commit is *correct*; no reader of an image could be.
+
+What it closes is the distance between *the producer was told to embed X* and
+*the binary in the image reports X*: a compile cargo did not re-run for a changed
+environment variable, an `option_env!` that resolved to nothing so the binary
+answers `unknown`, a stage that installed a binary from somewhere other than the
+package. The pool checks in `build.sh` already refuse an archive built from
+another tree, by stamp and by `SHA256SUMS` — but they read the archive's name and
+its bytes, never what was compiled into the binary inside it.
 
 Every layout constant is read from `boards/cx3576/board.env`; none is duplicated
 in `build.sh`, `compose/` or the overlay. The board console/storage

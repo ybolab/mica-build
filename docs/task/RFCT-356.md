@@ -1,6 +1,6 @@
 # RFCT-356 Two gates that report without checking: factory-root-gate on arm64, and the smoke build-commit assertion
 
-- **status**: in-progress
+- **status**: completed
 - **priority**: P1
 - **owner**: bkd/njizj3fm
 - **createdAt**: 2026-09-08 04:00
@@ -63,3 +63,153 @@ the binaries the image ships
 - `verify/run.sh --smoke` on both arm64 boards no longer prints `NOT ASSERTED`.
 - `verify/run.sh --verify` at its count or the change explained.
 - `make docs-verify` green from a `git archive` into an empty directory.
+
+## Outcome
+
+### 1. The gate now compares device nodes, and `diff` is handed only what it can read
+
+`inner.sh` makes **five** comparisons, not four:
+
+| comparison | what it reads |
+| --- | --- |
+| METADATA | `%M %U %G %P` over every entry |
+| CONTENT | a sha256 per regular file, a target per symlink |
+| DEVICES | `stat -c '%F %t %T %n'` over every block and character device |
+| CAPS | `getcap -r` |
+| HARDLINKS | `%n %P` for every file with more than one link |
+
+`diff -r --no-dereference` over the two trees is gone. Neither alternative the
+task ruled out was taken: no message is filtered, and `/dev` is still compared.
+The content comparison is now a diff of two *files* — the shape `caps` and
+`links` already used — so the only things handed to `diff` are text.
+
+**`%M` already carries the type character.** The task's framing said METADATA
+sees mode/uid/gid and not device type; measured, `crw-rw-rw- 0 0 dev/null` is
+what the inventory prints, so a device node shipped as a regular file, or
+missing, was already caught there. What nothing could see is the **major and
+minor** — a `/dev/null` exported as character 1:5 has the same mode, owner, link
+count and (absent) content as the real one. That is the hole DEVICES closes, and
+mutation 5 is the one no other comparison notices.
+
+### 2. A second arm64 blocker, found on the way
+
+**Neither arm64 root carries a single multiply-linked file.** `mutate.sh`'s
+hardlink case took the first `-links +1` file and `exit 1`-ed when there was
+none, so it could not have completed on cx3576 or virt-arm64 even with the
+device-node fix in place. x64 is the only board with one (klibc, one binary
+under six names). The case now has two forms — break a link where there is one,
+make one where there is not — and says which it used. Without this the gate
+still could not pass on either arm64 board.
+
+That comparison was also *vacuous* on those roots for the same reason: an empty
+list against an empty list, agreeing because neither side has anything, exactly
+the position the file already flags for capabilities.
+
+### 3. `mutate.sh`: six mutations -> **nine**, over five comparisons
+
+Added, each shown red and each reverted:
+
+| # | mutation | comparison |
+| --- | --- | --- |
+| 5 | `dev/console` 5:1 -> 5:2 | device |
+| 6 | `dev/console` character device -> empty regular file | device |
+| 7 | `dev/console` removed | device |
+
+### 4. The build-commit record is written by the path that builds the binaries
+
+- `pkgs/mosd/hack/build-deb.sh` writes `_out/mosd-build-<arch>.txt` after it has
+  compiled, asserted producer independence and staged the binaries — and only
+  for the producer that owns `mosd`/`apid`, so the mqtt producer's run of the
+  same script cannot write a record about binaries it did not build.
+- `pkgs/mosd/hack/build-target.sh` no longer writes one. It compiles a set no
+  image installs, so its record named a build whose output never reached an
+  image and was indistinguishable from one that did.
+- `rootfs/build.sh` removes the per-board copy at the start and writes it only
+  after the image is packed and inside its budget, from the record for the
+  board's architecture — and **refuses** to finish without one.
+
+**What the assertion is worth, plainly.** The two sides are the string compiled
+*into* the binary in the packed root, read back by executing it, and the string
+that producer run wrote to disk. Both descend from one `MOS_BUILD_COMMIT` in one
+`build-deb.sh` invocation, so **it is not a check that the commit is right** —
+no reader of an image could be. It closes the distance between *the producer was
+told to embed X* and *the binary in the image reports X*: a compile cargo did not
+re-run for a changed environment variable, an `option_env!` that resolved to
+nothing so the binary answers `unknown`, a stage that installed a binary from
+somewhere other than the package. The pool's own stamp and `SHA256SUMS` checks
+already refuse an archive built from another tree — but they read its name and
+its bytes, never what was compiled into the binary inside it.
+
+## Evidence
+
+Everything below is against artifacts built in this worktree at `2839410e2f3d`
+(main merged first). Pool: 18 archives at stamp `git2839410e2f3d-1`.
+
+**`make os-factory-root-gate`, both arm64 boards, green:**
+
+| board | entries | with content | device nodes | caps | hardlinks | mutations |
+| --- | --- | --- | --- | --- | --- | --- |
+| cx3576 | 4,531 | 3,889 | 8 | 0 | 0 | 9/9 red |
+| virt-arm64 | 5,742 | 4,768 | 8 | 0 | 0 | 9/9 red |
+
+```
+FIDELITY: the exported OCI image is the tree that ships, on all five comparisons
+MUTATION: all five comparisons were driven from the failing side and fired
+```
+
+Before: `FIDELITY: 1 of 4 comparisons differ` on both, from eight
+`is a character special file while file ... is a character special file` lines.
+
+**`verify/run.sh --smoke`, both boards — `NOT ASSERTED` is gone:**
+
+```
+verify smoke: build commit 2839410e2f3d, from _out/cx3576/mosd-build.txt
+PASS  mosd  ... [said: "mosd 0.1.0 (2839410e2f3d)"], and reports the commit
+      2839410e2f3d that _out/cx3576/mosd-build.txt records this build embedding
+RESULT: PASS (11 pass, 1 executor-limited, 0 fail, 0 unclaimed, of 12)
+```
+
+`virt-arm64` reads the same against its own record. `crun` is the standing
+executor limit, not this change's.
+
+**The assertion driven from the failing side.** A green run of a check nobody
+has watched fail proves nothing, so the record's `commit` was set to
+`deadbeefcafe` with the image and its binaries untouched, and `--smoke` re-run:
+
+```
+RESULT: FAIL (9 pass, 1 executor-limited, 2 fail, 0 unclaimed, of 12). FAILED: mosd, apid.
+```
+
+The record was restored and the board re-reads `2839410e2f3d`.
+
+**`verify/run.sh --verify --board cx3576`: `PASS (432/432 checks, 3 skipped
+(cx3576/uboot; each named above))`** — against an image assembled in this
+worktree from this pool. 432 is the count after RFCT-352 and RFCT-353 merged;
+`/srv/mos` reads a lower denominator because its image predates them.
+
+**Also green:** `verify/run.sh` (typecheck + 1356/1356 tests),
+`make docs-verify` from a `git archive` into an empty directory,
+`tests/shell-pipefail-lint.sh` (92/92), `tests/host-toolchain-lint.sh`
+(352/352 files, 0 findings).
+
+## What is not covered
+
+- **x64.** No x64 root can be composed here without a full amd64 pool, so the
+  content and device-node figures in `tests/factory-root-gate/README.md` are
+  arm64's; the x64 row keeps its pre-change entry and hardlink counts. x64 is
+  also the only board that can drive `mutate.sh`'s *break*-a-hardlink form, and
+  that form is unexercised on this host.
+- **Physical cx3576.** Cross-build, image-contract and emulated-execution
+  evidence only. No device booted.
+- **`--verify` on virt-arm64.** Only cx3576's image was assembled and verified;
+  virt-arm64 was built to a root and smoke-tested, which is what the gate needs.
+
+## Files touched outside the repository
+
+`_out/boards/`, `_out/debian-base/`, `_out/cargo/`, `_out/apid-ui/`,
+`pkgs/podman/out-{amd64,arm64}` and `pkgs/rauc/out-{amd64,arm64}` were copied in
+from `/srv/mos` — all gitignored build outputs, needed to rebuild the pool on
+this host. `_out/gate-probe/` holds the pre-change reproduction pair. A private
+buildx builder `ai-agent-njizj3fm-arm64` was used throughout; `mos-amd64`,
+`mos-arm64` and `mos-rauc-arm64` were not touched. Nothing under version control
+was changed outside this branch's commits.

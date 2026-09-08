@@ -1362,15 +1362,23 @@ echo "installed size: ${total_mb} MB (budget ${SIZE_BUDGET_MB} MB)"
 # nothing here installs and therefore no longer writes one.
 #
 # WHAT THE SMOKE RUN THEN ASSERTS, said plainly because it is easy to over-read.
-# Both sides descend from ONE `MOS_BUILD_COMMIT` in ONE build-deb.sh run: the
-# string handed to the compiler, and the string written into this record. So it
-# is not a check that the commit is correct -- nothing here could be, and
-# comparing against `git rev-parse HEAD` at run time is refused by name in
-# verify/src/smoke.ts for that reason. What it checks is the TRANSPORT: that the
-# mosd and mos-apid executed inside the packed root are the ones that build
-# produced. A pool archive left over from an earlier commit, or an image
-# composed from a pool the last producer run never re-indexed, ships a binary
-# reporting a commit this record does not carry, and the version rows go red.
+# The two sides are the string COMPILED INTO the binary in the packed root, read
+# back by executing it, and the string that producer run WROTE TO DISK -- and
+# both descend from one `MOS_BUILD_COMMIT` in one build-deb.sh invocation. So it
+# is not evidence that the commit is correct. Nothing a reader of an image could
+# do would be, which is why comparing against `git rev-parse HEAD` at run time is
+# refused by name in verify/src/smoke.ts.
+#
+# What it IS evidence of is the one gap the pool checks above cannot see. Those
+# refuse an archive built from another tree -- by stamp, and by SHA256SUMS over
+# the pool -- but they read the archive's NAME and its bytes, never what was
+# compiled into the binary inside it. This closes the distance between "the
+# producer was told to embed X" and "the binary in the image reports X": a
+# compile cargo did not re-run for a changed environment variable, an
+# `option_env!` that resolved to nothing so the binary says `unknown`, a stage
+# that installed a binary from somewhere other than the package. Each of those
+# ships an archive every check upstream accepts, and turns the version rows red
+# only here.
 if declined mosd; then
     echo "mosd: declined, so this root carries no mosd or mos-apid and no build commit is recorded for it"
 else

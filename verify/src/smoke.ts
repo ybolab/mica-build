@@ -199,14 +199,18 @@ export function firstLine(stdout: string): string {
  * for the board's architecture into `_out/<board>/` beside the factory root, and
  * this is what the runner reads back.
  *
- * WHAT THAT COMPARISON IS AND IS NOT. Both sides descend from one
- * `MOS_BUILD_COMMIT` in one producer run: the string compiled into the binary,
- * and the string written into the record. It therefore does not check that the
- * commit is right -- no reader of an image could. It checks the transport: that
- * the mosd and apid executed inside the packed root are the ones THAT build
- * produced, so a stale pool archive, or a root composed from a pool the last
- * producer run never re-indexed, ships a binary reporting a commit the record
- * does not carry and turns the version rows red.
+ * WHAT THAT COMPARISON IS AND IS NOT. The two sides are the string compiled
+ * INTO the binary in the packed root, read back by executing it, and the string
+ * that producer run wrote to disk -- and both descend from one
+ * `MOS_BUILD_COMMIT` in one invocation. It therefore does not check that the
+ * commit is right; no reader of an image could, which is why HEAD is refused
+ * above. It closes the distance between "the producer was told to embed X" and
+ * "the binary in the image reports X" -- a compile cargo did not re-run for a
+ * changed environment variable, an `option_env!` that resolved to nothing so the
+ * binary answers `unknown`, a stage that installed a binary from somewhere other
+ * than the package. The pool's own stamp and SHA256SUMS checks refuse an archive
+ * from another tree, but they read its name and its bytes, never what was
+ * compiled into the binary inside it.
  *
  * `commit` is optional because the fact may genuinely not be there -- a
  * hand-assembled `_out/` -- and the rule there is to print it and assert nothing
