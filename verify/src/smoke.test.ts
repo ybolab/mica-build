@@ -30,6 +30,7 @@ import {
   diagnose,
   dockerArgv,
   loadFactoryRoot,
+  OciArchiveLoadUnsupported,
   loadTimeoutMs,
   parseArchiveIndex,
   parseArchiveManifest,
@@ -1697,6 +1698,22 @@ describe('a `docker load` the watchdog killed is not a load that failed', () => 
       load: { status: 1, stdout: '', stderr: 'open /out/x64/factory-root.oci: no such file or directory\n' },
     })
     await expect(loadFactoryRoot(RECORD, run)).rejects.toThrow(/exited 1: open \/out\/x64/)
+  })
+
+  test('a readable OCI archive rejected by the classic store can use BuildKit', async () => {
+    const { run, calls } = fakeDaemon({
+      load: { status: 1, stdout: '', stderr: 'invalid archive: does not contain a manifest.json' },
+      members: MEMBERS,
+    })
+    await expect(loadFactoryRoot(RECORD, run)).rejects.toBeInstanceOf(OciArchiveLoadUnsupported)
+    expect(askedAbout(calls, REF)).toBe(false)
+  })
+
+  test('the same load message for an unreadable archive remains a hard failure', async () => {
+    const { run } = fakeDaemon({
+      load: { status: 1, stdout: '', stderr: 'invalid archive: does not contain a manifest.json' },
+    })
+    await expect(loadFactoryRoot(RECORD, run)).rejects.toThrow(/tar could not read index.json/)
   })
 })
 

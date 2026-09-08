@@ -25,6 +25,7 @@
         "base",
         "mos-bluetooth",
         "mos-board-cx3576",
+        "mos-board-s905x5m",
         "mos-podman",
         "mos-rauc",
         "mos-system",

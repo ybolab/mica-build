@@ -53,3 +53,6 @@ export const hasDisplay = (board: Board): boolean => board.hasDisplay === '1'
  */
 export const hasDramWindow = (board: Board): boolean =>
   (board.dramUsableBase ?? '') !== ''
+
+/** A GPT loader region, independent of the firmware interface. */
+export const hasRawBlob = (board: Board): boolean => board.partitions.some(p => p.role === 'raw-blob')

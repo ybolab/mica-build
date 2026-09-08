@@ -26,7 +26,7 @@ import { basename, dirname, join } from 'node:path'
 import { parseBoardEnv, type BoardEnvFile } from './board-env.ts'
 
 /** The roles the board definitions dispatch on. */
-export const KNOWN_ROLES = ['raw-blob', 'uboot-env', 'esp', 'verity-slot', 'ext4'] as const
+export const KNOWN_ROLES = ['vendor-reserved', 'raw-blob', 'uboot-env', 'esp', 'verity-slot', 'ext4'] as const
 export type KnownRole = (typeof KNOWN_ROLES)[number]
 
 export function isKnownRole(role: string | undefined): role is KnownRole {

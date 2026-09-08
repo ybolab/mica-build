@@ -15,6 +15,8 @@
 // ${VAR}-assembled destination appearing nowhere as a literal. A wrong path here
 // fails with rc=127 rather than passing quietly.
 
+import { join } from 'node:path'
+import { REPO_ROOT } from './paths.ts'
 import { cratePath, readCratePackageVersion, readPin, pinKeys, type Pin } from './smoke-pins.ts'
 import { PODMAN_VERSIONS_ENV, RAUC_VERSIONS_ENV, VERSIONS_ENV_FILES } from './smoke-pins.ts'
 
@@ -256,6 +258,21 @@ export const ARTIFACTS: readonly Artifact[] = [
     contract: { kind: 'version', argv: ['--version'] },
   },
 ]
+
+/** Optional binaries follow the composition record, including independent radio declines. */
+export function artifactsForPackages(packages: ReadonlySet<string>): readonly Artifact[] {
+  const result = [...ARTIFACTS]
+  if (packages.has('mos-mqtt-reference')) result.push({
+    name: 'mos-mqtt-reference', path: '/usr/bin/mos-mqtt-reference',
+    pin: crate('mqtt-reference'), contract: { kind: 'version', argv: ['--version'] },
+  })
+  if (packages.has('mos-s905x5m-bluetooth')) result.push({
+    name: 'skw_vhci_bridge', path: '/usr/sbin/skw_vhci_bridge',
+    pin: () => readPin(join(REPO_ROOT, 'boards/s905x5m/bsp/userland/versions.env'), 'SKW_BRIDGE_VERSION'),
+    contract: { kind: 'version', argv: ['--version'] },
+  })
+  return result
+}
 
 /**
  * The only artifacts allowed to be `unclaimed`, and the record of who allowed it.

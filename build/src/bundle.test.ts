@@ -24,6 +24,8 @@ import {
   BUNDLE_BOOT_FAT_LABEL,
   BUNDLE_SLOT_IMAGES,
   buildBundle,
+  ubootDtbName,
+  ubootDigestNames,
   bundleMountsFor,
   bundleVerityEnvText,
   checkBundleInfo,
@@ -51,6 +53,24 @@ import { bundleToolset, shippedRaucPath } from './toolsets.ts'
 
 const cx3576: Geometry = loadGeometry('cx3576')
 const x64: Geometry = loadGeometry('x64')
+
+describe('the board-specific U-Boot payload contract', () => {
+  test('CX3576 carries both slot-specific digests required by its boot script', () => {
+    const names = ubootDigestNames(cx3576)
+    expect(names).toEqual(['mos-boot-digest-a.env', 'mos-boot-digest-b.env'])
+    const required = cx3576.require('BOOT_SLOT_REQUIRED_FILES')
+    for (const slot of ['a', 'b']) {
+      expect(required.replaceAll('@SLOT@', slot).split(/\s+/))
+        .toContain(`mos-boot-digest-${slot}.env`)
+    }
+  })
+  test('S905X5M preserves its DTB name and declares no CX3576 boot-digest protocol', () => {
+    const board = loadGeometry('s905x5m')
+    expect(ubootDtbName(board)).toBe('s7d_s905x5m_m100.dtb')
+    expect(ubootDigestNames(board)).toEqual([])
+    expect(board.require('BOOT_SLOT_REQUIRED_FILES')).not.toContain('mos-boot-digest')
+  })
+})
 
 /**
  * One edit, refused unless it edits something.
@@ -816,6 +836,25 @@ describe('buildBundle end to end, against a real rauc', () => {
     expect(r.info.version).toBe('0.0.0-e2e')
     expect(r.payload.payloadSha256).toMatch(/^[0-9a-f]{64}$/)
     expect(r.payload.bundleBytes).toBeGreaterThan(r.payload.payloadBytes)
+  }, OPEN_TIMEOUT_MS)
+
+  test('s905x5m bundles retain the DTB name its boot script loads', async () => {
+    const geometry = loadGeometry('s905x5m')
+    expect(ubootDtbName(geometry)).toBe('s7d_s905x5m_m100.dtb')
+    const a = join(work, 's905-cmdline-a.txt')
+    const b = join(work, 's905-cmdline-b.txt')
+    writeFileSync(a, cmdlineFor(geometry, 'ROOTFS_A_GUID'))
+    writeFileSync(b, cmdlineFor(geometry, 'ROOTFS_B_GUID'))
+    const out = join(work, 's905x5m.raucb')
+    await buildBundle({ ...inputs, board: 's905x5m', bootCmdlineA: a, bootCmdlineB: b, bundleOut: out },
+      { toolbox: tb, log: () => {} })
+    const extracted = join(work, 's905-extracted')
+    await tb.must(['unsquashfs', '-n', '-d', extracted, out, 'boot.vfat'])
+    const listed = await tb.must(['mdir', '-/', '-b', '-i', join(extracted, 'boot.vfat'), '::/'])
+    expect(listed.stdout).toContain('s7d_s905x5m_m100.dtb')
+    expect(listed.stdout).not.toContain('rk3576-src.dtb')
+    expect(listed.stdout).toContain('mos-verity-a.env')
+    expect(listed.stdout).toContain('mos-verity-b.env')
   }, OPEN_TIMEOUT_MS)
 
   test('THE PAYLOAD IS A PURE FUNCTION OF THE INPUTS: a second build hashes the same', async () => {

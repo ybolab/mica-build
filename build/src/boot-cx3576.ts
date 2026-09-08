@@ -188,11 +188,16 @@ export function checkPartitionNumbers(geometry: Geometry, bootCmd: string, path:
   }
 }
 
-/** Every boot.cmd guard, in the order the cx3576 assembly contract applies them. */
-export function checkBootCmd(geometry: Geometry, bootCmd: string, path: string): void {
+/** The shared RAUC A/B guards, independent of a board's payload digest protocol. */
+export function checkAbBootCmd(geometry: Geometry, bootCmd: string, path: string): void {
   checkBootAttempts(geometry, bootCmd, path)
   checkBootCmdTokens(geometry, bootCmd, path)
   checkPartitionNumbers(geometry, bootCmd, path)
+}
+
+/** Every boot.cmd guard, in the order the cx3576 assembly contract applies them. */
+export function checkBootCmd(geometry: Geometry, bootCmd: string, path: string): void {
+  checkAbBootCmd(geometry, bootCmd, path)
   checkBootDigestGuards(geometry, bootCmd, path)
 }
 

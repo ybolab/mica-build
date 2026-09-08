@@ -1,6 +1,6 @@
 # PLAN-926 Merge the S905X5M adaptation into updated local main
 
-- **status**: implementing
+- **status**: completed
 - **createdAt**: 2026-09-08 10:00 UTC
 - **approvedAt**: 2026-09-08 10:00 UTC
 - **relatedTask**: RFCT-947
@@ -45,4 +45,37 @@ Existing artifacts retain their original provenance and will not be rebuilt.
 
 ## Verification
 
-Pending merge resolution and the scoped source checks.
+- Resolved all four textual conflicts, preserving upstream's slot-specific
+  CX3576 digest names and S905X5M's independent DTB/boot contract.
+- S905X5M declares HDMI present and a DRAM floor of zero from its existing
+  DTS. Its configuration and package-inventory readers now resolve absolute
+  directory links inside the extracted root, with a positive/negative test.
+- The first verifier run found 14 display-test failures: upstream's fixtures
+  relied on a cached boot script, while the adaptation deliberately requires
+  a fresh slot read. The fixtures now supply bytes through a checked mcopy
+  transport. A stale-export regression preserves fresh reads rather than
+  restoring the cache bypass.
+- Final verifier typecheck and suite: 1,468 tests passed, zero failures,
+  22,028 assertions across 50 files.
+- Build-driver typecheck and boot/bundle/geometry unit tests: 171 passed,
+  zero failures, 619 assertions. Seven real-bundle cases were explicitly
+  filtered out to honor the packaging stop.
+- The apid and settings-model source trees match the tested adaptation tip;
+  their previous 325-test API result still describes those unchanged files.
+
+- Package selection: 49 checks passed; all 25 producer packages are reachable
+  across 514 legal resolutions, with six distinct refusal cases. The S905X5M
+  radio/component preflight passed.
+- Container-network kernel configuration: 155 assertions passed. The API UI
+  build-contract check passed without compiling Rust or the UI.
+- Documentation: 195 index checks, 491 links, 763 status assertions, 249
+  translation-coverage checks and 150 board-dossier assertions passed.
+- Review of the merge resolutions and automatically merged package/root
+  changes found no introduced correctness issues. The integration diff against
+  the adaptation tip passes whitespace checks. The full first-parent diff
+  reports whitespace in 49 inherited files; all 49 are byte-for-byte unchanged
+  from the adaptation tip, including patch context that must be preserved.
+
+The verified integration is committed on local main. Both source histories
+are retained; remote main remains at 3c5374f3 and the adaptation branch remains
+at 2e276018. No image/package/installer build or device update was performed.

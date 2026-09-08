@@ -17,7 +17,7 @@ exist, and `resolve.sh` reads it at run time rather than carrying a copy.
 
 ## Families
 
-The filename is what selects a manifest. Five families, and a file belonging to
+The filename is what selects a manifest. The supported families are below; a file belonging to
 none of them is refused rather than ignored — a manifest nothing reads is a
 package set that never reaches an image and never fails a build either.
 
@@ -27,6 +27,8 @@ package set that never reaches an image and never fails a build either.
 | `profile-<profile>.pkgs` | `--profile <profile>`; exactly one |
 | `board-<board>.pkgs` | `--board <board>`; exactly one |
 | `radio-<radio>.pkgs` | `--radios` names `<radio>` and `--without` does **not** |
+| `board-radio-<board>-<radio>.pkgs` | selected board and non-declined radio; adds board-specific transport packages |
+| `component-<board>-<component>.pkgs` | explicitly named in `--components`; default-off |
 | `feature-<feature>.pkgs` | `--without` does **not** name `<feature>` |
 
 The `--without` tokens are the `feature-*.pkgs` basenames plus the
@@ -142,3 +144,12 @@ what APT does when a `Depends: mos-profile` is unsatisfied and two mutually
 conflicting packages provide it — the intent is that the transaction fails by
 name rather than an arbitrary provider being chosen, and that needs built pools
 to exercise.
+
+## Optional board components
+
+`MOS_ROOTFS_COMPONENTS="bm201-front-panel mqtt-reference" MOS_BOARD=s905x5m
+bash rootfs/build.sh` selects those component packages. Leave the variable
+unset to omit both. The resolver accepts the same space-separated list as
+`--components`. An unknown component or one belonging to another board is
+refused. `mqtt-reference` requires the dev profile and all MQTT packages;
+combining it with `--without mosd` is an error.

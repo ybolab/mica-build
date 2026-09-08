@@ -4,6 +4,68 @@ Campaign-level record, one entry per plan, newest first. Details live in the
 plan file and the task records it names; this file holds the one-paragraph
 history a reader can scan without opening either.
 
+## PLAN-926 — S905X5M integration into updated local main (2026-09-08)
+
+Updated local main to upstream 3c5374f3 and integrated the S905X5M adaptation,
+including the Wi-Fi switch and front-panel repairs. Conflict resolution keeps
+CX3576's slot-specific boot digests and S905X5M's independent payload contract.
+Added the newly required display/DRAM declarations and aligned board readers
+with upstream's path resolution inside extracted roots. Display fixtures now
+exercise fresh slot reads. Verifier and build-driver typechecks passed, with
+1,468 verifier tests and 171 boot/bundle/geometry unit tests passing. This is
+a local source integration; image packaging, remote main publication and
+device deployment are outside its scope. Existing hardware gaps remain open.
+
+## PLAN-925 — Wi-Fi client switch API alignment (2026-09-08)
+
+The built-in network page's Wi-Fi switch returned 409 because mos-apid omitted
+`wifi.client.enabled` from its settings write allowlist. The boolean leaf now
+returns 202 with an apply task, while adjacent Wi-Fi settings remain refused.
+OpenAPI and the resource inventory are synchronized. Formatting, clippy and
+325 apid binary tests passed, including switch, validation and session/CSRF
+regressions. The device and existing images still contain the earlier service;
+no packaging or deployment followed the user's disk-space stop instruction.
+RFCT-945 records successful managed Wi-Fi DNS/HTTPS and unresolved gateway
+ICMP loss separately from this API repair.
+
+## PLAN-924 — S905X5M front-panel executable permissions (2026-09-08)
+
+The package producer now installs both front-panel entry points as mode 0755.
+The composed-root verifier checks optional executable modes and the panel
+stop helper. All 1,394 verifier tests, actual package/root mode checks, 392 SD
+image checks and 14 executable smoke checks passed. A temporary device bind
+repair also passed service start/stop/restart. Replacement SD and RAUC artifacts
+were produced before packaging was stopped; the later installer rebuild was
+terminated. RFCT-944 retains the SD/eMMC boot-state ambiguity and remaining
+runtime qualification gaps. The running root filesystem was not replaced.
+
+## PLAN-923 — Local initialization helper and S905X5M SD inspection (2026-09-08)
+
+Adapted the workspace-local initialization helper to the current JSON API,
+session/CSRF contract, asynchronous apply tasks and additive SSH-key workflow.
+Credentials are stored privately and retries preserve existing device state.
+Fifteen isolated protocol cases and live fresh/repeat initialization passed.
+SD runtime checks verified storage identity, management, Ethernet/NTP, MQTT,
+container networking, radio discovery and basic HDMI/USB access. The image
+remains degraded: non-executable front-panel scripts also prevent the boot
+health gate from confirming the slot. RFCT-943 records the evidence and
+RFCT-944 tracks the remaining runtime defects. The helper remains outside
+the MOS Git checkout; this entry records its local delivery.
+
+## PLAN-922 — S905X5M package integration on current mainline (2026-09-08)
+
+Added the S905X5M/BM201 BSP to the top-level layout and package-based rootfs
+pipeline, with resolved kernel configuration exports, independent radio
+selection, and default-off front-panel and MQTT reference packages. SD images
+and RAUC bundles consume the selected package's boot export; eMMC packages and
+installer cards keep their separate media contracts. Runtime checks follow
+mainline configuration and package inventories. The port retains mainline's
+cx3576 boot-digest protocol and supports the x64 GRUB toolset on arm64 builders.
+Factory-root smoke checks can use the existing BuildKit executor when Docker's
+classic image store rejects a validated OCI archive.
+Build evidence is recorded in RFCT-942. Existing-device configuration migration
+and qualification of the new image on hardware remain separate work.
+
 ## PLAN-084 — Per-package JSON manifests and independent cache updates (2026-09-06)
 
 Debian runtime pins now live in 172 individual JSON files with explicit target

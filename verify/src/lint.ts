@@ -55,6 +55,10 @@ export const COMMON_KEYS = ['PARTNUM', 'LABEL', 'GUID', 'TYPECODE'] as const
  * The forbidden half is what catches a board claiming a capability it lacks.
  */
 export const ROLE_SCHEMA: Readonly<Record<string, { required: readonly string[], forbidden: readonly string[] }>> = {
+  'vendor-reserved': {
+    required: ['START_SECTOR'],
+    forbidden: ['FS_LABEL', 'FS_UUID', 'FAT_LABEL', 'FAT_VOLUME_ID', 'MAGIC_HEX'],
+  },
   'raw-blob': {
     required: ['START_SECTOR', 'SIZE_SECTORS', 'MAGIC_HEX'],
     forbidden: ['FS_LABEL', 'FS_UUID', 'FAT_LABEL', 'FAT_VOLUME_ID'],

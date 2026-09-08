@@ -468,7 +468,7 @@ describe('the shipped layouts', () => {
     // what the shell predecessor did when x64 referenced a renamed key. Named
     // rather than counted, because a count of the wrong boards is still the
     // right count.
-    expect(run.boards.map(b => b.board)).toEqual(['cx3576', 'virt-arm64', 'x64'])
+    expect(run.boards.map(b => b.board)).toEqual(['cx3576', 's905x5m', 'virt-arm64', 'x64'])
     for (const b of run.boards) expect(b.checks.length).toBeGreaterThan(0)
     expect(run.passed).toBe(run.checks.length)
   })

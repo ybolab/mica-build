@@ -61,6 +61,9 @@ IMAGE_ALPINE_3_21 -- and on a host with no bun it runs in a second pinned image,
 IMAGE_BUN_1 plus the client pinned as IMAGE_DOCKER_CLI_28, with the daemon
 socket mounted. That is a privilege grant, taken only in this mode.
 
+With --runtime HOST FIRST, it runs read-only checks over SSH from the host.
+It requires a host Bun binary; try --runtime HOST --help for its options.
+
 With --smoke FIRST, it runs the smoke runner: it loads
 _out/<board>/factory-root.oci -- the packed root the build exports as an OCI
 image -- and EXECUTES every self-built artifact inside it, requiring exit 0 and
@@ -103,6 +106,14 @@ case "${1:-}" in
 --help | -h) usage; exit 0 ;;
 --lint) MODE=lint; shift ;;
 --verify) MODE=verify; shift ;;
+--runtime)
+    MODE=runtime
+    shift
+    case "${1:-}" in '' | -*) echo "error: --runtime requires a host" >&2; exit 1 ;; esac
+    host="$1"
+    shift
+    set -- --host "${host}" "$@"
+    ;;
 --smoke) MODE=smoke; shift ;;
 --smoke-negative) MODE=smoke-negative; shift ;;
 esac
@@ -120,7 +131,7 @@ needs_docker() { case "${MODE}" in verify | smoke | smoke-negative) return 0 ;; 
 # never reaches the verifier's own parser, so `bun test --verify` is the same
 # green about the same wrong thing.
 for arg in "$@"; do
-    case "${arg}" in --lint | --verify | --smoke | --smoke-negative) ;; *) continue ;; esac
+    case "${arg}" in --lint | --verify | --runtime | --smoke | --smoke-negative) ;; *) continue ;; esac
     echo "error: ${arg} has to be the FIRST argument; here it came after '$1'." >&2
     echo "       Anywhere else it would be forwarded to \`bun test\`, which ignores it and" >&2
     echo "       reports a green suite in answer to a request for something else." >&2
@@ -157,7 +168,7 @@ fi
 # form to consider -- src/verify-cli.ts's parser reads values from the next argv
 # element and refuses an unknown option, so `--image=X` is already an error
 # naming itself.
-if [ "${MODE}" = verify ]; then
+if [ "${MODE}" = verify ] || [ "${MODE}" = runtime ]; then
     ABS=()
     take_path=0
     for arg in "$@"; do
@@ -170,7 +181,7 @@ if [ "${MODE}" = verify ]; then
             continue
         fi
         case "${arg}" in
-        --image | --work) take_path=1 ;;
+        --image | --work | --wifi-credentials) take_path=1 ;;
         esac
         ABS+=("${arg}")
     done
@@ -205,6 +216,11 @@ elif [ -z "${BUN}" ]; then
         ROUTE=container
         WHY="no bun on this host"
     fi
+fi
+
+if [ "${MODE}" = runtime ] && [ "${ROUTE}" != host ]; then
+    echo "error: --runtime refuses the Bun-container fallback; run on the SSH client host with Bun installed" >&2
+    exit 1
 fi
 
 # The docker-driving modes on a bun-less host.
@@ -497,6 +513,11 @@ if [ "${MODE}" = verify ]; then
     rc=0
     run_bun run src/verify-cli.ts "$@" || rc=$?
     exit "${rc}"
+fi
+
+if [ "${MODE}" = runtime ]; then
+    run_bun run src/runtime-cli.ts "$@"
+    exit $?
 fi
 
 # the smoke runner
