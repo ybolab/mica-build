@@ -16,12 +16,17 @@ import { describe, expect, test } from 'bun:test'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import {
+  BOOT_DIGEST_ARTEFACTS,
   bootAttemptValues,
   bootCmdSetting,
+  bootDigestEnv,
   checkBootAttempts,
   checkBootCmd,
   checkBootCmdTokens,
+  checkBootDigestGuards,
   checkPartitionNumbers,
+  crc32Hex,
+  filesizeHex,
   verityEnvBase,
   verityEnvFor,
 } from './boot-cx3576.ts'
@@ -341,4 +346,85 @@ describe('the per-slot verity env, lifted out of the cmdline rather than re-deri
       + `dm-mod.waitfor=PARTUUID=${GUID_A.toLowerCase()}\n`
     expect(verityEnvFor({ ...base, cmdline: two }).create).toContain('second')
   })
+})
+
+// what boot.scr checks the kernel and the dtb against
+
+describe('the boot digest: the two spellings U-Boot compares against', () => {
+  test('a byte count is env_set_hex\'s "%lx" -- lowercase, unprefixed, unpadded', () => {
+    // ${filesize} is what `load` publishes and what boot.cmd string-compares
+    // against, so this spelling IS the contract. The real kernel that died in
+    // paging_init was 44493312 bytes and its console line said so in decimal;
+    // U-Boot's own variable says 2a6ea00.
+    expect(filesizeHex(44493312)).toBe('2a6ea00')
+    expect(filesizeHex(8)).toBe('8')
+    expect(filesizeHex(0)).toBe('0')
+  })
+
+  test('a checksum is eight lowercase hex digits, zero-padded', () => {
+    // CRC-32's published check value: the standard vector, so a runtime whose
+    // crc32() meant a different polynomial is red here rather than on a board.
+    expect(crc32Hex(Buffer.from('123456789'))).toBe('cbf43926')
+    // The padding is load-bearing, not cosmetic. parse_verify_sum (u-boot
+    // common/hash.c) reads an argument of exactly 2*digest_size characters as a
+    // hex literal and ANYTHING ELSE as the name of an environment variable, so
+    // a checksum with a zero top byte written short would be looked up instead
+    // of compared, and would refuse a slot that was fine.
+    expect(crc32Hex(Buffer.from('62'))).toBe('0012d20a')
+  })
+
+  test('the file is one key pair per artefact, in the artefact order', () => {
+    const text = bootDigestEnv([
+      { file: 'Image', key: 'kernel', bytes: Buffer.from('123456789') },
+      { file: 'rk3576-src.dtb', key: 'fdt', bytes: Buffer.from([0xd0, 0x0d, 0xfe, 0xed]) },
+    ], '<digest>')
+    expect(text).toBe('kernel_bytes=9\nkernel_crc=cbf43926\nfdt_bytes=4\nfdt_crc=5b4ca720\n')
+    // env import -t wants a trailing newline on the last line like every other.
+    expect(text.endsWith('\n')).toBe(true)
+  })
+
+  test('a ZERO-LENGTH artefact is refused, because an empty file satisfies both assertions', () => {
+    // bytes=0 and crc=00000000 is exactly what loading an empty file produces,
+    // so the one input that makes the guard meaningless would sail through it.
+    expect(() => bootDigestEnv([{ file: 'Image', key: 'kernel', bytes: new Uint8Array(0) }], '<digest>'))
+      .toThrow(/Image is zero bytes/)
+  })
+
+  test('an empty artefact LIST is refused too', () => {
+    expect(() => bootDigestEnv([], '<digest>')).toThrow(/would record no artefact at all/)
+  })
+})
+
+describe('boot.cmd must CHECK what it loads, not merely carry the file', () => {
+  test('the shipped script verifies both artefacts', () => {
+    // The positive control. Two artefacts, and both must be reached.
+    expect(BOOT_DIGEST_ARTEFACTS.length).toBe(2)
+    expect(() => checkBootDigestGuards(g, BOOT_CMD, P)).not.toThrow()
+  })
+
+  test('RED when the script never loads the digest file', () => {
+    const without = BOOT_CMD.replaceAll('mos-boot-digest.env', 'something-else.env')
+    expect(() => checkBootDigestGuards(g, without, P)).toThrow(/never loads 'mos-boot-digest.env'/)
+  })
+
+  for (const a of BOOT_DIGEST_ARTEFACTS) {
+    test(`RED when the \${filesize} compare for ${a.file} is dropped`, () => {
+      const without = BOOT_CMD.replace(`"\${filesize}" != "\${${a.key}_bytes}"`, '"x" != "y"')
+      expect(without).not.toBe(BOOT_CMD)
+      expect(() => checkBootDigestGuards(g, without, P))
+        .toThrow(new RegExp(`does not compare \\$\\{filesize\\} against \\$\\{${a.key}_bytes\\}`))
+    })
+
+    test(`RED when the crc32 -v over ${a.file} is dropped`, () => {
+      // The size check alone catches a short read and NOT a full-length read
+      // that left stale bytes in the middle, which is the failure that was
+      // measured on hardware -- so removing only this half must still be red.
+      const without = BOOT_CMD.replace(
+        `crc32 -v \${${a.addr}} \${filesize} \${${a.key}_crc}`,
+        `true \${${a.addr}}`,
+      )
+      expect(without).not.toBe(BOOT_CMD)
+      expect(() => checkBootDigestGuards(g, without, P)).toThrow(/does not run 'crc32 -v' over the loaded/)
+    })
+  }
 })

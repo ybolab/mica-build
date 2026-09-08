@@ -16,6 +16,7 @@
 // lowercase, the layout is uppercase, and a literal comparison refuses a
 // correct build.
 
+import { crc32 } from 'node:zlib'
 import type { Geometry } from './geometry.ts'
 
 function lc(s: string): string {
@@ -167,6 +168,7 @@ export function checkBootCmd(geometry: Geometry, bootCmd: string, path: string):
   checkBootAttempts(geometry, bootCmd, path)
   checkBootCmdTokens(geometry, bootCmd, path)
   checkPartitionNumbers(geometry, bootCmd, path)
+  checkBootDigestGuards(geometry, bootCmd, path)
 }
 
 /**
@@ -271,4 +273,134 @@ export function verityEnvFor(options: {
   }
 
   return { create, waitfor, text: `verity_args=${create} ${waitfor}\n` }
+}
+
+/**
+ * The two files boot.cmd loads into DRAM, and the env-key prefix it reads each
+ * one's recorded size and checksum from.
+ *
+ * The FILENAMES are the ones this assembler stages -- `Image` and
+ * `rk3576-src.dtb`, the same two literals `makeBootSlot` copies in and the same
+ * two `boards/cx3576/board.env` lists in BOOT_SLOT_REQUIRED_FILES. The KEYS are
+ * boot.cmd's own vocabulary: it loads them at `${kernel_addr_r}` and
+ * `${fdt_addr_r}`, so `kernel_bytes`/`kernel_crc` and `fdt_bytes`/`fdt_crc` read
+ * beside the addresses they describe. Nothing derives one from the other -- a
+ * filename does not imply a load address -- so the pairing lives here once and
+ * `checkBootDigestGuards` holds the script to it.
+ */
+export const BOOT_DIGEST_ARTEFACTS = [
+  { file: 'Image', key: 'kernel', addr: 'kernel_addr_r' },
+  { file: 'rk3576-src.dtb', key: 'fdt', addr: 'fdt_addr_r' },
+] as const
+
+export interface BootDigestArtefact {
+  /** The name in the boot partition's FAT root. */
+  readonly file: string
+  /** The env-key prefix: `<key>_bytes` and `<key>_crc`. */
+  readonly key: string
+  /** The bytes that will be written into the slot, not the ones on the way in. */
+  readonly bytes: Uint8Array
+}
+
+/**
+ * The byte count in the radix `load` reports `${filesize}` in.
+ *
+ * `do_load` publishes it with `env_set_hex`, which is `sprintf(str, "%lx", ...)`
+ * -- lowercase hex, no `0x`, no leading zeros. boot.cmd compares the two as
+ * STRINGS, because hush has no arithmetic without `setexpr`, so the spelling is
+ * the contract and not a presentation choice.
+ */
+export function filesizeHex(bytes: number): string {
+  return bytes.toString(16)
+}
+
+/**
+ * CRC-32 as the eight lowercase hex digits `crc32 -v` compares against.
+ *
+ * Zero-padded to eight, and that is load-bearing in both directions.
+ * `parse_verify_sum` (u-boot common/hash.c) treats an argument whose length is
+ * exactly twice the digest size as a hex literal and ANYTHING ELSE as the name
+ * of an environment variable to look up: a checksum with a zero top byte
+ * written as six digits would not be compared against the image, it would be
+ * looked up as a variable, not found, and refuse a slot that was fine.
+ */
+export function crc32Hex(bytes: Uint8Array): string {
+  return crc32(bytes).toString(16).padStart(8, '0')
+}
+
+/**
+ * The `mos-boot-digest.env` written beside the kernel and the dtb.
+ *
+ * `load` returning success means the FAT directory had an entry and the read
+ * call did not error. It does not mean the bytes in DRAM are the bytes on the
+ * card: a cx3576 board booted a MIXTURE of two kernel builds -- current-build
+ * code executing over old-build bytes at `swapper_pg_dir` -- and died in
+ * `paging_init`, with the console reporting the full 44493312 bytes read while
+ * it happened (RFCT-351, RFCT-352). This file is what lets the boot script tell
+ * those two apart.
+ *
+ * A ZERO-LENGTH artefact is refused rather than digested. `load` of an empty
+ * file sets `${filesize}` to `0` and `crc32` over zero bytes is `00000000`, so
+ * an empty Image would satisfy both assertions exactly: the guard would pass on
+ * the one input that makes it meaningless, and the refusal would arrive as a
+ * board that does not boot instead of a build that does not finish.
+ */
+export function bootDigestEnv(artefacts: readonly BootDigestArtefact[], path: string): string {
+  if (artefacts.length === 0) {
+    throw new Error(
+      `${path} would record no artefact at all, and boot.scr reads a size and a checksum out of it `
+      + `for every file it loads; an empty digest file makes every one of those comparisons a `
+      + `comparison against nothing`,
+    )
+  }
+  const lines: string[] = []
+  for (const a of artefacts) {
+    if (a.bytes.length === 0) {
+      throw new Error(
+        `${a.file} is zero bytes, so ${path} would record 'bytes=0' and 'crc=00000000' -- which an `
+        + `empty file loaded into DRAM satisfies exactly. Fix the producer; do not digest it.`,
+      )
+    }
+    lines.push(`${a.key}_bytes=${filesizeHex(a.bytes.length)}`)
+    lines.push(`${a.key}_crc=${crc32Hex(a.bytes)}`)
+  }
+  return `${lines.join('\n')}\n`
+}
+
+/**
+ * boot.cmd must actually CHECK what it loads, artefact by artefact.
+ *
+ * The assembler writes mos-boot-digest.env into every slot whatever the script
+ * does with it, so a boot.cmd that stopped reading it would leave a boot
+ * partition that looks exactly like a guarded one. The file's presence is not
+ * evidence that anything compares it, which is why this asserts the comparison
+ * and not the filename alone: per artefact, the `${filesize}` string compare
+ * against `<key>_bytes` and the `crc32 -v` against `<key>_crc`.
+ */
+export function checkBootDigestGuards(geometry: Geometry, bootCmd: string, path: string): void {
+  const digestName = geometry.require('BOOT_DIGEST_ENV_NAME')
+  if (!bootCmd.includes(digestName)) {
+    throw new Error(
+      `${path} never loads '${digestName}', so nothing tells it what the Image and the dtb in the `
+      + `boot partition are supposed to be. 'load' succeeds on a partial or stale read -- a board `
+      + `booted a mixture of two kernel builds while the console reported the full byte count -- so `
+      + `an unchecked load is the whole defect RFCT-352 exists to close.`,
+    )
+  }
+  for (const a of BOOT_DIGEST_ARTEFACTS) {
+    if (!bootCmd.includes(`"\${filesize}" != "\${${a.key}_bytes}"`)) {
+      throw new Error(
+        `${path} does not compare \${filesize} against \${${a.key}_bytes} after loading ${a.file}; `
+        + `'load' reports success on a short read and ${digestName} is what says how long the file `
+        + `should have been`,
+      )
+    }
+    if (!bootCmd.includes(`crc32 -v \${${a.addr}} \${filesize} \${${a.key}_crc}`)) {
+      throw new Error(
+        `${path} does not run 'crc32 -v' over the loaded ${a.file} against \${${a.key}_crc}; the byte `
+        + `count alone catches a short read and NOT a full-length read that left stale bytes in the `
+        + `middle, which is the failure that was actually measured on hardware`,
+      )
+    }
+  }
 }

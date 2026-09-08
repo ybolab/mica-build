@@ -8,14 +8,15 @@
 // package's geometry; nothing is duplicated here and nothing re-reads that file.
 //
 // Each boot slot holds Image, rk3576-src.dtb, the shared boot.scr compiled from
-// boards/cx3576/boot.cmd, and a per-slot mos-verity.env. It holds NO
+// boards/cx3576/boot.cmd, the mos-boot-digest.env that boot.scr checks those two
+// against before booti, and a per-slot mos-verity.env. It holds NO
 // extlinux/extlinux.conf: U-Boot tries extlinux before boot.scr in both boot
 // frameworks, so an extlinux config here would silently bypass the RAUC A/B
 // handshake (docs/design/uboot-ab-handshake.md sections 5.4-5.5).
 
 import { closeSync, copyFileSync, existsSync, mkdirSync, openSync, readFileSync, readSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { basename, dirname, join, resolve } from 'node:path'
-import { checkBootCmd, verityEnvFor } from './boot-cx3576.ts'
+import { BOOT_DIGEST_ARTEFACTS, bootDigestEnv, checkBootCmd, verityEnvFor } from './boot-cx3576.ts'
 import { loadGeometry, type Geometry } from './geometry.ts'
 import { decideSlot, deriveLayout, gptSpecFor, loaderIdentityFaults, slotPinFromEnv, type DerivedLayout, type SlotDecision } from './layout-cx3576.ts'
 import { BOARDS_DIR, makeWorkDir, REPO_ROOT } from './paths.ts'
@@ -562,9 +563,12 @@ interface BootSlotSpec {
 /**
  * Stage and format one boot slot's FAT32 filesystem.
  *
- * The slots hold the same kernel, dtb and boot.scr; only the slot-suffixed
- * mos-verity-<slot>.env differs, and it is what points the shared script at this
- * slot's rootfs. The unsuffixed name is deliberately not written: a
+ * The slots hold the same kernel, dtb, boot.scr and mos-boot-digest.env; only
+ * the slot-suffixed mos-verity-<slot>.env differs, and it is what points the
+ * shared script at this slot's rootfs. The digest file is slot-NEUTRAL for the
+ * mirror-image reason: it describes this partition's own Image and dtb, of
+ * which there is one set, while the verity env describes a different partition
+ * that one boot payload cannot identify. The unsuffixed name is deliberately not written: a
  * RAUC-installed slot only ever carries the suffixed files, so writing it here
  * would make a factory slot and an updated slot differ in layout and leave the
  * suffixed path untested until the first update. Deliberately no
@@ -591,6 +595,16 @@ async function makeBootSlot(tb: Toolbox, geometry: Geometry, spec: BootSlotSpec)
   })
   writeFileSync(join(stage, verityEnvName), verity.text)
 
+  // The digests boot.scr checks the kernel and the dtb against before it hands
+  // the machine over, read back out of the STAGED copies rather than out of the
+  // inputs: these are the exact bytes mcopy is about to put in the filesystem,
+  // and a digest of anything else describes a file that is not there.
+  const digestName = geometry.require('BOOT_DIGEST_ENV_NAME')
+  writeFileSync(join(stage, digestName), bootDigestEnv(
+    BOOT_DIGEST_ARTEFACTS.map(a => ({ ...a, bytes: readFileSync(join(stage, a.file)) })),
+    join(stage, digestName),
+  ))
+
   // `find <stage> -exec touch -h -d FILE_MTIME {} +` -- the directory too, and
   // in the container, where the shell does it.
   await tb.must(['find', stage, '-exec', 'touch', '-h', '-d', geometry.ext4.fileMtime, '{}', '+'], {
@@ -605,7 +619,10 @@ async function makeBootSlot(tb: Toolbox, geometry: Geometry, spec: BootSlotSpec)
   // `boot.scr`, uppercase first) rather than by whatever the running locale
   // would say, because the container has no locale set and the image must not
   // depend on the one the host happens to carry.
-  const files = [`${stage}/Image`, `${stage}/${spec.bootScriptName}`, `${stage}/${verityEnvName}`, `${stage}/rk3576-src.dtb`]
+  const files = [
+    `${stage}/Image`, `${stage}/${spec.bootScriptName}`, `${stage}/${digestName}`,
+    `${stage}/${verityEnvName}`, `${stage}/rk3576-src.dtb`,
+  ]
     .sort((a, b) => (basename(a) < basename(b) ? -1 : basename(a) > basename(b) ? 1 : 0))
   await mcopy(tb, { image: spec.image, sources: files, destination: '::/', recursive: true })
 }

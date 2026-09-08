@@ -935,7 +935,7 @@ function slotFixture(board: Board, listing: readonly string[]): Fixture {
   })
 }
 
-const CX_SLOT_FILES = ['::/Image', '::/rk3576-src.dtb', '::/boot.scr', '::/mos-verity-a.env', '::/mos-verity-b.env']
+const CX_SLOT_FILES = ['::/Image', '::/rk3576-src.dtb', '::/boot.scr', '::/mos-boot-digest.env', '::/mos-verity-a.env', '::/mos-verity-b.env']
 
 describe("what a boot slot must contain", () => {
   test('each declared file is its own check, and each passes when the slot lists it', async () => {
