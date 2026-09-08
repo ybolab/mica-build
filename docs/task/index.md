@@ -4,11 +4,11 @@
 
 ## Usage
 
-Each task is a single line linking to its detail file. All detailed information lives in `docs/task/<feature-slug>-<timestamp>.md`.
+Each task is a single line linking to its detail file. All detailed information lives in `docs/task/<timestamp>-<feature-slug>.md`.
 
 ### Format
 
-- [ ] [**add-endpoint-20260906T1430Z Add endpoint**](add-endpoint-20260906T1430Z.md) `P1`
+- [ ] [**20260907-1428-add-endpoint Add endpoint**](20260907-1428-add-endpoint.md) `P1`
 
 ### Status Markers
 
@@ -33,11 +33,15 @@ their own records said in progress or pending). Read the record, not the row.
 
 ### Rules
 
+- Update or delete task entries and their detail files as needed; keep them
+  consistent.
+- Record change history and deletion reasons in `docs/CHANGELOG.md`; update
+  affected task and plan references.
 - New tasks append to the end.
-- **New records are named `<feature-slug>-<timestamp>.md`** — a lowercase
-  kebab-case slug plus the creation time in UTC at minute precision
-  (`YYYYMMDDTHHmmZ`). No sequence number is allocated. Existing numbered
-  `RFCT-NNN` files remain valid and are not renamed.
+- **New records are named `<timestamp>-<feature-slug>.md`** — the creation
+  time in UTC at minute precision as `YYYYMMDD-HHmm` (no `T`, no `Z`), then a
+  lowercase kebab-case slug. No sequence number is allocated. Existing
+  numbered `RFCT-NNN` files remain valid and are not renamed.
 - See each detail file for full details.
 - **A completed task's record is deleted, and its line goes with it.** This
   index is a list of what is left, not a history of what was done. A finished
