@@ -110,10 +110,11 @@ describe('against the real sgdisk, for both shipped boards', () => {
       // three (esp, both boot). Everything after the rootfs slots is sized in
       // the definition and PLACED at assembly time, which is M6b's and M6c's
       // chain and deliberately not modelled here.
-      const expected = board === 'cx3576' ? 5 : 3
+      const expected = board === 'cx3576' ? 5 : board === 's905x5m' ? 6 : 3
       expect(`${board}: ${parts.length} pinned partitions`).toBe(`${board}: ${expected} pinned partitions`)
       expect(parts.map(x => x.p.name).join(' ')).toBe(
-        board === 'cx3576' ? 'LOADER UENV_A UENV_B BOOT_A BOOT_B' : 'ESP BOOT_A BOOT_B',
+        board === 'cx3576' ? 'LOADER UENV_A UENV_B BOOT_A BOOT_B'
+          : board === 's905x5m' ? 'RESERVED ENV UENV_A UENV_B BOOT_A BOOT_B' : 'ESP BOOT_A BOOT_B',
       )
 
       const img = join(work, `${board}.img`)

@@ -65,6 +65,7 @@
   - `intake.md` — vendor and BSP intake rubric: input classes and acceptance
   - `board-env.md` — `board.env` key reference: the board definition contract
   - `board-template.md` — board dossier template: the thirteen validated sections
+  - `s905x5m.md` — board dossier: BM201 / S905X5M mainline adaptation and qualification boundary
   - `cx3576-example.md` — the filled dossier instance for the cx3576 board
   - `cx3576-bench.md` — the cx3576 bench session: stage order and assumptions, the scriptable/human split per row, the power-cut window, and the collector that writes the dossier's rows
   - `virt-arm64.md` — board dossier: the QEMU aarch64 virt machine, a test target with no release path

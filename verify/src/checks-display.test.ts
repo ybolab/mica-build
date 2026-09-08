@@ -12,16 +12,15 @@
 //   * `getty@tty1` with no enablement link and no preset -- which looks disabled
 //     and presets to ENABLE.
 //
-// THE COMMAND-LINE CHECKS RUN THROUGH THE REAL SEAM. `bootScript` short-circuits
-// on a file already present in the work directory, so writing `boot-a-boot.scr`
-// there drives the actual path -- slot selection from the board definition,
-// `uImageText`'s NUL strip, `consoleList`'s parse -- rather than a stub the test
-// invented. A fabricated seam would only test the fabrication.
+// The command-line checks read through bootScript and fatCopyOut. The fixture
+// supplies the requested slot bytes through a checked mcopy transport, so a
+// stale file in the work directory cannot stand in for a fresh slot read.
 
 import { describe, expect, test } from 'bun:test'
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { loadBoard } from './board.ts'
+import { SLOTS, slotOffsetBytes } from './boot-slots.ts'
 import { packedRootFixture, type RootFixture } from './checks-fixture.ts'
 import { consoleArgsOf, DISPLAY_CHECKS } from './checks-display.ts'
 import { assertRegisterWellFormed, CHECKS, type CheckCase } from './checks.ts'
@@ -76,8 +75,21 @@ function checkNamed(id: string): CheckCase {
 /** A fixture whose slot-A boot script carries `args`. */
 function withCmdline(args: string): RootFixture {
   const fx = packedRootFixture(cx3576)
-  writeFileSync(join(fx.ctx.workDir, 'boot-a-boot.scr'), bootScr(args))
-  return fx
+  const name = cx3576.get('BOOT_SCRIPT_NAME')!
+  const slot = SLOTS[0]!
+  const dest = join(fx.ctx.workDir, `boot-${slot.letter}-${name}`)
+  const tools = {
+    ...fx.ctx.tools,
+    run: async (argv: readonly string[]) => {
+      expect(argv).toEqual([
+        'env', 'MTOOLS_SKIP_CHECK=1', 'mcopy', '-n', '-i',
+        `${fx.ctx.image}@@${slotOffsetBytes(cx3576, slot.layout)}`, `::/${name}`, dest,
+      ])
+      writeFileSync(dest, bootScr(args))
+      return { argv, code: 0, stdout: '', stderr: '' }
+    },
+  }
+  return { ...fx, ctx: { ...fx.ctx, tools } }
 }
 
 async function only(fx: RootFixture, id: string): Promise<CheckResult> {
@@ -145,6 +157,18 @@ describe('the display family is in the register and can be diffed', () => {
         const got = await c.run(fx.ctx)
         expect(got.length).toBe(1)
         expect(`${c.id}:${(got[0] as CheckResult).verdict}`).toBe(`${c.id}:pass`)
+      }
+    }
+    finally {
+      fx.dispose()
+    }
+  })
+  test('a stale extracted script cannot replace the current slot contents', async () => {
+    const fx = withCmdline(SHIPPED_ARGS)
+    try {
+      writeFileSync(join(fx.ctx.workDir, `boot-a-${cx3576.get('BOOT_SCRIPT_NAME')}`), bootScr('quiet'))
+      for (const c of DISPLAY_CHECKS.filter(c => c.id !== 'display-skipped')) {
+        expect((await c.run(fx.ctx))[0]!.verdict).toBe('pass')
       }
     }
     finally {

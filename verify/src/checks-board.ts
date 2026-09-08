@@ -34,9 +34,10 @@
 
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { installedPackages } from './installed-packages.ts'
 import type { Board } from './board.ts'
 import { PER_SLOT, SLOTS, slotOffsetBytes } from './boot-slots.ts'
-import { boardsWhere, hasFirmware, hasHwinit, hasLed, hasRadio, isUBoot, SHIPPED } from './board-scope.ts'
+import { boardsWhere, hasFirmware, hasHwinit, hasLed, hasRadio, hasRawBlob, isUBoot, SHIPPED } from './board-scope.ts'
 import { entry, ETC_UNITS, packedRoot, wantsLink } from './checks-root.ts'
 import type { CheckCase, ImageContext } from './checks.ts'
 import { fatList, readBytes } from './image.ts'
@@ -156,7 +157,7 @@ const LOADER_CHECKS: readonly CheckCase[] = [
     },
     run: async (ctx): Promise<readonly CheckResult[]> => {
       const { board } = ctx
-      if (!isUBoot(board)) {
+      if (!hasRawBlob(board)) {
         return [skipped('loader-abuts-uenv-a', loaderSkipMessage(board))]
       }
       const table = await ctx.gpt()
@@ -192,7 +193,7 @@ const LOADER_CHECKS: readonly CheckCase[] = [
     // rather than about the image, and reading one side out of the GPT would
     // change what it says.
     id: 'loader-size-matches-uboot-max',
-    boards: boardsWhere(isUBoot),
+    boards: boardsWhere(hasRawBlob),
     shell: {
       pass: ', exactly the limit the U-Boot fit check enforces',
       fail: ' but UBOOT_MAX_BYTES is ',
@@ -223,7 +224,7 @@ const LOADER_CHECKS: readonly CheckCase[] = [
     // wrong bytes protects the wrong bytes, and the device reaches maskrom on
     // the boot after the first growth run rather than at flash time.
     id: 'loader-idbloader-magic',
-    boards: boardsWhere(isUBoot),
+    boards: boardsWhere(hasRawBlob),
     shell: {
       pass: ' starts with the Rockchip idbloader magic ',
       fail: ', expected the idbloader magic ',
@@ -259,7 +260,7 @@ const LOADER_CHECKS: readonly CheckCase[] = [
     // a loader some /etc/repart.d file can be made to grow into. Unique, and
     // distinct from both, or the entry protects nothing.
     id: 'loader-typecode-unique',
-    boards: boardsWhere(isUBoot),
+    boards: boardsWhere(hasRawBlob),
     shell: {
       pass: ' partition, and that type is neither linux-generic nor the ESP type',
       fail: 'the loader type must be unique and distinct from linux-generic/ESP',
@@ -300,7 +301,7 @@ const LOADER_CHECKS: readonly CheckCase[] = [
 function loaderSkipMessage(board: Board): string {
   const parts = (board.layoutPartitions ?? []).length
   return `the loader-partition protections (${parts}-partition ${board.name} layout has no loader): `
-    + `a grub board keeps its firmware in flash, not at a fixed sector, so there is no raw region for `
+    + `this board keeps its firmware outside the user-area GPT, so there is no raw region for `
     + `systemd-repart to discard and no GPT entry to assert. cx3576 needs these; `
     + `tests/handshake-test/ remains the only cover for the U-Boot A/B handshake either way`
 }
@@ -482,7 +483,7 @@ const RADIO_CHECKS: readonly CheckCase[] = [
     // not creep back. Comment lines are excluded, because the file may
     // legitimately EXPLAIN the drop.
     id: 'radio-modules-no-bcmdhd',
-    boards: boardsWhere(hasFirmware),
+    boards: boardsWhere(b => hasHwinit(b, 'modules')),
     shell: {
       pass: '/etc/mos/modules.conf loads no bcmdhd module (single-SKU AIC8800)',
       fail: '/etc/mos/modules.conf missing or still loads bcmdhd',
@@ -507,7 +508,7 @@ const RADIO_CHECKS: readonly CheckCase[] = [
 
   packedGrep({
     id: 'radio-modules-aic-fdrv',
-    boards: boardsWhere(hasFirmware),
+    boards: boardsWhere(b => hasHwinit(b, 'modules')),
     path: '/etc/mos/modules.conf',
     pattern: /aic8800_fdrv/,
     what: '/etc/mos/modules.conf lists aic8800_fdrv',
@@ -515,7 +516,7 @@ const RADIO_CHECKS: readonly CheckCase[] = [
 
   packedGrep({
     id: 'radio-modules-aic-btlpm',
-    boards: boardsWhere(hasFirmware),
+    boards: boardsWhere(b => hasHwinit(b, 'modules')),
     path: '/etc/mos/modules.conf',
     pattern: /^aic8800_btlpm$/,
     what: '/etc/mos/modules.conf lists aic8800_btlpm (BT core of the combo chip)',
@@ -523,17 +524,21 @@ const RADIO_CHECKS: readonly CheckCase[] = [
 
   skipOwner(
     'radio-module-list-skipped',
-    boardsWhere(b => !hasFirmware(b)),
+    boardsWhere(b => !hasHwinit(b, 'modules')),
     'the radio module-list assertions (',
-    board => `the radio module-list assertions (${board.name} declares no BOARD_FIRMWARE_FILES): there `
-      + `is no radio, so there is no driver the module list must load and no superseded one it must not`,
+    board => `the radio module-list assertions (${board.name} declares no modules hwinit): `
+      + `this board does not use the AIC8800 module-list contract`,
   ),
 ]
 
 // the hwinit facts
 
 function hwinitConfChecks(board: Board): CheckCase[] {
-  return (board.hwinitConfs ?? []).map(c => boardRegularFile('hwinit-conf', board.name, `/etc/mos/${c}.conf`))
+  return (board.hwinitConfs ?? []).map(c => {
+    const check = boardRegularFile('hwinit-conf', board.name, `/etc/mos/${c}.conf`)
+    const pkg = c === 'wireless' ? 'mos-s905x5m-radio' : c === 'bluetooth' ? 'mos-s905x5m-bluetooth' : undefined
+    return pkg === undefined ? check : forS905Package(check, pkg)
+  })
 }
 
 /** `health` is shared by every board and asserted unconditionally (batch 2a). */
@@ -673,6 +678,17 @@ const HWINIT_CHECKS: readonly CheckCase[] = [
     run: async (ctx): Promise<readonly CheckResult[]> => {
       const root = await packedRoot(ctx)
       const helpers = listDir(root, '/usr/lib/mos').filter(n => n.startsWith('hwinit-')).sort()
+      if (ctx.board.name === 's905x5m') {
+        const packages = installedPackages(root)
+        const expected = ['hwinit-audio']
+        if (packages.has('mos-s905x5m-radio')) expected.push('hwinit-wireless')
+        if (packages.has('mos-s905x5m-bluetooth')) expected.push('hwinit-bluetooth', 'hwinit-bt')
+        expected.sort()
+        const ok = helpers.join(' ') === expected.join(' ')
+        return [verdict('hwinit-helpers-match-declaration', ok,
+          ok ? `all ${expected.length} hwinit helper(s) selected by the package inventory are present`
+            : `selected hwinit fact(s) (${expected.join(' ')}) disagree with helpers (${helpers.join(' ')})`)]
+      }
       const declared = (ctx.board.hwinitConfs ?? []).length
       if (helpers.length === declared && declared !== 0) {
         return [verdict(
@@ -1140,6 +1156,23 @@ function boardRegularFileForFeature(id: string, boards: readonly string[], path:
   }
 }
 
+/** Optional radio checks use the packed inventory, never a missing file as a decline. */
+function forS905Package(check: CheckCase, pkg: string): CheckCase {
+  const message = `${check.id}: ${pkg} was not selected for s905x5m`
+  const prior = check.shell.skip
+  const skip = prior === undefined ? [message] : typeof prior === 'string' ? [prior, message] : [...prior, message]
+  return {
+    ...check,
+    shell: { ...check.shell, skip },
+    run: async ctx => {
+      if (ctx.board.name === 's905x5m' && !installedPackages(await packedRoot(ctx)).has(pkg)) {
+        return [skipped(check.id, message)]
+      }
+      return check.run(ctx)
+    },
+  }
+}
+
 export const BOARD_CHECKS: readonly CheckCase[] = [
   ...LOADER_CHECKS,
   ...SHIPPED.flatMap(bootSlotFileChecks),
@@ -1148,6 +1181,6 @@ export const BOARD_CHECKS: readonly CheckCase[] = [
   ...RADIO_CHECKS,
   ...SHIPPED.flatMap(hwinitConfChecks),
   ...HWINIT_CHECKS,
-  ...BLUETOOTH_CHECKS,
+  ...BLUETOOTH_CHECKS.map(c => forS905Package(c, 'mos-s905x5m-bluetooth')),
   ...LED_CHECKS,
 ]

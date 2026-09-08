@@ -257,7 +257,7 @@ describe('both boards at once', () => {
           .toEqual({ board: b.name, part: p.name, role: p.role, known: true })
       }
     }
-    expect([...KNOWN_ROLES]).toEqual(['raw-blob', 'uboot-env', 'esp', 'verity-slot', 'ext4'])
+    expect([...KNOWN_ROLES]).toEqual(['vendor-reserved', 'raw-blob', 'uboot-env', 'esp', 'verity-slot', 'ext4'])
   })
 
   test('every partition carries the common core, whatever its role', () => {

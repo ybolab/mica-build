@@ -25,6 +25,7 @@ import { join } from 'node:path'
 import { $ } from 'bun'
 import {
   buildBundle,
+  ubootDtbName,
   GEN_TRUST_ROOT_SH,
   RAUC_KEY_DIR,
   RENDER_CONFIG_SH,
@@ -337,7 +338,7 @@ export async function main(argv: readonly string[]): Promise<number> {
   const uboot = geometry.bootloader === 'uboot'
   const bootExport = join(outDir, 'boot')
   const kernelImage = join(bootExport, uboot ? 'Image' : 'vmlinuz')
-  const dtb = uboot ? join(bootExport, 'rk3576-src.dtb') : undefined
+  const dtb = uboot ? join(bootExport, ubootDtbName(geometry)) : undefined
   const bootCmd = uboot ? join(bootExport, 'boot.cmd') : undefined
 
   checkRequiredInputs({

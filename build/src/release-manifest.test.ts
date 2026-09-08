@@ -426,7 +426,7 @@ describe('the COMMITTED board evidence is valid and honest to this tree', () => 
     // the second. Both are asserted non-empty BY NAME, because a count of the
     // wrong boards satisfies a count.
     expect(releaseTargets).toEqual(['cx3576', 'x64'])
-    expect(testTargets).toEqual(['virt-arm64'])
+    expect(testTargets).toEqual(['s905x5m', 'virt-arm64'])
     expect([...releaseTargets, ...testTargets].sort()).toEqual([...boards].sort())
   })
 

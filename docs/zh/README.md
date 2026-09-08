@@ -100,6 +100,7 @@
 | `../bsp/porting.md` | db66fc02 | not-translated |
 | `../bsp/qualification.md` | db66fc02 | not-translated |
 | `../bsp/support-tiers.md` | db66fc02 | not-translated |
+| `../bsp/s905x5m.md` | 1d2a5e49 | not-translated |
 | `../bsp/virt-arm64.md` | 2b443f42 | not-translated |
 
 `docs/design/` 下的每一篇都有中文对应。中文版是**面向当前版本的概览**，

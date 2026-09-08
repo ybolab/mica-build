@@ -61,8 +61,8 @@ REPO_ROOT="$(cd "${HERE}/.." && pwd)"
 # One row per board: the committed config a build starts from, and the file that
 # asserts the result after olddefconfig. Discovered from neither -- written here,
 # because a board with no kernel build has no row and a glob would give it one.
-BOARD_CONFIGS="cx3576:boards/cx3576/bsp/kernel/config/kernel-cx3576z.config virt-arm64:boards/virt-arm64/bsp/kernel/config/virt-arm64.config x64:boards/x64/bsp/kernel/config/x64.config"
-BOARD_CONFIG_GATES="cx3576:boards/cx3576/bsp/kernel/configure.sh virt-arm64:boards/virt-arm64/bsp/kernel/Dockerfile x64:boards/x64/bsp/kernel/Dockerfile"
+BOARD_CONFIGS="s905x5m:boards/s905x5m/bsp/kernel/config/kernel-s905x5m.config cx3576:boards/cx3576/bsp/kernel/config/kernel-cx3576z.config virt-arm64:boards/virt-arm64/bsp/kernel/config/virt-arm64.config x64:boards/x64/bsp/kernel/config/x64.config"
+BOARD_CONFIG_GATES="s905x5m:boards/s905x5m/bsp/kernel/Dockerfile cx3576:boards/cx3576/bsp/kernel/configure.sh virt-arm64:boards/virt-arm64/bsp/kernel/Dockerfile x64:boards/x64/bsp/kernel/Dockerfile"
 FRAGMENT="${REPO_ROOT}/boards/common/mos-required.fragment"
 VERSIONS_ENV="${REPO_ROOT}/pkgs/podman/versions.env"
 

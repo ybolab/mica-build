@@ -39,7 +39,7 @@ describe('the discovery this file iterates is not empty', () => {
   test('every shipped board is in scope', () => {
     // Every `for (const b of BOARDS)` below is green over an empty list. This
     // is the assertion that makes the rest of the file evidence.
-    expect(BOARDS).toEqual(['cx3576', 'virt-arm64', 'x64'])
+    expect(BOARDS).toEqual(['cx3576', 's905x5m', 'virt-arm64', 'x64'])
   })
 
   test('the mutation helper actually changes the file it copies', () => {

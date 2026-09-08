@@ -62,6 +62,63 @@ done
 
 lower() { echo "$1" | tr 'A-Z' 'a-z'; }
 
+# The s905x5m environment lives at fixed absolute offsets in the eMMC user
+# area. The renderer reaches the same bytes through two GPT PARTUUIDs, so the
+# board layout and the U-Boot defconfig must agree before a bundle can be made.
+# The BSP build gate separately asserts the post-olddefconfig result; this
+# source check makes a source-layout disagreement fail in the bundle path too.
+assert_s905x5m_uboot_env_layout() {
+    local defconfig="${REPO_ROOT}/boards/s905x5m/bsp/uboot/config/s7d_bm201_defconfig"
+    local count
+
+    if [ ! -f "${defconfig}" ]; then
+        echo "error: ${defconfig} not found; cannot cross-check the s905x5m U-Boot environment layout" >&2
+        exit 1
+    fi
+
+    assert_defconfig_value() {
+        local symbol="$1" expected="$2" observed
+        count="$(grep -cFx -- "${expected}" "${defconfig}" || true)"
+        observed="$(grep -E "^${symbol}=" "${defconfig}" || true)"
+        [ -n "${observed}" ] || observed='<absent>'
+        if [ "${count}" -ne 1 ]; then
+            echo "error: ${defconfig} must contain ${expected} exactly once; observed ${observed}" >&2
+            exit 1
+        fi
+    }
+
+    assert_defconfig_value CONFIG_ENV_IS_IN_MMC CONFIG_ENV_IS_IN_MMC=y
+    assert_defconfig_value CONFIG_SYS_REDUNDAND_ENVIRONMENT CONFIG_SYS_REDUNDAND_ENVIRONMENT=y
+    assert_defconfig_value CONFIG_ENV_OFFSET "CONFIG_ENV_OFFSET=$(printf '0x%X' "${UENV_A_OFFSET_BYTES}")"
+    assert_defconfig_value CONFIG_ENV_OFFSET_REDUND "CONFIG_ENV_OFFSET_REDUND=$(printf '0x%X' "${UENV_B_OFFSET_BYTES}")"
+    assert_defconfig_value CONFIG_ENV_SIZE "CONFIG_ENV_SIZE=$(printf '0x%X' "${UENV_SIZE_BYTES}")"
+    assert_defconfig_value CONFIG_SYS_MMC_ENV_DEV CONFIG_SYS_MMC_ENV_DEV=1
+    assert_defconfig_value CONFIG_SYS_MMC_ENV_PART CONFIG_SYS_MMC_ENV_PART=0
+
+    count="$(grep -cFx -- 'CONFIG_ENV_IS_IN_STORAGE=y' "${defconfig}" || true)"
+    if [ "${count}" -ne 0 ]; then
+        echo "error: ${defconfig} still enables CONFIG_ENV_IS_IN_STORAGE; the vendor environment cannot provide the approved redundant MMC pair" >&2
+        exit 1
+    fi
+}
+
+if [ "${MOS_BOARD}" = "s905x5m" ] && [ "${RAUC_BOOTLOADER}" = "uboot" ]; then
+    assert_s905x5m_uboot_env_layout
+fi
+
+# True when any partition in this board's own ordered layout has the requested
+# role. Loader protection is a property of a GPT raw blob, not of RAUC's U-Boot
+# backend: an Amlogic U-Boot can execute from an eMMC hardware boot area that
+# does not appear in the GPT at all.
+has_partition_role() {
+    local wanted="$1" partition role
+    for partition in ${LAYOUT_PARTITIONS:-}; do
+        eval "role=\${${partition}_ROLE:-}"
+        [ "${role}" = "${wanted}" ] && return 0
+    done
+    return 1
+}
+
 # Substitutes @KEY@ placeholders and refuses to emit a file that still has one.
 render() {
     local src="$1" dst="$2"
@@ -329,9 +386,9 @@ fi
 # would be covered by no partition entry, and systemd-repart discards exactly
 # those regions — which is the failure the loader entry exists to prevent.
 #
-# U-Boot boards only: there is no loader partition on a UEFI board, because the
-# firmware is in flash rather than at a fixed sector of the disk.
-if [ "${RAUC_BOOTLOADER}" = "uboot" ] && \
+# Only layouts declaring a raw loader region need this protection. Other
+# firmware lives outside the user-area GPT.
+if has_partition_role raw-blob && \
    [ $((LOADER_START_SECTOR + LOADER_SIZE_SECTORS)) -ne "${UENV_A_START_SECTOR}" ]; then
     echo "error: the loader partition ends at sector $((LOADER_START_SECTOR + LOADER_SIZE_SECTORS)) but ${UENV_A_LABEL} starts at ${UENV_A_START_SECTOR}; the gap between them would be discarded on first boot" >&2
     exit 1

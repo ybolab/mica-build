@@ -118,6 +118,8 @@ describe('the register batch 3 adds', () => {
     // silent on the board in it.
     for (const [item, skipper] of [
       ['radio-modules-no-bcmdhd', 'radio-module-list-skipped'],
+      ['radio-modules-aic-fdrv', 'radio-module-list-skipped'],
+      ['radio-modules-aic-btlpm', 'radio-module-list-skipped'],
       ['bt-btattach', 'bt-userland-skipped'],
       ['gadget-udev-rule', 'gadget-udev-rule-skipped'],
       ['led-script', 'led-overlay-skipped'],
@@ -136,7 +138,7 @@ describe('the register batch 3 adds', () => {
     // rather than against two names written here, so a third board added to
     // boards/ widens this test with the tree instead of pinning it.
     expect(checkNamed('loader-size-matches-uboot-max').boards)
-      .toEqual(SHIPPED_BOARDS.filter(b => b.bootloader === 'uboot').map(b => b.name))
+      .toEqual(SHIPPED_BOARDS.filter(b => b.partitions.some(p => p.role === 'raw-blob')).map(b => b.name))
     expect(checkNamed('bt-btattach').boards)
       .toEqual(SHIPPED_BOARDS.filter(b => (b.radios ?? []).includes('bluetooth')).map(b => b.name))
     expect(checkNamed('status-led-absent').boards)
@@ -249,7 +251,7 @@ describe('check_status_led, BOARD_HAS_STATUS_LED=0 (x64)', () => {
     // UEFI boards declare 0 (neither emulated machine has /sys/class/leds) and
     // cx3576 declares 1. Named rather than counted -- a list of the wrong
     // boards is still a list of the right length.
-    expect(checkNamed('status-led-absent').boards).toEqual(['virt-arm64', 'x64'])
+    expect(checkNamed('status-led-absent').boards).toEqual(SHIPPED_BOARDS.filter(b => b.get('BOARD_HAS_STATUS_LED') === '0').map(b => b.name))
   })
 })
 
