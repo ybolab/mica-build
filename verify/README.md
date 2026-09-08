@@ -279,11 +279,24 @@ softened nothing.
 `mosd` and `apid` print `<name> <version> (<commit>)`. Comparing that commit
 against `git rev-parse HEAD` at run time is refused by name: it would be
 trivially green on any freshly built tree, asserting that somebody just built
-rather than that the embedding works. `pkgs/mosd/hack/build-target.sh` writes the
-commit it handed the compiler into a build fact instead, and the runner compares
-the reported line against **that**. Where the build recorded no commit there is
+rather than that the embedding works. `pkgs/mosd/hack/build-deb.sh` — the producer hook
+that compiles the binaries a composed root installs — writes the commit it
+handed the compiler into a build fact instead, and the runner compares the
+reported line against **that**. Where the build recorded no commit there is
 nothing to compare, and the row says `commit was NOT asserted` rather than
 passing quietly.
+
+The two sides are the string compiled **into** the binary in the packed root,
+read back by executing it, and the string that producer run wrote to disk — and
+both descend from one `MOS_BUILD_COMMIT` in one invocation. So it is **not** a
+check that the commit is right; no reader of an image could be. It closes the
+distance between *the producer was told to embed X* and *the binary in the image
+reports X*: a compile cargo did not re-run for a changed environment variable, an
+`option_env!` that resolved to nothing so the binary answers `unknown`, a stage
+that installed a binary from somewhere other than the package. The pool's stamp
+and `SHA256SUMS` checks already refuse an archive built from another tree — but
+they read its name and its bytes, never what was compiled into the binary
+inside it.
 
 The reported line is carried verbatim into every version verdict either way,
 because a line nobody can read back is a claim nobody can check:

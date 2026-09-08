@@ -1,5 +1,5 @@
 #!/bin/bash
-# The four comparisons. Runs INSIDE the pinned tool container; gate.sh starts it.
+# The five comparisons. Runs INSIDE the pinned tool container; gate.sh starts it.
 #
 # mos-build-side: container -- gate.sh runs this with `docker run ... sh -c 'apk add ...
 # && bash inner.sh'`; neither unsquashfs nor getcap is readable on the build host.
@@ -11,11 +11,13 @@
 # the second and the device ships the first, so if the two are not one tree the
 # smoke run is a check on something adjacent to the artifact.
 #
-# Four comparisons and not one: `diff -r` cannot see a mode, a uid or a gid; a
-# listing cannot see a byte; neither can see a file capability, which lives in
-# an xattr that has to survive a buildkit layer export to reach either side; and
-# none of the three can see a hardlink becoming two files. A COPY that changed
-# what it staged moves a mode or a path before it moves a byte.
+# Five comparisons and not one: a listing cannot see a byte; a byte comparison
+# cannot see a mode, a uid or a gid; neither can see a file capability, which
+# lives in an xattr that has to survive a buildkit layer export to reach either
+# side; none of the three can see a hardlink becoming two files; and none of the
+# four can see the major and minor of a device node, which is the whole of what
+# a device node is. A COPY that changed what it staged moves a mode or a path
+# before it moves a byte.
 #
 # Any difference exits non-zero: a script that printed the differing rows and
 # exited 0 would be a report and not a gate.
@@ -67,6 +69,18 @@ echo "oci layer: ${layer##*/}"
 inventory() { ( cd "$1" && find . -mindepth 1 -printf '%M %U %G %P\n' | LC_ALL=C sort ); }
 caps() { ( cd "$1" && getcap -r . 2>/dev/null | LC_ALL=C sort ); }
 links() { ( cd "$1" && find . -type f -links +1 -printf '%n %P\n' | LC_ALL=C sort ); }
+devices() { ( cd "$1" && find . -mindepth 1 \( -type b -o -type c \) -exec stat -c '%F %t %T %n' {} + | LC_ALL=C sort ); }
+# The entries that HAVE content: a regular file has bytes and a symlink has a
+# target, and a directory, a device node, a fifo and a socket have neither. The
+# bytes are named by their hash rather than compared in place so that the
+# comparison is a diff of two files, the shape `caps` and `links` already use.
+content() {
+    (
+        cd "$1"
+        find . -mindepth 1 -type f -print0 | LC_ALL=C sort -z | xargs -0 -r sha256sum
+        find . -mindepth 1 -type l -printf 'symlink %P -> %l\n' | LC_ALL=C sort
+    )
+}
 
 echo
 echo "== metadata: mode, uid, gid, path, over every entry =="
@@ -83,14 +97,52 @@ else
 fi
 
 echo
-echo "== content =="
-# --no-dereference: /etc/shadow -> /run/mos/shadow is dangling by design, and
-# following it would compare nothing on both sides and call that agreement.
-if diff -r --no-dereference "${work}/sq" "${work}/ocix" > "${work}/content.diff" 2>&1; then
+echo "== content: the bytes of every regular file, the target of every symlink =="
+# `diff -r --no-dereference` over the two trees was what this was until
+# RFCT-356, and diff cannot do it: it cannot READ a device node. For each of the
+# eight character devices under /dev it printed `File .../dev/null is a
+# character special file while file .../dev/null is a character special file`
+# and exited 1 -- eight lines that say only that diff declined to look -- so
+# CONTENT was red on every arm64 root for a reason that was never about the
+# root, and FIDELITY below then said the smoke run measured nothing. Neither way
+# out was available: filtering those lines would have filtered a real difference
+# phrased the same way, and a device node that changed type or major:minor is
+# exactly what diff phrases that way; and excluding /dev would have stopped
+# comparing eight entries that are part of the root. The device nodes are
+# compared below instead, by the property they actually have, and diff is handed
+# what it can read.
+#
+# Symlinks are compared by their TARGET and never followed: /etc/shadow ->
+# /run/mos/shadow is dangling by design, and following it would compare nothing
+# on both sides and call that agreement -- which is what `--no-dereference`
+# bought here before, and `%l` buys now.
+content "${work}/sq" > "${work}/sq.content"
+content "${work}/ocix" > "${work}/oci.content"
+echo "squashfs: $(wc -l < "${work}/sq.content") entries with content; oci: $(wc -l < "${work}/oci.content")"
+if diff -u "${work}/sq.content" "${work}/oci.content" > "${work}/content.diff"; then
     echo "CONTENT: identical"
 else
-    echo "CONTENT: $(wc -l < "${work}/content.diff") differing lines -- ${work}/content.diff"
+    echo "CONTENT: $(grep -c '^[+-][^+-]' "${work}/content.diff") differing rows -- ${work}/content.diff"
     head -20 "${work}/content.diff"
+    differing=$((differing + 1))
+fi
+
+echo
+echo "== device nodes: type, major, minor =="
+# A major and a minor are invisible to all four of the others. `%M` in the
+# inventory carries the type character, so a /dev/null exported as a regular
+# file is caught there -- but a /dev/null exported as character 1:5 has the same
+# mode, the same owner, the same link count and the same (absent) content as the
+# real one, and a root whose /dev/null is /dev/zero returns zeros to every
+# reader instead of end-of-file. `stat` and not `find -printf`, which has no
+# directive for either number.
+devices "${work}/sq" > "${work}/sq.devs"
+devices "${work}/ocix" > "${work}/oci.devs"
+echo "squashfs: $(wc -l < "${work}/sq.devs") device node(s); oci: $(wc -l < "${work}/oci.devs")"
+if diff -u "${work}/sq.devs" "${work}/oci.devs" > "${work}/devs.diff"; then
+    echo "DEVICES: identical"
+else
+    echo "DEVICES: differ -- ${work}/devs.diff"; cat "${work}/devs.diff"
     differing=$((differing + 1))
 fi
 
@@ -128,9 +180,9 @@ fi
 
 echo
 if [ "${differing}" -eq 0 ]; then
-    echo "FIDELITY: the exported OCI image is the tree that ships, on all four comparisons"
+    echo "FIDELITY: the exported OCI image is the tree that ships, on all five comparisons"
 else
-    echo "FIDELITY: ${differing} of 4 comparisons differ. The image the smoke run"
+    echo "FIDELITY: ${differing} of 5 comparisons differ. The image the smoke run"
     echo "          executes in is NOT the image the device ships, so nothing the smoke run"
     echo "          reports is about the shipped artifact."
     exit 1
