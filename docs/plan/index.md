@@ -1,14 +1,14 @@
 # NAS Appliance Refactor - Plan Index
 
-> Updated: 2026-09-07
+> Updated: 2026-09-08
 
 ## Usage
 
-Each plan is a single line linking to its detail file. All detailed information lives in `docs/plan/PLAN-NNN.md`.
+Each plan is a single line linking to its detail file. All detailed information lives in `docs/plan/<feature-slug>-<timestamp>.md`.
 
 ### Format
 
-- [ ] [**PLAN-001 Short plan title**](PLAN-001.md) `YYYY-MM-DD`
+- [ ] [**add-endpoint-20260906T1440Z Add endpoint**](add-endpoint-20260906T1440Z.md) `YYYY-MM-DD`
 
 ### Status Markers
 
@@ -22,7 +22,11 @@ Each plan is a single line linking to its detail file. All detailed information 
 ### Rules
 
 - New plans append to the end.
-- See each `PLAN-NNN.md` for full details.
+- **New records are named `<feature-slug>-<timestamp>.md`** — a lowercase
+  kebab-case slug plus the creation time in UTC at minute precision
+  (`YYYYMMDDTHHmmZ`). No sequence number is allocated. Existing numbered
+  `PLAN-NNN` files remain valid and are not renamed.
+- See each detail file for full details.
 - **A completed plan's record is deleted, and its line goes with it.** This
   index is a list of what is left, not a history of what was done. A finished
   plan lives in git history: `git log --diff-filter=D -- docs/plan/` lists
@@ -52,6 +56,8 @@ disobeys on sight teaches a reader the wrong thing about the tree.
 
 ## Plans
 
+- [x] [**PLAN-926 Merge the S905X5M adaptation into updated local main**](PLAN-926.md) `2026-09-08`
+
 - [ ] [**PLAN-037 Coordinate the embedded delivery roadmap**](PLAN-037.md) `2026-08-31`
 - [ ] [**PLAN-054 Design conditional fleet management**](PLAN-054.md) `2026-09-01`
 - [ ] [**PLAN-069 Design managed and untrusted application controls**](PLAN-069.md) `2026-09-03`
@@ -67,4 +73,24 @@ disobeys on sight teaches a reader the wrong thing about the tree.
 - [-] [**PLAN-086 Compose a minimal MOS runtime from explicit payloads**](PLAN-086.md) `2026-09-06`
 
 - [ ] [**cx3576-reproducible-bsp-20260907T1400Z Make CX3576 BSP builds reproducible and extract Dockerfile logic**](cx3576-reproducible-bsp-20260907T1400Z.md) `2026-09-07`
-- [x] [**PLAN-088 cx3576 HDMI boot logo, with the console recoverable**](PLAN-088.md)
+- [x] [**PLAN-088 cx3576 HDMI boot logo, with the console recoverable**](PLAN-088.md) `2026-09-08`
+
+- [ ] [**file-ab-signed-components-20260908T1428Z File-based A/B and independently signed system components**](file-ab-signed-components-20260908T1428Z.md) `2026-09-08`
+- [-] [**PLAN-910 s905x5m board intake (Amlogic S7D)**](PLAN-910.md) `2026-08-30`
+- [-] [**PLAN-911 Close three runtime gaps found by exercising containers on hardware**](PLAN-911.md) `2026-08-31`
+- [ ] [**PLAN-912 Validate s905x5m Bluetooth peer interaction**](PLAN-912.md) `2026-08-31`
+- [ ] [**PLAN-913 Restore shared rootfs cold-build reproducibility**](PLAN-913.md) `2026-08-31`
+- [x] [**PLAN-914 Classify FIT signature as a tree-wide export debt**](PLAN-914.md) `2026-08-31`
+- [-] [**PLAN-915 Adopt per-board `SYS_BOOTM_LEN` derivations**](PLAN-915.md) `2026-08-31`
+- [-] [**PLAN-916 Build and prove a reference MQTT application package**](PLAN-916.md) `2026-08-31`
+- [x] [**PLAN-917 Move branch-owned record IDs into a reserved range**](PLAN-917.md) `2026-09-01`
+- [x] [**PLAN-918 Select the MQTT reference application as a component**](PLAN-918.md) `2026-09-01`
+- [x] [**PLAN-919 Investigate s905x5m Wi-Fi acceptance-evidence gap**](PLAN-919.md) `2026-09-01`
+- [x] [**PLAN-920 Build a booted-board runtime acceptance suite**](PLAN-920.md) `2026-09-01`
+- [x] [**PLAN-921 Integrate the BM201 front-panel userland**](PLAN-921.md) `2026-09-01`
+- [x] [**PLAN-922 Adapt s905x5m to the current mainline contracts**](PLAN-922.md) `2026-09-08`
+- [x] [**PLAN-923 Adapt the local MOS initialization helper to the JSON API**](PLAN-923.md) `2026-09-08`
+
+- [x] [**PLAN-924 Repair S905X5M front-panel package permissions**](PLAN-924.md) `2026-09-08`
+- [x] [**PLAN-925 Align the Wi-Fi client switch with the settings API**](PLAN-925.md) `2026-09-08`
+- [x] [**PLAN-089 The boot health gate requires core function, not the absence of every failure**](PLAN-089.md) `2026-09-08`

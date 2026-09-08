@@ -28,18 +28,20 @@ fact about the device rather than a preference:
 | Is it in the signed image | yes | no — the image is pulled at run time |
 | What signs it | the RAUC bundle signature, then dm-verity | nothing today |
 | Does an OS rollback take it back | yes, atomically, with the OS | no — it keeps running across the rollback |
-| Does its failure roll the OS back | yes — a failed unit fails the health gate | no — nothing watches it |
+| Does its failure roll the OS back | no — a failed unit is reported, not fatal; only a unit the health gate REQUIRES rolls the OS back, and no application is in that set | no — nothing watches it |
 | Where the code sits | the read-only verity root | `/mos/containers/storage` on DATA |
 | Changeable on a running device | no | yes — a file in `/etc/containers/systemd` |
 | Needs the container switch on | no | yes |
 
-Two consequences are worth reading twice. A native application is inside the
-update health gate, so a crash loop after an update rolls the device back to
-the slot that worked; a container is not, so a container that will not start
-is simply a container that is not running. And a container survives an OS
-rollback unchanged, which is a feature when the two release on different
-schedules and a hazard when the application depended on something the older
-OS does not have.
+Two consequences are worth reading twice. Neither path's failure rolls the OS
+back on its own: the health gate requires a small named set — the boot
+transaction finished, mosd answering, apid answering — and an application unit
+is not in it, so a crash loop after an update leaves you a running device with
+a broken application rather than a rollback. That is deliberate; a device
+rolled into a slot that may not run is worse than a device you can reach and
+fix. And a container survives an OS rollback unchanged, which is a feature when
+the two release on different schedules and a hazard when the application
+depended on something the older OS does not have.
 
 Neither path rolls back an application's **data**. That is section 6.
 
@@ -188,10 +190,14 @@ either path.
 > status: unsupported
 
 The last one has a native qualification that is easy to over-read in either
-direction. Native code inherits the whole-slot A/B rollback: a failed unit
-fails the health gate and the device returns to the slot that worked. That is
-a real automatic rollback, and it is not per-application — it moves every
-application on the device at once, and it moves none of their **data**. STATE
+direction, and it is narrower than it used to be. Native code inherits the
+whole-slot A/B rollback, but the health gate does not trigger it on an
+application's failure: it requires only that the slot can be RECOVERED — the
+boot transaction finished, mosd answers, apid answers — and reports everything
+else. An application that takes the device off the network entirely will fail
+the gate; one that simply crashes will not. When the rollback does happen it is
+not per-application — it moves every application on the device at once, and it
+moves none of their **data**. STATE
 and DATA sit outside the A/B pair by design, which is what makes them survive
 an update; the consequence is that an application which migrated its own
 schema on first start is, after any rollback, an old version pointed at new

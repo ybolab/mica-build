@@ -103,11 +103,11 @@ describe('every toolset opens and provides what it claims', () => {
     // and either can be absent on its own: grub-mkstandalone from grub-common,
     // and the module tree it compiles against from grub-efi-<arch>-bin.
     //
-    // The arm64 case is the one that earns its keep. Its package is foreign to
-    // this amd64 image and reaches it only through dpkg --add-architecture, so
+    // One target is foreign to the builder and reaches it only through
+    // dpkg --add-architecture, so
     // a container where that step silently did nothing would still answer
     // `grub-mkstandalone --version` and would fail at the first
-    // --format=arm64-efi, during an image assembly rather than here.
+    // --format for the foreign target, during an image assembly rather than here.
     for (const arch of ['amd64', 'arm64']) {
       const tb = opened.find(t => t.toolset.key === `uefi-assembly-${arch}`)
       expect(tb).toBeDefined()

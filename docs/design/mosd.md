@@ -683,7 +683,11 @@ health gate (`rootfs/overlay/usr/lib/mos/mos-health`) owns the automatic
 `rauc status mark-good` — it probes systemd, mosd and apid first, and an
 automatic mark in mosd would duplicate that gate and could confirm a slot the
 gate would have failed. `MarkUpdate` exists for the case the gate cannot
-decide (e.g. a failed unit the operator has judged acceptable).
+decide — a slot an operator has judged good or bad on evidence the gate does
+not have, such as an application that is up and behaving wrongly. Since
+PLAN-089 the gate requires a named set (the boot transaction finished, mosd
+answering, apid answering) rather than forbidding every failed unit, so a
+failed unit is no longer something an operator has to overrule here.
 
 **The update lifecycle on top (RFCT-283).** `CheckUpdate` / `FetchUpdate`
 drive the device-side client `rauc-update` as bounded subprocesses and record

@@ -76,12 +76,12 @@ export const CX3576_ASSEMBLY: Toolset = {
  * verbatim-ness is what the byte-identity gate rests on: BOOTX64.EFI is only as
  * reproducible as the grub-efi-amd64-bin in its container.
  *
- * The arm64 row substitutes exactly one package. grub-efi-arm64-bin is
- * `Architecture: arm64` and therefore not in an amd64 index, so the assembly
- * image adds the foreign architecture before installing it -- see
- * `aptPreamble` below. That works because the package is DATA: 234 module
+ * Each row enables its target architecture before installing the module
+ * package. Both targets can therefore be assembled on either builder
+ * architecture; adding the native architecture is harmless. The arm64 row
+ * substitutes exactly one package. That works because the package is DATA: module
  * files under /usr/lib/grub/arm64-efi and no executable. The tool that reads
- * them, grub-mkstandalone, is the host's own amd64 binary out of grub-common,
+ * them, grub-mkstandalone, is the host-native binary out of grub-common,
  * and it produced a byte-identical BOOTAA64.EFI across two runs when this was
  * measured (PLAN-085).
  */
@@ -101,6 +101,7 @@ export const UEFI_ARCHES: Readonly<Record<string, UefiArch>> = {
     grubFormat: 'x86_64-efi',
     efiFile: 'BOOTX64.EFI',
     grubPackage: 'grub-efi-amd64-bin',
+    foreignArch: 'amd64',
   },
   arm64: {
     grubFormat: 'arm64-efi',

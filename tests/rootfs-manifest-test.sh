@@ -384,7 +384,7 @@ done <<<"${PRODUCER_ROWS}"
 # The legal space, taken from the manifest tree and the board files rather than
 # from a list written here: a board, profile, radio or feature added to the
 # repository is enumerated by this check the day it lands.
-mapfile -t ALL_BOARDS < <(cd "${PACKAGES_DIR}" && for f in board-*.pkgs; do basename "${f}" .pkgs | sed 's/^board-//'; done)
+mapfile -t ALL_BOARDS < <(cd "${PACKAGES_DIR}" && for f in board-*.pkgs; do [[ "$f" != board-radio-* ]] || continue; basename "${f}" .pkgs | sed 's/^board-//'; done)
 mapfile -t ALL_PROFILES < <(cd "${PACKAGES_DIR}" && for f in profile-*.pkgs; do basename "${f}" .pkgs | sed 's/^profile-//'; done)
 mapfile -t ALL_FEATURES < <(
     cd "${PACKAGES_DIR}" && for f in feature-*.pkgs; do basename "${f}" .pkgs | sed 's/^feature-//'; done
@@ -423,6 +423,17 @@ for board in "${ALL_BOARDS[@]}"; do
     done
 done
 
+# Optional board components are reachable only in their supported dev profile.
+for component in bm201-front-panel mqtt-reference; do
+    run_resolve "${PACKAGES_DIR}" --board s905x5m --profile dev --radios 'wifi bluetooth' --without '' --components "$component"
+    if [ "${resolve_rc}" -eq 0 ]; then
+        REACHED="${REACHED}${resolve_out//$'\n'/ } "
+        RESOLUTIONS_N=$((RESOLUTIONS_N + 1))
+    else
+        fail "optional component ${component} cannot be resolved: ${resolve_err}"
+    fi
+done
+REACHED=$(printf '%s\n' $REACHED | sort -u | tr '\n' ' ')
 REACHED_N=0
 for _pkg in ${REACHED}; do REACHED_N=$((REACHED_N + 1)); done
 

@@ -27,6 +27,7 @@ import {
   type GptPartition,
   type GptTable,
 } from './image.ts'
+import { S905X5M_CHECKS } from './checks-s905x5m.ts'
 import { BOARD_CHECKS } from './checks-board.ts'
 import { BOOTCHAIN_CHECKS } from './checks-bootchain.ts'
 import { BUSYBOX_CHECKS } from './checks-busybox.ts'
@@ -161,6 +162,7 @@ export const CHECKS: readonly CheckCase[] = [
   ...DISPLAY_CHECKS,
   ...FSTAB_CHECKS,
   ...BOARD_CHECKS,
+  ...S905X5M_CHECKS,
   ...MQTT_CHECKS,
   ...SHADOW_CHECKS,
   ...DBUS_CHECKS,

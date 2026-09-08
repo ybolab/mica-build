@@ -646,6 +646,22 @@ export interface BuildBundleOptions {
   readonly log?: (line: string) => void
 }
 
+/** The board declares the DTB filename that its boot script loads. */
+export function ubootDtbName(geometry: Geometry): string {
+  const names = geometry.require('BOOT_SLOT_REQUIRED_FILES').split(/\s+/).filter(f => f.endsWith('.dtb'))
+  if (names.length !== 1 || !/^[A-Za-z0-9][A-Za-z0-9._-]*\.dtb$/.test(names[0]!)) {
+    throw new Error('a U-Boot bundle requires exactly one plain DTB filename in BOOT_SLOT_REQUIRED_FILES')
+  }
+  return names[0]!
+}
+
+/** Both slot names for the optional boot-digest protocol. */
+export function ubootDigestNames(geometry: Geometry): readonly string[] {
+  if (geometry.board.get('BOOT_DIGEST_ENV_NAME') === undefined) return []
+  const base = bootDigestBase(geometry)
+  return ['a', 'b'].map(suffix => `${base}-${suffix}.env`)
+}
+
 export interface BuildBundleResult {
   readonly bundleOut: string
   readonly payload: PayloadReport
@@ -779,6 +795,7 @@ export async function buildBundle(
       bootAttemptsSeen = requireBootAttempts(geometry, bootCmdText, bootCmdPath).length
 
       const bootScriptName = geometry.require('BOOT_SCRIPT_NAME')
+      const dtbName = ubootDtbName(geometry)
       await makeBootScript(tb, {
         input: bootCmdPath,
         output: join(workDir, bootScriptName),
@@ -815,7 +832,7 @@ export async function buildBundle(
       if (inputs.dtb === undefined || inputs.dtb === '') {
         throw new Error(`no DTB was supplied, and a U-Boot board's boot payload carries one`)
       }
-      await tb.must(['cp', inputs.dtb, join(workDir, 'rk3576-src.dtb')], {
+      await tb.must(['cp', inputs.dtb, join(workDir, dtbName)], {
         note: `could not stage the device tree from ${inputs.dtb}`,
       })
 
@@ -829,13 +846,16 @@ export async function buildBundle(
       // booting. The two are identical here because there is one Image in this
       // payload; they stop being identical the moment the other slot is updated
       // separately, which is the case the suffix exists for.
-      const digestBase = bootDigestBase(geometry)
-      const digestText = bootDigestEnv(
-        BOOT_DIGEST_ARTEFACTS.map(a => ({ ...a, bytes: readFileSync(join(workDir, a.file)) })),
-        join(workDir, `${digestBase}-<slot>.env`),
-      )
-      for (const suffix of ['a', 'b']) {
-        writeFileSync(join(workDir, `${digestBase}-${suffix}.env`), digestText)
+      // Only a board whose boot script declares this protocol consumes it.
+      const digestPaths = ubootDigestNames(geometry).map(name => join(workDir, name))
+      if (digestPaths.length > 0) {
+        const digestText = bootDigestEnv(
+          BOOT_DIGEST_ARTEFACTS.map(a => ({ ...a, bytes: readFileSync(join(workDir, a.file)) })),
+          digestPaths[0]!,
+        )
+        for (const path of digestPaths) {
+          writeFileSync(path, digestText)
+        }
       }
 
       await tb.must(
@@ -853,10 +873,9 @@ export async function buildBundle(
         recursive: true,
         sources: [
           join(workDir, 'Image'),
-          join(workDir, 'rk3576-src.dtb'),
+          join(workDir, dtbName),
           join(workDir, bootScriptName),
-          join(workDir, `${digestBase}-a.env`),
-          join(workDir, `${digestBase}-b.env`),
+          ...digestPaths,
           join(workDir, `${base}-a.env`),
           join(workDir, `${base}-b.env`),
         ],

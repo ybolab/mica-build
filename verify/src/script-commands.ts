@@ -12,7 +12,8 @@
 // extractor is deliberately conservative and the oracle says so -- commands the
 // scripts invoke through their own `run`/`have` wrappers (busctl, rauc,
 // systemctl, curl, wget) are not in this set and must not be, because
-// `mos-health` uses `have X ||` to mark curl and wget optional.
+// `mos-health` reaches curl and wget only through `have`, which is what marks
+// them optional to this extractor.
 //
 // `sq_resolves_cmd` was, for a while, the only path test here that resolved a
 // symlink INSIDE the image; everywhere else `[ -f ]` and `stat` followed a link

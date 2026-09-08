@@ -173,7 +173,10 @@ on stdin it records `not tested — no operator present`, never a pass.
   partition's size against the disk's; `/sys/block/mmcblk0/device/{cid,name,
   manfid,life_time,pre_eol_info}`; the provisioning record and the claim state.
 - **Pass — row 1 (Cold boot).** The health gate green — `mos-health` ran and
-  reached `rauc status mark-good` — with no failed units, **repeatably**:
+  reached `rauc status mark-good` — **repeatably**. Record failed units beside
+  it rather than as part of it: since PLAN-089 a failed unit is reported and
+  not fatal, so a green gate with a failed unit is a real state and the row has
+  to say which it saw.
   §4 of [qualification.md](qualification.md) requires the cycle count, and the
   collector runs the cold cycle **five** times, asking for a power cycle
   between each and re-reading the same probe set. Five identical greens is the
@@ -320,7 +323,8 @@ previous shutdown. This is the *baseline*: stage 7 compares against it.
 - **Scriptable, after.** The same probe set, plus `journalctl --list-boots` and
   whether the clock moved backwards.
 - **Pass — row 2 (Warm boot).** Three reboots from a running system, each
-  reaching the health gate green with no failed units.
+  reaching the health gate green, with the failed-unit list recorded beside the
+  verdict rather than folded into it (see row 1).
 - **Pass — row 8 (RTC).** The driver is built and the node is enabled, so the
   chip should be there; **what this stage settles is the backup cell.** One of
   two honest outcomes, and the row records which:
@@ -418,9 +422,12 @@ previous shutdown. This is the *baseline*: stage 7 compares against it.
 See §6 for what the software half already proves and what is left.
 
 - **Human.** Put two bundles on the device: one that installs and boots, one
-  that installs and **fails its health gate**. Both must be signed against the
-  keyring in the running root, or RAUC refuses them and the row measures
-  nothing.
+  that installs and **fails its health gate**. Since PLAN-089 the second one
+  has to break a REQUIRED member — the boot transaction, mosd or apid — because
+  a bundle that merely breaks some unit now boots and confirms; see
+  `health-rejects-broken-slot` in §4's additions for which mutation to make.
+  Both must be signed against the keyring in the running root, or RAUC refuses
+  them and the row measures nothing.
 - **Scriptable.** Record the starting slot, `BOOT_ORDER` and both counters;
   install the good bundle; re-read all three; reboot; confirm the new slot
   booted (`rauc.slot=` on `/proc/cmdline`, `rauc status`), that the health gate
@@ -528,11 +535,15 @@ because the region moved: run this probe over **two** warm reboots and read the
 second.
 
 **`regdb-loaded` (stage 4), and read this before flashing.** The unit's
-`ExecStart` carries no `-`, so a failure is a failed unit, and `health.conf`
-tolerates none: on a device this is a health-gate failure and therefore an A/B
-rollback. That is deliberate — every way it can fail is excluded by
-construction and a dash would hide a real defect — and it is why the first unit
-to run it is a bench unit. If it fails here, the finding is the image's, not
+`ExecStart` carries no `-`, so a failure is a failed unit and the gate names it
+in the journal and reports it at live-state `health.units`. It is **no longer a
+health-gate failure and no longer a rollback**: PLAN-089 inverted the gate to a
+required set, and this unit is not in it. It was, and that is why this
+paragraph exists — on 2026-09-08 this exact unit failed on hardware and cost
+the slot a boot credit on every boot, on an SKU whose phy is self-managed and
+never consults what the unit loads. The dash is still absent deliberately, so
+that the failure is visible rather than swallowed; what changed is what a
+visible failure costs. If it fails here, the finding is still the image's, not
 the board's. The probes: `systemctl status mos-regdb-reload.service`,
 `iw reg get`, and `dmesg | grep -iE 'regulatory|regdb'`. **Pass:** the unit
 succeeded, and `iw reg get` reports a domain the database supplied rather than
@@ -549,6 +560,49 @@ success. A self-managed wiphy does not take the core regulatory domain, so
 `iw phy phy0 reg get` may differ from `iw reg get` — record **both**, because
 which of them a `country_code` in a rendered hostapd configuration actually
 reaches is the open question this database was packaged for.
+
+### The health gate's required set (PLAN-089)
+
+Three probes that only a booted device can settle, added for the same reason
+the block above exists: the gate's criterion changed on 2026-09-08 and the
+change is about what a device DOES when something is wrong, which no offline
+test can observe.
+
+| Probe | Stage | Claim |
+|---|---|---|
+| `health-required-set` | 1 `firstboot` | every member of the shipped required set passes on a real boot |
+| `health-tolerates-failed-unit` | 4 `network` | a failed unit outside the set does not cost a boot credit |
+| `health-rejects-broken-slot` | 8 `update` | a slot missing a required member still rolls back |
+
+**`health-required-set` (stage 1).** Read `journalctl -u mos-health` and
+`systemctl show -p Result --value mos-health.service`. **Pass:** the log carries
+`required set: boot-settled mosd apid`, one `required member <m>: OK` line for
+each, and `booted slot <X> marked good`. **Fail, and this is the run that can
+only happen here:** a member that is required but not PROVABLE on this board —
+`required member apid: apid.service is not installed`, or `neither curl nor
+wget` — which is a refusal by design and would loop the device. The offline
+suite fakes both daemons; nothing before this stage has ever asked the shipped
+image to satisfy its own conf.
+
+**`health-tolerates-failed-unit` (stage 4).** The incident replayed with the
+fix in, using the unit that caused it. With `mos-regdb-reload.service` in the
+failed state (`regdb-loaded` above says whether it is), read the boot counters
+before and after a reboot with `fw_printenv BOOT_ORDER BOOT_A_LEFT BOOT_B_LEFT`.
+**Pass:** `mos-health` names the unit (`note: failed unit:
+mos-regdb-reload.service`), reports it (`GET /api/v1/state/health` shows
+`units` at `degraded` naming it), reaches `mark-good`, and the booted slot's
+counter comes back **full**. **Fail:** the counter decrements — the gate is
+still refusing on a failed unit, which is the whole defect.
+
+**`health-rejects-broken-slot` (stage 8).** Stage 8 already needs *"one that
+installs and boots, one that installs and fails its health gate"*, and under
+the new criterion the second bundle has to break a **required member** —
+masking `apid.service`, or `mosd.service`, in the bundle's root is the smallest
+one that is not also a broken kernel. **Pass:** the bad slot boots, the gate
+logs `required member apid` (or `mosd`) with no `mark-good`, and the slot rolls
+back after its credits. **Fail, and it is the one worth naming:** a bundle that
+merely breaks *some* unit now boots, confirms and measures nothing — a green
+that means the bundle was wrong, not that rollback works.
 
 **`gadget-bound` (stage 5).** Beyond row 7's existing probe set, read
 `ls -l /sys/kernel/config/usb_gadget/cx3576_serial/configs/c.1/`, `cat

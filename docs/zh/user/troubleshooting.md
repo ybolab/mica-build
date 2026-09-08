@@ -52,10 +52,12 @@ wpa_supplicant 与 resolved 此刻实际观察到的状态，也就是"设备认
 - **服务状态：**`systemctl status <unit>`、`systemctl is-system-running`、
   `journalctl -u <unit>`。journal 是易失的——它不跨重启保留，所以在给
   故障设备断电之前先捕获它。
-- **启动健康：**健康门记录每个探测及其裁决（`journalctl -u mos-health`）。
-  更新后持续回滚的槽，失败在这三项之一：systemd 稳定、mosd 应答、apid
-  监听——日志会点名是哪一项。你已判定可接受的单元可以通过
-  `/etc/mos/health.conf` 容忍。
+- **启动健康：**健康门记录它所需的集合、每个成员的裁决，以及它看到的每一个
+  失败 unit（`journalctl -u mos-health`）。更新后持续回滚的槽，失败在所需成员
+  之一：启动事务稳定、mosd 应答、apid 监听——日志会点名是哪一项。单个失败的
+  unit **不会**让槽回滚；它被上报到 live-state 的 `health.units`，用
+  `GET /api/v1/state/health` 或从一份诊断快照里读。健康门要求什么写在只读根里的
+  `/etc/mos/health.conf`。
 - **更新状态：**RAUC 的槽状态（已启动槽、每槽状态、最近一次安装错误）
   可通过管理守护进程的状态读到，也可在 shell 里用 `rauc status`。
 - **容器：**[../design/containers.md](../design/containers.md) 中的故障表

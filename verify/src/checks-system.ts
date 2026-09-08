@@ -1,12 +1,12 @@
 // Batch 4a, the remainder: the small families that read only the unpacked root.
 //
-// Twenty-eight conclusions on cx3576 and twenty-seven on x64, grouped because
+// Twenty-nine conclusions on cx3576 and twenty-eight on x64, grouped because
 // they share the same unpacked-root input:
 //
 //   systemd-networkd enabled                1 / 1
 //   the ELF architecture of mosd/apid       2 / 2
 //   the bootloader environment tools          5 / 4  (2 SKIPs on grub)
-//   the health gate's root-side pair          2 / 2
+//   the health gate's root-side trio          3 / 3
 //   systemd-repart definitions              3 / 3
 //   the AuthorizedKeysFile drop-in          3 / 3
 //   the boot scripts' external commands     1 / 1
@@ -56,6 +56,7 @@ const SSHD_DROPIN = '/etc/ssh/sshd_config.d/05-mos-authorized-keys.conf'
 const AK_EXPECT = '/etc/ssh/authorized_keys.d/%u'
 const SSH_UNIT = '/usr/lib/systemd/system/ssh.service'
 const MOS_HEALTH = '/usr/lib/mos/mos-health'
+const HEALTH_CONF = '/etc/mos/health.conf'
 
 // readers
 
@@ -396,7 +397,7 @@ export function devLineCount(root: string, path: string): string {
   return n === 0 ? '0\n0' : String(n)
 }
 
-// the health gate's two root-side conclusions
+// the health gate's three root-side conclusions
 
 const HEALTH_CHECKS: readonly CheckCase[] = [
   {
@@ -457,6 +458,53 @@ const HEALTH_CHECKS: readonly CheckCase[] = [
           : `no curl or wget in the image, so mos-health probe c degrades to 'SKIP (no curl or wget `
             + `in the image)' and apid is never actually probed by the health gate`,
       )]
+    },
+  },
+
+  {
+    // PLAN-089. The gate's criterion is the `require=` set in
+    // /etc/mos/health.conf, and there is deliberately no compiled-in default:
+    // a conf with no `require=` line means "no criterion", which the gate
+    // refuses rather than reading as "confirm everything".
+    //
+    // That refusal is the right runtime behaviour and the wrong place to FIND
+    // OUT. A shipped root whose health.conf lost its require lines -- an
+    // overlay that did not install, a stray edit -- refuses to mark-good on
+    // every boot, so the slot loses a credit every boot and the device falls
+    // to the other slot and loops. Nothing about the image looks wrong. Asked
+    // here, it is a build that fails; asked on the device, it is a fleet.
+    id: 'health-gate-required-set-not-empty',
+    shell: {
+      pass: 'the health gate ships a non-empty required set: ',
+      fail: [
+        '/etc/mos/health.conf missing, so the health gate has no criterion',
+        'ships no `require=` line, so the health gate would refuse',
+      ],
+    },
+    run: async (ctx): Promise<readonly CheckResult[]> => {
+      const root = await packedRoot(ctx)
+      const id = 'health-gate-required-set-not-empty'
+      if (!regularFileInRoot(root, HEALTH_CONF)) {
+        return [verdict(id, false,
+          '/etc/mos/health.conf missing, so the health gate has no criterion to confirm the '
+          + 'booted slot against and would refuse on every boot')]
+      }
+      // Exactly what the gate reads: a line whose FIRST characters are
+      // `require=`. A commented-out one is not a member, and reading it as one
+      // here would report a required set the device does not have.
+      const members = text(root, HEALTH_CONF).split('\n')
+        .filter(l => l.startsWith('require='))
+        .map(l => l.slice('require='.length).trim())
+        .filter(m => m !== '')
+      if (members.length === 0) {
+        return [verdict(id, false,
+          '/etc/mos/health.conf ships no `require=` line, so the health gate would refuse to '
+          + 'confirm the booted slot on every boot: the slot loses a boot credit each time and '
+          + 'the device falls to the other slot and loops. Fix belongs in '
+          + 'rootfs/overlay/etc/mos/health.conf, NOT here')]
+      }
+      return [verdict(id, true,
+        `the health gate ships a non-empty required set: ${members.join(', ')}`)]
     },
   },
 ]

@@ -151,27 +151,46 @@ decision: a device that keeps every daemon's stdout forever fills the
 partition its own updates need.
 
 Health is where the native path differs most from the container one, and it
-is worth being exact about what it does and does not promise.
+is worth being exact about what it does and does not promise — **it promises
+less than it used to, deliberately** (PLAN-089).
 [`rootfs/overlay/usr/lib/mos/mos-health`](../../rootfs/overlay/usr/lib/mos/mos-health)
-runs once per boot, waits for systemd to settle, and refuses to confirm the
-booted slot if **any** unit is in the failed state and not named in
-[`/etc/mos/health.conf`](../../rootfs/overlay/etc/mos/health.conf)'s
-`tolerate-failed` allowlist. A slot that is never confirmed is rolled back by
-the U-Boot attempt counter.
+runs once per boot, waits for systemd to settle, and confirms the booted slot
+when a **required set** passes: the boot transaction finished, mosd answers on
+`com.mos.mosd1`, apid answers on `/healthz`. The set is named by `require=`
+lines in
+[`/etc/mos/health.conf`](../../rootfs/overlay/etc/mos/health.conf). Everything
+else the gate observes, **including a unit in the failed state**, is reported
+and never fatal. A slot that is never confirmed is rolled back by the U-Boot
+attempt counter.
 
-So a native application unit is already inside the update health gate. Three
+Until PLAN-089 the rule was the inverse — any failed unit not named in a
+`tolerate-failed` allowlist refused the slot, and that allowlist shipped empty.
+It cost a cx3576 a boot credit on every boot for a oneshot that governs nothing
+on that SKU. The criterion is now "can this slot be recovered", not "is
+everything on this device working".
+
+So a native application unit is **not** inside the update health gate. Three
 things follow:
 
-- **A crash loop after an update rolls the device back.** That is the
-  behaviour to want, and it is free — the unit only has to fail rather than
-  exit zero and pretend.
-- **`Type=notify` and a real readiness signal make the gate mean something.**
-  A unit that reports started before it can serve is a unit the gate passes
-  while the application is down. `WatchdogSec=` plus a periodic keepalive
-  extends the same idea past startup.
-- **The allowlist is a build-time decision.** `/etc/mos/health.conf` is inside
-  the read-only root, so tolerating a unit's failure is an image change that
-  goes through review, not something set on a device after the fact.
+- **A crash loop after an update does not roll the device back.** It leaves a
+  running, reachable, updatable device with a broken application on it — which
+  is the better of the two failures, because the alternative is a device
+  rolled into a slot that may not run either. Detect it with the health report
+  and the diagnostics, and fix it with an update.
+- **What an application CAN still fail is a required member.** A unit that
+  takes the network down, wedges mosd, or takes port 443 away from apid fails
+  the gate — not because it is an application, but because it removed the way
+  in. `Type=notify` with a real readiness signal, and `WatchdogSec=` with a
+  keepalive, are still how a unit tells systemd the truth about itself; they
+  now inform the report rather than the verdict.
+- **The required set is a build-time decision.** `/etc/mos/health.conf` is
+  inside the read-only root, so what the gate requires is an image change that
+  goes through review, not something set on a device after the fact. A conf
+  with no `require=` line is REFUSED rather than read as "confirm anything":
+  an empty required set would mean always-mark-good.
+- **A failed unit is still visible.** The gate reports the count and the names
+  to mosd at live-state `health.units`, one journal line per unit, and the
+  entry ships in a diagnostic snapshot under `failures.health`.
 
 ## 7. Named hardware
 
