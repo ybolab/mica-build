@@ -71,10 +71,11 @@
 
 import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
+import { SHIPPED } from './board-scope.ts'
 import { packedRoot } from './checks-root.ts'
 import type { CheckCase } from './checks.ts'
 import type { CheckResult } from './parity.ts'
-import { verdict } from './verdict.ts'
+import { skipped, verdict } from './verdict.ts'
 
 /**
  * One required symbol: what it is, what loads it, and what it buys.
@@ -204,6 +205,70 @@ export const REQUIRED: readonly Requirement[] = [
 ]
 
 /**
+ * One symbol a board's kernel must NOT build, and what building it would turn
+ * on.
+ *
+ * The opposite direction from REQUIRED, and it needs one because the two
+ * failures are not each other's mirror. A missing required symbol is a
+ * capability the image promised and does not have. An excluded symbol that
+ * appears is a capability nobody asked for that CHANGES WHAT THE DEVICE DOES
+ * the moment it exists -- there is no code to add, no unit to enable, and
+ * therefore nothing else in this contract that would notice.
+ */
+interface Exclusion {
+  readonly symbol: string
+  readonly what: string
+}
+
+/**
+ * Per board, the symbols its kernel must not build.
+ *
+ * PER BOARD AND NOT SHARED, which is the opposite of how
+ * `boards/common/mos-required.fragment` works, and the asymmetry is the
+ * finding rather than an oversight. x64 and virt-arm64 build
+ * `CONFIG_AUTOFS_FS=y` -- both configs derive from a mainline defconfig that
+ * sets it -- and cx3576 does not, because its config derives from a Rockchip
+ * vendor tree that does not. That difference was invisible until the board
+ * booted and systemd said `Failed to find module 'autofs4'` (RFCT-355).
+ *
+ * WHY THE ANSWER IS NOT "MAKE THEM AGREE", which was the obvious repair. The
+ * three boards differ in something else first: cx3576's boot slots are typed
+ * ESP and appear in no fstab, so `systemd-gpt-auto-generator` generates an
+ * `efi.automount` for BOOT-A on it and on neither of the others (x64 and
+ * virt-arm64 mount their ESP from fstab, which is what makes the generator
+ * skip it). On the booted hardware that generated unit is inert, and systemd
+ * says exactly why: `Starting of efi.automount - EFI System Partition
+ * Automount unsupported.` -- `automount_supported()` is `access("/dev/autofs")`
+ * and there is no autofs. Building autofs into this board's kernel would
+ * therefore not add a capability nothing uses; it would arm a read-write
+ * automount of a RAUC-owned boot partition, chosen by disk order rather than
+ * by which slot is running, on a device where /boot is deliberately not a
+ * mountpoint. That is a decision about the generator, and it is not this one.
+ *
+ * So the symbols stay out, and this is what says so. The systemd line is
+ * expected: `kmod_setup()` asks for `autofs4` on every boot whatever the unit
+ * set is, so it is not evidence that anything wanted it. The only two
+ * `.automount` units in the packed root are that generated `efi.automount` and
+ * `proc-sys-fs-binfmt_misc.automount`, which is skipped on its own
+ * `ConditionPathExists=/proc/sys/fs/binfmt_misc` because CONFIG_BINFMT_MISC is
+ * not set either.
+ */
+export const EXCLUDED_BY_BOARD: Readonly<Record<string, readonly Exclusion[]>> = {
+  cx3576: [
+    {
+      symbol: 'CONFIG_AUTOFS_FS',
+      what: 'automount support, which would arm the efi.automount that '
+        + 'systemd-gpt-auto-generator builds for this board’s ESP-typed BOOT-A',
+    },
+    {
+      symbol: 'CONFIG_AUTOFS4_FS',
+      what: 'the same filesystem under the name systemd still modprobes, which is why the '
+        + 'absence of both and not just one is the statement',
+    },
+  ],
+}
+
+/**
  * The half of the list modprobe can be asked about.
  *
  * Everything not here is asserted by the config check ALONE, which is why
@@ -261,7 +326,11 @@ export function kernelRelease(root: string): string {
  * `CONFIG_BRIDGE`, and `# CONFIG_WIREGUARD is not set` is read as the absence
  * it is rather than as a line mentioning the symbol.
  */
-export function configLines(root: string, release: string): ConfigLine[] {
+export function configLines(
+  root: string,
+  release: string,
+  symbols: readonly string[] = REQUIRED.map(r => r.symbol),
+): ConfigLine[] {
   let text = ''
   try {
     text = readFileSync(join(root, 'boot', `config-${release}`), 'utf8')
@@ -270,7 +339,7 @@ export function configLines(root: string, release: string): ConfigLine[] {
     text = ''
   }
   const lines = text.split('\n')
-  return REQUIRED.map(({ symbol }) => {
+  return symbols.map((symbol) => {
     const found = lines.find(l => l.startsWith(`${symbol}=`))
     if (found === undefined) return { symbol, line: undefined, value: undefined }
     const raw = found.slice(symbol.length + 1).trim()
@@ -428,6 +497,7 @@ export function brokenModules(root: string, release: string): BrokenModule[] {
 }
 
 const CONFIG_ID = 'kernel-config-floor-built-in'
+const EXCLUDED_ID = 'kernel-config-excluded'
 const MODPROBE_ID = 'kernel-floor-resolves-builtin'
 
 export const KERNEL_CHECKS: readonly CheckCase[] = [
@@ -541,5 +611,55 @@ export const KERNEL_CHECKS: readonly CheckCase[] = [
               + `config check above still green`,
       )]
     },
+  },
+
+  {
+    // The other direction: symbols this board's kernel must NOT build. The
+    // argument, the measurement and why "make the boards agree" is not the
+    // repair are all at EXCLUDED_BY_BOARD.
+    id: EXCLUDED_ID,
+    boards: Object.keys(EXCLUDED_BY_BOARD),
+    shell: {
+      pass: 'the shipped kernel config leaves out',
+      fail: 'the shipped kernel config builds',
+    },
+    run: async (ctx): Promise<readonly CheckResult[]> => {
+      const excluded = EXCLUDED_BY_BOARD[ctx.board.name] ?? []
+      const root = await packedRoot(ctx)
+      const release = kernelRelease(root)
+      const names = excluded.map(e => e.symbol.slice('CONFIG_'.length)).join(', ')
+      if (release === '') {
+        return [verdict(EXCLUDED_ID, false,
+          'no single /boot/config-* in the packed root, so whether this kernel leaves out '
+          + `${names} cannot be decided`)]
+      }
+      const found = configLines(root, release, excluded.map(e => e.symbol))
+      const built = found.filter(f => f.value !== undefined)
+      const quoted = found
+        .map(f => f.line ?? `${f.symbol} (no such line; absent or "is not set")`)
+        .join(', ')
+      const ok = built.length === 0
+      return [verdict(
+        EXCLUDED_ID,
+        ok,
+        ok
+          ? `the shipped kernel config leaves out ${names} in /boot/config-${release}: ${quoted}`
+          : `the shipped kernel config builds ${built.map(b => `${b.symbol}=${b.value}`).join(', ')} `
+            + `in /boot/config-${release}: ${quoted}. Each one turns on: `
+            + `${built.map(b => `${b.symbol} -- ${excluded.find(e => e.symbol === b.symbol)?.what ?? '?'}`)
+              .join('; ')}. Nothing else in this contract would notice: there is no unit to enable `
+            + `and no code to add, so the behaviour arrives with the symbol`,
+      )]
+    },
+  },
+
+  {
+    id: `${EXCLUDED_ID}-skipped`,
+    boards: SHIPPED.map(b => b.name).filter(n => EXCLUDED_BY_BOARD[n] === undefined),
+    shell: { skip: 'the excluded-symbol assertions (' },
+    run: async (ctx): Promise<readonly CheckResult[]> => [skipped(`${EXCLUDED_ID}-skipped`,
+      `the excluded-symbol assertions (${ctx.board.name} names none): a board lists a symbol here `
+      + `when building it would change what the device does with no unit and no code to say so, `
+      + `and this board has no such symbol on file`)],
   },
 ]

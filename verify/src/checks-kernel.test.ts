@@ -35,9 +35,10 @@ import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { loadBoard } from './board.ts'
 import { packedRootFixture, type RootFixture } from './checks-fixture.ts'
+import { SHIPPED } from './board-scope.ts'
 import {
-  KERNEL_CHECKS, REQUIRED, RESOLVABLE, brokenModules, builtinCount, configLines, depCount,
-  kernelRelease, resolveModule,
+  EXCLUDED_BY_BOARD, KERNEL_CHECKS, REQUIRED, RESOLVABLE, brokenModules, builtinCount, configLines,
+  depCount, kernelRelease, resolveModule,
 } from './checks-kernel.ts'
 import type { CheckCase } from './checks.ts'
 import { REPO_ROOT, boardEnvPath } from './paths.ts'
@@ -50,6 +51,7 @@ const RELEASE = '6.12.107'
 
 const CONFIG_ID = 'kernel-config-floor-built-in'
 const MODPROBE_ID = 'kernel-floor-resolves-builtin'
+const EXCLUDED_ID = 'kernel-config-excluded'
 
 function checkNamed(id: string): CheckCase {
   const found = KERNEL_CHECKS.find(c => c.id === id)
@@ -114,12 +116,94 @@ describe('the register entries', () => {
     // ships one. An UNDEFINED `boards` is what "every board" spells, so this
     // asserts the absence rather than a list that would have to be edited for a
     // fourth board.
-    expect(KERNEL_CHECKS.map(c => c.id).sort()).toEqual([CONFIG_ID, MODPROBE_ID].sort())
+    expect(KERNEL_CHECKS.map(c => c.id).sort())
+      .toEqual([CONFIG_ID, MODPROBE_ID, EXCLUDED_ID, `${EXCLUDED_ID}-skipped`].sort())
     expect(KERNEL_CHECKS.find(c => c.id === CONFIG_ID)?.boards).toBeUndefined()
     // The modprobe check keeps its scope, for the reason checks-kernel.ts gives:
     // its dependency walk covers the whole of modules.dep, which is four entries
     // on this board and a vendor tree's worth on cx3576.
     expect(KERNEL_CHECKS.find(c => c.id === MODPROBE_ID)?.boards).toEqual(['x64'])
+  })
+
+  test('the exclusion check and its skip partition the shipped boards', () => {
+    // Every board reaches exactly one of the two, so a board that stopped
+    // naming an excluded symbol prints the skip rather than nothing at all --
+    // which is what a scope of `Object.keys(EXCLUDED_BY_BOARD)` alone would do,
+    // and it would look identical to the check having gone quiet.
+    const named = KERNEL_CHECKS.find(c => c.id === EXCLUDED_ID)?.boards ?? []
+    const skipped = KERNEL_CHECKS.find(c => c.id === `${EXCLUDED_ID}-skipped`)?.boards ?? []
+    expect([...named].sort()).toEqual(Object.keys(EXCLUDED_BY_BOARD).sort())
+    expect([...named, ...skipped].sort()).toEqual(SHIPPED.map(b => b.name).sort())
+    expect(named.filter(n => skipped.includes(n))).toEqual([])
+  })
+
+  test('the exclusion list is not empty, so neither branch is vacuous', () => {
+    // The shape "asserts a list is absent" passes for free once the list is
+    // emptied. cx3576 names both spellings of autofs; a change that removed
+    // them would leave the check green about nothing.
+    const entries = Object.values(EXCLUDED_BY_BOARD)
+    expect(entries.length).toBeGreaterThan(0)
+    expect(entries.every(list => list.length > 0)).toBe(true)
+  })
+})
+
+describe('the excluded kernel symbols', () => {
+  // The cx3576 fixture, because that is the board that names any. The seeded
+  // config carries the required floor and nothing else, so autofs is absent in
+  // it exactly as it is in the board's real resolved config.
+  const cx3576 = loadBoard(boardEnvPath('cx3576'))
+
+  async function withCx3576(body: (fx: RootFixture) => Promise<void>): Promise<void> {
+    const fx = packedRootFixture(cx3576)
+    try {
+      const green = await only(fx, EXCLUDED_ID)
+      expect(green.verdict).toBe('pass')
+      expect(green.message).toContain('leaves out AUTOFS_FS, AUTOFS4_FS')
+      await body(fx)
+    }
+    finally {
+      fx.dispose()
+    }
+  }
+
+  test('green when neither spelling is in the config', async () => {
+    await withCx3576(async () => {})
+  })
+
+  test('RED when a vendor config bump switches autofs on', async () => {
+    // The direction this check exists for. Nothing else in the contract moves:
+    // no unit is added, no file changes, and the device starts honouring the
+    // efi.automount systemd-gpt-auto-generator already writes for BOOT-A.
+    await withCx3576(async (fx) => {
+      const full = join(fx.root, 'boot', `config-${RELEASE}`)
+      writeFileSync(full, `${readFileSync(full, 'utf8')}CONFIG_AUTOFS_FS=y\n`)
+      const got = await only(fx, EXCLUDED_ID)
+      expect(got.verdict).toBe('fail')
+      expect(got.message).toContain('builds CONFIG_AUTOFS_FS=y')
+      expect(got.message).toContain('efi.automount')
+    })
+  })
+
+  test('RED on the OTHER spelling too, which is the one systemd modprobes', async () => {
+    await withCx3576(async (fx) => {
+      const full = join(fx.root, 'boot', `config-${RELEASE}`)
+      writeFileSync(full, `${readFileSync(full, 'utf8')}CONFIG_AUTOFS4_FS=m\n`)
+      const got = await only(fx, EXCLUDED_ID)
+      expect(got.verdict).toBe('fail')
+      expect(got.message).toContain('builds CONFIG_AUTOFS4_FS=m')
+    })
+  })
+
+  test('RED, not green, when there is no config to read', async () => {
+    // The absence branch: "no line says CONFIG_AUTOFS_FS=y" is trivially true
+    // of a root with no kernel config at all, which is the shape in which an
+    // exclusion check quietly stops asserting anything.
+    await withCx3576(async (fx) => {
+      rmSync(join(fx.root, 'boot', `config-${RELEASE}`))
+      const got = await only(fx, EXCLUDED_ID)
+      expect(got.verdict).toBe('fail')
+      expect(got.message).toContain('no single /boot/config-*')
+    })
   })
 })
 
