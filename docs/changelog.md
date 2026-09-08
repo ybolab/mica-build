@@ -928,3 +928,12 @@ across start, shutdown and reboot, the container-network destination under
 `/mos`, and the change list P5 inherits. L1 reproduced the static audit and one
 candidate boot before merging. Record `20260908-1712-p1-writable-path-audit`.
 
+## 2026-09-08 21:04 [progress]
+
+P1-A of `20260908-1428-file-ab-signed-components` merged, completing P1: the
+feasibility gate passed on every proof without weakening a requirement. The
+kernel floor now embeds a verity trust anchor and requires the root-hash
+signature check, the contract reads it back, and the signed-boot lab is on the
+tree. Two shell lints that the P1-B merge had left red on main were fixed in
+the same step. P2 (frozen artifact/descriptor contracts) is dispatched for x64.
+

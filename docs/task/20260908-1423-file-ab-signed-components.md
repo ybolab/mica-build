@@ -72,3 +72,18 @@ Awaiting implementation approval for the completed file-based A/B proposal.
   tasks (`state-units-never-load`, `ssh-generator-vs-image-policy`,
   `wtmp-unbounded-append`). Harness: `tests/p1-writable-path-audit/`.
 
+- 2026-09-08 21:04: P1-A (`ew42ee3o`) merged. All five boot/trust proofs feasible as
+  drafted, nothing weakened: signed dm-verity accepted/refused with one errno
+  set on x64, virt-arm64 and the cx3576 vendor kernel; one kernel boots two
+  signed roots (switch_root on all three); cx3576 FIT enforcement in the
+  U-Boot sandbox and the board's control FDT taking a required key; systemd-boot
+  shared-UKI Type #1 entries with boot counting and `LoaderEntrySelected` on
+  x64 and virt-arm64. Tree: verity symbols in the shared kernel floor, the
+  `verity` dev-key domain, the `kernel-verity-trust-anchor` contract check
+  (cx3576 455, virt-arm64 325, x64 326), and the lab under
+  `tests/signed-boot-lab/`. L1 re-ran the contracts, refused a byte-flipped
+  signature, and required the lab on the branch and a reproducible x64 verdict
+  before merging. P1 is complete; P2 opens on x64. Carried into P2: the anchor
+  as a distributed build input, and kernel certificate expiry/revocation.
+  The shipped cx3576 path still boots an unsigned legacy `boot.scr` (P6).
+
