@@ -29,19 +29,35 @@ set -euo pipefail
 #     invocation instead of looping forever inside it. The next invocation is
 #     the post-reset boot.
 
-#  3. "Kernel accepted control" is emulated -- the one place the harness stands
-#     in for hardware, and load-bearing for the decrement trajectory. On
-#     sandbox, booti can NEVER hand over control (booti_setup() fails
-#     unconditionally), so a cycle that reaches booti always falls through to
-#     the script's burn-the-slot tail. A slot that "boots and hangs before
-#     mark-good" -- the case the 3->2->1->0 watchdog trajectory exists for --
-#     is modelled by seeding kernel_addr_r above the sandbox's 2048 MiB RAM:
-#     `load mmc 0:${bootpart} ${kernel_addr_r} Image` then hits the sandbox's
-#     hard os_abort() on the unmappable address and the process dies at exactly
-#     the semantic point where control leaves U-Boot -- after the decrement's
-#     saveenv, before the burn. kernel_addr_r is board-env-provided on hardware
-#     (never set by the script), so seeding it is environment, not a script
-#     change.
+#  3. "Kernel accepted control" is NOT modelled, and cannot be. On sandbox,
+#     booti can never hand over control (booti_setup() fails unconditionally),
+#     so a cycle that reaches booti always falls through to the script's
+#     burn-the-slot tail. EVERY other path in the script burns too. So every
+#     cycle here ends in a burn, and the only ending that is not one is the
+#     refill.
+
+#     This is a LOSS, taken deliberately under RFCT-352, and it is worth
+#     stating what it cost. Until the load guard landed, this harness modelled
+#     the handoff by pointing kernel_addr_r above the sandbox's 2048 MiB RAM,
+#     and read the resulting os_abort() as "control left U-Boot" after the
+#     decrement's saveenv and before the burn -- which produced the watchdog's
+#     3->2->1->0 decrement trajectory across real process invocations.
+#     Measured while extending this file: that abort never came from the load.
+#     With CONFIG_LMB=y -- sandbox's default, and not optional, since CMD_BOOTI
+#     will not build without it -- fs_read_lmb_check() refuses an out-of-RAM
+#     read before writing anything and `load` returns FAILURE; the abort came
+#     from the NEXT line, `booti` mapping an address nothing had been loaded
+#     to. The model worked only because the script ignored a failed load, which
+#     is the defect the guard closes. A guarded script refuses that slot, so
+#     the trajectory is no longer reachable on sandbox at all.
+
+#     What still holds, and what scenario 1 now asserts instead: the decrement
+#     is persisted BEFORE the boot attempt (two separate env writes per cycle,
+#     the decrement's and the burn's, in that order), a spent slot fails over
+#     to the other one, both spent refills to three, and the refilled device
+#     restarts at the head of BOOT_ORDER. What is no longer covered anywhere is
+#     a slot being given its three attempts across three resets, because
+#     nothing on sandbox can end a cycle without burning the slot.
 
 # Everything is written under the cwd (a private workspace mounted at /work);
 # nothing else. Offline: no network use at all.
@@ -109,6 +125,39 @@ for slot in a b; do
         "${slot}" "${slot}" "${slot}" > "mos-verity-${slot}.env"
 done
 
+# The digests boot.scr checks the loaded Image and dtb against, in the two
+# spellings U-Boot compares: `load` publishes ${filesize} through env_set_hex
+# ("%lx" -- lowercase, unprefixed, unpadded) and `crc32 -v` reads eight hex
+# digits. Computed here with python3's zlib.crc32, which is the same CRC-32
+# U-Boot's crc32 computes, and deliberately NOT with the assembler's
+# TypeScript: build/src/boot-cx3576.ts is the producer this script has to agree
+# with, so a fixture built by calling it would agree with it by construction.
+digest_env() { # out-file artefact...   (in BOOT_DIGEST_ARTEFACTS order)
+    python3 - "$@" <<'PY'
+import sys, zlib
+out, *files = sys.argv[1:]
+with open(out, 'w') as fh:
+    for key, path in zip(['kernel', 'fdt'], files):
+        data = open(path, 'rb').read()
+        fh.write('%s_bytes=%x\n' % (key, len(data)))
+        fh.write('%s_crc=%08x\n' % (key, zlib.crc32(data)))
+PY
+}
+digest_env "${BOOT_DIGEST_ENV_NAME}" Image rk3576-src.dtb
+
+# The two ways a slot can carry an Image that is not the one its digest
+# describes, one per assertion in the script.
+#   mixed  -- SAME LENGTH, different bytes in the middle. This is the shape of
+#             the failure that was measured on hardware: the console reported
+#             the full 44493312 bytes read while DRAM held a mixture of two
+#             kernel builds. Only the checksum can see it.
+#   short  -- fewer bytes than the digest records, which ${filesize} alone sees.
+mkdir -p mixed short
+cp Image mixed/Image
+printf 'STALE-BYTES-FROM-ANOTHER-BUILD' \
+    | dd of=mixed/Image bs=1 seek=$((2 * 1024 * 1024)) conv=notrunc status=none
+head -c $((4 * 1024 * 1024 - 4096)) Image > short/Image
+
 # One FAT slot image; contents vary per slot/variant. 64 MiB = BOOT_SIZE_MIB.
 mkfatslot() { # out-img fat-label file...
     local out="$1" label="$2"
@@ -152,14 +201,31 @@ mkdisk() { # out-img boot-a-slot-img boot-b-slot-img
     dd if="${slotb}" of="${out}" bs=1M seek=$((BOOT_B_OFFSET_BYTES / MIB_BYTES)) conv=notrunc status=none
 }
 
-mkfatslot slot-a-complete.img "${BOOT_A_FAT_LABEL}" Image rk3576-src.dtb boot.scr "${BOOT_VERITY_ENV_A_NAME}"
-mkfatslot slot-b-complete.img "${BOOT_B_FAT_LABEL}" Image rk3576-src.dtb boot.scr "${BOOT_VERITY_ENV_B_NAME}"
+mkfatslot slot-a-complete.img "${BOOT_A_FAT_LABEL}" Image rk3576-src.dtb boot.scr "${BOOT_VERITY_ENV_A_NAME}" "${BOOT_DIGEST_ENV_NAME}"
+mkfatslot slot-b-complete.img "${BOOT_B_FAT_LABEL}" Image rk3576-src.dtb boot.scr "${BOOT_VERITY_ENV_B_NAME}" "${BOOT_DIGEST_ENV_NAME}"
 # The burn case: slot A ships NEITHER the suffixed nor the unsuffixed verity
 # env, so both load attempts must fail and the script must zero A's credits.
-mkfatslot slot-a-noverity.img "${BOOT_A_FAT_LABEL}" Image rk3576-src.dtb boot.scr
+# Everything else about the slot is complete, including the digest file, so the
+# scenario has exactly one fault in it.
+mkfatslot slot-a-noverity.img "${BOOT_A_FAT_LABEL}" Image rk3576-src.dtb boot.scr "${BOOT_DIGEST_ENV_NAME}"
+# The three ways the load guard must refuse. Each carries ONE fault: an Image
+# that is the recorded length and not the recorded bytes, an Image that is
+# short, and a slot with no digest file to check anything against.
+mkfatslot slot-a-mixed.img "${BOOT_A_FAT_LABEL}" mixed/Image rk3576-src.dtb boot.scr "${BOOT_VERITY_ENV_A_NAME}" "${BOOT_DIGEST_ENV_NAME}"
+mkfatslot slot-a-short.img "${BOOT_A_FAT_LABEL}" short/Image rk3576-src.dtb boot.scr "${BOOT_VERITY_ENV_A_NAME}" "${BOOT_DIGEST_ENV_NAME}"
+mkfatslot slot-a-nodigest.img "${BOOT_A_FAT_LABEL}" Image rk3576-src.dtb boot.scr "${BOOT_VERITY_ENV_A_NAME}"
+# And the branch that fires when there is nothing to load: a complete slot
+# minus the kernel. It is here rather than in scenario 1 because scenario 1's
+# out-of-RAM address does not reach it -- the sandbox aborts on the unmappable
+# write instead (see the LMB note in the header).
+mkfatslot slot-a-noimage.img "${BOOT_A_FAT_LABEL}" rk3576-src.dtb boot.scr "${BOOT_VERITY_ENV_A_NAME}" "${BOOT_DIGEST_ENV_NAME}"
 
 mkdisk disk-complete.img slot-a-complete.img slot-b-complete.img
 mkdisk disk-noverity-a.img slot-a-noverity.img slot-b-complete.img
+mkdisk disk-mixed-a.img slot-a-mixed.img slot-b-complete.img
+mkdisk disk-short-a.img slot-a-short.img slot-b-complete.img
+mkdisk disk-nodigest-a.img slot-a-nodigest.img slot-b-complete.img
+mkdisk disk-noimage-a.img slot-a-noimage.img slot-b-complete.img
 
 # Anti-vacuity: the fixtures must actually be what the scenarios claim.
 check "complete slot A carries ${BOOT_VERITY_ENV_A_NAME}" \
@@ -170,6 +236,42 @@ check "noverity slot A lacks the unsuffixed ${BOOT_VERITY_ENV_NAME} fallback too
     "$(mdir -i slot-a-noverity.img -b ::/ | grep -cF "::/${BOOT_VERITY_ENV_NAME}")" 0
 check "boot.scr fixture is a legacy U-Boot image" \
     "$(od -An -tx1 -N4 boot.scr | tr -d ' \n')" 27051956
+check "complete slot A carries ${BOOT_DIGEST_ENV_NAME}" \
+    "$(mdir -i slot-a-complete.img -b ::/ | grep -cF "::/${BOOT_DIGEST_ENV_NAME}")" 1
+check "nodigest slot A lacks ${BOOT_DIGEST_ENV_NAME}" \
+    "$(mdir -i slot-a-nodigest.img -b ::/ | grep -cF "::/${BOOT_DIGEST_ENV_NAME}")" 0
+check "noimage slot A lacks Image and keeps everything else" \
+    "$(mdir -i slot-a-noimage.img -b ::/ | grep -cF "::/Image")" 0
+check "noimage slot A still carries its digest file" \
+    "$(mdir -i slot-a-noimage.img -b ::/ | grep -cF "::/${BOOT_DIGEST_ENV_NAME}")" 1
+# The mixed fixture is the whole point of the crc32 assertion, so the two facts
+# that make it one are asserted rather than assumed: SAME length, DIFFERENT
+# bytes. A `cp` that silently produced an identical file would make scenario 4
+# pass by booting, not by refusing.
+check "mixed Image is the same length as the digested one" \
+    "$(stat -c %s mixed/Image)" "$(stat -c %s Image)"
+check "mixed Image differs from the digested one" \
+    "$(cmp -s mixed/Image Image && echo same || echo differs)" differs
+check "short Image is shorter than the digested one" \
+    "$( [ "$(stat -c %s short/Image)" -lt "$(stat -c %s Image)" ] && echo shorter || echo not)" shorter
+# And the digest file must actually describe the pristine pair, or every
+# scenario below burns for the wrong reason.
+check "the digest records the Image's real length" \
+    "$(sed -n 's/^kernel_bytes=//p' "${BOOT_DIGEST_ENV_NAME}")" \
+    "$(printf '%x' "$(stat -c %s Image)")"
+check "the digest records the dtb's real length" \
+    "$(sed -n 's/^fdt_bytes=//p' "${BOOT_DIGEST_ENV_NAME}")" \
+    "$(printf '%x' "$(stat -c %s rk3576-src.dtb)")"
+check "the digest's checksums are eight hex digits" \
+    "$(grep -c '^[a-z]*_crc=[0-9a-f]\{8\}$' "${BOOT_DIGEST_ENV_NAME}")" 2
+
+# The two checksums the passing cycles print, read back out of the fixture
+# rather than written down: the fixture files are generated, so a literal here
+# would be a second statement of a value this script already computed.
+KERNEL_CRC="$(sed -n 's/^kernel_crc=//p' "${BOOT_DIGEST_ENV_NAME}")"
+FDT_CRC="$(sed -n 's/^fdt_crc=//p' "${BOOT_DIGEST_ENV_NAME}")"
+check "the fixture digest yielded a kernel checksum" "${#KERNEL_CRC}" 8
+check "the fixture digest yielded a dtb checksum" "${#FDT_CRC}" 8
 
 # --- environment seeding
 # Only what the BOARD env provides and the script consumes: the load addresses.
@@ -213,63 +315,72 @@ assert_env() { # label wantA wantB
     check "$1: persisted BOOT_A_LEFT" "$(sed -n 's/^BOOT_A_LEFT=\([0-9]*\).*/\1/p' <<<"${out}")" "$2"
     check "$1: persisted BOOT_B_LEFT" "$(sed -n 's/^BOOT_B_LEFT=\([0-9]*\).*/\1/p' <<<"${out}")" "$3"
 }
-# A cycle must never fall off the end of the script (exit 0 would mean source
-# returned, i.e. some command after booti was reached without a reset), and
-# must never time out.
-assert_cycle_rc() { # label rc
-    case "$2" in
-    0) echo "FAIL: $1: invocation exited 0 — boot.scr fell through"; FAILED=1 ;;
-    124) echo "FAIL: $1: invocation timed out"; FAILED=1 ;;
-    *) echo "PASS: $1: invocation ended by leaving U-Boot (rc=$2)" ;;
-    esac
-}
+# Every cycle now ends the same way -- a burn or a refill, both of which call
+# `reset`, which the poisoned argv[0] turns into exit 1 -- so each one is
+# checked against that exact code rather than against "not 0 and not 124". It
+# is the stronger statement and it subsumes both: exit 0 would mean boot.scr
+# fell through past booti without resetting, and 124 would mean the invocation
+# hung. The helper that made the weaker check no longer has a caller: nothing
+# on sandbox can end a cycle by leaving U-Boot any more (see note 3 above).
 
-echo "=== scenario 1: watchdog decrement, failover at zero, refill when both are spent ==="
+echo "=== scenario 1: failover at zero, refill when both are spent, restart at the head ==="
+# A COMPLETE disk, so every cycle gets all the way to booti and burns there.
+# The banner is what shows the decrement -- "A=2" is the value the script wrote
+# and persisted before it touched the slot -- and the counter read back
+# afterwards is what the burn left. Both matter, and they are different
+# numbers on purpose.
 cp disk-complete.img mmc0.img
-seed_env mmc0.img 0xf0000000
-# cycle# slot A-after B-after expected-banner
+seed_env mmc0.img 0x02000000
+# cycle# slot banner-A banner-B persisted-A persisted-B
 S1_PLAN=(
-    "1 A 2 3"
-    "2 A 1 3"
-    "3 A 0 3"
-    "4 B 0 2"
-    "5 B 0 1"
-    "6 B 0 0"
+    "1 A 2 3 0 3"
+    "2 B 0 2 0 0"
 )
 for row in "${S1_PLAN[@]}"; do
-    read -r n slot a b <<<"${row}"
+    read -r n slot ba bb pa pb <<<"${row}"
     rc="$(run_cycle "s1-c${n}.log")"
-    assert_cycle_rc "s1 cycle ${n}" "${rc}"
-    log_has "s1 cycle ${n}" "s1-c${n}.log" "mos: booting slot ${slot} (A=${a} B=${b} left)"
-    log_has "s1 cycle ${n}" "s1-c${n}.log" "Cannot map sandbox address"
-    log_lacks "s1 cycle ${n}" "s1-c${n}.log" "mos: booti returned"
+    check "s1 cycle ${n}: burn ends in a reset (exit 1 via poisoned re-exec)" "${rc}" 1
+    log_has "s1 cycle ${n}: the decremented counter is announced" "s1-c${n}.log" \
+        "mos: booting slot ${slot} (A=${ba} B=${bb} left)"
+    log_has "s1 cycle ${n}: both artefacts verify against the digest" "s1-c${n}.log" \
+        "crc32 ${KERNEL_CRC} verified in DRAM"
+    log_has "s1 cycle ${n}: and the slot burns on booti, not on the guard" "s1-c${n}.log" \
+        "mos: booti returned, slot ${slot} is bad"
     log_lacks "s1 cycle ${n}" "s1-c${n}.log" "saveenv FAILED"
-    assert_env "s1 cycle ${n}" "${a}" "${b}"
+    # DECREMENT-THEN-SAVE-THEN-BOOT (design section 4.2), read off the console:
+    # two environment writes per cycle, the decrement's before the banner and
+    # the burn's after it. One write would mean the attempt was never counted.
+    check "s1 cycle ${n}: the environment is written twice, decrement then burn" \
+        "$(grep -c 'Saving Environment to MMC' "s1-c${n}.log")" 2
+    check "s1 cycle ${n}: and the first write precedes the boot attempt" \
+        "$(grep -n 'Saving Environment to MMC\|mos: booting slot' "s1-c${n}.log" | head -1 | grep -c 'Saving Environment')" 1
+    assert_env "s1 cycle ${n}" "${pa}" "${pb}"
 done
-rc="$(run_cycle s1-c7.log)"
-check "s1 cycle 7: exhaustion ends in a reset (exit 1 via poisoned re-exec)" "${rc}" 1
-log_has "s1 cycle 7" s1-c7.log "mos: no bootable slot left, resetting attempt counters"
-log_lacks "s1 cycle 7" s1-c7.log "mos: booting slot"
-assert_env "s1 cycle 7: refill" 3 3
-rc="$(run_cycle s1-c8.log)"
-assert_cycle_rc "s1 cycle 8" "${rc}"
-log_has "s1 cycle 8: post-refill boot restarts on slot A" s1-c8.log "mos: booting slot A (A=2 B=3 left)"
-assert_env "s1 cycle 8" 2 3
+rc="$(run_cycle s1-c3.log)"
+check "s1 cycle 3: exhaustion ends in a reset (exit 1 via poisoned re-exec)" "${rc}" 1
+log_has "s1 cycle 3" s1-c3.log "mos: no bootable slot left, resetting attempt counters"
+log_lacks "s1 cycle 3" s1-c3.log "mos: booting slot"
+assert_env "s1 cycle 3: refill" 3 3
+rc="$(run_cycle s1-c4.log)"
+check "s1 cycle 4: burn ends in a reset (exit 1 via poisoned re-exec)" "${rc}" 1
+log_has "s1 cycle 4: post-refill boot restarts on slot A" s1-c4.log "mos: booting slot A (A=2 B=3 left)"
+assert_env "s1 cycle 4" 0 3
 
 echo "=== scenario 2: a slot without mos-verity-<slot>.env burns its credits ==="
 cp disk-noverity-a.img mmc0.img
-seed_env mmc0.img 0xf0000000
+seed_env mmc0.img 0x02000000
 rc="$(run_cycle s2-c1.log)"
 check "s2 cycle 1: burn ends in a reset (exit 1 via poisoned re-exec)" "${rc}" 1
 log_has "s2 cycle 1: decrement precedes the verity load" s2-c1.log "mos: booting slot A (A=2 B=3 left)"
 log_has "s2 cycle 1" s2-c1.log "mos: slot A has no mos-verity-a.env"
+log_lacks "s2 cycle 1: the verity env is missing, so nothing is loaded to check" s2-c1.log "verified in DRAM"
 assert_env "s2 cycle 1: burned" 0 3
 rc="$(run_cycle s2-c2.log)"
-assert_cycle_rc "s2 cycle 2" "${rc}"
+check "s2 cycle 2: slot B reaches booti and burns there" "${rc}" 1
 log_has "s2 cycle 2: next boot moves to slot B" s2-c2.log "mos: booting slot B (A=0 B=2 left)"
-log_has "s2 cycle 2: slot B's own verity env loads fine" s2-c2.log "Cannot map sandbox address"
+log_has "s2 cycle 2: slot B's own verity env loads fine" s2-c2.log "verified in DRAM"
 log_lacks "s2 cycle 2" s2-c2.log "has no mos-verity"
-assert_env "s2 cycle 2" 0 2
+assert_env "s2 cycle 2" 0 0
 
 echo "=== scenario 3: booti returns (native sandbox failure) = slot did not boot ==="
 cp disk-complete.img mmc0.img
@@ -277,9 +388,86 @@ seed_env mmc0.img 0x02000000
 rc="$(run_cycle s3-c1.log)"
 check "s3 cycle 1: burn ends in a reset (exit 1 via poisoned re-exec)" "${rc}" 1
 log_has "s3 cycle 1" s3-c1.log "mos: booting slot A (A=2 B=3 left)"
+# The POSITIVE control for the load guard, and it belongs here rather than in a
+# scenario of its own: this is the only cycle that gets past both verifications
+# to booti, so these two lines are the evidence that the guard passes a good
+# slot instead of refusing everything.
+log_has "s3 cycle 1: the Image verifies against the digest" s3-c1.log \
+    "mos: Image 400000 bytes, crc32 ${KERNEL_CRC} verified in DRAM"
+log_has "s3 cycle 1: the dtb verifies too" s3-c1.log \
+    "mos: rk3576-src.dtb 10000 bytes, crc32 ${FDT_CRC} verified in DRAM"
 log_has "s3 cycle 1: booti fails natively on sandbox" s3-c1.log "Booting is not supported on the sandbox."
 log_has "s3 cycle 1: the script sees booti return and burns the slot" s3-c1.log "mos: booti returned, slot A is bad"
 assert_env "s3 cycle 1" 0 3
+
+# The load guard, three ways. KERNEL_ADDR is IN RAM for all three: the whole
+# point is that `load` succeeds -- as it did on the board, reporting the full
+# byte count -- and that the script refuses anyway. Every one of them must also
+# NOT reach booti: a burn that happened because booti returned would be the
+# pre-existing tail firing, not the new guard, and the two are told apart by
+# which line the log carries.
+echo "=== scenario 4: an Image of the RIGHT LENGTH and the wrong bytes burns the slot ==="
+cp disk-mixed-a.img mmc0.img
+seed_env mmc0.img 0x02000000
+rc="$(run_cycle s4-c1.log)"
+check "s4 cycle 1: burn ends in a reset (exit 1 via poisoned re-exec)" "${rc}" 1
+log_has "s4 cycle 1: decrement precedes the load" s4-c1.log "mos: booting slot A (A=2 B=3 left)"
+log_has "s4 cycle 1: crc32 -v reports the mismatch" s4-c1.log "** ERROR **"
+log_has "s4 cycle 1: the script names the slot and the fault" s4-c1.log \
+    "mos: slot A p${BOOT_A_PARTNUM}: Image:"
+log_has "s4 cycle 1: and names the checksum as the failing half" s4-c1.log "crc32 is not"
+log_lacks "s4 cycle 1: the SIZE was fine, so that half must not fire" s4-c1.log "bytes landed, mos-boot-digest.env says"
+log_lacks "s4 cycle 1: the kernel was never handed control" s4-c1.log "mos: booti returned"
+assert_env "s4 cycle 1: burned" 0 3
+rc="$(run_cycle s4-c2.log)"
+check "s4 cycle 2: slot B reaches booti and its burn resets too" "${rc}" 1
+log_has "s4 cycle 2: next boot moves to slot B" s4-c2.log "mos: booting slot B (A=0 B=2 left)"
+log_has "s4 cycle 2: slot B's own Image verifies -- the guard passes a good slot" s4-c2.log \
+    "crc32 ${KERNEL_CRC} verified in DRAM"
+# kernel_addr_r is in RAM for this scenario, so B gets past both verifications
+# to booti, which cannot hand over control on sandbox: B burns on the
+# pre-existing tail, by a DIFFERENT line from A's. Both counters at zero is the
+# correct end state, not a second digest refusal.
+log_has "s4 cycle 2: and B burns on booti, not on the digest" s4-c2.log "mos: booti returned, slot B is bad"
+assert_env "s4 cycle 2" 0 0
+
+echo "=== scenario 5: a SHORT Image burns the slot, named as a short read ==="
+cp disk-short-a.img mmc0.img
+seed_env mmc0.img 0x02000000
+rc="$(run_cycle s5-c1.log)"
+check "s5 cycle 1: burn ends in a reset (exit 1 via poisoned re-exec)" "${rc}" 1
+log_has "s5 cycle 1: the size compare is what fires" s5-c1.log \
+    "mos: slot A p${BOOT_A_PARTNUM}: Image: 3ff000 bytes landed, mos-boot-digest.env says 400000"
+log_lacks "s5 cycle 1: and it fires BEFORE the checksum, which never runs" s5-c1.log "** ERROR **"
+log_lacks "s5 cycle 1: the kernel was never handed control" s5-c1.log "mos: booti returned"
+assert_env "s5 cycle 1: burned" 0 3
+
+echo "=== scenario 6: a slot with no mos-boot-digest.env burns its credits ==="
+cp disk-nodigest-a.img mmc0.img
+seed_env mmc0.img 0x02000000
+rc="$(run_cycle s6-c1.log)"
+check "s6 cycle 1: burn ends in a reset (exit 1 via poisoned re-exec)" "${rc}" 1
+log_has "s6 cycle 1: its own verity env loaded fine, so this is the digest file" s6-c1.log \
+    "mos: slot A p${BOOT_A_PARTNUM}: no mos-boot-digest.env beside Image"
+log_lacks "s6 cycle 1" s6-c1.log "has no mos-verity"
+log_lacks "s6 cycle 1: nothing was loaded, let alone booted" s6-c1.log "mos: booti returned"
+assert_env "s6 cycle 1: burned" 0 3
+rc="$(run_cycle s6-c2.log)"
+check "s6 cycle 2: slot B reaches booti and its burn resets too" "${rc}" 1
+log_has "s6 cycle 2: next boot moves to slot B" s6-c2.log "mos: booting slot B (A=0 B=2 left)"
+log_has "s6 cycle 2: B has a digest file and gets past it to booti" s6-c2.log "mos: booti returned, slot B is bad"
+assert_env "s6 cycle 2" 0 0
+
+echo "=== scenario 7: a slot with no Image at all burns its credits ==="
+cp disk-noimage-a.img mmc0.img
+seed_env mmc0.img 0x02000000
+rc="$(run_cycle s7-c1.log)"
+check "s7 cycle 1: burn ends in a reset (exit 1 via poisoned re-exec)" "${rc}" 1
+log_has "s7 cycle 1: the load failure is named, not the checksum" s7-c1.log \
+    "mos: slot A p${BOOT_A_PARTNUM}: Image would not load"
+log_lacks "s7 cycle 1: and nothing was compared" s7-c1.log "** ERROR **"
+log_lacks "s7 cycle 1: the kernel was never handed control" s7-c1.log "mos: booti returned"
+assert_env "s7 cycle 1: burned" 0 3
 
 if [ "${FAILED}" -eq 0 ]; then
     echo "RESULT: PASS"

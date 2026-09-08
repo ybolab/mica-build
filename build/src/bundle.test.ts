@@ -839,11 +839,17 @@ describe('buildBundle end to end, against a real rauc', () => {
     expect(other.payload.payloadSha256).not.toBe(base.payload.payloadSha256)
   }, OPEN_TIMEOUT_MS)
 
-  test('the staged boot payload carries exactly the five files, under a NEUTRAL label', async () => {
+  test('the staged boot payload carries exactly the six files, under a NEUTRAL label', async () => {
     // One image, two possible destinations: a bundle's boot payload must not
     // carry a slot's FAT identity. And the file LIST is the contract a
     // RAUC-installed slot boots from -- the unsuffixed mos-verity.env is
     // deliberately absent, because a factory slot carries none either.
+    //
+    // mos-boot-digest.env is the one that is NOT slot-suffixed, and this list
+    // is where that shows: the payload carries both slots' verity envs because
+    // it does not know which boot partition it will land in, and ONE digest
+    // file because it carries one Image whichever partition that turns out to
+    // be. A suffixed pair here would be two names for one fact.
     const out = join(work, 'peek.raucb')
     await buildBundle({ ...inputs, bundleOut: out }, { toolbox: tb, log: () => {} })
     // unsquashfs rather than `rauc extract`: rauc 1.13's extract loop-MOUNTS
@@ -857,7 +863,10 @@ describe('buildBundle end to end, against a real rauc', () => {
     await tb.must(['unsquashfs', '-n', '-d', extracted, out, 'boot.vfat'])
     const listed = await tb.must(['mdir', '-/', '-b', '-i', join(extracted, 'boot.vfat'), '::/'])
     expect(listed.stdout.split('\n').map(l => l.trim()).filter(l => l !== '').sort())
-      .toEqual(['::/Image', '::/boot.scr', '::/mos-verity-a.env', '::/mos-verity-b.env', '::/rk3576-src.dtb'])
+      .toEqual([
+        '::/Image', '::/boot.scr', '::/mos-boot-digest.env',
+        '::/mos-verity-a.env', '::/mos-verity-b.env', '::/rk3576-src.dtb',
+      ])
     const vol = await tb.must(['minfo', '-i', join(extracted, 'boot.vfat')])
     expect(vol.stdout).toContain(BUNDLE_BOOT_FAT_LABEL)
   }, OPEN_TIMEOUT_MS)

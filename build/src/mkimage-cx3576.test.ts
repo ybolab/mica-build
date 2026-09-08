@@ -22,6 +22,7 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { crc32 } from 'node:zlib'
 import { loadGeometry, loadGeometryFromPath, type Geometry } from './geometry.ts'
 import { deriveLayout, gptSpecFor } from './layout-cx3576.ts'
 import {
@@ -542,22 +543,54 @@ describe('a whole assembly, and what is actually in it', () => {
     expect(await verifyGpt(tb, out.image)).toContain('No problems found')
   }, TOOL_TIMEOUT_MS)
 
-  test('each boot slot carries exactly the four files, and NO extlinux', async () => {
+  test('each boot slot carries exactly the five files, and NO extlinux', async () => {
     // No extlinux/extlinux.conf: both U-Boot boot frameworks try extlinux before
     // boot.scr, so one here would silently bypass the whole A/B handshake. And
     // no UNSUFFIXED mos-verity.env: a RAUC-installed slot only ever carries the
     // suffixed file, so writing it would leave that path untested until the
     // first update.
+    //
+    // Exactly ONE mos-boot-digest.env per slot, with no suffix: it describes
+    // the Image and the dtb in the partition it sits in, of which there is one
+    // set, where the verity env describes the rootfs slot this partition is
+    // paired with, which one RAUC boot payload cannot know.
     for (const [part, suffix] of [['BOOT_A', 'a'], ['BOOT_B', 'b']] as [string, string][]) {
       const p = g.requirePartition(part)
       const slice = join(dir, `slice-${suffix}.img`)
       await tb.must(['dd', `if=${out.image}`, `of=${slice}`, 'bs=1M',
         `skip=${p.start?.mib}`, `count=${g.requireInt('BOOT_SIZE_MIB')}`, 'status=none'])
       expect(await listFat(tb, slice)).toEqual([
-        '::/Image', `::/${g.require('BOOT_SCRIPT_NAME')}`, `::/mos-verity-${suffix}.env`, '::/rk3576-src.dtb',
+        '::/Image', `::/${g.require('BOOT_SCRIPT_NAME')}`, `::/${g.require('BOOT_DIGEST_ENV_NAME')}`,
+        `::/mos-verity-${suffix}.env`, '::/rk3576-src.dtb',
       ].sort())
       rmSync(slice, { force: true })
     }
+  }, ASSEMBLE_TIMEOUT_MS)
+
+  test('and that digest file is the SAME bytes in both slots, describing the slot it is in', async () => {
+    // The claim the missing suffix rests on: one Image per partition, one
+    // digest, and both partitions carry the same pair. If the two ever differed
+    // the name would have to say which was which.
+    const texts: string[] = []
+    for (const [part, suffix] of [['BOOT_A', 'a'], ['BOOT_B', 'b']] as [string, string][]) {
+      const p = g.requirePartition(part)
+      const slice = join(dir, `dslice-${suffix}.img`)
+      await tb.must(['dd', `if=${out.image}`, `of=${slice}`, 'bs=1M',
+        `skip=${p.start?.mib}`, `count=${g.requireInt('BOOT_SIZE_MIB')}`, 'status=none'])
+      const got = await tb.must(['mtype', '-i', slice, `::/${g.require('BOOT_DIGEST_ENV_NAME')}`])
+      texts.push(got.stdout)
+      rmSync(slice, { force: true })
+    }
+    expect(texts[0]).toBe(texts[1])
+    // And it is the digest of what is actually there, not of whatever was
+    // handed in: the fixture kernel and dtb, read back through the same two
+    // spellings boot.scr compares.
+    const kernel = readFileSync(base.kernelImage)
+    const dtb = readFileSync(base.dtb)
+    expect(texts[0]).toContain(`kernel_bytes=${kernel.length.toString(16)}`)
+    expect(texts[0]).toContain(`kernel_crc=${crc32(kernel).toString(16).padStart(8, '0')}`)
+    expect(texts[0]).toContain(`fdt_bytes=${dtb.length.toString(16)}`)
+    expect(texts[0]).toContain(`fdt_crc=${crc32(dtb).toString(16).padStart(8, '0')}`)
   }, ASSEMBLE_TIMEOUT_MS)
 
   test('the assembly rebuilds BYTE-IDENTICALLY from the same inputs', async () => {

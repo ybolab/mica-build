@@ -105,6 +105,7 @@ wipeable runtime residue under `/var`.
 | `BOOT_CMD_SOURCE` | source the script is compiled from | repo path | assembler |
 | `BOOT_VERITY_ENV_NAME` | unsuffixed verity-parameter base name (legacy fallback only) | `mos-verity.env` | assembler |
 | `BOOT_VERITY_ENV_A_NAME`, `BOOT_VERITY_ENV_B_NAME` | the slot-suffixed names actually written; the suffix identifies which rootfs partition the verity table describes | `mos-verity-<slot>.env` | assembler, bundle builder, verify |
+| `BOOT_DIGEST_ENV_NAME` | the byte count and CRC-32 of this boot partition's own kernel and dtb, which the boot script checks before `booti`; slot-NEUTRAL, because it describes files in the partition it sits in rather than the rootfs slot that partition is paired with | `mos-boot-digest.env` | assembler, bundle builder, verify |
 | `BOOT_ATTEMPTS_DEFAULT`, `BOOT_ATTEMPTS_MIN`, `BOOT_ATTEMPTS_MAX` | boot-attempt credits. RAUC writes hex, U-Boot's `test -gt` parses decimal; the radices agree only for 0–9, so values stay in 1..9 | integers within 1..9 | boot script defaults, RAUC config renderer |
 
 ## UEFI keys (present only on UEFI boards)

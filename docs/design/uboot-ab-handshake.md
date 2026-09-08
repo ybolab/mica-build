@@ -320,6 +320,8 @@ CONFIG_CMD_FS_GENERIC=y
 CONFIG_CMD_FAT=y
 CONFIG_CMD_BOOTI=y
 CONFIG_CMD_PART=y
+CONFIG_CMD_CRC32=y
+CONFIG_CRC32_VERIFY=y
 CONFIG_LEGACY_IMAGE_FORMAT=y
 CONFIG_HUSH_PARSER=y
 
@@ -331,6 +333,19 @@ CONFIG_HUSH_PARSER=y
 
 Notes, each with its evidence:
 
+- `CONFIG_CRC32_VERIFY=y` — `default n` (`u-boot/cmd/Kconfig`) [V], so it is not
+  optional and not automatic. It is what gives `crc32` the `-v address count
+  crc` form the load guard uses (§5.3 divergence 3, §5.6): one command that
+  compares and returns the verdict as an exit status hush can branch on, and
+  prints both values when they differ. `CONFIG_CMD_CRC32` alone (`default y`)
+  gives only `crc32 address count [addr]`, which can write its answer to memory
+  and nowhere else; reading it back needs a byte swap — `crc32_wd_buf` stores
+  the digest big-endian and `setexpr`'s `*addr` does a native load
+  (`u-boot/cmd/setexpr.c`) [V] — and an unpadded `%llx` comparison, two
+  spellings nothing would check. **Losing this symbol does not degrade the
+  script, it bricks the device**: an unknown flag is a usage error, the script
+  reads that as a failed verification, and both slots burn. It is asserted by
+  name in `boards/cx3576/bsp/uboot/build-mos.sh`.
 - `CONFIG_ENV_MMC_DEVICE_INDEX=0` — `mmc0 = &sdhci` = eMMC in the generic DT
   (`u-boot/arch/arm/dts/rk3576-generic.dts`) [V]. Rockchip additionally
   overrides `mmc_get_env_dev()` to resolve `/chosen/u-boot,spl-boot-device`
@@ -536,9 +551,8 @@ are *not* baked in — they are imported from the chosen slot's boot partition
 
 **This block is synced to the shipped `boards/cx3576/boot.cmd`**, which is
 what `build/src/mkimage-cx3576.ts` compiles into `boot.scr`. It now differs from the
-version first published here in **two** places. Both were defects that made
-every update revert silently, and both are recorded in the shipped script's
-provenance header:
+version first published here in **three** places. All three were defects, and
+all three are recorded in the shipped script's provenance header:
 
 1. **The slot-suffixed verity env.** The script sets `slotsuffix` alongside
    `bootslot` and loads `mos-verity-${slotsuffix}.env`, falling back to the
@@ -556,6 +570,26 @@ provenance header:
    `rauc status mark-good` and the installed slot is rolled back. This is a
    requirement on the boot path that only became visible once the handshake was
    integrated end to end. (integration check, fixed deliberately.)
+3. **The kernel and the dtb are loaded through a guard.** The version first
+   published here checked the 370-byte verity env and not the 42 MB kernel, and
+   a cx3576 board booted a **mixture of two kernel builds** and died in
+   `paging_init` (`kernel BUG at arch/arm64/mm/mmu.c:283`) while the console
+   reported the full `44493312 bytes read`. RFCT-351 measured the eight bytes
+   under `swapper_pg_dir[256]` to be, byte for byte, file offset `0x1e87800` of
+   a *different, older* build, while the `brk #0x800` that trapped exists only
+   in the current one. `load` returning success means the FAT directory had an
+   entry and the read call did not error; it does not mean the bytes in DRAM
+   are the bytes on the card, and the cheapest possible check would have said
+   so. `mos-boot-digest.env` (§5.6) carries each file's byte count and CRC-32,
+   the script asserts both, and either disagreeing burns the slot down the same
+   route the missing-verity-env case already takes. (RFCT-352.)
+
+   **This one is not deployable by an update alone**, unlike the other two. It
+   needs `CONFIG_CRC32_VERIFY=y` in the U-Boot build (§3.2), and the loader
+   lives in raw sectors outside every RAUC slot group, so a device carrying the
+   previous `uboot-mos` blob would read `crc32 -v` as a usage error, treat that
+   as a failed verification, and burn both slots. The blob and the boot payload
+   have to be flashed together.
 
 ```sh
 # boot.cmd — mos A/B handshake for CX3576-Z (A/B layout).
@@ -564,8 +598,16 @@ provenance header:
 #
 # hush notes: no arithmetic without setexpr; setexpr is HEXADECIMAL, which is
 # also the radix RAUC uses for BOOT_x_LEFT. Keep boot-attempts in 1..9.
+#
+# PARTITION NUMBERS. bootpart/rootpart below are literal GPT partition numbers,
+# because hush cannot read boards/cx3576/board.env. They are BOOT_A_PARTNUM /
+# BOOT_B_PARTNUM / ROOTFS_A_PARTNUM / ROOTFS_B_PARTNUM from that file, and
+# build/src/mkimage-cx3576.ts refuses to compile this script if any of the four disagrees.
+# Do not edit one here without editing the layout: a stale number sends U-Boot
+# to the wrong partition after it has already persisted the attempt decrement.
 
 setenv verityaddr 0x40f00000
+setenv digestaddr 0x40f10000
 
 # --- defaults, only used on a virgin environment ---------------------------
 test -n "${BOOT_ORDER}"  || setenv BOOT_ORDER "A B"
@@ -582,16 +624,16 @@ for slot in ${BOOT_ORDER}; do
             setexpr BOOT_A_LEFT ${BOOT_A_LEFT} - 1
             setenv bootslot A
             setenv slotsuffix a
-            setenv bootpart 3
-            setenv rootpart 5
+            setenv bootpart 4
+            setenv rootpart 6
         fi
     elif test "${slot}" = "B"; then
         if test ${BOOT_B_LEFT} -gt 0; then
             setexpr BOOT_B_LEFT ${BOOT_B_LEFT} - 1
             setenv bootslot B
             setenv slotsuffix b
-            setenv bootpart 4
-            setenv rootpart 6
+            setenv bootpart 5
+            setenv rootpart 7
         fi
     fi
 done
@@ -655,11 +697,98 @@ setenv rootargs "root=/dev/dm-0 rootfstype=squashfs ro rootwait"
 # exhaustion — an update that reverts while the device looks healthy.
 setenv raucargs "rauc.slot=${bootslot}"
 
-setenv bootargs "${rootargs} ${verity_args} ${raucargs} ${consoleargs} storagemedia=emmc net.ifnames=0 ${machineid_arg}"
+setenv bootargs "${rootargs} ${verity_args} ${raucargs} ${consoleargs} net.ifnames=0 ${machineid_arg}"
 
-# --- load and go -----------------------------------------------------------
-load mmc 0:${bootpart} ${kernel_addr_r} Image
-load mmc 0:${bootpart} ${fdt_addr_r} rk3576-src.dtb
+# --- load the kernel and the dtb, and prove what landed ---------------------
+# mos-boot-digest.env records the byte count and the CRC-32 of the Image and the
+# rk3576-src.dtb sitting beside it in THIS boot partition, and it is what turns
+# `load` from a command whose success means "the FAT directory had an entry and
+# the read did not error" into one whose success means "the bytes in DRAM are
+# the bytes on the card". A board booted a mixture of two kernel builds and died
+# in paging_init while the console reported the full 44493312 bytes read
+# (RFCT-351, RFCT-352): an unguarded load cannot tell those two apart, and it
+# was the cheap 370-byte file that was checked and the 42 MB one that was not.
+#
+# The file carries NO slot suffix, and the contrast with mos-verity-<slot>.env
+# above is the reason. That file describes a DIFFERENT partition -- the rootfs
+# slot this boot partition will be paired with -- which one RAUC boot payload
+# cannot know, since it is installed into whichever boot slot is inactive, so it
+# ships both slots' copies under distinct names. These digests describe this
+# partition's OWN two files, of which there is exactly one set whichever slot
+# the partition turns out to be, exactly as there is one Image and one boot.scr.
+# A suffix here would be two names for one fact, and the copy that is never read
+# would be free to drift.
+#
+# WHAT THE TWO ASSERTIONS CATCH, stated separately because they are not the same
+# claim. The byte count catches a short read, and names it precisely, which the
+# checksum alone would not. The CRC-32 catches any divergence present in DRAM at
+# the moment it runs -- a short read or stale bytes in the middle -- and it is
+# the one of the two that would have caught the failure above. NEITHER can catch
+# a corruption that happens after the check and before the kernel reads the
+# page: the window is now the milliseconds between crc32 and booti instead of
+# the whole load, but it is not zero, and this script cannot make it zero.
+#
+# The four values are cleared first. `env import` leaves whatever a previous
+# boot persisted in place for any key the file does not carry, and the burn
+# paths call saveenv, so a truncated digest file could otherwise be checked
+# against a stale value some earlier boot wrote -- the guard passing on the
+# strength of the number it exists to test.
+setenv bootfault
+setenv kernel_bytes
+setenv kernel_crc
+setenv fdt_bytes
+setenv fdt_crc
+
+if load mmc 0:${bootpart} ${digestaddr} mos-boot-digest.env; then
+    env import -t ${digestaddr} ${filesize} || setenv bootfault "mos-boot-digest.env would not import"
+else
+    setenv bootfault "no mos-boot-digest.env beside Image"
+fi
+
+# `load` reports ${filesize} through env_set_hex, i.e. "%lx": lowercase hex, no
+# 0x prefix, no leading zeros. mos-boot-digest.env spells the byte counts the
+# same way, so this is a string compare and needs no arithmetic -- hush has none
+# without setexpr, and setexpr is hexadecimal (see the header).
+if test -z "${bootfault}"; then
+    if load mmc 0:${bootpart} ${kernel_addr_r} Image; then
+        if test "${filesize}" != "${kernel_bytes}"; then
+            setenv bootfault "Image: ${filesize} bytes landed, mos-boot-digest.env says ${kernel_bytes}"
+        elif crc32 -v ${kernel_addr_r} ${filesize} ${kernel_crc}; then
+            echo "mos: Image ${kernel_bytes} bytes, crc32 ${kernel_crc} verified in DRAM"
+        else
+            setenv bootfault "Image: ${kernel_bytes} bytes landed and their crc32 is not ${kernel_crc}"
+        fi
+    else
+        setenv bootfault "Image would not load"
+    fi
+fi
+
+if test -z "${bootfault}"; then
+    if load mmc 0:${bootpart} ${fdt_addr_r} rk3576-src.dtb; then
+        if test "${filesize}" != "${fdt_bytes}"; then
+            setenv bootfault "rk3576-src.dtb: ${filesize} bytes landed, mos-boot-digest.env says ${fdt_bytes}"
+        elif crc32 -v ${fdt_addr_r} ${filesize} ${fdt_crc}; then
+            echo "mos: rk3576-src.dtb ${fdt_bytes} bytes, crc32 ${fdt_crc} verified in DRAM"
+        else
+            setenv bootfault "rk3576-src.dtb: ${fdt_bytes} bytes landed and their crc32 is not ${fdt_crc}"
+        fi
+    else
+        setenv bootfault "rk3576-src.dtb would not load"
+    fi
+fi
+
+# The same route the missing-verity-env case takes, for the same reason: burn
+# this slot's remaining credits so the next reset moves on instead of retrying a
+# slot we know cannot boot. It is not a permanent loss -- when both slots reach
+# zero the refill block above puts three credits back on each -- so a transient
+# fault costs a trip through the other slot and back, not the device.
+if test -n "${bootfault}"; then
+    echo "mos: slot ${bootslot} p${bootpart}: ${bootfault}"
+    setenv BOOT_${bootslot}_LEFT 0
+    saveenv
+    reset
+fi
+
 booti ${kernel_addr_r} - ${fdt_addr_r}
 
 # booti only returns on failure: burn this slot's remaining credits so the
@@ -672,11 +801,9 @@ reset
 
 `${kernel_addr_r}` = `0x42000000`, `${fdt_addr_r}` = `0x52000000`,
 `${scriptaddr}` = `0x40c00000`, `${pxefile_addr_r}` = `0x40e00000`
-(`u-boot/include/configs/rk3576_common.h`) [V]; `verityaddr=0x40f00000`
-sits in the gap between `pxefile_addr_r` and `kernel_addr_r`.
-
-The `Image` / `rk3576-src.dtb` filenames match what the assembler stages into
-each boot partition (`build/src/mkimage-cx3576.ts`) [V].
+(`u-boot/include/configs/rk3576_common.h`) [V]; `verityaddr=0x40f00000` and
+`digestaddr=0x40f10000` sit in the 18 MiB gap between `pxefile_addr_r` and
+`kernel_addr_r`, 64 KiB apart, and both files they hold are a few hundred bytes.
 
 ### 5.4 Composition with `extlinux/extlinux.conf`
 
@@ -735,10 +862,16 @@ in U-Boot, which is already set [V].
    `verity_args=dm-mod.create="rootfs,,0,ro,<table>" dm-mod.waitfor=PARTUUID=<slot rootfs PARTUUID>`
    with `<table>` built from that slot's verity metadata (§7.3). Slot A's file
    references PARTUUID `...0005`, slot B's references `...0006`.
-3. Not write `extlinux/extlinux.conf` into the mos boot slots (§5.4).
-4. Apply the fixed mtime `@1577836800` to every staged file before the `mcopy`
+3. Write one slot-neutral `mos-boot-digest.env` into each boot partition,
+   computed from the **staged** copies of `Image` and `rk3576-src.dtb` rather
+   than from the inputs — those are the bytes `mcopy` is about to write, and a
+   digest of anything else describes a file that is not there (§5.6). The
+   bundle builder writes the same file into the single `boot.vfat` its payload
+   carries, for the same reason and with no suffix: one payload, one kernel.
+4. Not write `extlinux/extlinux.conf` into the mos boot slots (§5.4).
+5. Apply the fixed mtime `@1577836800` to every staged file before the `mcopy`
    that fills the slot (`build/src/mkimage-cx3576.ts`) [V].
-5. Zero-fill uenv-a/uenv-b so a freshly flashed device starts from the
+6. Zero-fill uenv-a/uenv-b so a freshly flashed device starts from the
    compiled-in default environment rather than stale bytes. (These were p1/p2
    when this section was written; they are **p2/p3** since the loader partition
    landed — see §8.0. Their start sectors and therefore U-Boot's `ENV_OFFSET`
@@ -748,6 +881,71 @@ Inputs it needs that this design does not provide: the verity root hash, data
 block count and hash-tree start block for each slot — those come from the
 `veritysetup format` step in the rootfs/verity task, which must surface them as
 shell variables for the `mos-verity-<slot>.env` renderer.
+
+### 5.6 `mos-boot-digest.env`
+
+One file per boot partition, written beside `Image` and `rk3576-src.dtb` by
+whatever produced them — the image assembler at flash time, the RAUC boot
+payload at update time — recording what those two files are:
+
+```
+kernel_bytes=2a6ea00
+kernel_crc=<8 hex digits>
+fdt_bytes=<hex>
+fdt_crc=<8 hex digits>
+```
+
+**The two spellings are the contract, not presentation.** `load` publishes
+`${filesize}` through `env_set_hex`, which is `sprintf(str, "%lx", ...)` —
+lowercase hex, no `0x`, no leading zeros — and boot.scr compares the two as
+strings, because hush has no arithmetic without `setexpr` and `setexpr` is
+hexadecimal (§4.1). The checksum is zero-padded to eight digits because
+`parse_verify_sum` (`u-boot/common/hash.c`) reads an argument of exactly
+`2 * digest_size` characters as a hex literal and **anything else as the name of
+an environment variable to look up**: a checksum with a zero top byte written as
+six digits would not be compared against the image at all, and would refuse a
+slot that was fine.
+
+**It carries no slot suffix, and the contrast with `mos-verity-<slot>.env` is
+the reason.** That file describes a *different* partition — the rootfs slot this
+boot partition will be paired with — which one RAUC boot payload cannot know,
+since it is installed into whichever boot slot is inactive; so it ships both
+slots' copies under distinct names (§5.3, divergence 1). These digests describe
+this partition's *own* two files, of which there is exactly one set whichever
+slot the partition turns out to be, exactly as there is one `Image` and one
+`boot.scr`. A suffix would be two names for one fact, and the copy that is never
+read would be free to drift.
+
+**What each half catches, stated separately.** The byte count catches a short
+read, and names it precisely, which the checksum alone would not. The CRC-32
+catches any divergence present in DRAM when it runs — a short read *or* stale
+bytes in the middle — and it is the one of the two that would have caught the
+failure in §5.3's divergence 3. Neither catches a corruption that happens
+*after* the check and before the kernel reads the page: the window is the
+milliseconds between `crc32` and `booti` rather than the whole load, but it is
+not zero, and the script cannot make it zero.
+
+**Cost.** `crc32` over 44,493,312 bytes measured **≈95 ms** in the U-Boot
+sandbox on an x86 host (Xeon 8581C @ 2.10 GHz; 1072 ms for one pass against a
+980 ms process floor, and 1969 ms for ten, so ≈95–99 ms each — about 470 MB/s).
+`lib/crc32.c` is portable C, so the RK3576 figure will differ with clock and
+IPC; **it has not been measured on the board**, because no cx3576 is attached to
+the session that wrote this, and it is owed. The refusal it buys is the
+difference between a console line naming the slot and a kernel `BUG()` in
+`paging_init` with nothing attributing it.
+
+**A refusal burns the slot, and that is right even on a first boot.** The burn
+is `BOOT_<slot>_LEFT=0`, which is not a permanent loss: when both slots reach
+zero the script refills each to three and resets (§4.2), so a transient fault
+costs a trip through the other slot and back, not the device. On a
+factory-flashed board whose `rootfs-b` is still zero-filled that trip ends in
+slot B's own credits being spent and the counters refilling, which returns to
+slot A — so the guard cannot strand a device that a retry would have saved. It
+costs boot cycles, and it buys a board that says why it will not boot instead of
+one that executes a kernel it cannot vouch for.
+
+The `Image` / `rk3576-src.dtb` filenames match what the assembler stages into
+each boot partition (`build/src/mkimage-cx3576.ts`) [V].
 
 ---
 

@@ -118,7 +118,8 @@ describe('cx3576 — the U-Boot board', () => {
     expect(cx3576.firmwareFiles!.length).toBe(5)
     expect(cx3576.firmwareFiles![0]).toBe('/usr/lib/firmware/aic_userconfig_8800d80.txt')
     // Interpolated mid-list, with @SLOT@ left alone for the installer.
-    expect(cx3576.bootSlotRequiredFiles).toEqual(['Image', 'rk3576-src.dtb', 'boot.scr', 'mos-verity-@SLOT@.env'])
+    expect(cx3576.bootSlotRequiredFiles)
+      .toEqual(['Image', 'rk3576-src.dtb', 'boot.scr', 'mos-verity-@SLOT@.env', 'mos-boot-digest.env'])
     // A U-Boot board has no ESP contents list; absent, not empty.
     expect(cx3576.espRequiredFiles).toBeUndefined()
   })
@@ -129,13 +130,13 @@ describe('cx3576 — the U-Boot board', () => {
     expect(cx3576.cmdlineArgs).toBe('console=ttyFIQ0,1500000 earlycon=uart8250,mmio32,0x2ad40000 net.ifnames=0')
   })
 
-  test('reads clean: no faults, no duplicated keys, 143 assignments', () => {
+  test('reads clean: no faults, no duplicated keys, 144 assignments', () => {
     expect(cx3576.faults).toEqual([])
     expect(cx3576.env.duplicates).toEqual([])
     // If this number moves, the board definition gained or lost a key. That is
     // a deliberate act; update it deliberately.
-    expect(cx3576.env.assignments.length).toBe(143)
-    expect(cx3576.env.values.size).toBe(143)
+    expect(cx3576.env.assignments.length).toBe(144)
+    expect(cx3576.env.values.size).toBe(144)
   })
 })
 
