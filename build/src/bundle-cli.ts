@@ -38,17 +38,20 @@ import { shippedRaucPath } from './toolsets.ts'
 /** The board a bundle is built for when nothing says otherwise, as in the shell. */
 export const DEFAULT_BOARD = 'cx3576'
 
-const USAGE = `usage: bash build/run.sh --bundle [VERSION] [--board B] [--out-dir DIR] [--bsp-out DIR]
+const USAGE = `usage: bash build/run.sh --bundle [VERSION] [--board B] [--out-dir DIR]
 
-Builds the signed RAUC update bundle. Inputs come from _out/<board>/ and
-_out/boards/<board>/.
+Builds the signed RAUC update bundle. Every input comes from _out/<board>/:
+the verity image and the per-slot cmdlines the rootfs build wrote, and
+_out/<board>/boot/, where that same build exported this board's kernel -- plus
+its device tree and boot.cmd on a U-Boot board -- out of the packed root. There
+is no --bsp-out: since PLAN-086 S2 the bundle reads no BSP artefact directly,
+which is what stops it and the flashed image shipping different kernels.
 
   VERSION          the bundle version string; also MOS_BUNDLE_VERSION
                    (default: 0.0.0-dev)
   --board B        the board to bundle for (default: ${DEFAULT_BOARD}, or MOS_BOARD)
-  --out-dir DIR    where the rootfs-side inputs are and the bundle is written
+  --out-dir DIR    where the rootfs build's outputs are and the bundle is written
                    (default: _out/<board>)
-  --bsp-out DIR    the BSP build products (default: _out/boards/<board>, or BSP_OUT)
 
 environment:
   CERT KEY KEYRING     real signing material, instead of meta/rauc/
@@ -206,23 +209,28 @@ export function requireHostRauc(arch: string, exists: (p: string) => boolean = e
 }
 
 export interface RequiredInputs {
-  /** Produced by the rootfs build; the message names it. */
+  /** Written by the rootfs build itself; the message names it. */
   readonly rootfsSide: readonly string[]
-  /** Produced by a BSP build, or found through BSP_OUT; a different message. */
-  readonly boardSide: readonly string[]
+  /**
+   * Exported by the rootfs build OUT OF the packed root; a different message.
+   *
+   * Since PLAN-086 S2 no boot input is read from `BSP_OUT` here. The blobs
+   * reach the assembler through the board and kernel packages and out again
+   * through `rootfs/scripts/pack-export-boot.sh`, so the same command produces
+   * both families and the distinction is no longer "which command do I run" but
+   * "which half of it did not produce this" -- a missing verity image means the
+   * composition failed, and a missing `boot/Image` means the package that is
+   * supposed to carry it did not.
+   */
+  readonly bootExport: readonly string[]
 }
 
 /**
- * Every input that must exist, split by WHO produces it.
- *
- * The two families get different sentences in the shell and keep them here:
- * one is made by a script you can run, the other by a BSP build or a BSP_OUT
- * pointed somewhere else.
+ * Every input that must exist, split by WHERE the rootfs build put it.
  */
 export function checkRequiredInputs(
   inputs: RequiredInputs,
   board: string,
-  bspOut: string,
   exists: (p: string) => boolean = existsSync,
 ): void {
   for (const input of inputs.rootfsSide) {
@@ -230,9 +238,13 @@ export function checkRequiredInputs(
       throw new Error(`${input} not found; run 'MOS_BOARD=${board} bash ${ROOTFS_PRODUCER}' first`)
     }
   }
-  for (const input of inputs.boardSide) {
+  for (const input of inputs.bootExport) {
     if (!exists(input)) {
-      throw new Error(`${input} not found; build the BSP or set BSP_OUT (currently: ${bspOut})`)
+      throw new Error(
+        `${input} not found; it is exported out of the packed root by `
+        + `'MOS_BOARD=${board} bash ${ROOTFS_PRODUCER}', which takes it from the installed board `
+        + `and kernel packages. An export missing a file means a package did not carry it`,
+      )
     }
   }
 }
@@ -241,14 +253,12 @@ export interface CliOptions {
   readonly board: string
   readonly version: string
   readonly outDir: string
-  readonly bspOut: string
 }
 
 export function parseArgs(argv: readonly string[], env: Record<string, string | undefined>): CliOptions {
   const board = env.MOS_BOARD ?? DEFAULT_BOARD
   let version: string | undefined
   let outDir: string | undefined
-  let bspOut: string | undefined
   for (let i = 0; i < argv.length; i += 1) {
     const a = argv[i]
     const next = argv[i + 1]
@@ -256,10 +266,9 @@ export function parseArgs(argv: readonly string[], env: Record<string, string | 
       console.log(USAGE)
       process.exit(0)
     }
-    if (a === '--board' || a === '--out-dir' || a === '--bsp-out') {
+    if (a === '--board' || a === '--out-dir') {
       if (next === undefined) throw new Error(`${a} needs a value\n\n${USAGE}`)
       if (a === '--out-dir') outDir = next
-      else if (a === '--bsp-out') bspOut = next
       i += 1
       continue
     }
@@ -275,7 +284,6 @@ export function parseArgs(argv: readonly string[], env: Record<string, string | 
     board: chosen,
     version: checkVersion(version ?? env.MOS_BUNDLE_VERSION ?? '0.0.0-dev'),
     outDir: outDir ?? join(REPO_ROOT, '_out', chosen),
-    bspOut: bspOut ?? env.BSP_OUT ?? join(REPO_ROOT, '_out', 'boards', chosen),
   }
 }
 
@@ -318,27 +326,26 @@ export async function main(argv: readonly string[]): Promise<number> {
   const bootCmdlineA = join(outDir, 'boot-cmdline-a.txt')
   const bootCmdlineB = join(outDir, 'boot-cmdline-b.txt')
 
-  // Where the kernel comes from is a BOARD FACT. cx3576's boot payload is its
-  // BSP's Image plus a device tree, taken from BSP_OUT; x64's is the single
-  // vmlinuz the rootfs build extracted into _out, which is also the one the
-  // image assembler put on the slot boot partitions -- so the bundle and the
-  // flashed image cannot ship different kernels for the same build.
-  //
-  // Both boards' kernels are now built by this repository; what still differs
-  // is where the bundle READS one from, which is why this switches on the
-  // bootloader rather than on who compiled it.
+  // ONE BOOT EXPORT, READ BY BOTH ASSEMBLERS (PLAN-086 S2). What a board's boot
+  // payload IS is still a board fact -- cx3576's is an Image plus a device tree
+  // and a UEFI board's is a single vmlinuz -- but where the bundle reads it from
+  // no longer is: `_out/<board>/boot/` is what rootfs/scripts/pack-export-boot.sh
+  // wrote out of the packed root, and build/src/mkimage-cx3576-cli.ts reads the
+  // same directory. That is what makes it impossible for the bundle and the
+  // flashed image to ship different kernels for one build, and cx3576 is the
+  // half that used to reach past it into BSP_OUT.
   const uboot = geometry.bootloader === 'uboot'
-  const kernelImage = uboot
-    ? join(options.bspOut, 'kernel', 'Image')
-    : join(outDir, 'boot', 'vmlinuz')
-  const dtb = uboot ? join(options.bspOut, 'kernel', 'rk3576-src.dtb') : undefined
+  const bootExport = join(outDir, 'boot')
+  const kernelImage = join(bootExport, uboot ? 'Image' : 'vmlinuz')
+  const dtb = uboot ? join(bootExport, 'rk3576-src.dtb') : undefined
+  const bootCmd = uboot ? join(bootExport, 'boot.cmd') : undefined
 
   checkRequiredInputs({
     rootfsSide: uboot
       ? [rootfsVerityImg, rootfsVerityEnv, bootCmdlineA, bootCmdlineB]
-      : [rootfsVerityImg, rootfsVerityEnv, kernelImage],
-    boardSide: uboot ? [kernelImage, dtb!] : [],
-  }, options.board, options.bspOut)
+      : [rootfsVerityImg, rootfsVerityEnv],
+    bootExport: uboot ? [kernelImage, dtb!, bootCmd!] : [kernelImage],
+  }, options.board)
 
   const arch = hostArchFor(osArch())
   const raucBin = requireHostRauc(arch)
@@ -352,6 +359,7 @@ export async function main(argv: readonly string[]): Promise<number> {
     board: options.board,
     kernelImage,
     dtb,
+    bootCmd,
     rootfsVerityImg,
     rootfsVerityEnv,
     rootfsReport: join(outDir, 'rootfs-report.txt'),

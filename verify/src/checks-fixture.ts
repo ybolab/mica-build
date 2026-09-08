@@ -1529,3 +1529,122 @@ export function packedRootFixture(board: Board): RootFixture {
 
   return { ctx, root, dispose: () => rmSync(dir, { recursive: true, force: true }) }
 }
+
+// ---------------------------------------------------------------- ELF fixtures
+//
+// PLAN-086 S2's checks read ELF section tables and the GNU build-id note out of
+// the packed root, so driving them needs files that ARE ELF. Copying a real
+// binary in would be 40 MB of vendored artefact whose sections nobody chose;
+// this writes the smallest thing `verify/src/elf.ts` has to be able to read, and
+// the test decides which sections it has -- which is the only way to drive
+// "still carries .debug_info" and "carries no build-id" at all.
+
+/** ET_EXEC. */
+export const ELF_TYPE_EXEC = 2
+/** ET_REL -- what a kernel module is. */
+export const ELF_TYPE_REL = 1
+/** SHT_PROGBITS. */
+const SHT_PROGBITS = 1
+/** SHT_NOTE, and SHT_NOBITS for a note whose content was moved out. */
+const SHT_NOTE = 7
+const SHT_NOBITS = 8
+/** EM_AARCH64. Nothing here reads it; a plausible value beats a zero. */
+const EM_AARCH64 = 183
+
+export interface SyntheticSection {
+  readonly name: string
+  /** Defaults to SHT_PROGBITS. */
+  readonly type?: number
+  readonly content: Uint8Array
+}
+
+/** A `.note.gnu.build-id` section body carrying `id`, which must be hex. */
+export function buildIdNote(id: string): Uint8Array {
+  const desc = Buffer.from(id, 'hex')
+  const name = Buffer.from('GNU\0', 'latin1')
+  const body = Buffer.alloc(12 + name.length + ((desc.length + 3) & ~3))
+  body.writeUInt32LE(name.length, 0)
+  body.writeUInt32LE(desc.length, 4)
+  body.writeUInt32LE(3, 8) // NT_GNU_BUILD_ID
+  name.copy(body, 12)
+  desc.copy(body, 12 + name.length)
+  return body
+}
+
+export interface SyntheticElfOptions {
+  /** Defaults to [`ELF_TYPE_EXEC`]. */
+  readonly type?: number
+  /** The GNU build-id to embed; omitted means no note section at all. */
+  readonly buildId?: string
+  /** Written as SHT_NOBITS, the shape `objcopy --strip-debug` leaves behind. */
+  readonly buildIdNobits?: boolean
+  readonly sections?: readonly SyntheticSection[]
+}
+
+/**
+ * A minimal 64-bit little-endian ELF, written to `path`.
+ *
+ * Header, then each section's content, then the section header table. No
+ * program headers: nothing here is executed, and `elf.ts` reads `e_shoff`.
+ */
+export function writeSyntheticElf(path: string, options: SyntheticElfOptions = {}): void {
+  const sections: SyntheticSection[] = [...(options.sections ?? [])]
+  if (options.buildId !== undefined) {
+    sections.unshift({
+      name: '.note.gnu.build-id',
+      type: options.buildIdNobits === true ? SHT_NOBITS : SHT_NOTE,
+      content: buildIdNote(options.buildId),
+    })
+  }
+  // Section 0 is SHT_NULL and has no name; `.shstrtab` is last and names them.
+  const names = ['', ...sections.map(s => s.name), '.shstrtab']
+  const nameOffsets: number[] = []
+  let strtab = ''
+  for (const n of names) {
+    nameOffsets.push(strtab.length)
+    strtab += `${n}\0`
+  }
+  const strtabBytes = Buffer.from(strtab, 'latin1')
+
+  const bodies = [Buffer.alloc(0), ...sections.map(s => Buffer.from(s.content)), strtabBytes]
+  const types = [0, ...sections.map(s => s.type ?? SHT_PROGBITS), 3 /* SHT_STRTAB */]
+
+  const HEADER = 64
+  const ENTRY = 64
+  const offsets: number[] = []
+  let cursor = HEADER
+  for (const b of bodies) {
+    offsets.push(cursor)
+    cursor += b.length
+  }
+  const shoff = cursor
+
+  const table = Buffer.alloc(ENTRY * bodies.length)
+  for (let i = 0; i < bodies.length; i += 1) {
+    const o = i * ENTRY
+    table.writeUInt32LE(nameOffsets[i] as number, o)
+    table.writeUInt32LE(types[i] as number, o + 4)
+    table.writeBigUInt64LE(0n, o + 8) // sh_flags
+    table.writeBigUInt64LE(0n, o + 16) // sh_addr
+    table.writeBigUInt64LE(BigInt(i === 0 ? 0 : (offsets[i] as number)), o + 24)
+    table.writeBigUInt64LE(BigInt((bodies[i] as Buffer).length), o + 32)
+    table.writeUInt32LE(0, o + 40) // sh_link
+    table.writeUInt32LE(0, o + 44) // sh_info
+    table.writeBigUInt64LE(1n, o + 48) // sh_addralign
+    table.writeBigUInt64LE(0n, o + 56) // sh_entsize
+  }
+
+  const header = Buffer.alloc(HEADER)
+  header.set([0x7f, 0x45, 0x4c, 0x46, 2, 1, 1, 0], 0)
+  header.writeUInt16LE(options.type ?? ELF_TYPE_EXEC, 16)
+  header.writeUInt16LE(EM_AARCH64, 18)
+  header.writeUInt32LE(1, 20)
+  header.writeBigUInt64LE(BigInt(shoff), 40)
+  header.writeUInt16LE(HEADER, 52)
+  header.writeUInt16LE(ENTRY, 58)
+  header.writeUInt16LE(bodies.length, 60)
+  header.writeUInt16LE(bodies.length - 1, 62)
+
+  mkdirSync(dirname(path), { recursive: true })
+  writeFileSync(path, Buffer.concat([header, ...bodies, table]))
+}

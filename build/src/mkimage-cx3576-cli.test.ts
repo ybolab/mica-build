@@ -63,9 +63,15 @@ describe('the two families of missing input', () => {
     } finally { e.cleanup() }
   })
 
-  test('a missing BSP input names BSP_OUT and says what it currently is', async () => {
+  test('a missing boot-export input names the export and the package behind it', async () => {
     // The rootfs side has to be satisfied first, or the other message wins --
     // which is itself the order the shell checks in.
+    //
+    // PLAN-086 S2: this used to name BSP_OUT, because that is where the
+    // assembler read the kernel and the device tree from. It reads
+    // _out/<board>/boot/ now, and BSP_OUT could be pointed anywhere at all
+    // without changing what the image is assembled from -- so a message naming
+    // it would send a reader to a directory that no longer decides anything.
     const e = emptyOut()
     try {
       const out = join(e.dir, 'out')
@@ -73,11 +79,33 @@ describe('the two families of missing input', () => {
         writeFileSync(join(out, f), '')
       }
       await expect(main(['--out-dir', out, '--bsp-out', '/opt/nowhere']))
-        .rejects.toThrow(/Image not found; build the BSP or set BSP_OUT \(currently: \/opt\/nowhere\)/)
+        .rejects.toThrow(/boot\/Image not found; it is exported out of the packed root by 'MOS_BOARD=cx3576 bash rootfs\/build\.sh'/)
     } finally { e.cleanup() }
   })
 
   test('a missing uboot-mos gets the uboot-mos-only sentence, not "not found"', async () => {
+    // The kernel, the device tree and boot.cmd have to be in the export first,
+    // or the sentence above wins -- the u-boot blob is checked last, exactly as
+    // it was when all three came from BSP_OUT.
+    const e = emptyOut()
+    try {
+      const out = join(e.dir, 'out')
+      const board = join(e.dir, 'board')
+      for (const f of ['rootfs-verity.img', 'rootfs-verity.env', 'boot-cmdline-a.txt', 'boot-cmdline-b.txt']) {
+        writeFileSync(join(out, f), '')
+      }
+      mkdirSync(join(out, 'boot'), { recursive: true })
+      for (const f of ['Image', 'rk3576-src.dtb', 'boot.cmd']) writeFileSync(join(out, 'boot', f), '')
+      await expect(main(['--out-dir', out, '--bsp-out', board]))
+        .rejects.toThrow(/build it with 'make -C boards\/cx3576\/bsp uboot-mos'/)
+    } finally { e.cleanup() }
+  })
+
+  test('the boot inputs are read from the EXPORT, never from BSP_OUT', async () => {
+    // The property PLAN-086 S2 is for, driven from the side that can fail: a
+    // BSP_OUT holding every blob does not satisfy the assembler, because a
+    // BSP tree and the packed root can disagree about which kernel this image
+    // was composed with, and only one of them is in the image.
     const e = emptyOut()
     try {
       const out = join(e.dir, 'out')
@@ -86,10 +114,11 @@ describe('the two families of missing input', () => {
         writeFileSync(join(out, f), '')
       }
       mkdirSync(join(board, 'kernel'), { recursive: true })
-      writeFileSync(join(board, 'kernel', 'Image'), '')
-      writeFileSync(join(board, 'kernel', 'rk3576-src.dtb'), '')
+      mkdirSync(join(board, 'uboot-mos'), { recursive: true })
+      for (const f of ['Image', 'rk3576-src.dtb']) writeFileSync(join(board, 'kernel', f), '')
+      writeFileSync(join(board, 'uboot-mos', 'u-boot-rockchip.bin'), '')
       await expect(main(['--out-dir', out, '--bsp-out', board]))
-        .rejects.toThrow(/build it with 'make -C boards\/cx3576\/bsp uboot-mos'/)
+        .rejects.toThrow(/boot\/Image not found; it is exported out of the packed root/)
     } finally { e.cleanup() }
   })
 

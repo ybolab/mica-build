@@ -213,12 +213,21 @@ RUN --mount=type=bind,source=rootfs/scripts,target=/mos-scripts \
     sh /mos-scripts/package-manager-purge.sh
 
 # Build report (moved out of the tree by the pack stage; never ships in the
-# image). TOTAL_MB is measured HERE, after the purge, so the budget gate in
-# build.sh weighs the root that ships rather than the one that was built.
+# image).
+#
+# TOTAL_MB IS NOT MEASURED HERE ANY MORE, and the move is PLAN-086 S2's. It
+# used to be taken at this line, after the purge, so that the budget gate in
+# build.sh weighed the root that ships rather than the one that was built --
+# and that reason is unchanged. What changed is where the shipping root is
+# finished: the pack stage now strips the debug information out of the
+# self-built binaries and takes the boot blobs out of the tree, roughly 95 MB
+# on either board, so a number taken here would overstate what ships by that
+# much and the budget gate would weigh a root nothing flashes. It is measured
+# over /rootfs in `pack`, at the last moment before mksquashfs reads it, and
+# appended to this same report in this same position.
 RUN { cat /rootfs-report.pkgs; \
       echo; \
       echo "RAUC_VERSION $(cat /rootfs-report.rauc)"; \
-      echo "TOTAL_MB $(du -sxm --exclude=/proc --exclude=/sys --exclude=/dev / 2>/dev/null | cut -f1)"; \
     } > /rootfs-report.txt && rm -f /rootfs-report.pkgs /rootfs-report.rauc
 
 # Pack: squashfs-zstd + appended dm-verity hash tree.
@@ -230,14 +239,28 @@ FROM --platform=$BUILDPLATFORM ${MOS_IMAGE_DEBIAN_BOOKWORM} AS pack
 # under `set -u` is a build failure rather than a check that silently reads "no
 # radios" on a board that has them.
 ARG BOARD_RADIOS=""
+# MOS_ARCH and MOS_BOARD are declared here for the same reason, and PLAN-086 S2
+# is what needs them. MOS_ARCH picks which of the two cross binutils below
+# rewrites the board's ELF -- this stage runs on the BUILD platform, so the
+# native objcopy is the wrong one for the tree it is pointed at. MOS_BOARD names
+# the one directory under /usr/lib/mos/board/ that carries this board's boot
+# blobs; a glob would find it too, and would also find a second one without
+# saying which was meant.
+ARG MOS_ARCH
+ARG MOS_BOARD
 # No initramfs-tools-core here since PLAN-074. It was installed for one
 # binary, lsinitramfs, which rootfs/scripts/pack-export-boot.sh used to list
 # the exported initrd and assert veritysetup, the mos-verity script and the
 # absence of busybox in it. There is no initrd on either board now -- x64's
 # kernel assembles the dm-verity root from the command line, as cx3576's always
 # did -- so that script asserts the absence instead and reads nothing.
+# BOTH cross binutils, not the one MOS_ARCH selects. They are 60 MB together
+# and this apt layer is then keyed on nothing but the base digest, so an amd64
+# board and an arm64 board share it; installing only the selected one would put
+# MOS_ARCH in the cache key and rebuild this layer every time the board changed.
 RUN apt-get update && apt-get install -y --no-install-recommends \
         squashfs-tools cryptsetup-bin libcap2-bin \
+        binutils-x86-64-linux-gnu binutils-aarch64-linux-gnu \
     && rm -rf /var/lib/apt/lists/*
 COPY --from=closed / /rootfs/
 
@@ -367,6 +390,50 @@ RUN --mount=type=bind,source=rootfs/scripts,target=/mos-scripts \
 RUN --mount=type=bind,source=rootfs/scripts,target=/mos-scripts \
     sh /mos-scripts/pack-assert-shadow-chain.sh
 
+# PLAN-086 S2 -- the two exports that take content OUT of the root, both of
+# them here rather than after the pack: everything below this point measures or
+# reads /rootfs, so a removal made after any of it would be a removal none of
+# those numbers describe.
+
+# THE BOOT INPUTS. The kernel a slot boots lives on the boot partition and the
+# bootloader lives in the loader region, so a second copy inside the
+# verity-protected root is 54 MB on cx3576 and 53 MB on a UEFI board that no
+# running system reads. They stay in the board and kernel PACKAGES -- that is
+# what makes "which blobs was this image assembled from" a property of the
+# package set rather than of the directory the build was run beside, which is
+# the argument boards/cx3576/deb/board-cx3576/Dockerfile records -- and this is
+# the finalizer performing the export that argument always described. GRUB has
+# no squashfs driver, so on a UEFI board the kernel HAS to sit on the ESP as a
+# plain file; cx3576 has had the same arrangement from the start. Either way the
+# kernel is not covered by dm-verity, and what protects it is that RAUC replaces
+# the boot slot from the same signed bundle as the rootfs slot.
+#
+# _out/<board>/boot/ is now the ONE place the assembler and the bundle builder
+# read a boot input from -- build/src/mkimage-cx3576-cli.ts and
+# build/src/bundle-cli.ts both take it from there, where cx3576's half used to
+# reach back into BSP_OUT. The image contract's bsp-compare family still
+# compares each slot's Image and device tree against ${BSP_OUT}/kernel/, so the
+# export cannot drift from the BSP build without a check going red.
+RUN --mount=type=bind,source=rootfs/scripts,target=/mos-scripts \
+    MOS_BOARD="${MOS_BOARD}" sh /mos-scripts/pack-export-boot.sh
+
+# THE DEBUG INFORMATION. Thirteen binaries in this root carry `.debug*`,
+# `.symtab` or `.strtab` -- 42.7 MB of it, and every one of the thirteen is
+# built by this repository; Debian ships its own stripped. They are stripped
+# here and the debug halves are written to /out/debug/.build-id/, matched to the
+# binary they came from by GNU build-id, which is the note gdb and every other
+# consumer of separated debug information resolves on. Kernel modules are not
+# touched: their symbol tables are what the module loader relocates against.
+RUN --mount=type=bind,source=rootfs/scripts,target=/mos-scripts \
+    MOS_ARCH="${MOS_ARCH}" sh /mos-scripts/pack-export-debug.sh
+
+# TOTAL_MB, measured HERE rather than in `closed`, because the two lines above
+# are what finish the shipping root: a number taken before them describes a tree
+# that is roughly 95 MB larger than anything this build writes to a slot, and
+# build.sh's budget gate reads this number. Appended to the report in the
+# position it has always occupied, so the file's shape does not move.
+RUN echo "TOTAL_MB $(du -sxm /rootfs | cut -f1)" >> /out/rootfs-report.txt
+
 # Privilege inventory of the SOURCE tree, captured before packing so the packed
 # image can be diffed against it. Numeric uid/gid deliberately: the tree is
 # arm64 Debian but this stage runs on the build platform, whose /etc/passwd
@@ -447,23 +514,6 @@ RUN --mount=type=bind,source=rootfs/scripts,target=/mos-scripts \
     sh /mos-scripts/pack-verity.sh
 
 
-# The kernel, extracted out of the root for boards whose bootloader cannot read
-# it. No initramfs travels with it: this board's kernel assembles the dm-verity
-# root from the command line, and the export script asserts that the root
-# carries no initrd rather than listing one. GRUB has no squashfs driver, so on x64 it cannot
-# load a kernel from the verity-protected root -- the kernel has to sit on the
-# ESP as a plain file. That is the same arrangement cx3576 already has (Image
-# on the FAT boot partition, not inside the squashfs) and it carries the same
-# property, worth stating rather than discovering: the kernel is not covered by
-# dm-verity on either board. What protects it is that RAUC updates the boot
-# slot as part of the same signed bundle as the rootfs slot.
-
-# Copied for every architecture and simply absent on arm64, where the board
-# supplies its own Image: `cp` of a glob that matches nothing would fail the
-# build, so the miss is explicit.
-RUN --mount=type=bind,source=rootfs/scripts,target=/mos-scripts \
-    sh /mos-scripts/pack-export-boot.sh
-
 # The factory /var tree, exported so the image assembler can seed EPHEMERAL at
 # assembly instead of copying it out on first boot. Seeding at runtime puts
 # mos-seed-var at the same moment as every other unit that writes /var: Debian
@@ -487,6 +537,11 @@ COPY --from=pack /out/rootfs-verity.img /
 COPY --from=pack /out/rootfs-verity.env /
 COPY --from=pack /out/rootfs-report.txt /
 COPY --from=pack /out/boot/ /boot/
+# The separated debug information, one `.debug` per shipped binary plus the
+# manifest that names the build-id tying each to its binary. Outside the root by
+# construction -- this is the whole point of the split -- and read by the image
+# contract's debug-export family out of _out/<board>/debug/.
+COPY --from=pack /out/debug/ /debug/
 
 # The factory root as an OCI image.
 

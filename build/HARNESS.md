@@ -480,7 +480,8 @@ would be right about today's file and wrong about the next one.
 | `uboot-mos` absent | "build it with 'make -C boards/cx3576/bsp uboot-mos'", "is NOT a substitute", "CONFIG_ENV_IS_NOWHERE", "silently never run the RAUC A/B handshake" |
 | `uboot-mos` byte-identical to the debug build | "is byte-identical to the debug build at …", quoting the env offsets the real variant carries, and "do not copy or symlink the other variant into place" |
 | **no debug build present at all** | assembles. The control: its absence disables nothing else, and without this the guard could be "always refuses" |
-| through the CLI, with no `uboot-mos` on disk | the same sentence, plus "note: BSP_OUT is currently …" |
+| through the CLI, with no `uboot-mos` blob in the boot export | the same sentence, which since PLAN-086 S2 also names the two steps between the BSP build and the export: `make os-deb-board-cx3576` and `rootfs/build.sh` |
+| through the CLI, with every blob in `BSP_OUT` and none in the export | "boot/Image not found; it is exported out of the packed root" — the property the slice is for, driven from the side that can fail |
 
 **the rest** — thirty-three refusals in all, each driven:
 
@@ -937,8 +938,9 @@ that a guard stayed quiet about an input it had no reason to complain about.
 | `CERT=/hsm/typo.pem` missing | "…supplied from the environment but this file does not exist", and NOT `make os-devkeys` — a different reader with a different fix |
 | `CERT=/keys-backup/c.pem` against `KEYDIR=/keys` | the environment sentence: the under-`KEYDIR` test needs the slash, and `/keys-backup` is not under `/keys` |
 | **each rootfs-side input missing, in turn** | "not found; run 'MOS_BOARD=cx3576 bash rootfs/build.sh' first" |
-| **each board-side input missing, in turn** | "build the BSP or set BSP_OUT (currently: /bsp-out)" — a different action, so a different sentence |
+| **each boot-export input missing, in turn** | "it is exported out of the packed root by …, which takes it from the installed board and kernel packages" — since PLAN-086 S2 both families come from ONE command, and the sentences still differ because the diagnosis does: a missing verity image means the composition did not finish, a missing `boot/Image` means a package did not carry it |
 | both families missing | the rootfs-side sentence first |
+| a UEFI board's one-file boot export | short, not empty, and still refused when that file is absent — an empty list is what a vacuous guard looks like |
 | `riscv64`, `armv7l`, `ppc64le`, `''` | "pkgs/rauc/ builds amd64 and arm64" |
 | `x86_64`, `x64`, `aarch64`, `arm64` | accepted — `uname -m` and node's `os.arch()` spell these differently and both reach this function |
 | the shipped rauc absent | "out-amd64/rauc not found … built from source now, not installed from Debian" |

@@ -1171,6 +1171,17 @@ DRIVER_ARGS=(
 # driver decides only the order, the tags and which argument reaches which file,
 # and it refuses an argument no file declares rather than letting docker warn
 # about it.
+# THE TWO EXPORT DIRECTORIES, EMPTIED FIRST (PLAN-086 S2). `-o type=local`
+# MERGES into its destination: it writes what the stage holds and removes
+# nothing that is already there. Both of these are sets whose membership is the
+# point -- `boot/` is every boot input this root carried and `debug/` is one
+# `.build-id/<id>.debug` per binary that was stripped -- so a file left behind
+# by a previous build is a boot blob no image was assembled from, or debug
+# information for a binary this image does not ship. The second is the worse
+# one: a debug file that resolves a core against symbols from another build is
+# a wrong answer where no file at all would have been an honest miss.
+rm -rf "$OUT_DIR/boot" "$OUT_DIR/debug"
+
 echo "rootfs: composing $MOS_BOARD"
 bash "$REPO_ROOT/rootfs/debian/docker.sh" cache --arch "$MOS_ARCH" \
     --packages "$COMPOSE_STAGE/packages.txt"

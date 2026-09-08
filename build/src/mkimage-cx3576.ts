@@ -135,6 +135,9 @@ export function envFileGet(path: string, key: string): string {
 export function ubootMissingError(path: string, debugVariantDir: string): Error {
   return new Error(
     `${path} not found; build it with 'make -C boards/${BOARD}/bsp uboot-mos'.\n`
+    + `Since PLAN-086 S2 that blob reaches the assembler through the mos-board-${BOARD} package `
+    + `and the boot export the rootfs build takes out of the packed root, so a BSP build has to be `
+    + `followed by 'make os-deb-board-${BOARD}' and 'MOS_BOARD=${BOARD} bash ${ROOTFS_PRODUCER}'.\n`
     + `The v1 blob under out/${debugVariantDir}/ is NOT a substitute. It is the debug variant: `
     + `CONFIG_ENV_IS_NOWHERE (no persistent environment at all) and no pinned bootmeth order, so a v2 `
     + `image built with it would boot, look healthy, and silently never run the RAUC A/B handshake -- `
