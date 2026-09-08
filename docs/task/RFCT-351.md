@@ -123,11 +123,14 @@ for byte, and it lies inside the file rather than past its end: the file is
 
 Three further searches, all negative:
 
-- **The value is in nothing this repository flashes.** The word `0x90ffef61`
-  (the `ADRP` half) occurs in none of the 90 files under the cx3576 BSP
-  outputs and sources -- not the Image, not either U-Boot variant, not the
-  vendor `MiniLoaderAll.bin`, not the dtb, not the Alpine rootfs. The pair is
-  instruction-shaped, but it is not text from anything we ship.
+- **The value is in nothing the CURRENT build flashes.** The word `0x90ffef61`
+  (the `ADRP` half) occurs in none of the 90 files under the cx3576 BSP outputs
+  and sources -- not the Image, not either U-Boot variant, not the vendor
+  `MiniLoaderAll.bin`, not the dtb, not the Alpine rootfs. It is
+  instruction-shaped but it is not text from anything this build ships. **It is
+  text from the PREVIOUS build**, which the section "Whose text it is" below
+  identifies by name; that search was over the current artefacts only, and
+  widening it to an older assembled image is what found it.
 - **The relocator does not write there.** `CONFIG_RELOCATABLE=y`, so `head.S`
   walks 267,504 `R_AARCH64_RELATIVE` entries before `start_kernel`. Parsed out
   of the Image between `__rela_start` and `__rela_end`: **zero** of them have
@@ -136,7 +139,164 @@ Three further searches, all negative:
   `mem_rsvmap` block is empty (first entry is the `0,0` terminator), so the
   three `/reserved-memory` nodes are the whole reservation set.
 
+### Whose text it is
+
+`0x910fa02190ffef61` **is** kernel text, and the decode was right about that.
+It is the wrong kernel's.
+
+The bytes `61 ef ff 90 21 a0 0f 91` occur **exactly once** in the kernel of
+`_out/cx3576/cx3576-mos-1788768763.img`, the 2026-09-07 08:12 image, at file
+offset **`0x1e87800`** -- which is, to the byte, `swapper_pg_dir[256]` in the
+kernel that crashed. Disassembled out of that older Image:
+
+```
+ffffffc009e877f0 <early_kvm_mode_cfg>:
+ffffffc009e877fc:  a9be7bfd   stp  x29, x30, [sp, #-32]!
+ffffffc009e87800:  90ffef61   adrp x1, 0xffffffc009c73000
+ffffffc009e87804:  910fa021   add  x1, x1, #0x3e8
+```
+
+`early_kvm_mode_cfg+0x10` -- the `kvm-arm.mode=` early-param handler, ordinary
+`.init.text`. In the shipped kernel that same function is at
+`ffffffc009e977f0`, exactly `0x10000` higher, which is the whole size delta
+between the two builds.
+
+**The image in DRAM was not one file.** Two offsets settle it:
+
+| file offset | shipped kernel (`image_size 0x2b30000`) | 08:12 kernel (`0x2b20000`) |
+| --- | --- | --- |
+| `0x31da8`, the faulting PC | `d4210000` = **`brk #0x800`** | `f90043e3` = `str x3,[sp,#128]` |
+| `0x1e87800`, `swapper_pg_dir[256]` | `0000000000000000` | **`61efff9021a00f91`** = `x20` |
+
+The BUG trap that fired exists only in the shipped kernel, so the CPU was
+executing shipped bytes at PA `0x42031da8`; the word it read at PA `0x43e87800`
+is the older build's. Three more registers say the same from the other
+direction -- `x21` is the shipped `_etext` (`ffffffc0096b0000`; the 08:12
+kernel's is `ffffffc0096a0000`), `x23` its text size, and `x19` the shipped
+`early_pgtable_alloc` at `ffffffc009e96d20`, where the 08:12 kernel has
+`free_area_init+0x9d8`.
+
+**It is a hole, not a truncation.** The shipped `paging_init` lives at
+`ffffffc009e97080` and ran there with shipped constants -- the 08:12 kernel has
+`alloc_large_system_hash+0x1c` at that address -- and `setup_arch` at
+`ffffffc009e93fbc` likewise. So content at `0x1e87800` was stale while content
+`0x0c7bc` higher was fresh, and so was content 31 MB lower. A short read would
+have left everything above one cut stale; this did not.
+
+It is also not a displaced copy of the shipped image: the shipped Image does
+not contain that word anywhere, and the same instruction pair in it (at
+`0x1e97800`, in the same function) carries *different immediates*
+(`d0ffef61 911a4021`) because its target moved. The bytes are the older file's.
+
+**Reproduced from source.** The tree at `c7ce86e5` -- the parent of `abd5e727`,
+earliest of the four commits that added `BPF_JIT`, `DM_CRYPT`,
+`CRYPTO_AUTHENC` and `CRYPTO_ESSIV` -- rebuilds to `image_size 0x2b20000`,
+99.935% of its 4 KiB pages identical to the kernel extracted from that image
+(the seven that differ are date strings and the build-id over them; that tree
+predates RFCT-320's pins, and its banner says `root@buildkitsandbox`), and
+byte-identical at `0x1e87800`.
+
+### `INIT_DIR_SIZE`, closed analytically and then empirically
+
+The early page-table sizing cannot be size-sensitive at 2 MiB on this board.
+From `arch/arm64/include/asm/kernel-pgtable.h` at the pinned commit:
+
+```c
+#if ARM64_KERNEL_USES_PMD_MAPS                            /* 1: CONFIG_ARM64_4K_PAGES */
+#define SWAPPER_PGTABLE_LEVELS  (CONFIG_PGTABLE_LEVELS - 1)   /* 3 - 1 = 2 */
+```
+
+`EARLY_PUDS` needs `> 3` levels and `EARLY_PMDS` needs `> 2`, so with 2 both
+expand to the literal `0` and `EARLY_PAGES = 1 + EARLY_PGDS`. The only shift
+left is `PGDIR_SHIFT = 30`: **1 GiB**. A 2 MiB crossing spends one more of the
+512 *entries* in an already-reserved PMD page and cannot cost a page.
+
+| | 08:12 (`_end ffffffc00ab20000`) | shipped (`_end ffffffc00ab30000`) |
+| --- | --- | --- |
+| `_end` 1 GiB block | same | same |
+| `_end` 2 MiB block | same | same |
+| `INIT_DIR_SIZE`, computed | `0x2000` | `0x2000` |
+| `init_pg_end - init_pg_dir`, linked | `0x2000` | `0x2000` |
+| `INIT_IDMAP_DIR_SIZE`, computed | `0x5000` | `0x5000` |
+| `init_idmap_pg_end - init_idmap_pg_dir`, linked | `0x5000` | `0x5000` |
+| `head.S` `create_kernel_mapping` needs | 2 pages | 2 pages |
+| `create_idmap` needs (PA `0x42000000..0x44f30000`) | 2 pages, 3 spare | 2 pages, 3 spare |
+
+Computed and linked agree in both builds. `INIT_DIR_SIZE` first changes at
+`image_size 0x38010000` -- the kernel would have to grow **852.9 MiB** from its
+current `0x2b30000`.
+
+There is a structural reason as well, which holds whatever the arithmetic says:
+`init_idmap_pg_dir` (`ffffffc009f70000`) and `init_pg_dir`
+(`ffffffc00ab27000`) are both **above** `swapper_pg_dir`
+(`ffffffc009e87000`), by 954 KiB and 13.2 MiB. Early page-table builders fill
+forward. An overrun of either runs away from `swapper_pg_dir`, never into it.
+
+### The two kernels, symbol by symbol
+
+Built from `c7ce86e5` with the current Dockerfile plus a throwaway
+`System.map` export, outside the repository:
+
+| symbol | shipped | 08:12 | delta |
+| --- | --- | --- | --- |
+| `_stext` | `ffffffc008010000` | `ffffffc008010000` | 0 |
+| `_etext` | `ffffffc0096b0000` | `ffffffc0096a0000` | -65,536 |
+| `idmap_pg_dir` | `ffffffc009e84000` | `ffffffc009e71000` | -77,824 |
+| `tramp_pg_dir` | `ffffffc009e85000` | `ffffffc009e72000` | -77,824 |
+| `reserved_pg_dir` | `ffffffc009e86000` | `ffffffc009e73000` | -77,824 |
+| `swapper_pg_dir` | `ffffffc009e87000` | `ffffffc009e74000` | -77,824 |
+| `__init_begin` | `ffffffc009e90000` | `ffffffc009e80000` | -65,536 |
+| `init_idmap_pg_dir` | `ffffffc009f70000` | `ffffffc009f60000` | -65,536 |
+| `init_pg_dir` | `ffffffc00ab27000` | `ffffffc00ab14000` | -77,824 |
+| `init_pg_end` | `ffffffc00ab29000` | `ffffffc00ab16000` | -77,824 |
+| `_end` | `ffffffc00ab30000` | `ffffffc00ab20000` | -65,536 |
+
+The 64 KiB is in `.text` (`_etext` moves by it). In **both**: no `*_pg_dir` is
+inside `_stext.._etext`, and the whole `[idmap_pg_dir, __init_begin)` block is
+zero in the Image. The 08:12 kernel's `swapper_pg_dir` is at PA `0x43e74000`,
+a different page from the `0x43e87000` that was read.
+
+### The bench test this leaves
+
+At the U-Boot prompt, the boot script's own first line and then one read:
+
+```
+load mmc 0:${bootpart} ${kernel_addr_r} Image     # expect 44,493,312 bytes read
+md 0x43e87800 2
+```
+
+`90ffef61 910fa021` means the load delivered old content and the fault is in
+the load path or in DRAM that survived a warm reset; `00000000 00000000` means
+the load was right and something between it and `paging_init` wrote there. For
+the whole page rather than one word, `md 0x43e87000 16` against the 08:12
+kernel's bytes at that offset:
+
+```
+43e87000: 52820018 9274fa73 f2bfb7e2 aa1303e4
+43e87010: aa1603e1 f2dfffa2 d0ff0d45 52800026
+43e87020: 910dc0a5 9786ab98 9b385ae1 aa1303e2
+43e87030: 4b170320 eb37c29f 54000089 110006f7
+```
+
+`rkdeveloptool rd`, which `make -C boards/cx3576/bsp flash` ends with, is a
+warm reset: DDR is not cleared, so a previous boot's image survives a reflash.
+A power cycle between flash and boot is worth having in any test that is trying
+to establish whether an image boots.
+
+**`boards/cx3576/boot.cmd` has no error check between its three steps.** `load
+Image`, `load rk3576-src.dtb` and `booti` run unconditionally in sequence, so a
+failed or short load reaches `booti` anyway and the console says nothing about
+it. Not changed here: it is the A/B handshake and `tests/handshake-test`
+encodes its current shape.
+
 ### The toolchain, and what Armbian actually says
+
+Demoted by L1's correction: `kernel/Dockerfile` has started `FROM ubuntu:24.04`
+since the initial scaffold (`feb448e7`, 2026-08-17), so GCC 13.3 has built every
+cx3576 kernel this repository has produced -- and the 08:12 kernel's own banner
+in the flashed image says so directly
+(`aarch64-linux-gnu-gcc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0, GNU ld ... 2.42`).
+Recorded anyway, because the question was asked and the answer is durable.
 
 The reference answer is Armbian's own build configuration, and it does not
 name a toolchain version. `config/sources/arm64.conf` sets
@@ -185,24 +345,13 @@ text, because the linker script is what places them and it did not change.
 
 **Stated plainly: the toolchain is not the cause, and the build is not the
 cause.** The kernel this repository produces places its page tables where 6.1's
-linker script says, ships them zeroed, and its own relocator does not touch
-them. What went wrong went wrong on the board, to PA `0x43e87000`, after
-`load mmc` and before `paging_init`. The measurements say the build is
-exonerated, not that the bug is found.
-
-### What the next measurement should be
-
-The one register that would settle it was not dumped, and it does not need the
-kernel: it needs U-Boot. `bdinfo` prints `relocaddr`, `reloc off` and
-`sp start`, and Rockchip's `board_get_usable_ram_top()` caps the relocation
-target at `SDRAM_BASE + 128 MiB`, with the malloc arena and the stack growing
-down from there. The kernel occupies `0x42000000..0x44b30000` -- 43 MiB, which
-is large -- and the page that was corrupted is at `0x43e87000`, 1.5 MiB below
-the round `0x44000000`. Whether U-Boot's own heap or stack reaches down into
-the last megabytes of a 43 MiB kernel image is answerable from one `bdinfo` on
-the console, against those three numbers and `CONFIG_SYS_MALLOC_LEN`. `md
-0x43e87000 8` before `booti`, and again from a `booti`-less boot, would say it
-directly.
+linker script says, ships them zeroed, sizes its early page tables to match what
+`head.S` writes, and its own relocator does not touch them. What reached the CPU
+was a kernel image assembled from two builds -- the shipped one at PA
+`0x42031da8`, the 2026-09-07 08:12 one at PA `0x43e87800`. That is a delivery
+fault between the boot slot and DRAM. The measurements say the build is
+exonerated and name the bytes; they do not say which link of the boot chain
+dropped them.
 
 ### Reproducibility, unchanged and re-measured
 

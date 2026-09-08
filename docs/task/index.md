@@ -69,6 +69,8 @@ thing about the tree. Both indexes now say the same thing.
 - [ ] [**UI-011 Stabilize Bun V8 coverage aggregation**](UI-011.md) `P1`
 - [-] [**RFCT-335 Add a generic virtual arm64 board, bootable in QEMU**](RFCT-335.md) `P1`
 - [x] [**RFCT-343 cx3576: reproducible kernel and U-Boot, and the config the contract reads**](RFCT-343.md) `P1`
+- [x] [**RFCT-357 Spike: grub-arm64-efi under U-Boot EFI_LOADER on RK3576**](RFCT-357.md) `P1`
+- [x] [**RFCT-353 Verify the whole flashed image, and give the mos image a flash path**](RFCT-353.md) `P1`
 - [x] [**RFCT-351 cx3576 kernel BUGs in paging_init: System.map, and the build cleared**](RFCT-351.md) `P1`
 - [x] [**RFCT-350 PLAN-086 S2: separate the debug and boot artefacts from the shipped root**](RFCT-350.md) `P1`
 - [x] [**RFCT-349 Bound the cache fetch from outside the process, and stop the lint reading prose as a command**](RFCT-349.md) `P1`
