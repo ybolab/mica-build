@@ -18,7 +18,7 @@
 // decided the question the other way.
 
 import { lstatSync, readdirSync, readFileSync, type Stats } from 'node:fs'
-import { join } from 'node:path'
+import { pathInRoot } from './checks-root.ts'
 
 /**
  * Where a unit file may live, in the order systemd would find one.
@@ -64,7 +64,7 @@ export function presetRules(root: string): PresetRule[] {
   for (const dir of PRESET_DIRS) {
     let names: string[]
     try {
-      names = readdirSync(join(root, dir))
+      names = readdirSync(pathInRoot(root, dir))
     }
     catch {
       continue
@@ -79,7 +79,7 @@ export function presetRules(root: string): PresetRule[] {
     const file = byName.get(name) as string
     let body: string
     try {
-      body = readFileSync(join(root, file), 'utf8')
+      body = readFileSync(pathInRoot(root, file), 'utf8')
     }
     catch {
       continue
@@ -139,13 +139,19 @@ export function presetForInstance(root: string, instance: string): PresetRule | 
  * Both suffixes, because both are enablement: an `[Install]` section can name
  * either, and a check that knew only the first would miss half of the mechanism
  * it exists to find.
+ *
+ * Resolved through `pathInRoot` with `followLeaf: false`: the directory chain is
+ * followed INSIDE the image, so an absolute symlink on the way to a `.wants`
+ * directory cannot escape to the verifier's own filesystem, while the leaf is
+ * left alone because the leaf IS the subject -- these entries are symlinks by
+ * construction and a dangling one must be reported rather than skipped.
  */
 export function wantsLinksNaming(root: string, unit: string): string[] {
   const out: string[] = []
   const visit = (dir: string): void => {
     let names: string[]
     try {
-      names = readdirSync(join(root, dir))
+      names = readdirSync(pathInRoot(root, dir))
     }
     catch {
       return
@@ -154,7 +160,7 @@ export function wantsLinksNaming(root: string, unit: string): string[] {
       const path = `${dir}/${name}`
       let st: Stats
       try {
-        st = lstatSync(join(root, path))
+        st = lstatSync(pathInRoot(root, path, false))
       }
       catch {
         continue

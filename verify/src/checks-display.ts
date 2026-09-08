@@ -37,14 +37,13 @@
 // `boardCmdline`. A grub display board would keep its console arguments in the
 // cmdline the bootloader composes, and takes that branch.
 
-import { existsSync, readFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { readFileSync } from 'node:fs'
 import { boardsWhere, hasDisplay, isUBoot } from './board-scope.ts'
 import { SLOTS, type BootSlot } from './boot-slots.ts'
 import { bootScript } from './checks-bootchain.ts'
 import { boardCmdline } from './checks-cmdline.ts'
 import { kernelRelease } from './checks-kernel.ts'
-import { packedRoot } from './checks-root.ts'
+import { packedRoot, pathInRoot, regularFileInRoot } from './checks-root.ts'
 import type { CheckCase, ImageContext } from './checks.ts'
 import { uImageText } from './image.ts'
 import type { CheckResult } from './parity.ts'
@@ -128,13 +127,22 @@ function consoleList(text: string): string[] {
 /** `tty1`, `tty0` and friends: the virtual consoles, which are the display. */
 const isVirtualConsole = (name: string): boolean => /^tty\d+$/.test(name)
 
-/** The shipped `/boot/config-<release>`, or '' when there is no single one. */
+/**
+ * The shipped `/boot/config-<release>`, or '' when there is no single one.
+ *
+ * Read through `pathInRoot`, which resolves every hop INSIDE the image. A plain
+ * `join(root, path)` hands an absolute symlink stored in the image to the
+ * verifier's own filesystem, and the answer for such a path is a fact about the
+ * machine running the check rather than about the image (RFCT-358). `pathInRoot`
+ * throws when a hop is missing, and the throw lands in the catch that already
+ * spells absence as `''`.
+ */
 async function shippedKernelConfig(ctx: ImageContext): Promise<string> {
   const root = await packedRoot(ctx)
   const release = kernelRelease(root)
   if (release === '') return ''
   try {
-    return readFileSync(join(root, 'boot', `config-${release}`), 'utf8')
+    return readFileSync(pathInRoot(root, `/boot/config-${release}`), 'utf8')
   }
   catch {
     return ''
@@ -351,7 +359,7 @@ export const DISPLAY_CHECKS: readonly CheckCase[] = [
       // name would find nothing on a perfectly good image.
       const template = UNIT_DIRS
         .map(dir => `${dir}/getty@.service`)
-        .find(p => existsSync(join(root, p)))
+        .find(p => regularFileInRoot(root, p))
       if (template === undefined) {
         return [verdict(id, false,
           `getty@tty1 is not disabled by a preset: there is no getty@.service in `
