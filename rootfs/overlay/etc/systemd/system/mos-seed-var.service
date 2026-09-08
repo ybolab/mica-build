@@ -19,9 +19,11 @@ Before=local-fs.target systemd-tmpfiles-setup.service shutdown.target
 # that instant exists but is still owned by root -- tar restores directory
 # ownership in a final pass -- so it gets EACCES and fails.
 #
-# It fails CLOSED and loudly: mos-health refuses to confirm the booted slot
-# while any unit outside its allowlist has failed, so a first boot ends with
-# the slot unconfirmed and, after an update, rolled back.
+# It fails loudly: the failure is a failed unit, which mos-health names in the
+# journal and reports to mosd at live-state `health.units`. Since PLAN-089 it
+# does NOT by itself refuse the slot -- the gate requires a named set (the boot
+# transaction settled, mosd answering, apid answering) rather than forbidding
+# every failed unit -- so this unit failing costs the seed, not a boot credit.
 #
 # THE STRUCTURAL REPAIR IS DONE and this line is now the belt to its brace.
 # EPHEMERAL ships already seeded -- the image assembler fills it with

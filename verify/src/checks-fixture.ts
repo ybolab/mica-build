@@ -292,10 +292,12 @@ function seedHealthyRoot(root: string, board: Board): void {
     '/usr/lib/mos/mos-shadow-reconcile',
     '/etc/ssh/sshd_config.d/05-mos-authorized-keys.conf',
     '/usr/lib/mos/mos-seed-home', '/usr/lib/mos/profile.conf',
-    '/etc/mos/health.conf',
   ]) file(p)
 
   // --- the files a grep check reads, with content that satisfies it ---
+  // health.conf carries CONTENT and not just a path: the gate's required set is
+  // read out of it, and an empty file is the vacuity the check exists to catch.
+  file('/etc/mos/health.conf', 'require=boot-settled\nrequire=mosd\nrequire=apid\nsettle-sec=60\n')
   file('/etc/systemd/network/80-dhcp.network', '[Network]\nDHCP=yes\n')
   file('/etc/systemd/journald.conf.d/00-volatile.conf', '[Journal]\nStorage=volatile\n')
   file('/usr/lib/systemd/system/mosd.service', '[Service]\nBusName=com.mos.mosd\n')

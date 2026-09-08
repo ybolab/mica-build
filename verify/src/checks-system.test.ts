@@ -50,6 +50,7 @@ const ETC_SSH_MOUNT = '/etc/systemd/system/etc-ssh.mount'
 const PROFILE = '/usr/lib/mos/profile.conf'
 const SSH_UNIT = '/usr/lib/systemd/system/ssh.service'
 const MOS_HEALTH = '/usr/lib/mos/mos-health'
+const HEALTH_CONF = '/etc/mos/health.conf'
 
 function checkNamed(id: string): CheckCase {
   const found = SYSTEM_CHECKS.find(c => c.id === id)
@@ -416,6 +417,45 @@ describe('the health gate\'s root-side pair', () => {
       expect(await verdictOf(fx, 'health-gate-http-client')).toBe('fail')
       expect(await messageOf(fx, 'health-gate-http-client'))
         .toContain('apid is never actually probed by the health gate')
+    }
+    finally {
+      fx.dispose()
+    }
+  })
+
+  test('a health.conf with no require= line fails, and names the loop it would cause', async () => {
+    const fx = await mutated('health-gate-required-set-not-empty',
+      root => write(root, HEALTH_CONF, '# every member commented out\n#require=mosd\nsettle-sec=60\n'))
+    try {
+      expect(await verdictOf(fx, 'health-gate-required-set-not-empty')).toBe('fail')
+      expect(await messageOf(fx, 'health-gate-required-set-not-empty'))
+        .toContain('the device falls to the other slot and loops')
+    }
+    finally {
+      fx.dispose()
+    }
+  })
+
+  test('health.conf absent fails on its own branch, not as an empty set', async () => {
+    const fx = await mutated('health-gate-required-set-not-empty',
+      root => rmSync(join(root, HEALTH_CONF)))
+    try {
+      expect(await verdictOf(fx, 'health-gate-required-set-not-empty')).toBe('fail')
+      expect(await messageOf(fx, 'health-gate-required-set-not-empty'))
+        .toContain('/etc/mos/health.conf missing')
+    }
+    finally {
+      fx.dispose()
+    }
+  })
+
+  test('the passing message names the members, so a shrunk set is visible', async () => {
+    const fx = packedRootFixture(cx3576)
+    try {
+      write(fx.root, HEALTH_CONF, 'require=mosd\n')
+      const got = await only(fx, 'health-gate-required-set-not-empty')
+      expect(got.verdict).toBe('pass')
+      expect(got.message).toBe('the health gate ships a non-empty required set: mosd')
     }
     finally {
       fx.dispose()
@@ -908,8 +948,9 @@ describe('the boot scripts\' external commands', () => {
 describe('the extractor itself, stage by stage', () => {
   test('a WRAPPER call is not extracted -- `have curl` marks curl optional', () => {
     // The oracle is explicit that busctl, rauc, systemctl, curl and wget must
-    // NOT be in this set: mos-health uses `have X ||` to mark them optional, and
-    // asserting they exist would be asserting the wrong thing.
+    // NOT be in this set: mos-health reaches every one of them through `have`
+    // or `run`, so none is at command position, and asserting they exist here
+    // would be asserting the wrong thing.
     const got = extractCommands('#!/bin/sh\nhave() { command -v "$1"; }\nhave curl || exit 0\n')
     expect(got).not.toContain('curl')
     expect(got).not.toContain('have')
