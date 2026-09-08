@@ -46,14 +46,24 @@ RUN git init -q /uboot && \
 
 # The one sandbox-only divergence that is a requirement, not a convenience:
 # SANDBOX_RAM_SIZE_MB=2048. The shipped script loads the verity env at
-# 0x40f00000; sandbox default RAM is 256 MiB and any access above RAM is a hard
-# os_abort(). 2048 MiB puts every address the script uses in range -- and
-# leaves the abort available on purpose: the harness models "the kernel
-# accepted control" by pointing kernel_addr_r above 2048 MiB, ending the
-# process at the `load ... Image` line, after the decrement's saveenv and
-# before the booti-returned burn. On sandbox booti can NEVER hand over control
-# (arch/sandbox/lib/bootm.c booti_setup unconditionally fails), so without that
-# abort the decrement trajectory 3->2->1->0 would be unreachable.
+# 0x40f00000 and the boot digest at 0x40f10000; sandbox default RAM is 256 MiB
+# and every address above RAM is a hard os_abort(). 2048 MiB puts every address
+# the script uses in range.
+#
+# WHAT THIS COMMENT USED TO SAY, and what RFCT-352 measured instead. It claimed
+# the harness could model "the kernel accepted control" by pointing
+# kernel_addr_r above RAM, so that `load ... Image` aborted the process after
+# the decrement's saveenv and before the burn. The abort was real; the line it
+# came from was not. With CONFIG_LMB=y -- sandbox's default, and NOT optional,
+# because CMD_BOOTI is unbuildable without it -- fs_read_lmb_check() (fs/fs.c)
+# refuses an out-of-RAM read before anything is written and `load` returns
+# FAILURE. The abort came one line later, from `booti` mapping the address
+# nothing had been loaded to (`phys_to_virt: Cannot map sandbox address
+# f0000000`). It worked only because the script IGNORED the failed load, which
+# is the defect RFCT-352 closes: a guarded script refuses that slot and never
+# reaches booti, so the model is no longer expressible and no cycle on sandbox
+# can end anywhere but in a burn. tests/handshake-test/harness.sh says what
+# that costs and what now covers the watchdog instead.
 
 # The mmc node is appended to the sandbox devicetree; `filename` is relative,
 # resolved against the harness workspace cwd at run time.
@@ -100,6 +110,8 @@ RUN cd /uboot && \
                    --set-val ENV_OFFSET_REDUND 0x1100000 \
                    --set-val ENV_MMC_DEVICE_INDEX 0 \
                    --set-val ENV_MMC_EMMC_HW_PARTITION 0 \
+                   --enable CMD_CRC32 \
+                   --enable CRC32_VERIFY \
                    --set-val SANDBOX_RAM_SIZE_MB 2048 \
                    --disable SANDBOX_SDL \
                    --disable EFI_LOADER \
@@ -120,6 +132,9 @@ RUN cd /uboot && \
         CONFIG_ENV_MMC_DEVICE_INDEX=0 \
         CONFIG_ENV_MMC_EMMC_HW_PARTITION=0 \
         CONFIG_SANDBOX_RAM_SIZE_MB=2048 \
+        CONFIG_CMD_CRC32=y \
+        CONFIG_CRC32_VERIFY=y \
+        CONFIG_LMB=y \
         CONFIG_CMD_BOOTI=y \
         CONFIG_CMD_SETEXPR=y \
         CONFIG_CMD_SAVEENV=y \

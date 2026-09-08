@@ -118,7 +118,8 @@ describe('cx3576 — the U-Boot board', () => {
     expect(cx3576.firmwareFiles!.length).toBe(5)
     expect(cx3576.firmwareFiles![0]).toBe('/usr/lib/firmware/aic_userconfig_8800d80.txt')
     // Interpolated mid-list, with @SLOT@ left alone for the installer.
-    expect(cx3576.bootSlotRequiredFiles).toEqual(['Image', 'rk3576-src.dtb', 'boot.scr', 'mos-verity-@SLOT@.env'])
+    expect(cx3576.bootSlotRequiredFiles)
+      .toEqual(['Image', 'rk3576-src.dtb', 'boot.scr', 'mos-verity-@SLOT@.env', 'mos-boot-digest.env'])
     // A U-Boot board has no ESP contents list; absent, not empty.
     expect(cx3576.espRequiredFiles).toBeUndefined()
   })
