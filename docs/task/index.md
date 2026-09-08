@@ -69,6 +69,7 @@ thing about the tree. Both indexes now say the same thing.
 - [ ] [**UI-011 Stabilize Bun V8 coverage aggregation**](UI-011.md) `P1`
 - [-] [**RFCT-335 Add a generic virtual arm64 board, bootable in QEMU**](RFCT-335.md) `P1`
 - [x] [**RFCT-343 cx3576: reproducible kernel and U-Boot, and the config the contract reads**](RFCT-343.md) `P1`
+- [x] [**RFCT-350 PLAN-086 S2: separate the debug and boot artefacts from the shipped root**](RFCT-350.md) `P1`
 - [x] [**RFCT-349 Bound the cache fetch from outside the process, and stop the lint reading prose as a command**](RFCT-349.md) `P1`
 - [x] [**RFCT-347 PLAN-080 B4/B5/B7 and the two debts RFCT-318 left**](RFCT-347.md) `P1`
 - [x] [**RFCT-348 cx3576 bench test plan and its collection script**](RFCT-348.md) `P1`
