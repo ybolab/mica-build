@@ -19,6 +19,7 @@ import {
   BOOT_DIGEST_ARTEFACTS,
   bootAttemptValues,
   bootCmdSetting,
+  bootDigestBase,
   bootDigestEnv,
   checkBootAttempts,
   checkBootCmd,
@@ -403,8 +404,32 @@ describe('boot.cmd must CHECK what it loads, not merely carry the file', () => {
   })
 
   test('RED when the script never loads the digest file', () => {
-    const without = BOOT_CMD.replaceAll('mos-boot-digest.env', 'something-else.env')
-    expect(() => checkBootDigestGuards(g, without, P)).toThrow(/never loads 'mos-boot-digest.env'/)
+    const without = BOOT_CMD.replaceAll('mos-boot-digest-${slotsuffix}.env', 'something-else.env')
+    expect(without).not.toBe(BOOT_CMD)
+    expect(() => checkBootDigestGuards(g, without, P))
+      .toThrow(/never loads 'mos-boot-digest-\$\{slotsuffix\}\.env'/)
+  })
+
+  test('RED when it loads an UNSUFFIXED digest name', () => {
+    // A slot-neutral name would be a name a RAUC boot payload cannot ship: the
+    // payload lands in whichever slot is inactive, so it carries both slots'
+    // files and neither of them is unsuffixed. An updated slot would find
+    // nothing and burn itself on the first boot.
+    const neutral = BOOT_CMD.replaceAll('mos-boot-digest-${slotsuffix}.env', 'mos-boot-digest.env')
+    expect(neutral).not.toBe(BOOT_CMD)
+    expect(() => checkBootDigestGuards(g, neutral, P)).toThrow(/never loads/)
+  })
+
+  test('the three digest names are one derivation of one base', () => {
+    expect(bootDigestBase(g)).toBe('mos-boot-digest')
+    const m = mutatedBoard('BOOT_DIGEST_ENV_B_NAME=mos-boot-digest-B.env')
+    try {
+      expect(() => bootDigestBase(loadGeometryFromPath(m.path)))
+        .toThrow(/must be 'mos-boot-digest-a\.env'\/'mos-boot-digest-b\.env'/)
+    }
+    finally {
+      m.cleanup()
+    }
   })
 
   for (const a of BOOT_DIGEST_ARTEFACTS) {
@@ -416,9 +441,10 @@ describe('boot.cmd must CHECK what it loads, not merely carry the file', () => {
     })
 
     test(`RED when the crc32 -v over ${a.file} is dropped`, () => {
-      // The size check alone catches a short read and NOT a full-length read
-      // that left stale bytes in the middle, which is the failure that was
-      // measured on hardware -- so removing only this half must still be red.
+      // THE guard. Measured at the U-Boot prompt on the board: the load that
+      // delivered another build's bytes reported the exact right byte count, so
+      // the size compare is green on that failure and removing only this half
+      // leaves nothing that catches it.
       const without = BOOT_CMD.replace(
         `crc32 -v \${${a.addr}} \${filesize} \${${a.key}_crc}`,
         `true \${${a.addr}}`,

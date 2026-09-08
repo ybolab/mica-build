@@ -274,24 +274,16 @@ const RAW_BLOB_SKIP: readonly CheckCase[] = [
  * The boot-slot files that come out of the BSP build rather than the assembler.
  *
  * Derived, not named: every entry of this board's own BOOT_SLOT_REQUIRED_FILES
- * that is not written during assembly -- the compiled boot script, a per-slot
- * verity env, or the digest file whose whole content is computed from the two
- * BSP artefacts -- is a BSP artefact, and lives at `${BSP_OUT}/kernel/<name>`.
- * On cx3576 that is exactly `Image` and `rk3576-src.dtb`, the literal pair
- * required by the verification contract.
- *
- * BOOT_DIGEST_ENV_NAME has to be excluded BY NAME rather than by shape: it is
- * the one assembler-written entry that carries no `@SLOT@`, because it
- * describes this boot partition's own files instead of the rootfs slot it is
- * paired with. Left in, it would be looked for under `${BSP_OUT}/kernel/`,
- * where nothing produces it, and every slot would fail a compare against a file
- * that does not exist.
+ * that is neither the compiled boot script nor a per-slot file is a BSP
+ * artefact, and lives at `${BSP_OUT}/kernel/<name>`. On cx3576 that is exactly
+ * `Image` and `rk3576-src.dtb`, the literal pair required by the verification
+ * contract; the verity env and the boot digest are the assembler's, and both
+ * carry `@SLOT@`, which is what takes them out.
  */
 export function bspArtefacts(board: Board): string[] {
   const script = board.get('BOOT_SCRIPT_NAME')
-  const digest = board.get('BOOT_DIGEST_ENV_NAME')
   return (board.bootSlotRequiredFiles ?? []).filter(f =>
-    f !== script && f !== digest && !f.includes('@SLOT@') && !/^mos-verity-[ab]\.env$/.test(f))
+    f !== script && !f.includes('@SLOT@') && !/^mos-verity-[ab]\.env$/.test(f))
 }
 
 /** The device tree among them, which the status-LED family reads. */
@@ -357,11 +349,18 @@ function bspCompareChecks(board: Board): CheckCase[] {
  * the very files they claim to describe.
  *
  * `boards/cx3576/boot.cmd` refuses a slot whose Image or dtb does not match
- * mos-boot-digest.env, so a digest that disagrees with the artefact beside it is
- * not a cosmetic defect: it is a slot that burns its credits on every boot and a
- * device that refuses both of them. The assembler computes the file from the
- * staged copies, which is exactly why it cannot be the thing that proves it --
- * this reads both back out of the assembled image and compares them there.
+ * mos-boot-digest-<slot>.env, so a digest that disagrees with the artefact
+ * beside it is not a cosmetic defect: it is a slot that burns its credits on
+ * every boot and a device that refuses both of them. The assembler computes the
+ * file from the staged copies, which is exactly why it cannot be the thing that
+ * proves it -- this reads both back out of the assembled image and compares
+ * them there.
+ *
+ * THE CHECKSUM IS WHAT MATTERS HERE. Measured at the U-Boot prompt on the
+ * board: the load that delivered another build's bytes reported the exact right
+ * size, so a check that compared only the recorded length would be green on the
+ * failure this whole family exists for. Both halves are compared and neither is
+ * sufficient alone, but they are not equals.
  *
  * The pairing is matched by VALUE, not by key name. The env-key prefixes
  * (`kernel_`, `fdt_`) are boot.cmd's own vocabulary, tied to the load addresses
@@ -371,48 +370,53 @@ function bspCompareChecks(board: Board): CheckCase[] {
  * `<key>_bytes` / `<key>_crc` pair in the file that describes it.
  */
 function bootDigestChecks(board: Board): CheckCase[] {
-  const digest = board.get('BOOT_DIGEST_ENV_NAME')
-  if (!isUBoot(board) || digest === undefined) return []
-  return SLOTS.flatMap(slot => bspArtefacts(board).map((file) => {
-    const id = `boot-digest-${board.name}-${slot.display}-${file}`
-    return {
-      id,
-      boards: [board.name],
-      shell: {
-        pass: `${slot.display} ${digest} records ${file}`,
-        fail: [
-          `${slot.display} ${digest} missing or unreadable`,
-          `${slot.display} ${file} missing or unreadable`,
-          `${slot.display} ${digest} records no size and checksum pair matching ${file}`,
-        ],
-      },
-      run: async (ctx: ImageContext): Promise<readonly CheckResult[]> => {
-        const envFile = await slotCopy(ctx, slot, digest)
-        if (envFile === undefined) {
-          return [verdict(id, false, `${slot.display} ${digest} missing or unreadable`)]
-        }
-        const copied = await slotCopy(ctx, slot, file)
-        if (copied === undefined) {
-          return [verdict(id, false, `${slot.display} ${file} missing or unreadable`)]
-        }
-        const bytes = readFileSync(copied)
-        // The two spellings boot.scr compares as strings: `load` publishes
-        // ${filesize} through env_set_hex ("%lx", no padding) and `crc32 -v`
-        // reads eight hex digits.
-        const wantBytes = bytes.length.toString(16)
-        const wantCrc = crc32(bytes).toString(16).padStart(8, '0')
-        const pairs = digestPairs(readFileSync(envFile, 'utf8'))
-        const hit = [...pairs].find(([, v]) => v.bytes === wantBytes && v.crc === wantCrc)
-        return [verdict(id, hit !== undefined,
-          hit !== undefined
-            ? `${slot.display} ${digest} records ${file} as ${hit[0]}_bytes=${wantBytes} `
-              + `${hit[0]}_crc=${wantCrc}, and that is what is in the slot`
-            : `${slot.display} ${digest} records no size and checksum pair matching ${file} `
-              + `(${bytes.length} bytes = 0x${wantBytes}, crc32 ${wantCrc}); boot.scr would refuse `
-              + `this slot and burn its credits on every boot`)]
-      },
-    } satisfies CheckCase
-  }))
+  const base = board.get('BOOT_DIGEST_ENV_NAME')
+  if (!isUBoot(board) || base === undefined) return []
+  return SLOTS.flatMap((slot) => {
+    // The slot's OWN file, spelled the way boot.scr spells it: the assembler
+    // writes only this one into this partition, exactly as with the verity env.
+    const digest = `${base.replace(/\.env$/, '')}-${slot.letter}.env`
+    return bspArtefacts(board).map((file) => {
+      const id = `boot-digest-${board.name}-${slot.display}-${file}`
+      return {
+        id,
+        boards: [board.name],
+        shell: {
+          pass: `${slot.display} ${digest} records ${file}`,
+          fail: [
+            `${slot.display} ${digest} missing or unreadable`,
+            `${slot.display} ${file} missing or unreadable`,
+            `${slot.display} ${digest} records no size and checksum pair matching ${file}`,
+          ],
+        },
+        run: async (ctx: ImageContext): Promise<readonly CheckResult[]> => {
+          const envFile = await slotCopy(ctx, slot, digest)
+          if (envFile === undefined) {
+            return [verdict(id, false, `${slot.display} ${digest} missing or unreadable`)]
+          }
+          const copied = await slotCopy(ctx, slot, file)
+          if (copied === undefined) {
+            return [verdict(id, false, `${slot.display} ${file} missing or unreadable`)]
+          }
+          const bytes = readFileSync(copied)
+          // The two spellings boot.scr compares as strings: `load` publishes
+          // ${filesize} through env_set_hex ("%lx", no padding) and `crc32 -v`
+          // reads eight hex digits.
+          const wantBytes = bytes.length.toString(16)
+          const wantCrc = crc32(bytes).toString(16).padStart(8, '0')
+          const pairs = digestPairs(readFileSync(envFile, 'utf8'))
+          const hit = [...pairs].find(([, v]) => v.bytes === wantBytes && v.crc === wantCrc)
+          return [verdict(id, hit !== undefined,
+            hit !== undefined
+              ? `${slot.display} ${digest} records ${file} as ${hit[0]}_bytes=${wantBytes} `
+                + `${hit[0]}_crc=${wantCrc}, and that is what is in the slot`
+              : `${slot.display} ${digest} records no size and checksum pair matching ${file} `
+                + `(${bytes.length} bytes = 0x${wantBytes}, crc32 ${wantCrc}); boot.scr would refuse `
+                + `this slot and burn its credits on every boot`)]
+        },
+      } satisfies CheckCase
+    })
+  })
 }
 
 /** `<key>_bytes=` / `<key>_crc=` lines, grouped by the prefix they share. */
