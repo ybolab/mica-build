@@ -41,8 +41,9 @@
 #     out of the pool index. PLAN-036 section 4's durable composition record,
 #     and the one that says what this image is made of.
 #   mosd-build.txt: the commit mosd and apid in this root were built from,
-#     copied from _out/mosd-build.txt. NOT copied into the image. Removed when
-#     mosd is declined; see below.
+#     copied from _out/mosd-build-<arch>.txt, which the producer that compiled
+#     them wrote. NOT copied into the image. Not written when mosd is declined;
+#     see below.
 # rootfs/README.md, "Outputs to _out/<board>/", is the table version of this.
 
 # Every layout constant is read from boards/cx3576/board.env.
@@ -222,13 +223,11 @@ SQUASHFS_TIME=${FILE_MTIME#@}
 
 mkdir -p "$OUT_DIR"
 
-# REMOVED ON EVERY BUILD, and nothing on this path writes it back. The mosd and
-# mos-apid binaries in a composed root are compiled by
-# pkgs/mosd/hack/build-deb.sh, which embeds the commit and does NOT write
-# _out/mosd-build.txt -- so the smoke runner takes its printed-only branch and
-# says on its own first lines that the commit was not asserted. That is a real
-# gap and it is visible; what it must not become is a stale record left by an
-# older build being asserted against binaries that came out of a package.
+# REMOVED HERE AND WRITTEN AFTER THE PACK, near the end of this file. A record
+# left by a previous build would name the commit of an image this run did not
+# produce, and a run that dies in between would leave it looking current --
+# which is worse than its absence, because the smoke runner says out loud when
+# it has no record and cannot say anything at all about a wrong one.
 rm -f "$OUT_DIR/mosd-build.txt"
 
 # Read-only root wiring. The overlay tree is copied into the build context with
@@ -1354,6 +1353,41 @@ if [ "$total_mb" -gt "$SIZE_BUDGET_MB" ]; then
     exit 1
 fi
 echo "installed size: ${total_mb} MB (budget ${SIZE_BUDGET_MB} MB)"
+
+# THE BUILD COMMIT, beside the image it describes, and written only now that
+# the image exists. The mosd and mos-apid binaries in this root came out of the
+# pool, so the record comes from the producer that compiled them --
+# pkgs/mosd/hack/build-deb.sh writes _out/mosd-build-<arch>.txt whenever it
+# does -- and not from pkgs/mosd/hack/build-target.sh, which compiles a set
+# nothing here installs and therefore no longer writes one.
+#
+# WHAT THE SMOKE RUN THEN ASSERTS, said plainly because it is easy to over-read.
+# Both sides descend from ONE `MOS_BUILD_COMMIT` in ONE build-deb.sh run: the
+# string handed to the compiler, and the string written into this record. So it
+# is not a check that the commit is correct -- nothing here could be, and
+# comparing against `git rev-parse HEAD` at run time is refused by name in
+# verify/src/smoke.ts for that reason. What it checks is the TRANSPORT: that the
+# mosd and mos-apid executed inside the packed root are the ones that build
+# produced. A pool archive left over from an earlier commit, or an image
+# composed from a pool the last producer run never re-indexed, ships a binary
+# reporting a commit this record does not carry, and the version rows go red.
+if declined mosd; then
+    echo "mosd: declined, so this root carries no mosd or mos-apid and no build commit is recorded for it"
+else
+    MOSD_BUILD_SRC="$REPO_ROOT/_out/mosd-build-$MOS_ARCH.txt"
+    [ -s "$MOSD_BUILD_SRC" ] || {
+        echo "error: $MOSD_BUILD_SRC is missing or empty, so the commit the mosd and mos-apid in this root" >&2
+        echo "       were built from cannot be recorded beside it, and the smoke run would report that it" >&2
+        echo "       asserted nothing about the commit -- which is the state this refusal exists to end." >&2
+        echo "       pkgs/mosd/hack/build-deb.sh writes it every time it compiles them. The pool above" >&2
+        echo "       passed the stamp check, so a pool with those packages and no record beside it is one" >&2
+        echo "       that was carried in from another tree rather than built here." >&2
+        echo "       Build it with: make os-debs" >&2
+        exit 1
+    }
+    cp "$MOSD_BUILD_SRC" "$OUT_DIR/mosd-build.txt"
+    echo "mosd: build commit $(sed -n 's/^commit\t//p' "$OUT_DIR/mosd-build.txt") recorded from $MOSD_BUILD_SRC"
+fi
 
 # The smoke run, and it is part of the build. A wrong-arch, missing-soname or
 # version-skewed binary must fail the build, so every self-built binary is

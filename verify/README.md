@@ -279,11 +279,18 @@ softened nothing.
 `mosd` and `apid` print `<name> <version> (<commit>)`. Comparing that commit
 against `git rev-parse HEAD` at run time is refused by name: it would be
 trivially green on any freshly built tree, asserting that somebody just built
-rather than that the embedding works. `pkgs/mosd/hack/build-target.sh` writes the
-commit it handed the compiler into a build fact instead, and the runner compares
-the reported line against **that**. Where the build recorded no commit there is
+rather than that the embedding works. `pkgs/mosd/hack/build-deb.sh` — the producer hook
+that compiles the binaries a composed root installs — writes the commit it
+handed the compiler into a build fact instead, and the runner compares the
+reported line against **that**. Where the build recorded no commit there is
 nothing to compare, and the row says `commit was NOT asserted` rather than
 passing quietly.
+
+Both sides of that comparison descend from one `MOS_BUILD_COMMIT` in one
+producer run, so it is **not** a check that the commit is right — it is a check
+on the transport. What it catches is a binary in the shipped root that did *not*
+come out of the build the record describes: a stale pool archive, or a root
+composed from a pool the last producer run never re-indexed.
 
 The reported line is carried verbatim into every version verdict either way,
 because a line nobody can read back is a claim nobody can check:
