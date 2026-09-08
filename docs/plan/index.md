@@ -4,11 +4,11 @@
 
 ## Usage
 
-Each plan is a single line linking to its detail file. All detailed information lives in `docs/plan/<feature-slug>-<timestamp>.md`.
+Each plan is a single line linking to its detail file. All detailed information lives in `docs/plan/<timestamp>-<feature-slug>.md`.
 
 ### Format
 
-- [ ] [**add-endpoint-20260906T1440Z Add endpoint**](add-endpoint-20260906T1440Z.md) `YYYY-MM-DD`
+- [ ] [**20260907-1440-add-endpoint Add endpoint**](20260907-1440-add-endpoint.md) `YYYY-MM-DD`
 
 ### Status Markers
 
@@ -21,11 +21,15 @@ Each plan is a single line linking to its detail file. All detailed information 
 
 ### Rules
 
+- Update or delete plan entries and their detail files as needed; keep them
+  consistent.
+- Record change history and deletion reasons in `docs/CHANGELOG.md`; update
+  affected task and plan references.
 - New plans append to the end.
-- **New records are named `<feature-slug>-<timestamp>.md`** — a lowercase
-  kebab-case slug plus the creation time in UTC at minute precision
-  (`YYYYMMDDTHHmmZ`). No sequence number is allocated. Existing numbered
-  `PLAN-NNN` files remain valid and are not renamed.
+- **New records are named `<timestamp>-<feature-slug>.md`** — the creation
+  time in UTC at minute precision as `YYYYMMDD-HHmm` (no `T`, no `Z`), then a
+  lowercase kebab-case slug. No sequence number is allocated. Existing
+  numbered `PLAN-NNN` files remain valid and are not renamed.
 - See each detail file for full details.
 - **A completed plan's record is deleted, and its line goes with it.** This
   index is a list of what is left, not a history of what was done. A finished
