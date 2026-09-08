@@ -901,3 +901,13 @@ for x64 can open on it.
 excluded) for a `proposed` status line, instead of only `PLAN-NNN.md`; the
 negative test carries both record shapes and an index-only case, and the
 user-doc contract (en and zh) states the rule. Task `20260908-1727-status-gate-plan-naming`.
+
+## 2026-09-08 19:32 [progress]
+
+P1-A of `20260908-1428-file-ab-signed-components` reports the boot/trust half
+feasible as drafted: signed dm-verity accepted/refused with the plan's errno
+set on x64, virt-arm64 and the cx3576 vendor kernel; one kernel boots two
+signed roots; cx3576 FIT enforcement in the U-Boot sandbox; systemd-boot
+shared-UKI Type #1 entries with boot counting on x64 and virt-arm64. L1
+verified the raw logs, re-ran the gates and refused a byte-flipped signature.
+Merge pending the committed harness and the x64 contract.
