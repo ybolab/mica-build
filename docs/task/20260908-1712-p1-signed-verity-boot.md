@@ -114,9 +114,13 @@ signature by the same anchor: cx3576's `rootfs-verity.img` (root hash
   and the shell that then runs is out of that image --
   `/dev/mapper/vroot / squashfs ro`, hostname `mos`, `/bin/sh -> dash`. Run once
   per root per kernel; the kernel is byte-identical across the pair.
-- On x64 this is reported at the mapping/mount level only: the two roots that
-  exist in this tree are arm64, so a `switch_root` there could map and mount
-  them but not execute from them.
+- Boot level on x64 as well, against two x64 roots this branch composed: the
+  shipped one (`6d5631c6...`) and a second composition with rauc declined
+  (`bb442dd9...`, 71753728 vs 75665408 squashfs bytes). Same kernel, both
+  roots, `switch_root` onto each. `rootfs/build.sh` ends the second compose
+  non-zero -- its smoke step requires the full feature set and says so by name
+  -- after the root and its verity tree are written, which is what that
+  fixture needed.
 
 ### Proof 3 -- veritysetup path
 
@@ -193,6 +197,27 @@ Measured on virt-arm64 (the plan's target) and on x64, identically:
 - One bit flipped in the UKI on the ESP, same enrolled keys:
   `Error loading \EFI\mos\kernels\k1.efi: Access denied`, then
   `No bootable option or device was found`.
+
+### x64 first (L1 re-prioritisation, 2026-09-08 17:19)
+
+The x64 half is self-contained and was re-run against x64 material:
+
+- Proof 1's whole matrix against this branch's own x64 root
+  (`6d5631c620b9...`, `_out/x64/rootfs-verity.img`), same verdicts and the same
+  five errno values as the table above.
+- Proof 2 at boot level with two x64 roots, as recorded above.
+- `verify/run.sh --verify --board x64`: **PASS (326/326 checks, 26 skipped)** on
+  `_out/x64/x64-mos-1788896581.img`. One more check than virt-arm64's 325
+  because the modprobe half of the kernel contract is registered for x64 only;
+  the +1 against the recorded 454 for cx3576 is the new anchor check on every
+  board.
+- The assembled image boots the way the machine boots it -- OVMF, the ESP's
+  GRUB, the shipped `dm-mod.create=` line, no initramfs -- to a login prompt
+  (`mos-9ba616d0 login:`), with `Loaded X.509 cert 'mos development verity
+  content anchor: ...'` in the same log. The kernel config delta does not
+  disturb the current unsigned boot path: that path is unchanged and still
+  passes an unauthenticated root hash on the command line, which is exactly
+  what the file-based A/B design replaces.
 
 ### What this cost, and what it did not
 
