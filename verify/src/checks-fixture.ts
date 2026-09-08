@@ -284,6 +284,7 @@ function seedHealthyRoot(root: string, board: Board): void {
     '/usr/lib/systemd/system/rauc.service', '/usr/lib/systemd/systemd-growfs',
     '/usr/lib/systemd/system/fstrim.service',
     '/usr/lib/systemd/system/serial-getty@.service',
+    '/usr/lib/systemd/system/getty@.service',
     '/usr/lib/mos/mos-health', '/usr/lib/mos/mos-machine-id',
     '/usr/lib/systemd/system/mos-health.service',
     '/usr/lib/systemd/system/mos-machine-id.service',
@@ -633,6 +634,11 @@ function seedFirewall(root: string, file: WriteFile): void {
     + '\t\ttype filter hook input priority filter;\n\t}\n}\n')
 
   file('/usr/lib/systemd/system-preset/50-mos-ssh.preset', 'disable ssh.service\n')
+  // The board preset that keeps a login prompt off HDMI. Seeded here rather
+  // than only in the display suite because the healthy root is one root: a
+  // fixture where getty@tty1 resolved to ENABLED would be an image this tree
+  // does not ship, and the display family would have nothing green to mutate.
+  file('/usr/lib/systemd/system-preset/50-mos-getty.preset', 'disable getty@.service\n')
   file('/usr/lib/systemd/system-preset/50-mos-nftables.preset', 'disable nftables.service\n')
   file('/usr/lib/systemd/system-preset/90-systemd.preset',
     '# Settings for units distributed with systemd itself.\n'
@@ -1366,7 +1372,14 @@ function seedBoardShape(root: string, board: Board, file: WriteFile): void {
     + 'CONFIG_BRIDGE_NETFILTER=y\n'
     + 'CONFIG_NF_TABLES_BRIDGE=y\n'
     + 'CONFIG_NF_CONNTRACK_BRIDGE=y\n'
-    + 'CONFIG_BRIDGE_VLAN_FILTERING=y\n')
+    + 'CONFIG_BRIDGE_VLAN_FILTERING=y\n'
+    // The boot logo, and the symbol whose PRESENCE would suppress it.
+    // FRAMEBUFFER_CONSOLE_DEFERRED_TAKEOVER is deliberately absent rather than
+    // spelled `# ... is not set`: both are what a real config carries for an
+    // unset symbol, and the check must read the absence as the decision.
+    + 'CONFIG_LOGO=y\n'
+    + 'CONFIG_LOGO_LINUX_CLUT224=y\n'
+    + 'CONFIG_FRAMEBUFFER_CONSOLE=y\n')
   const mod = `/lib/modules/${release}`
   file(`${mod}/modules.builtin`,
     'kernel/drivers/md/dm-mod.ko\n'

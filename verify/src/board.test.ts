@@ -124,19 +124,33 @@ describe('cx3576 — the U-Boot board', () => {
     expect(cx3576.espRequiredFiles).toBeUndefined()
   })
 
-  test('has a status indicator, and a smaller size budget', () => {
+  test('has a status indicator and a display, and a smaller size budget', () => {
     expect(cx3576.hasStatusLed).toBe('1')
+    expect(cx3576.hasDisplay).toBe('1')
     expect(cx3576.sizeBudgetMb).toBe(400)
-    expect(cx3576.cmdlineArgs).toBe('console=ttyFIQ0,1500000 earlycon=uart8250,mmio32,0x2ad40000 net.ifnames=0')
+    // The ORDER of the two console= values is the fact, not the set: /dev/console
+    // is the LAST one, so tty1 first keeps userspace output on serial while the
+    // display still receives kernel messages. loglevel=5 is the floor at which
+    // fbcon draws the boot logo. PLAN-088.
+    expect(cx3576.cmdlineArgs).toBe(
+      'console=tty1 console=ttyFIQ0,1500000 earlycon=uart8250,mmio32,0x2ad40000 '
+      + 'loglevel=5 fbcon=logo-pos:center,logo-count:1 net.ifnames=0')
   })
 
-  test('reads clean: no faults, no duplicated keys, 147 assignments', () => {
+  test('reads clean: no faults, no duplicated keys, 148 assignments', () => {
     expect(cx3576.faults).toEqual([])
     expect(cx3576.env.duplicates).toEqual([])
     // If this number moves, the board definition gained or lost a key. That is
     // a deliberate act; update it deliberately.
-    expect(cx3576.env.assignments.length).toBe(147)
-    expect(cx3576.env.values.size).toBe(147)
+    //
+    // 143 -> 148 across three branches that landed together, and this number
+    // has now gone red on TWO successive merges, which is the point of it.
+    // RFCT-352 added the digest env names, RFCT-355 added
+    // BOARD_DRAM_USABLE_BASE, PLAN-088 added BOARD_HAS_DISPLAY; each branch
+    // updated this for its own key and textual merge can only keep one of the
+    // answers, so the true count is never any single branch's.
+    expect(cx3576.env.assignments.length).toBe(148)
+    expect(cx3576.env.values.size).toBe(148)
   })
 })
 
@@ -222,11 +236,14 @@ describe('x64 — the GRUB board', () => {
     expect(x64.cmdlineArgs).toBe('console=tty0 console=ttyS0,115200 net.ifnames=0')
   })
 
-  test('reads clean: no faults, no duplicated keys, 117 assignments', () => {
+  test('reads clean: no faults, no duplicated keys, 118 assignments', () => {
     expect(x64.faults).toEqual([])
     expect(x64.env.duplicates).toEqual([])
-    expect(x64.env.assignments.length).toBe(117)
-    expect(x64.env.values.size).toBe(117)
+    // 118 for the same reason cx3576 is 148: BOARD_HAS_DISPLAY is REQUIRED of
+    // every board, so declaring 0 is a key here too. An absent key would make
+    // "this board has no screen" an absence rather than a decision.
+    expect(x64.env.assignments.length).toBe(118)
+    expect(x64.env.values.size).toBe(118)
   })
 })
 

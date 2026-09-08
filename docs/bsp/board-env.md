@@ -149,13 +149,17 @@ wipeable runtime residue under `/var`.
 
 ## Board-level required keys
 
-Every board must declare these four with a value:
+Every board must declare these six with a value. The set is
+`REQUIRED_BOARD_KEYS` in `verify/src/lint.ts`, and the lint refuses a definition
+that omits one or declares it empty:
 
 | Key | Meaning | Legal values | Read by |
 |---|---|---|---|
-| `BOARD_CMDLINE_ARGS` | board console and cmdline facts (console devices in order, `net.ifnames=0`) | kernel cmdline fragment | `rootfs/build.sh` |
+| `BOARD_CMDLINE_ARGS` | board console and cmdline facts. **The console devices are ORDERED**: every `console=` receives printk, but `/dev/console` is the last one, so a board with both a display and a serial console puts the display first | kernel cmdline fragment | `rootfs/build.sh` |
 | `BOARD_SIZE_BUDGET_MB` | see above | MB integer | `rootfs/build.sh` |
 | `BOARD_HAS_STATUS_LED` | whether the image drives a status LED; decides which outcome the verifier asserts — present and enabled, or absent entirely | `0` or `1` | rootfs staging, verify |
+| `BOARD_HAS_DISPLAY` | whether the board has a local display the image treats as an output. Gates the boot-logo and console-recoverability contract (`docs/design/display.md` §4): on `1` the verifier asserts the console order, the loglevel floor, the logo symbols and that `getty@tty1` resolves to disabled; on `0` it prints a skip naming the board | `0` or `1` | verify |
+| `BOARD_RELEASE_TARGET` | whether the release path serves this board | `0` or `1` | release gate, verify |
 | `MOS_ARCH` | see above | `arm64`, `amd64` | everywhere |
 
 ## Hardware lists

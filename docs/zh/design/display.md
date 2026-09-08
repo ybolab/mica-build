@@ -50,18 +50,52 @@ kiosk:
 
 ## 4. 启动观感与 tty 策略
 
-- **启动画面**：U-Boot 显示板级 splash，内核以 `quiet` 让 fbcon 不出现在生产环境的 HDMI 上，
-  kiosk 服务启动时接管 DRM master。目标是**客户屏幕上永不闪过任何文本**。
-  - cx3576 的 splash 母版目前是**只有源资产、还没有消费者**：没有构建步骤读取它，
-    而 U-Boot 的 splash 路径要 BMP，所以格式转换属于下面的阶段 1。母版是 76 KB 的 PNG，
-    1920x1080，每通道 16 位。
+由 PLAN-088 在 cx3576 上落地。本节已按照固定版本源码的实际行为重写；此前的三条说法
+经测量为错误，下面保留纠正而非直接删除，因为每一条都是从外部观察最容易得出的结论。
+
+- **画面由内核绘制，而不是 U-Boot。** `CONFIG_LOGO` + `CONFIG_LOGO_LINUX_CLUT224`，
+  板级 224 色 PPM 在构建时从 `boards/cx3576/bsp/rootfs/assets/splash.png` 派生 ——
+  该母版不再是"没有消费者的源资产"。**U-Boot 什么也不显示**，这不是排期问题：
+  固定版本是上游 u-boot `ece349ade`，其 Rockchip 显示驱动只有 VOP1 时代的
+  RK3288/RK3328/RK3399，整棵树里没有 VOP2 驱动、没有任何 RK3576 显示支持，
+  因此在那里打开 `SPLASH_SCREEN` 只会编出一个无驱动可绑定的 video 核心。
+  所以 HDMI **从复位到 DRM 探测之间都是黑的**，无缝开机画面被 U-Boot 分支选型问题挡住。
+  证据与替代方案的代价见 PLAN-088 第 1 节。
+- **不使用也不允许使用 `quiet`。** 只有当 `console_loglevel` 大于
+  `CONFIG_CONSOLE_LOGLEVEL_QUIET`（本内核为 4）时 fbcon 才绘制 logo
+  （`fbcon.c:1009-1010`），而 `quiet` 恰好把它设成 4 —— 它挡住文本的同时也挡住了
+  **logo**。本板使用 `loglevel=5`：既是显示 logo 的下限，又安静到正常启动只打印
+  warning 及以上，并且非零，所以 oops 时 `console_verbose()` 仍会抬高等级。
+  `loglevel=0` 会让 panic 在包括串口在内的所有 console 上都不可见，已被镜像契约拒绝。
+- **HDMI 有意保留在 console 列表中。** 命令行是
+  `console=tty1 console=ttyFIQ0,1500000`，**顺序就是设计本身**：每个 `console=`
+  都接收 printk，但 `/dev/console` 是最后一个，因此用户态输出留在串口线上，
+  而内核 panic 仍会占据屏幕。对于没有接串口线的设备，这是唯一的诊断通路。
+- **`getty@tty1` 由 preset 关闭**（`mos-board-cx3576` 中的 `50-mos-getty.preset`），
+  而不是靠"缺少软链接" —— 未被任何规则匹配的单元 preset 结果是 ENABLE，
+  而 `90-systemd.preset` 写的正是 `enable getty@.service`。它仍然可以随时启动：
+  `systemctl start getty@tty1` 让屏幕在运行时变成登录终端，无需第二条启动路径、无需重新构建。
+- **存在第三种状态，不只是"logo 或控制台"。** 实测的 bench dmesg 在探测时没有可读
+  EDID 的显示器时打印 `[drm] Cannot find any crtc or sizes`：该路径返回 `-EAGAIN`，
+  fbdev 建立被**推迟**，于是**根本没有创建 fbdev** —— 屏幕是黑的，`console=tty1`
+  也什么都不渲染，因为 VT 输出走的是 `dummy_con`。也就是说：**只有接上显示器且
+  EDID 可读时**，HDMI 才是一条诊断通路。
+  - **热插拔可以在不重启的情况下恢复。** `rockchip_drm_output_poll_changed`
+    （`rockchip_drm_fb.c:363`）调用 `drm_fb_helper_hotplug_event`，后者走
+    `deferred_setup` 分支并在此时创建 fbdev；fbcon 随即绑定并绘制 logo。
+    先无显示器开机、之后再插上显示器的设备会显示 logo，而不是黑屏。
+  - panic **无法**靠事后插显示器恢复 —— 已经 panic 的内核不会再运行热插拔工作项。
+    oops 可以，因为 VT 缓冲区里仍有文本，fbcon 绑定时会重绘。
+- **不引入 plymouth，也不引入任何用户态开机动画。** kiosk 在 `mos-gui` 启动时接管
+  DRM master；除此之外没有别的东西绘制屏幕。
 - **控制台通道**：向导 tty2 / 调试 shell tty3 都在**串口**上；生产镜像中禁用从 kiosk 切换 VT。
 - **kiosk 崩溃策略**：带退避重启；连续失败 N 次后回退到一张静态的"服务不可用 + 支持网址"
   DRM 画面，而**不是**回退到控制台。
 
 ## 5. 板卡要求（在 boards.md 第 4 节之上追加）
 
-`board.env` 里**没有显示能力这个键**，所以目前没有任何板卡声明这项特性。产品带 HDMI 输出的
+`board.env` 带有 **`BOARD_HAS_DISPLAY`**（`0` 或 `1`，PLAN-088 加入）：cx3576 声明 `1`，
+两块 QEMU 板声明 `0`。它约束的是上面第 4 节的启动观感，而不是 kiosk。产品带 HDMI 输出的
 板卡必须提供：
 
 - **内核**：SoC 显示管线与 HDMI 编码器的 DRM/KMS `=y`；GPU 驱动

@@ -764,8 +764,15 @@ const RESERVED_MEMORY_SKIP: readonly CheckCase[] = [
 
 // 4. boot.scr -- the compiled boot script
 
-/** The compiled script out of a slot, or undefined when it is not there. */
-async function bootScript(ctx: ImageContext, slot: BootSlot): Promise<string | undefined> {
+/**
+ * The compiled script out of a slot, or undefined when it is not there.
+ *
+ * Exported for `checks-display.ts`: on a U-Boot board the kernel command line is
+ * composed inside this script rather than in the per-slot verity env, so the
+ * console list and the fbcon options can only be read here. One reader, so the
+ * two families cannot disagree about which file in the slot is the script.
+ */
+export async function bootScript(ctx: ImageContext, slot: BootSlot): Promise<string | undefined> {
   const name = ctx.board.get('BOOT_SCRIPT_NAME')
   if (name === undefined || name.trim() === '') {
     throw new ToolOutputError(

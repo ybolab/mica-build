@@ -263,6 +263,24 @@ const EMPTY_DECLARATION: readonly RejectCase[] = [
   },
 ]
 
+// --- board-level flags added after the shell pair ---------------------------
+//
+// Not in PORTED, which is the fourteen cases the predecessor suite had and is
+// asserted by length below: BOARD_HAS_DISPLAY did not exist when that suite was
+// written. It is gated exactly like BOARD_HAS_STATUS_LED, because the failure is
+// the same -- a third value leaves "does this board have a screen" answered by
+// whichever consumer coerced it first, and on this board that question decides
+// whether a customer sees a boot logo or a login prompt.
+
+const LATER_KEYS: readonly RejectCase[] = [
+  {
+    name: 'bad-has-display',
+    board: 'x64',
+    edit: setKey('BOARD_HAS_DISPLAY', 'yes'),
+    says: `BOARD_HAS_DISPLAY is 'yes'; it must be 0 or 1`,
+  },
+]
+
 // --- what the shell could not see at all, because it ran the file ------------
 
 const NOT_DATA: readonly RejectCase[] = [
@@ -384,7 +402,7 @@ const RECOVERY: readonly RejectCase[] = [
   },
 ]
 
-const CASES: readonly RejectCase[] = [...PORTED, ...EMPTY_DECLARATION, ...NOT_DATA, ...RECOVERY]
+const CASES: readonly RejectCase[] = [...PORTED, ...EMPTY_DECLARATION, ...LATER_KEYS, ...NOT_DATA, ...RECOVERY]
 
 function messagesFor(c: RejectCase): string[] {
   return withMutatedBoard(c.board, c.edit, (p) => {
@@ -479,6 +497,7 @@ describe('the run itself', () => {
   // identity and diffed it against what ran; this is that guard.
   test('the cases that ran are exactly the cases declared', () => {
     expect([...CASES].map(c => c.name).sort()).toEqual([
+      'bad-has-display',
       'bad-status-led',
       'boot-attempts-on-grub',
       'boot-attempts-on-grub-empty',
@@ -656,14 +675,21 @@ describe('the role schema', () => {
     }
   })
 
-  test('the board-level required keys are the four the shell pair checked, plus the release flag', () => {
+  test('the board-level required keys are the four the shell pair checked, plus two flags', () => {
     // BOARD_RELEASE_TARGET is the one this pair did not have. It was added
     // when a board arrived that has NO release path (virt-arm64): before it,
     // whether a board was releasable was a fact only prose carried, and the
     // release gate would assemble for any board with a board.env.
+    //
+    // BOARD_HAS_DISPLAY arrived the same way, for the board that has a product
+    // screen. It is REQUIRED rather than defaulted for the reason the whole
+    // list is: a board that declares nothing would be read as having no display
+    // by whichever consumer looked first, and "no display" would then be an
+    // absence rather than a decision -- so the display contract would report no
+    // divergence about a board it had never been told anything about.
     expect([...REQUIRED_BOARD_KEYS]).toEqual([
       'BOARD_CMDLINE_ARGS', 'BOARD_SIZE_BUDGET_MB', 'BOARD_HAS_STATUS_LED',
-      'BOARD_RELEASE_TARGET', 'MOS_ARCH',
+      'BOARD_HAS_DISPLAY', 'BOARD_RELEASE_TARGET', 'MOS_ARCH',
     ])
   })
 })

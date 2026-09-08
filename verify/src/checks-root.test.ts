@@ -1255,13 +1255,21 @@ describe('the migrated modules keep resolving in the root', () => {
   // checks-fstab, checks-rauc, checks-rauc-units, checks-ext4, checks-cmdline),
   // measured 2026-09-08. They are the same defect and are not this task's
   // scope; nothing here says they are safe.
+  //
+  // PLAN-088's two modules are on the list as well, and they were never
+  // migrated -- they were WRITTEN against this resolver, after RFCT-358 landed.
+  // Enrolling them is what makes that a property of the tree rather than of the
+  // day they were written: the grep is the only thing that would notice a later
+  // edit reaching for `join(root, ...)` again.
   const MIGRATED = [
     'checks-connd.ts',
     'checks-dbus.ts',
+    'checks-display.ts',
     'checks-engine.ts',
     'checks-home.ts',
     'checks-system.ts',
     'script-commands.ts',
+    'unit-state.ts',
   ]
   const SRC = dirname(fileURLToPath(import.meta.url))
 

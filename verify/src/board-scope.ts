@@ -43,6 +43,9 @@ export const hasFirmware = (board: Board): boolean => (board.firmwareFiles ?? []
 /** `[ "${BOARD_HAS_STATUS_LED}" = "1" ]`. A string compare, as the oracle spells it. */
 export const hasLed = (board: Board): boolean => board.hasStatusLed === '1'
 
+/** `[ "${BOARD_HAS_DISPLAY}" = "1" ]`. Same shape and same reason as `hasLed`. */
+export const hasDisplay = (board: Board): boolean => board.hasDisplay === '1'
+
 /**
  * `[ -n "${BOARD_DRAM_USABLE_BASE}" ]` -- the board declares where the DRAM its
  * firmware hands the kernel begins, so a reserved-memory region can be checked
