@@ -100,7 +100,7 @@ thing about the tree. Both indexes now say the same thing.
 
 - [-] [**cx3576-reproducible-bsp-20260907T1356Z Make CX3576 BSP builds reproducible and extract Dockerfile logic**](cx3576-reproducible-bsp-20260907T1356Z.md) `P1`
 
-- [ ] [**20260908-1423-file-ab-signed-components Design and implement file-based A/B with independently signed components**](20260908-1423-file-ab-signed-components.md) `P1`
+- [-] [**20260908-1423-file-ab-signed-components Design and implement file-based A/B with independently signed components**](20260908-1423-file-ab-signed-components.md) `P1`
 - [x] [**RFCT-910 Make the s905x5m kernel meet the shared floor**](RFCT-910.md) `P1`
 - [x] [**RFCT-911 Establish whether vendor U-Boot can automatically roll back**](RFCT-911.md) `P1`
 - [x] [**RFCT-912 Build the s905x5m U-Boot and assert the shared contract**](RFCT-912.md) `P1`

@@ -79,7 +79,7 @@ disobeys on sight teaches a reader the wrong thing about the tree.
 - [ ] [**cx3576-reproducible-bsp-20260907T1400Z Make CX3576 BSP builds reproducible and extract Dockerfile logic**](cx3576-reproducible-bsp-20260907T1400Z.md) `2026-09-07`
 - [x] [**PLAN-088 cx3576 HDMI boot logo, with the console recoverable**](PLAN-088.md) `2026-09-08`
 
-- [ ] [**20260908-1428-file-ab-signed-components File-based A/B and independently signed system components**](20260908-1428-file-ab-signed-components.md) `2026-09-08`
+- [-] [**20260908-1428-file-ab-signed-components File-based A/B and independently signed system components**](20260908-1428-file-ab-signed-components.md) `2026-09-08`
 - [-] [**PLAN-910 s905x5m board intake (Amlogic S7D)**](PLAN-910.md) `2026-08-30`
 - [-] [**PLAN-911 Close three runtime gaps found by exercising containers on hardware**](PLAN-911.md) `2026-08-31`
 - [ ] [**PLAN-912 Validate s905x5m Bluetooth peer interaction**](PLAN-912.md) `2026-08-31`

@@ -1,8 +1,8 @@
 # 20260908-1428-file-ab-signed-components File-based A/B and independently signed system components
 
-- **status**: draft
+- **status**: implementing
 - **createdAt**: 2026-09-08 14:28
-- **approvedAt**: (pending)
+- **approvedAt**: 2026-09-08 17:11
 - **relatedTask**: [20260908-1423-file-ab-signed-components](../task/20260908-1423-file-ab-signed-components.md)
 
 ## Context
@@ -513,3 +513,10 @@ Primary references checked during design:
 - User requirement: writable state, metadata and var should share DATA rather than require additional partitions. This amendment uses bind mounts for major system directories and updates quota, reset, startup and fault-isolation requirements accordingly.
 - User correction: do not mount all of `/var`; only required paths should be writable. Section 5 now keeps its parent skeleton immutable, lists initial persistent leaves, requires an enabled-writer audit, and scopes volatile storage, quotas, seeding and cleanup to explicit paths. The previous whole-var DATA bind and VAR budget are superseded.
 - Approval: pending for implementation. The three-partition target, RAUC replacement, and UEFI switch to systemd-boot are reviewable proposal decisions; no implementation has been performed.
+- 2026-09-08 17:11: **Approved by the user for implementation** ("按这个来执行"). Execution
+  follows the plan's own sequence: P1 is the feasibility gate and is dispatched
+  first; P2 and later wait on P1's evidence. P1 is run as two parallel L3
+  tasks with disjoint files — the boot/trust proofs (signed verity on both
+  kernel families, cx3576 signed FIT, UEFI shared-UKI Type #1 entries) and
+  the writable-path writer audit — because their evidence rows are separate
+  and a combined task would serialise ~4 h of builds behind a document audit.

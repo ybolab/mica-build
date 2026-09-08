@@ -1,8 +1,8 @@
 # 20260908-1423-file-ab-signed-components Design and implement file-based A/B with independently signed components
 
-- **status**: pending
+- **status**: in_progress
 - **priority**: P1
-- **owner**: (unassigned)
+- **owner**: l1/6rjx4wrt
 - **createdAt**: 2026-09-08 14:23
 - **relatedPlan**: [20260908-1428-file-ab-signed-components](../plan/20260908-1428-file-ab-signed-components.md)
 

@@ -871,3 +871,11 @@ rewritten). Two records renamed from the interim slug-first form to the
 updated. Added `AGENTS.md` (+ `CLAUDE.md` symlink), `docs/decisions/`,
 `.gitattributes`, `.editorconfig`, `.env.example`. Fast path stays
 enabled. Record: `docs/plan/20260908-1702-pma-project-injection.md`.
+
+## 2026-09-08 17:11 [progress]
+
+Plan `20260908-1428-file-ab-signed-components` (file-based A/B, independently
+signed components, three-partition layout, unified DATA) approved by the user
+for implementation. Task `20260908-1423-file-ab-signed-components` claimed by
+L1. P1 — the feasibility gate — is being dispatched as two parallel L3 tasks;
+later phases wait on its evidence per the plan's own sequence.
