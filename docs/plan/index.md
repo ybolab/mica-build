@@ -67,3 +67,4 @@ disobeys on sight teaches a reader the wrong thing about the tree.
 - [-] [**PLAN-086 Compose a minimal MOS runtime from explicit payloads**](PLAN-086.md) `2026-09-06`
 
 - [ ] [**cx3576-reproducible-bsp-20260907T1400Z Make CX3576 BSP builds reproducible and extract Dockerfile logic**](cx3576-reproducible-bsp-20260907T1400Z.md) `2026-09-07`
+- [x] [**PLAN-088 cx3576 HDMI boot logo, with the console recoverable**](PLAN-088.md)
