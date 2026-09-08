@@ -1,6 +1,6 @@
 # RFCT-354 cx3576 boot logo on HDMI, with the console recoverable on demand
 
-- **status**: in-progress
+- **status**: completed
 - **priority**: P1
 - **owner**: bkd/p6mvvj35
 - **createdAt**: 2026-09-08 03:40
