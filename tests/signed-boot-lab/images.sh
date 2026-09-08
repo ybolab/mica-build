@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+# Build the lab's container images by name, from the Dockerfiles beside this
+# script.
+#
+#   bash tests/signed-boot-lab/images.sh            the two the verity and UEFI
+#                                                   proofs need
+#   bash tests/signed-boot-lab/images.sh --uboot    and the U-Boot sandbox
+#
+# Every image is labelled `ai-agent=true` so an unattended sweep can reclaim
+# it, and every base image is resolved through build-env/from.sh rather than
+# written here: the Dockerfiles declare their FROM argument with no default, so
+# a build that forgot one fails before any layer runs.
+set -euo pipefail
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
+
+WITH_UBOOT=0
+[ "${1-}" = --uboot ] && WITH_UBOOT=1
+
+SNAPSHOT="$(. "${REPO_ROOT}/rootfs/debian/sources.env"; printf '%s' "${MIRROR}")"
+[ -n "${SNAPSHOT}" ] || {
+    echo "error: rootfs/debian/sources.env yielded no MIRROR, so the lab would install from wherever apt happens to point" >&2
+    exit 1
+}
+lab_note "apt snapshot: ${SNAPSHOT}"
+
+mapfile -t TRIXIE_ARG < <(bash "${REPO_ROOT}/build-env/from.sh" MOS_IMAGE_DEBIAN_TRIXIE=IMAGE_DEBIAN_TRIXIE)
+[ "${#TRIXIE_ARG[@]}" -eq 2 ] || { echo "error: build-env/from.sh did not resolve IMAGE_DEBIAN_TRIXIE" >&2; exit 1; }
+
+build() {  # build <tag> <dockerfile> [extra args...]
+    local tag="$1" file="$2"; shift 2
+    lab_note "building ${tag} from ${file##*/}"
+    docker build --label ai-agent=true -t "${tag}" -f "${LAB_DIR}/${file}" \
+        "${TRIXIE_ARG[@]}" --build-arg "MOS_DEBIAN_SNAPSHOT=${SNAPSHOT}" \
+        "$@" "${LAB_DIR}"
+}
+
+build "${LAB_IMAGE}" Dockerfile.lab
+build "${GUEST_IMAGE}" Dockerfile.guest
+
+if [ "${WITH_UBOOT}" = 1 ]; then
+    mapfile -t UBUNTU_ARG < <(bash "${REPO_ROOT}/build-env/from.sh" MOS_IMAGE_UBUNTU_2404=IMAGE_UBUNTU_2404)
+    [ "${#UBUNTU_ARG[@]}" -eq 2 ] || { echo "error: build-env/from.sh did not resolve IMAGE_UBUNTU_2404" >&2; exit 1; }
+    lab_note "building ${UBOOT_IMAGE} from Dockerfile.uboot-sandbox (a full U-Boot build; minutes)"
+    docker build --label ai-agent=true -t "${UBOOT_IMAGE}" \
+        -f "${LAB_DIR}/Dockerfile.uboot-sandbox" "${UBUNTU_ARG[@]}" "${LAB_DIR}"
+fi
+
+lab_note "done"

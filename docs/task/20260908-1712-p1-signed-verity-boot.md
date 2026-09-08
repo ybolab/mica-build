@@ -68,6 +68,23 @@ P1-A proofs complete; the plan's boot/trust half is feasible as drafted.
 - `boards/cx3576/bsp/uboot/build-mos.sh` asserts the FIT signature symbols the
   defconfig already provides, plus `LEGACY_IMAGE_FORMAT=y`, by name.
 
+### How to re-run any of this
+
+The drivers are committed under `tests/signed-boot-lab/`, one entry script per
+proof family, each with a header saying what it proves and on which target;
+`tests/signed-boot-lab/README.md` is the index. Build the two container images
+once with `tests/signed-boot-lab/images.sh` (and `--uboot` for the sandbox),
+then:
+
+| Proof | Entry script |
+|---|---|
+| 1, 2, 3 | `verity-matrix.sh --arch <amd64\|arm64> --kernel <image>`, with `A_SRC=` and `B_SRC=` naming two directories that hold a `rootfs-verity.img` |
+| a second root to give it | `second-root.sh --board <board>` |
+| 4, enforcement | `fit-sandbox.sh` |
+| 4, the board's control FDT | `cx3576-control-fdt.sh --dtb <u-boot.dtb>` |
+| 5 | `uefi-uki.sh --arch <amd64\|arm64> --kernel <image>` |
+| the assembled image still boots | `image-boot.sh --image <image>` |
+
 ### Proof 1 -- signed verity on both kernel families
 
 Measured starting point (all three built configs, before this change):
