@@ -911,3 +911,12 @@ signed roots; cx3576 FIT enforcement in the U-Boot sandbox; systemd-boot
 shared-UKI Type #1 entries with boot counting on x64 and virt-arm64. L1
 verified the raw logs, re-ran the gates and refused a byte-flipped signature.
 Merge pending the committed harness and the x64 contract.
+
+## 2026-09-08 20:11 [progress]
+
+Three tasks opened from the P1-B audit's findings, none part of the file-based
+A/B contract: `20260908-2011-state-units-never-load` (units seeded into STATE are never
+loaded on first boot), `20260908-2011-ssh-generator-vs-image-policy` (port 22 conflict
+and `AuthorizedKeysFile` override) and `20260908-2011-wtmp-unbounded-append`. Recorded
+pending; not dispatched from the P1 watchdog.
+

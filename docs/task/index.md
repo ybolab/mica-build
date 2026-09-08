@@ -142,3 +142,6 @@ thing about the tree. Both indexes now say the same thing.
 - [x] [**RFCT-359 cx3576 stable MAC derives from the port topology, and reaches every port**](RFCT-359.md) `P1`
 - [x] [**20260908-1702-pma-project-injection Wire the repository into the PMA workflow**](20260908-1702-pma-project-injection.md) `P1`
 - [x] [**20260908-1727-status-gate-plan-naming Accept both plan-record namings in the truth-status gate**](20260908-1727-status-gate-plan-naming.md) `P1`
+- [ ] [**20260908-2011-state-units-never-load STATE-seeded systemd units never load on first boot**](20260908-2011-state-units-never-load.md) `P2`
+- [ ] [**20260908-2011-ssh-generator-vs-image-policy systemd-ssh-generator overrides the image's SSH policy and port**](20260908-2011-ssh-generator-vs-image-policy.md) `P2`
+- [ ] [**20260908-2011-wtmp-unbounded-append Login accounting appends to /var/log/wtmp without a bound**](20260908-2011-wtmp-unbounded-append.md) `P2`
