@@ -82,6 +82,7 @@ export const REQUIRED_BOARD_KEYS = [
   'BOARD_CMDLINE_ARGS',
   'BOARD_SIZE_BUDGET_MB',
   'BOARD_HAS_STATUS_LED',
+  'BOARD_HAS_DISPLAY',
   'BOARD_RELEASE_TARGET',
   'MOS_ARCH',
 ] as const
@@ -428,6 +429,16 @@ function lintBoardKeys(r: Recorder, b: Board): void {
     r.fail(`BOARD_HAS_STATUS_LED is '${led}'; it must be 0 or 1`)
   }
 
+  // BOARD_HAS_DISPLAY, on the same grounds as the indicator above: it selects
+  // whether the boot-logo and console-recoverability contract applies to this
+  // board, and a third value would leave that question answered by whichever
+  // consumer coerced it first.
+  const display = b.hasDisplay
+  if (display !== undefined && display !== '' && display !== '0' && display !== '1') {
+    ok = false
+    r.fail(`BOARD_HAS_DISPLAY is '${display}'; it must be 0 or 1`)
+  }
+
   // BOARD_RELEASE_TARGET decides whether the release path serves this board
   // at all, so a third value is not a shrug -- it is a board whose release
   // status nothing can act on. Refused here rather than read as truthy by
@@ -440,8 +451,8 @@ function lintBoardKeys(r: Recorder, b: Board): void {
 
   if (ok) {
     r.pass(
-      `declares all ${REQUIRED_BOARD_KEYS.length} board-level keys, and BOARD_HAS_STATUS_LED `
-      + 'and BOARD_RELEASE_TARGET are each 0 or 1',
+      `declares all ${REQUIRED_BOARD_KEYS.length} board-level keys, and BOARD_HAS_STATUS_LED, `
+      + 'BOARD_HAS_DISPLAY and BOARD_RELEASE_TARGET are each 0 or 1',
     )
   }
 }

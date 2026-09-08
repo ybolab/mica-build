@@ -35,6 +35,7 @@ import { SHAPE_CHECKS_ALL } from './checks-shape.ts'
 import { CONND_CHECKS } from './checks-connd.ts'
 import { DBUS_CHECKS } from './checks-dbus.ts'
 import { DEBUG_CHECKS } from './checks-debug.ts'
+import { DISPLAY_CHECKS } from './checks-display.ts'
 import { ENGINE_CHECKS_ALL } from './checks-engine.ts'
 import { EXT4_CHECKS } from './checks-ext4.ts'
 import { HOME_CHECKS } from './checks-home.ts'
@@ -157,6 +158,7 @@ export const CHECKS: readonly CheckCase[] = [
   ...FIREWALL_CHECKS,
   ...HWDB_CHECKS,
   ...DEBUG_CHECKS,
+  ...DISPLAY_CHECKS,
   ...FSTAB_CHECKS,
   ...BOARD_CHECKS,
   ...MQTT_CHECKS,

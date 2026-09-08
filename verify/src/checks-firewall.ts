@@ -55,11 +55,12 @@
 // rule is one `systemctl preset-all` away from the failure, and a check that
 // only counted links would call it correct.
 
-import { existsSync, lstatSync, readdirSync, readFileSync, readlinkSync, statSync, type Stats } from 'node:fs'
+import { existsSync, lstatSync, readlinkSync, statSync, type Stats } from 'node:fs'
 import { dirname, join } from 'node:path'
 import type { CheckCase } from './checks.ts'
 import { packedRoot } from './checks-root.ts'
 import type { CheckResult } from './parity.ts'
+import { PRESET_DIRS, UNIT_DIRS, presetFor, wantsLinksNaming } from './unit-state.ts'
 import { verdict } from './verdict.ts'
 
 /**
@@ -105,129 +106,6 @@ const NFT_COMMAND = 'nft'
 
 /** The unit the nftables package ships, which must never run in this image. */
 const NFTABLES_UNIT = 'nftables.service'
-
-/**
- * Where a unit file may live, in the order systemd would find one.
- *
- * Both trees, because "the unit exists" is what makes the rest of this check a
- * statement about something: a root that lost the unit -- a renamed unit, a
- * dropped dependency, an unpack that failed -- would satisfy "no link names it"
- * and "no preset enables it" trivially, and report green over an image that has
- * no nftables in it at all.
- */
-const UNIT_DIRS: readonly string[] = ['/etc/systemd/system', '/usr/lib/systemd/system']
-
-/**
- * The preset directories, in systemd's own precedence order.
- *
- * Highest precedence first. A file in an earlier directory MASKS a same-named
- * file in a later one, and within the merged set the rules are read in
- * lexicographic order of basename with the FIRST MATCH WINNING -- which is why
- * this cannot be a grep for `disable nftables.service`: an `enable nftables.*`
- * in a file sorting earlier would beat it, and the grep would still find the
- * line it was looking for.
- */
-const PRESET_DIRS: readonly string[] = [
-  '/etc/systemd/system-preset',
-  '/run/systemd/system-preset',
-  '/usr/lib/systemd/system-preset',
-]
-
-/** One preset rule, in the order it would be consulted. */
-interface PresetRule {
-  /** The file it came from, image-absolute, for the verdict to name. */
-  readonly file: string
-  readonly verb: 'enable' | 'disable'
-  readonly pattern: string
-}
-
-/**
- * Every preset rule in the root, in systemd's consultation order.
- *
- * Masking is by BASENAME across the directories, which is what systemd does and
- * what makes /etc a place an operator could override policy from; the merged
- * set is then sorted by that basename.
- */
-function presetRules(root: string): PresetRule[] {
-  const byName = new Map<string, string>()
-  for (const dir of PRESET_DIRS) {
-    let names: string[]
-    try {
-      names = readdirSync(join(root, dir))
-    }
-    catch {
-      continue
-    }
-    for (const name of names) {
-      if (!name.endsWith('.preset')) continue
-      if (!byName.has(name)) byName.set(name, `${dir}/${name}`)
-    }
-  }
-  const out: PresetRule[] = []
-  for (const name of [...byName.keys()].sort()) {
-    const file = byName.get(name) as string
-    let body: string
-    try {
-      body = readFileSync(join(root, file), 'utf8')
-    }
-    catch {
-      continue
-    }
-    for (const raw of body.split('\n')) {
-      const line = raw.trim()
-      if (line === '' || line.startsWith('#') || line.startsWith(';')) continue
-      const m = /^(enable|disable)[ \t]+(\S+)/.exec(line)
-      if (m === null) continue
-      out.push({ file, verb: m[1] as 'enable' | 'disable', pattern: m[2] as string })
-    }
-  }
-  return out
-}
-
-/** A systemd preset glob (`*`, `?`) as a whole-string matcher. */
-function globMatches(pattern: string, unit: string): boolean {
-  const escaped = pattern.replace(/[.+^${}()|[\]\\]/g, '\\$&')
-  return new RegExp(`^${escaped.replace(/\*/g, '.*').replace(/\?/g, '.')}$`).test(unit)
-}
-
-/** The first rule that claims `unit`, or undefined when none does. */
-function presetFor(root: string, unit: string): PresetRule | undefined {
-  return presetRules(root).find(r => globMatches(r.pattern, unit))
-}
-
-/** Every `.wants` symlink under the unit trees whose basename is `unit`. */
-function wantsLinksNaming(root: string, unit: string): string[] {
-  const out: string[] = []
-  const visit = (dir: string): void => {
-    let names: string[]
-    try {
-      names = readdirSync(join(root, dir))
-    }
-    catch {
-      return
-    }
-    for (const name of names) {
-      const path = `${dir}/${name}`
-      let st: Stats
-      try {
-        st = lstatSync(join(root, path))
-      }
-      catch {
-        continue
-      }
-      if (st.isDirectory()) {
-        visit(path)
-        continue
-      }
-      // `.wants` AND `.requires`: both are enablement, an [Install] section can
-      // name either, and a check that knew only the first would miss half of
-      // the mechanism it exists to find.
-      if (name === unit && (dir.endsWith('.wants') || dir.endsWith('.requires'))) out.push(path)
-    }
-  }
-  for (const dir of UNIT_DIRS) visit(dir)
-  return out
-}
 
 /** Where a symlink at an image-absolute `path` points, as an image path. */
 function linkTarget(root: string, path: string): string {

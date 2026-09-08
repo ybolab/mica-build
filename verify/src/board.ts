@@ -102,6 +102,13 @@ export interface Board {
   readonly bootAttemptsDefault: number | undefined
   readonly hasStatusLed: string | undefined
   /**
+   * Whether this board has a local display (`BOARD_HAS_DISPLAY`).
+   *
+   * Raw string for the same reason as `hasStatusLed`: the model reports what
+   * the file says and the lint rules on the value.
+   */
+  readonly hasDisplay: string | undefined
+  /**
    * Whether this board has a release path (`BOARD_RELEASE_TARGET`).
    *
    * Kept as the raw string, like `hasStatusLed`: the model reports what
@@ -248,6 +255,7 @@ export function modelBoard(env: BoardEnvFile, name: string): Board {
     grubenv: get('RAUC_GRUBENV'),
     bootAttemptsDefault: int('BOOT_ATTEMPTS_DEFAULT'),
     hasStatusLed: get('BOARD_HAS_STATUS_LED'),
+    hasDisplay: get('BOARD_HAS_DISPLAY'),
     releaseTarget: get('BOARD_RELEASE_TARGET'),
     sizeBudgetMb: int('BOARD_SIZE_BUDGET_MB'),
     cmdlineArgs: get('BOARD_CMDLINE_ARGS'),
