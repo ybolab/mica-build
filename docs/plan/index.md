@@ -89,3 +89,4 @@ disobeys on sight teaches a reader the wrong thing about the tree.
 
 - [x] [**PLAN-924 Repair S905X5M front-panel package permissions**](PLAN-924.md) `2026-09-08`
 - [x] [**PLAN-925 Align the Wi-Fi client switch with the settings API**](PLAN-925.md) `2026-09-08`
+- [x] [**PLAN-089 The boot health gate requires core function, not the absence of every failure**](PLAN-089.md)

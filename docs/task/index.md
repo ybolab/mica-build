@@ -69,6 +69,7 @@ thing about the tree. Both indexes now say the same thing.
 - [-] [**RFCT-310 The host toolchain lint and the container-only build policy**](RFCT-310.md) `P1`
 - [-] [**RFCT-315 PLAN-070 F7/F8/F9: the client reads the baked anchor**](RFCT-315.md) `P1`
 - [ ] [**UI-011 Stabilize Bun V8 coverage aggregation**](UI-011.md) `P1`
+- [x] [**RFCT-360 PLAN-089: the boot health gate requires core function**](RFCT-360.md) `P1`
 - [-] [**RFCT-335 Add a generic virtual arm64 board, bootable in QEMU**](RFCT-335.md) `P1`
 - [x] [**RFCT-343 cx3576: reproducible kernel and U-Boot, and the config the contract reads**](RFCT-343.md) `P1`
 - [x] [**RFCT-354 PLAN-088: cx3576 HDMI boot logo, console recoverable on demand**](RFCT-354.md) `P1`
