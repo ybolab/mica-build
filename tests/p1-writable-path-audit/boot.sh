@@ -158,7 +158,7 @@ set +e
 timeout 900 ssh -i "$KEY" -p "$SSH_PORT" \
     -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
     -o BatchMode=yes -o ConnectTimeout=20 -o LogLevel=ERROR \
-    "root@$IP" "sh -s $MODE" <"$H/probe.sh" >"$S/probe-$LABEL.txt" 2>&1
+    "root@$IP" "sh -s $MODE '$PUBKEY'" <"$H/probe.sh" >"$S/probe-$LABEL.txt" 2>&1
 rc=$?
 set -e
 echo "probe exit $rc, $(grep -c 'P1AUDIT|' "$S/probe-$LABEL.txt" 2>/dev/null || echo 0) lines -> $S/probe-$LABEL.txt"

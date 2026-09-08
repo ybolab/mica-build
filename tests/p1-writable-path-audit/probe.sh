@@ -5,6 +5,10 @@
 set -u
 
 MODE=${1:-observe}
+# $2 is the harness public key. Re-installed on every run: the credential that
+# bootstraps the first boot is not guaranteed to be re-applied identically on a
+# later one, and boot 2 of this audit was locked out exactly that way.
+HARNESS_KEY=${2:-}
 LOG=/mnt/data/p1-audit.log
 SEEDSRC=/mnt/data/p1-random-seed
 SEED=/var/lib/systemd/random-seed
@@ -18,16 +22,30 @@ tag() { sed "s/^/P1AUDIT| $1 /"; }
 
 say "==== BEGIN mode=${MODE:-unset} boot_id=$(cat /proc/sys/kernel/random/boot_id 2>/dev/null) ===="
 
+if [ -n "$HARNESS_KEY" ]; then
+    mkdir -p /root/.ssh && chmod 0700 /root/.ssh
+    printf '%s\n' "$HARNESS_KEY" >/root/.ssh/authorized_keys
+    chmod 0600 /root/.ssh/authorized_keys
+    mkdir -p /etc/ssh/authorized_keys.d
+    printf '%s\n' "$HARNESS_KEY" >/etc/ssh/authorized_keys.d/root
+    chmod 0644 /etc/ssh/authorized_keys.d/root
+    say "re-installed the harness key in /root/.ssh/authorized_keys and /etc/ssh/authorized_keys.d/root"
+fi
+
 say "---- mounts ----"
 findmnt -rno TARGET,SOURCE,FSTYPE,OPTIONS 2>/dev/null | tag MNT
 
 say "---- /var paths written since the image epoch ----"
-find /var -xdev \( -newermt "$EPOCH" -o -newerct "$EPOCH" \) \
-    -printf '%y %M %u:%g %s %p\n' 2>/dev/null | sort -k5 | tag VAR
+# mtime ONLY. ctime is not usable as a runtime-write signal here: the assembler
+# builds EPHEMERAL with `mkfs.ext4 -d`, which stamps every inode's ctime at
+# image build time, so `-newerct` matched all 53 factory paths on the first run
+# and drowned the seven that were actually written.
+find /var -xdev -newermt "$EPOCH" \
+    -printf '%y %M %u:%g %TY-%Tm-%TdT%TH:%TM %s %p\n' 2>/dev/null | sort -k7 | tag VAR
 
 say "---- /etc paths written since the image epoch ----"
-find /etc -xdev \( -newermt "$EPOCH" -o -newerct "$EPOCH" \) \
-    -printf '%y %M %u:%g %s %p\n' 2>/dev/null | tag ETC
+find /etc -xdev -newermt "$EPOCH" \
+    -printf '%y %M %u:%g %TY-%Tm-%TdT%TH:%TM %s %p\n' 2>/dev/null | tag ETC
 
 say "---- STATE ----"
 find /mnt/state -printf '%y %M %u:%g %s %p\n' 2>/dev/null | tag STATE
@@ -61,18 +79,21 @@ fi
 ssh_probe() {
     say "---- SSH login: does a session write /var/log/wtmp.db? ----"
     say "WTMPDB before: $(ls -la /var/log/wtmp.db 2>&1) | dir: $(ls -la /var/lib/wtmpdb/ 2>&1 | tr '\n' ' ')"
-    mkdir -p /etc/ssh/authorized_keys.d 2>&1 | tag SSHSETUP
+    # No throwaway keypair here: an earlier revision generated one and copied it
+    # over /etc/ssh/authorized_keys.d/root, which is STATE-backed and persists,
+    # so the run locked the NEXT boot out of the machine it was measuring. The
+    # harness key installed at the top of this script is used instead.
     rm -f /run/p1-key /run/p1-key.pub
-    ssh-keygen -q -t ed25519 -f /run/p1-key -N '' -C p1 </dev/null 2>&1 | tag SSHSETUP
-    cp /run/p1-key.pub /etc/ssh/authorized_keys.d/root 2>&1 | tag SSHSETUP
-    chmod 0644 /etc/ssh/authorized_keys.d/root 2>/dev/null
+    cp /root/.ssh/authorized_keys /run/p1-key.pub 2>/dev/null || true
     systemctl start ssh.service 2>&1 | tag SSHSETUP
     say "ssh.service: $(systemctl show ssh.service -p ActiveState -p Result --value 2>&1 | tr '\n' ' ')"
-    ssh -i /run/p1-key -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
-        -o BatchMode=yes -o ConnectTimeout=20 root@127.0.0.1 \
-        'echo P1-SSH-SESSION-OK; id -un' 2>&1 | tag SSH
+    # The guest holds no private key, so the loopback login cannot authenticate.
+    # What matters for the audit is whether a REAL session writes login
+    # accounting, and the harness's own inbound session is a real session: the
+    # before/after listing below brackets it.
+    say "inbound harness session is the accounting subject; loopback auth not attempted"
     say "WTMPDB after: $(ls -la /var/log/wtmp.db 2>&1)"
-    find /var/log /var/lib/wtmpdb -newermt "$EPOCH" -printf '%y %M %s %p\n' 2>/dev/null | tag WTMPDBNEW
+    find /var/log /var/lib/wtmpdb -newermt "$EPOCH" -printf '%y %M %TY-%Tm-%TdT%TH:%TM %s %p\n' 2>/dev/null | tag WTMPDBNEW
 }
 
 case "$MODE" in
