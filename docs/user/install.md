@@ -9,12 +9,16 @@ data inside the written image extent; keep any files you need elsewhere first.
 
 ## Prepare and identify
 
+Factory image names use `mos-BOARD-YYYYMMDD-HHmmss.img`, with UTC build time
+to the second distinguishing builds. Use the actual delivered filename in the
+commands below.
+
 Use the exact board's image and obtain its metadata public key from the build's
 trusted handover. Run the image verifier with explicit inputs:
 
 ```sh
 bash verify/run.sh --verify --board x64 \
-  --image /path/to/image/disk.img --public-key /path/to/metadata-public.key
+  --image /path/to/image/mos-x64-20260909-164233.img --public-key /path/to/metadata-public.key
 ```
 
 Substitute `virt-arm64` or `cx3576` only for that board's own image. Verification
@@ -35,7 +39,7 @@ For virtual acceptance, the repository harness uses a fresh disk copy and
 explicit public boot certificate:
 
 ```sh
-MOS_BOARD=x64 MOS_QEMU_IMAGE=/path/to/image/disk.img \
+MOS_BOARD=x64 MOS_QEMU_IMAGE=/path/to/image/mos-x64-20260909-164233.img \
 MOS_QEMU_BOOT_CERT=/path/to/boot-signer.cert.pem \
   bash pkgs/mosd/tests/apid-api/run.sh
 ```
@@ -51,8 +55,11 @@ Use the local bench board's RockUSB loader/maskrom interface and identify the
 attached device before writing. The board BSP provides complete-image flashing:
 
 ```sh
-make -C boards/cx3576/bsp flash-mos MOS_IMAGE=/path/to/image/disk.img
+make -C boards/cx3576/bsp flash-mos MOS_IMAGE=/path/to/image/mos-cx3576-20260909-164233.img
 ```
+
+Without `MOS_IMAGE`, the BSP selects the newest timestamped cx3576 image in
+`_out/cx3576/image/`. Set `MOS_IMAGE` explicitly to flash a particular build.
 
 Preflight checks the current GPT and loader placement before issuing a device
 write. The flashing path reads back and compares every image byte before reset;

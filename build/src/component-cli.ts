@@ -11,6 +11,8 @@ import { assembleFileImage, FILE_IMAGE_TOOLS } from './file-image.ts'
 import { parseFileLayout } from './file-layout.ts'
 import { packBootFirmware, packKernel } from './kernel-package.ts'
 import { maintainFirmware } from './firmware-maintenance.ts'
+import { factoryImageFilename } from './image-name.ts'
+import { fileSha256 } from './release-manifest.ts'
 import { REPO_ROOT } from './paths.ts'
 import { Toolbox } from './toolbox.ts'
 
@@ -34,6 +36,7 @@ const USAGE = `Usage: bash build/run.sh --components COMMAND [OPTIONS]
 
 Paths are relative to the repository root. Signing inputs are explicit.
 The image records file is an array of {envelope, kernelDirectory, rootDirectory}.
+Image output: mos-BOARD-YYYYMMDD-HHmmss.img (UTC) and SHA256SUMS; prints the image path.
 `
 
 async function main() {
@@ -167,9 +170,15 @@ async function main() {
       })
       const mounts = [dirname(output), ...records.flatMap(record => [record.kernelDirectory, record.rootDirectory])]
       const tb = await Toolbox.open(FILE_IMAGE_TOOLS, { mounts })
-      try { await assembleFileImage(layout(), records, keys(), path('firmware'), output, tb) }
+      let disk: string
+      try { disk = await assembleFileImage(layout(), records, keys(), path('firmware'), output, tb) }
       finally { await tb.close() }
-      break
+      const filename = factoryImageFilename(value('board'), new Date())
+      const image = join(output, filename)
+      renameSync(disk, image)
+      writeFileSync(join(output, 'SHA256SUMS'), `${fileSha256(image)}  ${filename}\n`, { flag: 'wx' })
+      console.log(image)
+      return
     }
     default: throw new Error(USAGE)
   }

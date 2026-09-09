@@ -4,6 +4,18 @@ Campaign-level record, one entry per plan, newest first. Details live in the
 plan file and the task records it names; this file holds the one-paragraph
 history a reader can scan without opening either.
 
+## Timestamped factory images (2026-09-09)
+
+Factory image publication now uses `mos-BOARD-YYYYMMDD-HHmmss.img` with UTC
+build time to the second. Release packaging preserves and validates the name in
+its manifest, checksums and provenance; cx3576 flashing selects the newest
+matching image by default. The existing cx3576 handover uses its actual
+`20260909-164233` build time with unchanged bytes and source identity. All 384
+build tests, real image CLI output, release verification and flash selection
+checks pass. The completed task and plan `20260909-1725-timestamped-factory-images`
+are consolidated into the [delivery record](task/20260908-2229-file-ab-delivery-x64-first.md)
+and current build/install documentation to avoid retaining obsolete work records.
+
 ## Clean cx3576 image rebuild (2026-09-09)
 
 Deleted the generated `_out/` tree at the user's request and rebuilt the complete

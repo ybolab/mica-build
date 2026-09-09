@@ -89,7 +89,10 @@ The records input to `image` is an array of exactly two objects with
 `envelope`, `kernelDirectory` and `rootDirectory`. Each envelope is the original
 signed JSON text. The assembler checks trust, board association, component bytes,
 verity geometry, destination capacity, GPT and clean filesystem state. It
-accounts for seeded DATA quota usage before publishing the image.
+accounts for seeded DATA quota usage before publishing the image. The CLI names
+the complete image `mos-BOARD-YYYYMMDD-HHmmss.img` using UTC completion time,
+writes `SHA256SUMS` beside it, and prints the full image path. Use that actual
+filename in verification and release commands; the timestamps below are examples.
 
 ```sh
 bash build/run.sh --components image --board x64 \
@@ -98,7 +101,7 @@ bash build/run.sh --components image --board x64 \
   --firmware /path/to/firmware-package --out /path/to/new-image
 
 bash verify/run.sh --verify --board x64 \
-  --image /path/to/new-image/disk.img --public-key /path/to/public.key
+  --image /path/to/new-image/mos-x64-20260909-164233.img --public-key /path/to/public.key
 ```
 
 The component CLI takes base64 key values; the verifier takes public-key file
@@ -138,7 +141,7 @@ UEFI/FIT key enforcement; boot tests establish that separately.
 QEMU API acceptance requires a full factory image and the public boot signer:
 
 ```sh
-MOS_BOARD=x64 MOS_QEMU_IMAGE=/path/to/image/disk.img \
+MOS_BOARD=x64 MOS_QEMU_IMAGE=/path/to/image/mos-x64-20260909-164233.img \
 MOS_QEMU_BOOT_CERT=/path/to/public-boot.cert.pem \
   bash pkgs/mosd/tests/apid-api/run.sh
 ```

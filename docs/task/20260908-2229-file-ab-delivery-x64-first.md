@@ -912,7 +912,7 @@ runtime, package pool and rootfs. The source was clean commit
 `38f2a37b9a3c`, including the power action feedback repair. This run rebuilt the
 ARM64 pool only; the deleted x64 images were not regenerated.
 
-- Complete factory image: `_out/cx3576/image/disk.img`, 2,435,842,048 bytes.
+- Complete factory image: `_out/cx3576/image/mos-cx3576-20260909-164233.img`, 2,435,842,048 bytes.
 - SHA-256: `324e0ca02ecfede11a8e0f35302d2588265769b7e50bed932700db74405ea252`.
 - Checksums and public metadata anchor: `_out/cx3576/image/SHA256SUMS` and
   `_out/cx3576/image/metadata.public.key`.
@@ -932,3 +932,20 @@ The optional container orchestration route lacked the local Buildx profile;
 the supported host Bun orchestration route completed rootfs composition using
 the pinned build containers. Initial failure records remain beside the passing
 retry logs. Physical cx3576 startup, reboot and USB readback remain untested.
+
+## Timestamped factory image handover (2026-09-09)
+
+The current cx3576 image and release copy use
+`mos-cx3576-20260909-164233.img`, reflecting the original completion time of
+2026-09-09 16:42:33 UTC. Every image byte and the clean `38f2a37b9a3c` source
+identity are preserved. Refreshed release provenance, manifest and checksums
+bind the timestamped name; no generic-name alias is retained.
+
+Subsequent component CLI builds publish `mos-BOARD-YYYYMMDD-HHmmss.img` with
+UTC completion time and `SHA256SUMS`. Release assembly preserves that basename,
+and cx3576 flashing defaults to the newest matching timestamp. The focused
+regression first reproduced the lost release name; all 384 build tests now pass.
+Real CLI assembly, unchanged delivered-image hashes, the 14-artifact release
+gate and flash default/override/missing-image checks pass. Local review finds no
+blocking issues. Controller evidence lives in `.tmp/image-naming`; the disposable
+CLI image is removed after verification. Physical board acceptance is unchanged.

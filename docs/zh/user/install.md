@@ -7,11 +7,14 @@
 
 ## 准备并识别
 
+刷机文件名为 `mos-BOARD-YYYYMMDD-HHmmss.img`，使用精确到秒的 UTC 构建时间
+区分版本。下列命令中的文件名需要替换为实际交付文件。
+
 使用确切板卡的镜像，通过可信交付取得元数据公钥，再验证：
 
 ```sh
 bash verify/run.sh --verify --board x64 \
-  --image /path/to/image/disk.img --public-key /path/to/metadata-public.key
+  --image /path/to/image/mos-x64-20260909-164233.img --public-key /path/to/metadata-public.key
 ```
 
 只为对应板卡的产物替换 `--board`。该检查验证签名对象和布局，不注册平台启动密钥。
@@ -25,7 +28,7 @@ bash verify/run.sh --verify --board x64 \
 启动。UEFI 使用可移动介质 EFI 入口。磁盘包含 ESP/SYSTEM/DATA，仅 DATA 扩容。
 
 ```sh
-MOS_BOARD=x64 MOS_QEMU_IMAGE=/path/to/image/disk.img \
+MOS_BOARD=x64 MOS_QEMU_IMAGE=/path/to/image/mos-x64-20260909-164233.img \
 MOS_QEMU_BOOT_CERT=/path/to/boot-signer.cert.pem \
   bash pkgs/mosd/tests/apid-api/run.sh
 ```
@@ -40,8 +43,11 @@ MOS_QEMU_BOOT_CERT=/path/to/boot-signer.cert.pem \
 通过本地台架板的 RockUSB loader/maskrom 接口操作，写入前识别所连接设备。
 
 ```sh
-make -C boards/cx3576/bsp flash-mos MOS_IMAGE=/path/to/image/disk.img
+make -C boards/cx3576/bsp flash-mos MOS_IMAGE=/path/to/image/mos-cx3576-20260909-164233.img
 ```
+
+不指定 `MOS_IMAGE` 时，默认选择 `_out/cx3576/image/` 中时间最新的 cx3576 镜像。
+需要指定版本时，显式传入 `MOS_IMAGE`。
 
 预检先检查当前 GPT 和 loader 位置。写入后比较全部镜像字节，回读不符时保持恢复
 接口而不复位。固件从 LBA 64 开始，其保留分区还包含两份启动尝试记录。

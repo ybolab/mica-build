@@ -1,13 +1,14 @@
 import { afterEach, beforeEach, expect, test } from 'bun:test'
 import { createHash, generateKeyPairSync } from 'node:crypto'
 import { spawnSync } from 'node:child_process'
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { Signer } from '../../shared/update-envelope.ts'
 import { canonicalJson, componentId } from './components.ts'
 import { packArchive } from './component-archive.ts'
 import { assembleRelease, gateRelease, type ReleaseInputs } from './release-manifest.ts'
 
+const IMAGE = 'mos-x64-20260909-164233.img'
 let work: string
 let inputs: ReleaseInputs
 let keys: string[]
@@ -42,18 +43,49 @@ beforeEach(() => {
   f.id = componentId(f)
   writeFileSync(join(work, 'firmware/firmware.json'), JSON.stringify(signer.sign(JSON.parse(canonicalJson(f)))))
   writeFileSync(join(work, 'firmware/BOOTX64.EFI'), bytes)
-  writeFileSync(join(work, 'image.img'), 'fixture image; image boot acceptance is separate\n')
+  writeFileSync(join(work, IMAGE), 'fixture image; image boot acceptance is separate\n')
   writeFileSync(join(work, 'packages.tsv'), '#package\tversion\tarchitecture\nmos-system\t1\tall\nlibc6\t2.41\tamd64\n')
   writeFileSync(join(work, 'meta/updates/manifest.json'), readFileSync(new URL('../../meta.example/updates/manifest.json', import.meta.url)))
   writeFileSync(join(work, 'meta/GENERATED'), 'DEVELOPMENT-GRADE\nDOMAINS=boot verity updates\n')
   writeFileSync(join(work, 'notes.md'), '# Current release\n\nDevelopment evidence only.\n')
   inputs = { out: join(work, 'release'), board: 'x64', version: d.version, channel: 'development', profile: 'dev',
     source: { commit: 'a'.repeat(40), dirty: true }, builderImages: { IMAGE_TEST: 'example@sha256:' + 'a'.repeat(64) },
-    image: join(work, 'image.img'), update: join(work, 'update.mosupd'), firmware: join(work, 'firmware'),
+    image: join(work, IMAGE), update: join(work, 'update.mosupd'), firmware: join(work, 'firmware'),
     packages: join(work, 'packages.tsv'), meta: join(work, 'meta'), notes: join(work, 'notes.md'),
     evidence: new URL('../../boards/x64/evidence.json', import.meta.url).pathname, keys }
 })
 afterEach(() => rmSync(work, { recursive: true, force: true }))
+
+test('release preserves the build timestamp in the factory image name', () => {
+  const filename = 'mos-x64-20260910-010203.img'
+  const image = join(work, filename)
+  renameSync(inputs.image, image)
+  assembleRelease({ ...inputs, image })
+  expect(read('manifest.json').artifacts.find((a: { role: string }) => a.role === 'image').filename).toBe(filename)
+  expect(read('provenance.json').inputs.find((a: { role: string }) => a.role === 'image').filename).toBe(filename)
+  expect(readFileSync(join(inputs.out, 'SHA256SUMS'), 'utf8')).toContain(`  ${filename}\n`)
+})
+
+test.each(['disk.img', 'image.img', 'mos-cx3576-20260909-164233.img', 'mos-x64-20260230-164233.img'])(
+  'release refuses invalid factory image name %s', filename => {
+    const image = join(work, filename)
+    renameSync(inputs.image, image)
+    expect(() => assembleRelease({ ...inputs, image })).toThrow('factory image filename')
+  },
+)
+
+test('release gate refuses generic image names and duplicate image roles', () => {
+  assembleRelease(inputs)
+  const m = read('manifest.json')
+  const image = m.artifacts.find((a: { role: string }) => a.role === 'image')
+  image.filename = 'image.img'
+  write('manifest.json', m)
+  expect(() => gateRelease(inputs.out, keys)).toThrow('artifact filename or role')
+  image.filename = IMAGE
+  m.artifacts[1] = { ...image, filename: 'mos-x64-20260910-010203.img' }
+  write('manifest.json', m)
+  expect(() => gateRelease(inputs.out, keys)).toThrow('artifact filename or role')
+})
 
 test('current release binds independent artifacts and derives inventory and provenance', () => {
   assembleRelease(inputs)
@@ -69,14 +101,14 @@ test('missing, changed and unlisted release files are refused', () => {
   writeFileSync(join(inputs.out, 'unlisted'), 'extra')
   expect(() => gateRelease(inputs.out, keys)).toThrow('file set')
   rmSync(join(inputs.out, 'unlisted'))
-  writeFileSync(join(inputs.out, 'image.img'), 'changed')
+  writeFileSync(join(inputs.out, IMAGE), 'changed')
   expect(() => gateRelease(inputs.out, keys)).toThrow('digest or length')
-  rmSync(join(inputs.out, 'image.img'))
+  rmSync(join(inputs.out, IMAGE))
   expect(() => gateRelease(inputs.out, keys)).toThrow('file set')
 })
 test('symlink artifacts and parent traversal never satisfy the gate', () => {
   assembleRelease(inputs)
-  rmSync(join(inputs.out, 'image.img')); symlinkSync(join(work, 'image.img'), join(inputs.out, 'image.img'))
+  rmSync(join(inputs.out, IMAGE)); symlinkSync(join(work, IMAGE), join(inputs.out, IMAGE))
   expect(() => gateRelease(inputs.out, keys)).toThrow('regular file')
   const m = read('manifest.json'); m.artifacts[0].filename = '../image.img'; write('manifest.json', m)
   expect(() => gateRelease(inputs.out, keys)).toThrow('artifact')
@@ -147,7 +179,7 @@ test('shipped release CLI and documented verification commands execute', () => {
   const checked = spawnSync('bash', ['-euo', 'pipefail', '-c', commands], { env, encoding: 'utf8' })
   expect(checked.status).toBe(0)
   expect(checked.stdout).toContain('RELEASE_GATE_PASS')
-  writeFileSync(join(inputs.out, 'image.img'), 'tampered')
+  writeFileSync(join(inputs.out, IMAGE), 'tampered')
   expect(spawnSync('bash', ['-euo', 'pipefail', '-c', commands], { env, stdio: 'ignore' }).status).not.toBe(0)
 }, 60000)
 

@@ -10,7 +10,7 @@ remains a separate operation. There is no earlier-format reader or migration.
 
 `manifest.json` records the board, version, profile, source commit and dirty flag,
 board assurance, development signing domains, and every artifact's role, length
-and SHA-256. A directory has exactly the fixed file set below. Missing, extra,
+and SHA-256. A directory has exactly the file roles below. Missing, extra,
 duplicate, nonregular and changed files fail the gate. Unknown schema fields and
 schemas fail as well.
 
@@ -34,7 +34,7 @@ component/image producers without claiming a product release.
 
 | Filename | Content |
 | --- | --- |
-| `image.img` | Complete current three-partition factory image |
+| `mos-BOARD-YYYYMMDD-HHmmss.img` | Complete current three-partition factory image, named by UTC build time |
 | `update.mosupd` | `MOSUPD01` deployment envelope and authenticated objects |
 | `firmware.json` | Independently signed `mos/firmware/v1` envelope |
 | `firmware.bin` | Firmware bytes named by that envelope; the original destination remains in its signed target |
@@ -49,6 +49,10 @@ component/image producers without claiming a product release.
 | `release-notes.md` | Required, nonempty release notes supplied by the release author |
 | `SHA256SUMS` | Ordered digests of every artifact except itself |
 | `manifest.json` | Release identity and digests, including `SHA256SUMS` |
+
+The image basename is preserved from the component build. It must contain the
+release board and a valid UTC timestamp to the second. Exactly one image is
+allowed; its filename is also recorded in checksums and provenance.
 
 The SBOM lists package names, versions and architectures. It is not a recursive
 inventory of vendored Rust crates, JavaScript dependencies, kernel modules or
@@ -74,7 +78,7 @@ of the component build records are required alongside this gate.
 ```bash
 bash build/run.sh --release assemble \
   --board x64 --version 1.0.0-dev --channel development --profile dev \
-  --image /absolute/build/image/disk.img \
+  --image /absolute/build/image/mos-x64-20260909-164233.img \
   --update /absolute/build/update.mosupd \
   --firmware /absolute/build/firmware \
   --package-manifest /absolute/extracted/usr/share/mos/manifest.tsv \
@@ -154,7 +158,7 @@ image bytes or notes. Use the independent current image verifier before flashing
 
 ```bash
 bash verify/run.sh --verify --board x64 \
-  --image /absolute/new-release-directory/image.img \
+  --image /absolute/new-release-directory/mos-x64-20260909-164233.img \
   --public-key /absolute/metadata.pub
 ```
 
@@ -166,8 +170,8 @@ image's directory-gate pass as a boot pass.
 
 `make os-release-verify-test` runs the shipped CLI and the documented verification
 commands. It also checks missing/unlisted files, changed artifacts, symlinks,
-invalid schema/fields/roles, empty notes, duplicate package rows, malformed
-markers, prohibited channels, wrong anchors, archive truncation/trailing data,
+invalid schema/fields/roles or image timestamps, empty notes, duplicate package
+rows, malformed markers, prohibited channels, wrong anchors, archive truncation/trailing data,
 repinned object corruption, mismatched boards and insufficient evidence.
 
 The build suite runs the same tests. The complete-image release exercise uses

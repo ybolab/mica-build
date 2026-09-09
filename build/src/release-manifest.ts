@@ -1,16 +1,20 @@
 import { createHash } from 'node:crypto'
 import { closeSync, copyFileSync, existsSync, lstatSync, mkdirSync, openSync, readFileSync, readdirSync, readSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 import { authenticateDeployment, canonicalJson, componentId } from './components.ts'
 import { authenticateFirmware } from './firmware.ts'
+import { isFactoryImageFilename } from './image-name.ts'
 
 const FILES = {
-  'image.img': 'image', 'update.mosupd': 'update', 'firmware.json': 'firmware-manifest',
+  'update.mosupd': 'update', 'firmware.json': 'firmware-manifest',
   'firmware.bin': 'firmware', 'package-manifest.tsv': 'packages', 'baked-meta.json': 'meta',
   'development-marker.txt': 'development-marker', 'board-evidence.json': 'evidence',
   'builder-images.json': 'build-inputs', 'sbom.cdx.json': 'sbom', 'licenses.json': 'licenses',
   'provenance.json': 'provenance', 'release-notes.md': 'notes', 'SHA256SUMS': 'checksums',
 } as const
+function releaseFiles(image: string): Record<string, string> {
+  return { [image]: 'image', ...FILES }
+}
 const CHANNELS = ['development', 'candidate', 'stable'] as const
 export type ReleaseChannel = typeof CHANNELS[number]
 type Source = { commit: string, dirty: boolean }
@@ -59,9 +63,9 @@ export function fileSha256(path: string): string {
     return hash.digest('hex')
   } finally { closeSync(fd) }
 }
-function measure(dir: string, filename: string): Artifact {
+function measure(dir: string, filename: string, role: string): Artifact {
   const path = join(dir, filename)
-  return { filename, role: FILES[filename as keyof typeof FILES], bytes: regular(path).size, sha256: fileSha256(path) }
+  return { filename, role, bytes: regular(path).size, sha256: fileSha256(path) }
 }
 function json(dir: string, filename: string, value: unknown) {
   writeFileSync(join(dir, filename), `${JSON.stringify(value, null, 2)}\n`)
@@ -80,13 +84,17 @@ function manifest(value: unknown): ReleaseManifest {
   requireValue(['I1', 'I2', 'I3', 'I4'].includes(m.bootAssurance as string), 'boot assurance')
   requireValue(Array.isArray(m.developmentDomains) && m.developmentDomains.every(d => ['boot', 'verity', 'updates'].includes(d))
     && new Set(m.developmentDomains).size === m.developmentDomains.length, 'development domains')
-  requireValue(Array.isArray(m.artifacts) && m.artifacts.length === Object.keys(FILES).length, 'artifact count')
+  requireValue(Array.isArray(m.artifacts) && m.artifacts.length === Object.keys(FILES).length + 1, 'artifact count')
   const seen = new Set<string>()
+  const roles = new Set<string>()
   for (const value of m.artifacts) {
     const a = object(value, ['filename', 'role', 'bytes', 'sha256'])
-    requireValue(typeof a.filename === 'string' && Object.hasOwn(FILES, a.filename)
-      && FILES[a.filename as keyof typeof FILES] === a.role && !seen.has(a.filename), 'artifact filename or role')
+    requireValue(typeof a.filename === 'string' && typeof a.role === 'string'
+      && (a.role === 'image' ? isFactoryImageFilename(a.filename, m.board as string)
+        : Object.hasOwn(FILES, a.filename) && FILES[a.filename as keyof typeof FILES] === a.role)
+      && !seen.has(a.filename) && !roles.has(a.role), 'artifact filename or role')
     seen.add(a.filename)
+    roles.add(a.role)
     requireValue(Number.isSafeInteger(a.bytes) && (a.bytes as number) >= 0
       && typeof a.sha256 === 'string' && /^[a-f0-9]{64}$/.test(a.sha256), 'artifact digest or length')
   }
@@ -136,7 +144,8 @@ function packages(text: string) {
   requireValue(rows.some(r => r.name.startsWith('mos')), 'empty MOS package inventory')
   return rows.sort((a, b) => `${a.name}:${a.architecture}`.localeCompare(`${b.name}:${b.architecture}`))
 }
-function derived(dir: string, m: Omit<ReleaseManifest, 'artifacts'>) {
+function derived(dir: string, m: Omit<ReleaseManifest, 'artifacts'>, image: string) {
+  const files = releaseFiles(image)
   const rows = packages(read(join(dir, 'package-manifest.tsv')))
   const images: unknown = JSON.parse(read(join(dir, 'builder-images.json')))
   requireValue(images !== null && typeof images === 'object' && !Array.isArray(images)
@@ -148,7 +157,7 @@ function derived(dir: string, m: Omit<ReleaseManifest, 'artifacts'>) {
       components: rows.map(r => ({ type: 'library', name: r.name, version: r.version, properties: [{ name: 'mos:architecture', value: r.architecture }] })) },
     'licenses.json': { schemaVersion: 1, statement: OFFER, source: m.source, packages: rows },
     'provenance.json': { schema: 'mos/provenance/v1', source: m.source, board: m.board, version: m.version, profile: m.profile, builderImages: images,
-      inputs: ['image.img', 'update.mosupd', 'firmware.json', 'firmware.bin', 'package-manifest.tsv', 'baked-meta.json', 'development-marker.txt', 'board-evidence.json', 'builder-images.json', 'release-notes.md'].map(filename => measure(dir, filename)) },
+      inputs: [image, 'update.mosupd', 'firmware.json', 'firmware.bin', 'package-manifest.tsv', 'baked-meta.json', 'development-marker.txt', 'board-evidence.json', 'builder-images.json', 'release-notes.md'].map(filename => measure(dir, filename, files[filename]!)) },
   }
 }
 /** Authenticate every MOSUPD01 object using bounded reads, without unpacking it. */
@@ -183,9 +192,10 @@ export function verifyArchive(path: string, keys: readonly string[]) {
 }
 export function gateRelease(dir: string, keys: readonly string[]) {
   const m = manifest(JSON.parse(read(join(dir, 'manifest.json'))))
-  requireValue(readdirSync(dir).sort().join() === ['manifest.json', ...Object.keys(FILES)].sort().join(), 'release file set differs')
+  const image = m.artifacts.find(a => a.role === 'image')!.filename
+  requireValue(readdirSync(dir).sort().join() === ['manifest.json', ...Object.keys(releaseFiles(image))].sort().join(), 'release file set differs')
   for (const a of m.artifacts) {
-    const measured = measure(dir, a.filename)
+    const measured = measure(dir, a.filename, a.role)
     requireValue(measured.bytes === a.bytes && measured.sha256 === a.sha256, `artifact digest or length: ${a.filename}`)
   }
   requireValue(read(join(dir, 'SHA256SUMS')) === sums(m.artifacts), 'checksum list differs')
@@ -202,13 +212,15 @@ export function gateRelease(dir: string, keys: readonly string[]) {
   requireValue(firmware.board === m.board, 'firmware board differs')
   requireValue(regular(join(dir, 'firmware.bin')).size === firmware.artifact.bytes
     && fileSha256(join(dir, 'firmware.bin')) === firmware.artifact.sha256, 'firmware digest or length')
-  for (const [name, expected] of Object.entries(derived(dir, m))) {
+  for (const [name, expected] of Object.entries(derived(dir, m, image))) {
     requireValue(canonicalJson(JSON.parse(read(join(dir, name)))) === canonicalJson(expected), `derived record differs: ${name}`)
   }
   return { manifest: m, deploymentId: componentId(deployment), firmwareId: firmware.id, artifactsChecked: m.artifacts.length }
 }
 export function assembleRelease(inputs: ReleaseInputs) {
   requireValue(!existsSync(inputs.out), 'output exists')
+  const image = basename(inputs.image)
+  requireValue(isFactoryImageFilename(image, inputs.board), 'factory image filename must contain the board and UTC build time')
   requireValue(read(inputs.notes).trim(), 'empty release notes')
   packages(read(inputs.packages))
   const hasMarker = lstatSync(join(inputs.meta, 'GENERATED'), { throwIfNoEntry: false }) !== undefined
@@ -221,7 +233,7 @@ export function assembleRelease(inputs: ReleaseInputs) {
   requireValue(deployment.board === inputs.board && deployment.version === inputs.version, 'update board or version differs')
   const m: ReleaseManifest = { schema: 'mos/release/v1', board: inputs.board, version: inputs.version, channel: inputs.channel,
     profile: inputs.profile, source: inputs.source, bootAssurance, developmentDomains, artifacts: [] }
-  const files = { 'image.img': inputs.image, 'update.mosupd': inputs.update, 'firmware.json': join(inputs.firmware, 'firmware.json'),
+  const files = { [image]: inputs.image, 'update.mosupd': inputs.update, 'firmware.json': join(inputs.firmware, 'firmware.json'),
     'firmware.bin': join(inputs.firmware, inputs.board === 'cx3576' ? 'u-boot-rockchip.bin' : inputs.board === 'x64' ? 'BOOTX64.EFI' : 'BOOTAA64.EFI'), 'package-manifest.tsv': inputs.packages,
     'baked-meta.json': join(inputs.meta, 'updates/manifest.json'), 'board-evidence.json': inputs.evidence, 'release-notes.md': inputs.notes }
   for (const path of Object.values(files)) regular(path)
@@ -229,10 +241,10 @@ export function assembleRelease(inputs: ReleaseInputs) {
   for (const [name, path] of Object.entries(files)) copyFileSync(path, join(inputs.out, name))
   writeFileSync(join(inputs.out, 'development-marker.txt'), developmentDomains.length ? `DEVELOPMENT-GRADE\nDOMAINS=${developmentDomains.join(' ')}\n` : '')
   json(inputs.out, 'builder-images.json', inputs.builderImages)
-  for (const [name, value] of Object.entries(derived(inputs.out, m))) json(inputs.out, name, value)
-  m.artifacts = Object.keys(FILES).filter(name => name !== 'SHA256SUMS').map(name => measure(inputs.out, name))
+  for (const [name, value] of Object.entries(derived(inputs.out, m, image))) json(inputs.out, name, value)
+  m.artifacts = Object.entries(releaseFiles(image)).filter(([name]) => name !== 'SHA256SUMS').map(([name, role]) => measure(inputs.out, name, role))
   writeFileSync(join(inputs.out, 'SHA256SUMS'), sums(m.artifacts))
-  m.artifacts.push(measure(inputs.out, 'SHA256SUMS'))
+  m.artifacts.push(measure(inputs.out, 'SHA256SUMS', 'checksums'))
   json(inputs.out, 'manifest.json', m)
   return gateRelease(inputs.out, inputs.keys)
 }
