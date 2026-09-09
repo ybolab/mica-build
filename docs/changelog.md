@@ -4,6 +4,17 @@ Campaign-level record, one entry per plan, newest first. Details live in the
 plan file and the task records it names; this file holds the one-paragraph
 history a reader can scan without opening either.
 
+## Clean cx3576 image rebuild (2026-09-09)
+
+Deleted the generated `_out/` tree at the user's request and rebuilt the complete
+cx3576 image from clean commit `38f2a37b9a3c`, including the apid power feedback
+repair. The image passes all 123 offline checks, required FIT signature negatives,
+flash geometry, DATA-only growth and the 14-artifact release gate. Root smoke
+reports 11 passes and the existing crun qemu-user limitation. Earlier generated
+images and transcripts were removed; the [delivery record](task/20260908-2229-file-ab-delivery-x64-first.md)
+identifies the new artifacts and preserves the distinction from pending physical
+board acceptance.
+
 ## Power action feedback (2026-09-09)
 
 Apid now waits for mosd to admit a reboot or power-off request before answering

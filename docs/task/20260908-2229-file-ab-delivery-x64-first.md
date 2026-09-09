@@ -15,7 +15,7 @@ and cx3576. No old-layout or update-package compatibility is required.
 
 ## ActiveForm
 
-Finishing documentation/source cleanup and measurement, then qualifying cx3576 on a physical bench.
+The clean cx3576 factory image is built and verified; physical bench qualification remains.
 
 ## Dependencies
 
@@ -32,9 +32,10 @@ image. Independent S905X5M BSP sources remain without a MOS system-image target.
 
 ### Full-image acceptance
 
-Every listed result has an exit-zero controller record under `.tmp/`; paths
-under `_out/` hold local ignored artifacts and transcripts. They are evidence
-locations on this workspace, not published download URLs.
+Every listed result has an exit-zero controller record under `.tmp/`. The user
+requested deletion of all `_out/` contents on 2026-09-09: artifact and transcript
+paths recorded before the clean rebuild below are now historical locations.
+The clean rebuild section identifies the currently available local artifacts.
 
 | Gate | x64 evidence | virt-arm64 evidence | Result |
 |---|---|---|---|
@@ -898,7 +899,36 @@ refusals and the dashboard confirmation overlay. Its fresh x64 factory image
 `_out/reboot-fixed.p8eARn/image/disk.img` and browser evidence
 `_out/reboot-fixed-api.FIa1wh` pass refusal, actual reboot, reauthentication and
 power-off, including two complete exitrd shutdowns. The Rust gate passes 1,053
-tests and the UI gate passes 154. Both package pools now use
-`git1875d1332170.dirty-1`; the earlier matrix retains its original artifacts and
-provenance. Original-device diagnosis and physical cx3576 qualification remain
-separate pending access details.
+tests and the UI gate passes 154. Those test images used package pools stamped
+`git1875d1332170.dirty-1`; the later clean rebuild removed their `_out/` artifacts.
+Their recorded provenance remains historical. Original-device diagnosis and
+physical cx3576 qualification remain separate pending access details.
+
+## Clean cx3576 rebuild (2026-09-09)
+
+At the user's request, deleted `/srv/mos/_out` completely (approximately
+227 GiB), then rebuilt the cx3576 kernel, firmware, native init, ARM64 container
+runtime, package pool and rootfs. The source was clean commit
+`38f2a37b9a3c`, including the power action feedback repair. This run rebuilt the
+ARM64 pool only; the deleted x64 images were not regenerated.
+
+- Complete factory image: `_out/cx3576/image/disk.img`, 2,435,842,048 bytes.
+- SHA-256: `324e0ca02ecfede11a8e0f35302d2588265769b7e50bed932700db74405ea252`.
+- Checksums and public metadata anchor: `_out/cx3576/image/SHA256SUMS` and
+  `_out/cx3576/image/metadata.public.key`.
+- Offline image verification passes 123 checks with no skips. Required FIT
+  signature negatives, flash geometry and DATA-only growth pass; growth
+  preserves every firmware/counter/SYSTEM byte and refuses wrong identities.
+- Root smoke passes 11 checks; crun remains explicitly executor-limited by
+  qemu-user's memory-file-descriptor re-execution support.
+- `_out/cx3576/release` passes the 14-artifact release gate and all checksums,
+  including the complete image, offline update archive and signed firmware.
+- Controller logs are in `.tmp/clean-cx3576-20260909`; `delete.rc`,
+  `boot-components.rc`, `debian-cache.rc`, `build.rc` and `assemble.rc` are zero.
+
+The initial Debian snapshot download stalled in Bun; the existing official
+Debian mirror option populated the cache with every pinned digest verified.
+The optional container orchestration route lacked the local Buildx profile;
+the supported host Bun orchestration route completed rootfs composition using
+the pinned build containers. Initial failure records remain beside the passing
+retry logs. Physical cx3576 startup, reboot and USB readback remain untested.
