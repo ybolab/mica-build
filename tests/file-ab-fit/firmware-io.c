@@ -25,6 +25,7 @@ static unsigned char medium[2][65536], buffer[131072];
 static jmp_buf stopped;
 static int fault, reads, writes, flushes, invalidations, loads, launches, armed;
 static int fail_copy = -1;
+static int watchdog_probe_error, watchdog_start_error;
 static uint32_t crc32(uint32_t crc, const unsigned char *p, size_t size)
 {
     crc = ~crc;
@@ -78,9 +79,9 @@ static int button_get_by_label(const char *label, struct udevice **out)
 { (void)label; (void)out; return -1; }
 static int button_get_state(struct udevice *d) { (void)d; return 0; }
 static int uclass_get_device(int kind, int number, struct udevice **out)
-{ assert(kind == UCLASS_WDT && number == 0); *out = &device; return 0; }
+{ assert(kind == UCLASS_WDT && number == 0); *out = &device; return watchdog_probe_error; }
 static int wdt_start(struct udevice *d, unsigned long timeout, int flags)
-{ assert(d == &device && timeout == 120000 && flags == 0); armed = 1; return 0; }
+{ assert(d == &device && timeout == 120000 && flags == 0); if (watchdog_start_error) return watchdog_start_error; armed = 1; return 0; }
 static void wdt_reset(struct udevice *d) { assert(d == &device); }
 static struct mmc *find_mmc_device(int n) { assert(armed && n == 0); return &mmc; }
 static int mmc_init(struct mmc *m) { assert(m == &mmc); return 0; }
@@ -125,6 +126,7 @@ static void prepare(void)
     }
     reads = writes = flushes = invalidations = loads = launches = armed = 0;
     fail_copy = -1;
+    watchdog_probe_error = watchdog_start_error = 0;
 }
 int main(void)
 {
@@ -144,6 +146,14 @@ int main(void)
             assert(outcome == 2 && launches == 0 && loads == 0);
             assert(flushes == (fault == 1 ? 0 : 1));
         }
+    }
+    for (int phase = 0; phase < 2; phase++) {
+        prepare();
+        if (phase == 0) watchdog_probe_error = -38;
+        else watchdog_start_error = -5;
+        int outcome = setjmp(stopped);
+        if (!outcome) mos_file_boot();
+        assert(outcome == 2 && armed == 0 && writes == 0 && reads == 0 && loads == 0 && launches == 0);
     }
     // One unreadable copy may use the other; two corrupt copies must stop.
     fault = 0; prepare(); fail_copy = 1; armed = 1;

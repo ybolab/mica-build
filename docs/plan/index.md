@@ -99,3 +99,5 @@ disobeys on sight teaches a reader the wrong thing about the tree.
 - [x] [**PLAN-925 Align the Wi-Fi client switch with the settings API**](PLAN-925.md) `2026-09-08`
 - [x] [**PLAN-089 The boot health gate requires core function, not the absence of every failure**](PLAN-089.md) `2026-09-08`
 - [x] [**20260908-1702-pma-project-injection Wire the repository into the PMA workflow**](20260908-1702-pma-project-injection.md) `2026-09-08`
+
+- [-] [**20260909-2331-cx3576-boot-watchdog Restore mandatory cx3576 boot watchdog availability**](20260909-2331-cx3576-boot-watchdog.md) `2026-09-09`
