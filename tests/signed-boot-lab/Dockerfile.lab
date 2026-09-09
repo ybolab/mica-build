@@ -16,12 +16,13 @@ ARG MOS_DEBIAN_SNAPSHOT
 RUN rm -f /etc/apt/sources.list.d/debian.sources && \
     printf 'deb [check-valid-until=no] %s trixie main\n' "${MOS_DEBIAN_SNAPSHOT}" \
       > /etc/apt/sources.list.d/snapshot.list && \
+    printf 'Package: *\nPin: origin "snapshot.debian.org"\nPin-Priority: 1001\n' > /etc/apt/preferences.d/snapshot && \
     dpkg --add-architecture arm64 && \
     apt-get -o Acquire::Retries=3 update -qq && \
-    apt-get install -y --no-install-recommends \
+    apt-get install -y --allow-downgrades --no-install-recommends \
         qemu-system-x86 qemu-system-arm ovmf qemu-efi-aarch64 ipxe-qemu \
         systemd-boot-efi systemd-boot-efi:arm64 systemd-ukify sbsigntool \
         u-boot-tools device-tree-compiler \
-        cpio mtools dosfstools gdisk parted socat openssl python3 binutils \
-        file xz-utils python3-virt-firmware busybox-static && \
+        cpio mtools dosfstools gdisk e2fsprogs parted socat openssl python3 binutils \
+        file xz-utils python3-virt-firmware busybox-static squashfs-tools systemd-repart && \
     rm -rf /var/lib/apt/lists/*

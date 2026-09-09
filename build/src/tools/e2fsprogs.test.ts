@@ -5,7 +5,7 @@
 // inside it failed, so its exit status is not its verdict; its stderr is.
 // os/mkimage-common.sh states the consequence of getting that wrong: "Silencing
 // the stream instead would let a rename of `sif` turn this into a no-op that
-// still reports success" -- and a no-op there means EPHEMERAL stops rebuilding
+// still reports success" -- and a no-op there means the seeded filesystem stops rebuilding
 // byte-identically, which nothing else would notice.
 //
 // This is also the toolset that proves the container-side case is the ordinary
@@ -13,37 +13,29 @@
 // and no amount of it being on PATH changes that.
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
-import { rmSync, writeFileSync } from 'node:fs'
+import { readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { loadGeometry } from '../geometry.ts'
+import { parseBoardEnv } from '../verify-package.ts'
 import { makeWorkDir, REPO_ROOT } from '../paths.ts'
 import { OPEN_TIMEOUT_MS, TOOL_TIMEOUT_MS } from '../testing.ts'
 import { Toolbox } from '../toolbox.ts'
-import { CX3576_ASSEMBLY } from '../toolsets.ts'
+import { FILE_IMAGE_TOOLS } from '../file-image.ts'
 import { truncate } from './dd.ts'
 import { debugfsApply, dumpe2fsFull, dumpe2fsHeader, mke2fs, mke2fsArgs } from './e2fsprogs.ts'
 
 let tb: Toolbox
 let work = ''
 
-/** META's real settings, out of cx3576's definition. */
-function metaSpec(image: string, seedDir?: string) {
-  const g = loadGeometry('cx3576')
-  const meta = g.requirePartition('META')
-  return {
-    image,
-    label: meta.fsLabel!,
-    uuid: meta.fsUuid!,
-    blockSize: g.ext4.blockSize,
-    features: g.ext4.features,
-    fakeTime: g.ext4.fakeTime,
-    seedDir,
-  }
+/** DATA filesystem settings from the current board definition. */
+function dataSpec(image: string, seedDir?: string) {
+  const env = parseBoardEnv(readFileSync(join(REPO_ROOT, 'boards/cx3576/board.env'), 'utf8'), 'board.env').values
+  return { image, label: env.get('DATA_FS_LABEL')!, uuid: env.get('DATA_FS_UUID')!,
+    blockSize: BigInt(env.get('EXT4_BLOCK_SIZE')!), features: env.get('EXT4_FEATURES')!, fakeTime: env.get('E2FSPROGS_FAKE_TIME')!, seedDir }
 }
 
 beforeAll(async () => {
   work = makeWorkDir('e2fsprogs')
-  tb = await Toolbox.open(CX3576_ASSEMBLY, { mounts: [REPO_ROOT], cwd: work })
+  tb = await Toolbox.open(FILE_IMAGE_TOOLS, { mounts: [REPO_ROOT], cwd: work })
 }, OPEN_TIMEOUT_MS)
 afterAll(async () => {
   await tb?.close()
@@ -52,31 +44,31 @@ afterAll(async () => {
 
 describe('the argv shape', () => {
   test('the hash seed is pinned to the filesystem\'s own uuid, and root_owner to 0:0', () => {
-    const argv = mke2fsArgs(metaSpec('meta.img'))
+    const argv = mke2fsArgs(dataSpec('meta.img'))
     expect(argv).toEqual([
-      'mke2fs', '-q', '-t', 'ext4', '-b', '4096', '-L', 'meta',
-      '-U', '5ac35760-0002-4000-8000-000000000107',
+      'mke2fs', '-q', '-t', 'ext4', '-b', '4096', '-L', 'data',
+      '-U', '5ac35760-0002-4000-8000-000000000103',
       '-O', '^orphan_file,^metadata_csum_seed',
-      '-E', 'root_owner=0:0,hash_seed=5ac35760-0002-4000-8000-000000000107',
+      '-E', 'root_owner=0:0,hash_seed=5ac35760-0002-4000-8000-000000000103',
       'meta.img',
     ])
   })
 
   test('-d only when a seed was asked for', () => {
-    expect(mke2fsArgs(metaSpec('m.img'))).not.toContain('-d')
-    expect(mke2fsArgs(metaSpec('m.img', '/stage/var'))).toContain('-d')
+    expect(mke2fsArgs(dataSpec('m.img'))).not.toContain('-d')
+    expect(mke2fsArgs(dataSpec('m.img', '/stage/var'))).toContain('-d')
   })
 
   test('an empty feature list is refused: `-O \'\'` is a different filesystem, not a default one', () => {
-    expect(() => mke2fsArgs({ ...metaSpec('m.img'), features: '  ' })).toThrow(/empty feature list is a different filesystem/)
+    expect(() => mke2fsArgs({ ...dataSpec('m.img'), features: '  ' })).toThrow(/empty feature list is a different filesystem/)
   })
 
   test('a non-positive block size is refused', () => {
-    expect(() => mke2fsArgs({ ...metaSpec('m.img'), blockSize: 0n })).toThrow(/-b 0/)
+    expect(() => mke2fsArgs({ ...dataSpec('m.img'), blockSize: 0n })).toThrow(/-b 0/)
   })
 
   test('E2FSPROGS_FAKE_TIME is not on the command line -- mke2fs reads it from the ENVIRONMENT', () => {
-    expect(mke2fsArgs(metaSpec('m.img')).join(' ')).not.toContain('1577836800')
+    expect(mke2fsArgs(dataSpec('m.img')).join(' ')).not.toContain('1577836800')
   })
 })
 
@@ -87,15 +79,14 @@ describe('against the real e2fsprogs', () => {
     expect(version).toMatch(/^mke2fs 1\.(4[7-9]|[5-9][0-9])/)
   }, TOOL_TIMEOUT_MS)
 
-  test('META at the size cx3576 declares formats, and the header reads back the pinned uuid', async () => {
-    const g = loadGeometry('cx3576')
+  test('DATA with the board filesystem policy formats, and the header reads back the pinned uuid', async () => {
     const img = join(work, 'meta.img')
-    await truncate(tb, img, `${g.requirePartition('META').size!.mib}M`)
-    await mke2fs(tb, metaSpec(img))
+    await truncate(tb, img, '256M')
+    await mke2fs(tb, dataSpec(img))
 
     const h = await dumpe2fsHeader(tb, img)
-    expect(h.uuid.toLowerCase()).toBe('5ac35760-0002-4000-8000-000000000107')
-    expect(h.label).toBe('meta')
+    expect(h.uuid.toLowerCase()).toBe('5ac35760-0002-4000-8000-000000000103')
+    expect(h.label).toBe('data')
     expect(h.blockSize).toBe(4096n)
     expect(h.inodeCount).toBeGreaterThan(0n)
     expect(h.firstInode).toBe(11n)
@@ -108,7 +99,7 @@ describe('against the real e2fsprogs', () => {
     const b = join(work, 'rep-b.img')
     for (const img of [a, b]) {
       await truncate(tb, img, '16M')
-      await mke2fs(tb, metaSpec(img))
+      await mke2fs(tb, dataSpec(img))
     }
     const ha = (await tb.must(['sha256sum', a])).stdout.split(/\s+/)[0]
     const hb = (await tb.must(['sha256sum', b])).stdout.split(/\s+/)[0]
@@ -119,7 +110,7 @@ describe('against the real e2fsprogs', () => {
   test('...and a different E2FSPROGS_FAKE_TIME produces different bytes, so that comparison means something', async () => {
     const c = join(work, 'rep-c.img')
     await truncate(tb, c, '16M')
-    await mke2fs(tb, { ...metaSpec(c), fakeTime: '1600000000' })
+    await mke2fs(tb, { ...dataSpec(c), fakeTime: '1600000000' })
     const ha = (await tb.must(['sha256sum', join(work, 'rep-a.img')])).stdout.split(/\s+/)[0]
     const hc = (await tb.must(['sha256sum', c])).stdout.split(/\s+/)[0]
     expect(hc).not.toBe(ha!)
@@ -133,7 +124,7 @@ describe('against the real e2fsprogs', () => {
 
     const img = join(work, 'seeded.img')
     await truncate(tb, img, '16M')
-    await mke2fs(tb, metaSpec(img, seed))
+    await mke2fs(tb, dataSpec(img, seed))
 
     const h = await dumpe2fsHeader(tb, img)
     const unseeded = await dumpe2fsHeader(tb, join(work, 'rep-a.img'))
@@ -149,7 +140,7 @@ describe('debugfs: exit 0 is not a verdict', () => {
   test('a command file that works applies cleanly', async () => {
     const img = join(work, 'debugfs-ok.img')
     await truncate(tb, img, '16M')
-    await mke2fs(tb, metaSpec(img))
+    await mke2fs(tb, dataSpec(img))
     const cmds = join(work, 'ok.cmds')
     // `sif` is what pin_seeded_times uses: set inode field.
     writeFileSync(cmds, 'sif <11> atime 1577836800\nsif <11> ctime 1577836800\n')
@@ -163,7 +154,7 @@ describe('debugfs: exit 0 is not a verdict', () => {
     // 0, so an exit-status check passes a run that pinned nothing.
     const img = join(work, 'debugfs-bad.img')
     await truncate(tb, img, '16M')
-    await mke2fs(tb, metaSpec(img))
+    await mke2fs(tb, dataSpec(img))
     const cmds = join(work, 'badarg.cmds')
     writeFileSync(cmds, 'sif <999999> atime 1577836800\n')
 
@@ -246,7 +237,7 @@ describe('dumpe2fs refuses a header it cannot read', () => {
 
   test('a fakeTime that is not an epoch is refused before mke2fs runs', async () => {
     for (const bad of ['', '@1577836800', 'now']) {
-      await expect(mke2fs(tb, { ...metaSpec(join(work, 'x.img')), fakeTime: bad }))
+      await expect(mke2fs(tb, { ...dataSpec(join(work, 'x.img')), fakeTime: bad }))
         .rejects.toThrow(/which is not an epoch/)
     }
   })

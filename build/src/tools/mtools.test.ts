@@ -12,11 +12,10 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { loadGeometry } from '../geometry.ts'
 import { makeWorkDir, REPO_ROOT } from '../paths.ts'
 import { OPEN_TIMEOUT_MS, TOOL_TIMEOUT_MS } from '../testing.ts'
 import { Toolbox, ToolError } from '../toolbox.ts'
-import { CX3576_ASSEMBLY } from '../toolsets.ts'
+import { FILE_IMAGE_TOOLS } from '../file-image.ts'
 import { truncate } from './dd.ts'
 import { FAT32_MIN_CLUSTERS, listFat, mcopy, mcopyArgs, mkfsVfat, mkfsVfatArgs, mmd, readFatClusters } from './mtools.ts'
 
@@ -25,7 +24,7 @@ let work = ''
 
 beforeAll(async () => {
   work = makeWorkDir('mtools')
-  tb = await Toolbox.open(CX3576_ASSEMBLY, { mounts: [REPO_ROOT], cwd: work })
+  tb = await Toolbox.open(FILE_IMAGE_TOOLS, { mounts: [REPO_ROOT], cwd: work })
 }, OPEN_TIMEOUT_MS)
 afterAll(async () => {
   await tb?.close()
@@ -66,16 +65,11 @@ describe('the argv shapes', () => {
 })
 
 describe('against the real mkfs.vfat and mtools', () => {
-  test('a BOOT slot at the size cx3576 declares is a real FAT32', async () => {
-    const g = loadGeometry('cx3576')
-    const boot = g.requirePartition('BOOT_A')
-    expect(boot.size?.mib).toBe(64n)
-
-    const img = join(work, 'boot-a.img')
-    await truncate(tb, img, `${boot.size!.mib}M`)
-    await mkfsVfat(tb, { image: img, label: boot.fatLabel!, volumeId: boot.fatVolumeId! })
-    const clusters = await readFatClusters(tb, img)
-    expect(clusters).toBeGreaterThan(FAT32_MIN_CLUSTERS)
+  test('the current 512 MiB ESP is a real FAT32 filesystem', async () => {
+    const img = join(work, 'esp.img')
+    await truncate(tb, img, '512M')
+    await mkfsVfat(tb, { image: img, label: 'MOS-ESP', volumeId: 'C3576100' })
+    expect(await readFatClusters(tb, img)).toBeGreaterThan(FAT32_MIN_CLUSTERS)
   }, TOOL_TIMEOUT_MS)
 
   test('mkfs.vfat -F 32 SUCCEEDS on a size that cannot be FAT32, and only the cluster count sees it', async () => {

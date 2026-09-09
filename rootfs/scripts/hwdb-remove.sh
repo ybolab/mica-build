@@ -300,8 +300,7 @@ checked=$(echo "${survivors}" | grep -c '|')
 rules_after=$(find ${RULE_DIRS} -type f -name '*.rules' 2>/dev/null | wc -l)
 [ "${rules_after}" -ge 30 ] ||
     { echo "error: ${rules_after} udev rule file(s) survive; this root shipped 41 and this step removes clauses, never files" >&2; exit 1; }
-modules_index=$(find /usr/lib/modules -type f -name 'modules.dep' 2>/dev/null | wc -l)
-[ "${modules_index}" -gt 0 ] ||
-    { echo "error: no modules.dep is under /usr/lib/modules. The kernel module index is explicitly kept by PLAN-086 S4 and nothing here should have touched it" >&2; exit 1; }
+# Module indexes belong to the separately verified support image. Its producer
+# checks them before signing; this user-space transform never owns that tree.
 
 echo "hwdb: removed the compiled database, ${src_before} source file(s), the update unit, ${imports_before} query clause(s) and ${flags_before} bookkeeping flag(s); ${rules_after} rule file(s) survive, ${dropped_total} rule(s) left with no action were dropped, ${checked} preserved action(s) checked"

@@ -448,7 +448,7 @@ describe('the shipped compose directory and its supplier', () => {
     expect(unsuppliedArgs(stages, supplied)).toEqual([])
     // Named, so that an ARG gaining or losing an empty default is a decision
     // somebody makes here rather than a set that silently changes size.
-    expect(declared).toEqual(['BOARD_RADIOS', 'RAUC_VERSION'])
+    expect(declared).toEqual(['BOARD_RADIOS'])
   })
 })
 
@@ -614,7 +614,7 @@ describe('ociExport -- the factory root as an OCI image', () => {
   })
 
   test('a stage that is not the terminal one is refused', () => {
-    // An OCI image of 10-base would be a root with no podman, no rauc and no
+    // An OCI image of 10-base would be a root with no podman, no mos-deploy and no
     // mosd in it -- and every smoke check for a binary that is not there has to
     // be written to notice that, or it passes.
     expect(() => ociExport(plan()[0]!, opts)).toThrow(/not the terminal stage/)

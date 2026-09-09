@@ -1,263 +1,25 @@
-// A synthetic image, for driving a ported check RED.
-//
-// A check lands with the fixture that fails it, because nothing can tell a check
-// that passes from a check that cannot fail: both report green against a healthy
-// image, and only a mutation separates them.
-//
-// A fake image as well as a mutated real one. `verify/HARNESS.md` records an
-// end-to-end run against a real image edited on disk, which proves the whole
-// pipeline reports the failing direction; what it cannot be is one mutation per
-// check, being a 1.3 GB copy and a three-minute run each time, and half the
-// mutations (a partition that is not the last one, a table with a partition
-// missing) cannot be made with sgdisk without turning three other checks red at
-// once. So each check is also driven here against a table built in memory: one
-// mutation, one check, one named failure, no image and no container, with the
-// baseline asserted green first in every case.
-
-import {
-  chmodSync,
-  existsSync,
-  chownSync,
-  mkdirSync,
-  mkdtempSync,
-  readFileSync,
-  rmSync,
-  symlinkSync,
-  truncateSync,
-  writeFileSync,
-} from 'node:fs'
+import { chmodSync, existsSync, chownSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import type { Board } from './board.ts'
 import type { ImageContext } from './checks.ts'
-import type { FatSlot, GptPartition, GptTable } from './image.ts'
-import { walkLayout } from './layout.ts'
 import { CONTRACT, mountUnitFor } from './checks-connd.ts'
-import { cryptPrefixes, readProfileContract } from './checks-system.ts'
 import { REPO_ROOT } from './paths.ts'
-import type { ToolResult, ToolRuntime } from './tools.ts'
-import { ToolOutputError } from './tools.ts'
-
-/** A tool run that never happened, for the checks that drive no tool. */
-const NO_TOOLS: ToolRuntime = {
-  route: 'host',
-  announce: 'verify: no tools (fixture)',
-  run: async (argv): Promise<ToolResult> => {
-    throw new ToolOutputError(
-      `the fixture runtime was asked to run \`${argv.join(' ')}\`. A check reaching a real tool from `
-      + `a synthetic context is reading something the fixture did not set up, so the verdict would `
-      + `be about the host rather than about the mutation.`,
-    )
-  },
-  dispose: async () => {},
-}
-
-/** A runtime that answers exactly one command and refuses every other. */
-export function toolsAnswering(match: RegExp, result: Partial<ToolResult>): ToolRuntime {
-  return {
-    ...NO_TOOLS,
-    run: async (argv): Promise<ToolResult> => {
-      const line = argv.join(' ')
-      if (!match.test(line)) return NO_TOOLS.run(argv)
-      return { argv, code: 0, stdout: '', stderr: '', ...result }
-    },
-  }
-}
-
+import { ToolOutputError, type ToolResult, type ToolRuntime } from './tools.ts'
+const NO_TOOLS: ToolRuntime = { route: 'host', announce: 'fixture', dispose: async () => {}, run: async argv => { throw new Error(`Unexpected fixture tool: ${argv.join(' ')}`) } }
 export { NO_TOOLS }
-
-/**
- * The GPT a board's own definition describes -- i.e. the table of an image that
- * is exactly right.
- *
- * Built by the SAME walk the checks compare against, which is the one place
- * that is legitimate: the fixture's job is to be green until it is mutated, so
- * a baseline the checks agree with is the baseline. Every assertion below then
- * comes from a MUTATION of it, and it is the mutation that is the test.
- */
-export function healthyGpt(board: Board, slotSectors: number): GptTable {
-  const walk = walkLayout(board, slotSectors)
-  const partitions: GptPartition[] = walk.rows.map(row => ({
-    number: row.number,
-    firstSector: row.startSector,
-    lastSector: row.startSector + row.sizeSectors - 1,
-    sizeSectors: row.sizeSectors,
-    typeGuid: row.typecode,
-    uniqueGuid: row.guid,
-    name: row.label,
-    attributeFlags: '0000000000000000',
-  }))
-  return {
-    image: '(fixture)',
-    sectorSize: board.sectorSize ?? 512,
-    diskGuid: board.get('DISK_GUID') ?? '',
-    totalSectors: walk.totalSizeMib * walk.sectorsPerMib,
-    partitions,
-    partition: (n: number) => partitions.find(p => p.number === n),
-  }
+export function toolsAnswering(match: RegExp, result: Partial<ToolResult>): ToolRuntime {
+  return { ...NO_TOOLS, run: async argv => { if (!match.test(argv.join(' '))) return NO_TOOLS.run(argv); return { argv, code: 0, stdout: '', stderr: '', ...result } } }
 }
-
-/** `healthyGpt` with one partition's fields replaced. */
-export function gptWith(
-  table: GptTable,
-  number: number,
-  over: Partial<GptPartition>,
-): GptTable {
-  const partitions = table.partitions.map(p => (p.number === number ? { ...p, ...over } : p))
-  return { ...table, partitions, partition: (n: number) => partitions.find(p => p.number === n) }
-}
-
-/** `healthyGpt` with one partition removed entirely. */
-export function gptWithout(table: GptTable, number: number): GptTable {
-  const partitions = table.partitions.filter(p => p.number !== number)
-  return { ...table, partitions, partition: (n: number) => partitions.find(p => p.number === n) }
-}
-
-export interface FixtureRequest {
-  readonly board: Board
-  readonly gpt: GptTable
-  readonly tools?: ToolRuntime
-  /** The size the file at `ctx.image` should report. Defaults to the walk's. */
-  readonly imageBytes?: number
-}
-
-export interface Fixture {
-  readonly ctx: ImageContext
-  readonly dispose: () => void
-}
-
-/**
- * A context over a synthetic table and a real, EMPTY file of a chosen size.
- *
- * The file has to exist because `gpt-image-size` stats it, and it is sparse
- * because the size is the only thing about it any check reads. Everything that
- * would touch the image's CONTENT throws, by name: a check that reached for
- * bytes here would be answered by the fixture rather than by the mutation.
- */
-export function imageFixture(request: FixtureRequest): Fixture {
-  const { board, gpt, tools = NO_TOOLS } = request
-  const dir = mkdtempSync(join(tmpdir(), 'mos-image-fixture-'))
-  const image = join(dir, 'fixture.img')
-  writeFileSync(image, '')
-  const walk = walkLayout(board, gpt.partition(Number(board.get('ROOTFS_A_PARTNUM')))?.sizeSectors ?? 0)
-  truncateSync(image, request.imageBytes ?? walk.totalSizeMib * (board.mibBytes ?? 1048576))
-
-  const refuse = (what: string): never => {
-    throw new ToolOutputError(`the fixture has no ${what}; this check reads more than the table.`)
-  }
-
-  const ctx: ImageContext = {
-    board,
-    image,
-    tools,
-    workDir: dir,
-    outDir: dir,
-    // No check that reads the table reads the baked set; the path is inside
-    // the fixture so that one reaching for it finds an empty directory rather
-    // than the host's real meta/.
-    metaDir: join(dir, 'meta'),
-    gpt: async () => gpt,
-    partition: async (nameOrNumber: string | number) => {
-      const found = typeof nameOrNumber === 'number'
-        ? gpt.partition(nameOrNumber)
-        : gpt.partitions.find(p => p.name.toLowerCase() === String(nameOrNumber).toLowerCase())
-      if (found === undefined) throw new ToolOutputError(`the fixture table has no partition '${nameOrNumber}'`)
-      return found
-    },
-    fatSlot: async (nameOrNumber: string | number): Promise<FatSlot> => {
-      const found = typeof nameOrNumber === 'number'
-        ? gpt.partition(nameOrNumber)
-        : gpt.partitions.find(p => p.name.toLowerCase() === String(nameOrNumber).toLowerCase())
-      if (found === undefined) throw new ToolOutputError(`the fixture table has no partition '${nameOrNumber}'`)
-      return { image, offsetBytes: found.firstSector * gpt.sectorSize }
-    },
-    extract: async () => refuse('extracted partition payloads'),
-    // Named, empty, and not a refusal. The layout-addressed families hand this
-    // name to a TOOL and never read the bytes themselves -- the stub runtime
-    // keys its transcript on the file name, which is the tier. So the fixture
-    // supplies the name and nothing behind it: a check that did read the bytes
-    // gets `readBytes`'s own refusal naming a zero-length file, which is a
-    // sentence about the fixture rather than about the image.
-    extractAt: async (name: string) => {
-      const at = join(dir, name)
-      if (!existsSync(at)) writeFileSync(at, '')
-      return at
-    },
-    unpackRoot: async () => refuse('unpacked root'),
-  }
-
-  return { ctx, dispose: () => rmSync(dir, { recursive: true, force: true }) }
-}
-
-// M4c: a synthetic packed root, for the batch-2 checks
-
-/**
- * A directory tree standing in for the unpacked read-only root, and a context
- * whose `unpackRoot` hands it back.
- *
- * Why a built tree rather than a real one. The real root is 4,354 paths on
- * cx3576 and 9,238 on x64, behind a 256 MiB extract and an unsquashfs in a
- * container; one mutation per check against that is a three-minute run each
- * time. `verify/HARNESS.md` records the end-to-end runs that prove the whole
- * pipeline reports the failing direction, and this is what makes ONE mutation
- * name ONE check.
- *
- * What is not invented here. /etc/fstab is rendered from the SHIPPED template,
- * rootfs/overlay/etc/fstab.in, with the board's own GUIDs -- the same
- * discipline the image fixture contract follows and for the same
- * reason: a fixture built from this file's idea of the table would test that
- * idea rather than the shipped one, and an fstab.in that grew a new placeholder
- * would go on passing here. The renderer refuses a leftover placeholder, which
- * is how that stays true.
- */
-export interface RootFixture {
-  readonly ctx: ImageContext
-  /** The tree on disk, for a test to mutate before driving a check. */
-  readonly root: string
-  readonly dispose: () => void
-}
-
-const FSTAB_IN = join(REPO_ROOT, 'rootfs', 'overlay', 'etc', 'fstab.in')
-
-/**
- * The escape page's markup, TRANSCRIBED -- and deliberately a second copy.
- *
- * The fixture's idea of the constant and the CHECK's idea of it come from two
- * places, so they cannot drift apart silently: this is an INDEPENDENT literal
- * from `checks-root.ts`'s, and `checks-root.test.ts` asserts the two equal.
- *
- * Deliberately NOT `import { BUILTIN_MARKUP }`. Seeding the fixture from the
- * very constant the check greps for would make the positive case true by
- * construction -- the check would find what the fixture was built from, and an
- * edit to that one constant would move both sides at once and stay green.
- */
-const ORACLE_BUILTIN_MARKUP = '<script type="module" crossorigin src="/_ui/assets/index-'
-
-/** For the drift assertion in checks-root.test.ts; see above. */
-export const FIXTURE_BUILTIN_MARKUP = ORACLE_BUILTIN_MARKUP
-
-function guidOfPartition(board: Board, layout: string): string {
-  const g = board.partition(layout)?.guid
-  if (g === undefined || g === '') throw new ToolOutputError(`${board.path} declares no ${layout}_GUID`)
-  return g.toLowerCase()
-}
-
+export interface RootFixture { ctx: ImageContext, root: string, dispose: () => void }
+type WriteFile = (path: string, content?: string) => void
+const PURGE_THRESHOLD = 100
 const TAB = '\t'
-
-/**
- * systemd's shipped `/usr/lib/systemd/network/99-default.link`, verbatim from
- * the 257.13 root this tree packs.
- *
- * `MACAddressPolicy=persistent` is the line that matters: on a board whose NICs
- * have no address in hardware it is not inert, and cx3576 ships a `.link` file
- * ahead of it to say so.
- */
+const FSTAB_IN = join(REPO_ROOT, 'rootfs/overlay/etc/fstab.in')
 const DEFAULT_LINK = '[Match]\nOriginalName=*\n\n[Link]\n'
-  + 'NamePolicy=keep kernel database onboard slot path\n'
-  + 'AlternativeNamesPolicy=database onboard slot path mac\n'
-  + 'MACAddressPolicy=persistent\n'
-
-/** Every path the batch-2 checks read, in a state that makes all of them PASS. */
+const ORACLE_BUILTIN_MARKUP = '<script type="module" crossorigin src="/_ui/assets/index-'
+export const FIXTURE_POOL_VERSION = '0.1.0+git0123456789ab-1'
+function guidOfPartition(board: Board, name: string): string { return board.get(`${name}_GUID`) ?? '' }
 function seedHealthyRoot(root: string, board: Board): void {
   const file = (path: string, content = 'x\n'): void => {
     mkdirSync(dirname(join(root, path)), { recursive: true })
@@ -270,10 +32,6 @@ function seedHealthyRoot(root: string, board: Board): void {
   ].join(TAB)
   const fstab = readFileSync(FSTAB_IN, 'utf8')
     .replaceAll('@DATA_LINE@', dataLine)
-    .replaceAll('@STATE_GUID@', guidOfPartition(board, 'STATE'))
-    .replaceAll('@META_GUID@', guidOfPartition(board, 'META'))
-    .replaceAll('@EPHEMERAL_GUID@', guidOfPartition(board, 'EPHEMERAL'))
-    .replaceAll('@VAR_OPTS@', 'noatime')
   if (/@[A-Z_]+@/.test(fstab)) {
     throw new ToolOutputError(
       `an unrendered placeholder is left in the fixture fstab: ${FSTAB_IN} has grown a placeholder `
@@ -284,23 +42,17 @@ function seedHealthyRoot(root: string, board: Board): void {
 
   // --- the mountpoints the packed root must ship ---
   for (const d of [
-    '/mnt/data', '/mnt/state', '/mnt/meta', '/srv', '/mos', '/var', '/home', '/root',
+    '/mnt/data', '/srv', '/mos', '/var', '/home', '/root',
     '/usr/local/lib/systemd/system', '/etc/containers/systemd',
   ]) mkdirSync(join(root, d), { recursive: true })
 
   // --- the regular files ---
   for (const p of [
     '/usr/lib/systemd/systemd', '/usr/bin/mosd',
-    '/usr/bin/rauc', '/etc/rauc/system.conf',
-    '/usr/share/dbus-1/system.d/de.pengutronix.rauc.conf',
-    '/usr/share/dbus-1/system-services/de.pengutronix.rauc.service',
-    '/usr/lib/systemd/system/rauc.service', '/usr/lib/systemd/systemd-growfs',
     '/usr/lib/systemd/system/fstrim.service',
     '/usr/lib/systemd/system/serial-getty@.service',
     '/usr/lib/systemd/system/getty@.service',
-    '/usr/lib/mos/mos-health', '/usr/lib/mos/mos-machine-id',
     '/usr/lib/systemd/system/mos-health.service',
-    '/usr/lib/systemd/system/mos-machine-id.service',
     '/etc/passwd', '/etc/group', '/usr/share/factory/etc/shadow',
     '/usr/lib/mos/mos-shadow-reconcile',
     '/etc/ssh/sshd_config.d/05-mos-authorized-keys.conf',
@@ -323,17 +75,6 @@ function seedHealthyRoot(root: string, board: Board): void {
     '[Unit]\nAfter=mosd.service\n[Service]\nStateDirectory=mos/apid\n')
   file('/usr/share/dbus-1/system.d/com.mos.mosd.conf',
     '<busconfig>\n<policy user="root">\n<allow own="com.mos.mosd"/>\n</policy>\n</busconfig>\n')
-  // Upstream's own unit, TRANSCRIBED -- the ExecStart is the whole point of it
-  // here, because `rauc-units-never-override-boot-slot` counts the rauc command
-  // lines it found and is RED over a tree that carries none. Seeded with the
-  // flag ABSENT, because absent is the shipped state and its presence is the
-  // mutation. Transcribed and not imported for ORACLE_BUILTIN_MARKUP's reason:
-  // a fixture built out of the constant the check reads would move both sides
-  // of the comparison in one edit.
-  file('/usr/lib/systemd/system/rauc.service',
-    '[Unit]\nDescription=RAUC Update Service\n\n[Service]\nType=dbus\n'
-    + 'BusName=de.pengutronix.rauc\n'
-    + 'ExecStart=/usr/bin/rauc --mount=/run/rauc/mnt service\n')
   file('/etc/systemd/system/mos-shadow-reconcile.service',
     '[Service]\nExecStart=/usr/lib/mos/mos-shadow-reconcile\n')
   file('/etc/tmpfiles.d/mos-var.conf', 'q /var/tmp 1777 root root 10d\ne /var/cache - - - 30d\n')
@@ -344,7 +85,6 @@ function seedHealthyRoot(root: string, board: Board): void {
     ['multi-user.target.wants', 'apid.service'],
     ['sysinit.target.wants', 'systemd-resolved.service'],
     ['multi-user.target.wants', 'mos-health.service'],
-    ['multi-user.target.wants', 'mos-machine-id.service'],
     ['timers.target.wants', 'fstrim.timer'],
     ['multi-user.target.wants', 'mos-shadow-reconcile.service'],
   ] as const) {
@@ -379,9 +119,6 @@ function seedHealthyRoot(root: string, board: Board): void {
     symlinkSync(`/usr/lib/systemd/system/${unit}`, join(dir, unit))
   }
 
-  // --- one kernel's modules, and its modules.dep ---
-  file('/usr/lib/modules/6.1.115/modules.dep', '')
-
   // --- resolv.conf, as systemd-resolved wants it ---
   mkdirSync(join(root, '/etc'), { recursive: true })
   symlinkSync('../run/systemd/resolve/stub-resolv.conf', join(root, '/etc/resolv.conf'))
@@ -410,99 +147,25 @@ function seedHealthyRoot(root: string, board: Board): void {
     '',
   ].join('\n'))
 
-  // --- the device-side update client, and the identity it selects against ---
-  //
-  // mos-rauc-update ships both binaries; the release-side rauc-sign is
-  // deliberately NOT seeded, because its ABSENCE is the shipped state and its
-  // presence is the mutation.
-  //
-  // The identity's three values are the fixture's own statements of the same
-  // facts, which is what makes the check's comparisons real rather than a
-  // constant compared with itself: the board is the one this fixture was seeded
-  // for, the profile is what profile.conf above says, and the version is the
-  // one manifest.tsv records for mos-system.
-  file('/usr/bin/rauc-update', 'ELF ... rauc-update\n')
-  file('/usr/bin/rauc-verify', 'ELF ... rauc-verify\n')
-  chmodSync(join(root, '/usr/bin/rauc-update'), 0o755)
-  chmodSync(join(root, '/usr/bin/rauc-verify'), 0o755)
-  file('/usr/share/mos/release-identity.env', [
-    '# What this device is, for rauc-update.',
-    `BOARD=${board.name}`,
-    'PROFILE=dev',
-    `VERSION=${FIXTURE_POOL_VERSION}`,
-    `COMMIT_DATE=${FIXTURE_COMMIT_DATE}`,
-    '',
-  ].join('\n'))
-
-  // --- the baked public set, byte-equal to what the fixture's meta/ holds ---
-  // Present, and that is the shipped state now: rootfs/build.sh stages the
-  // allowlist's required members out of meta/ into every image, so an absent
-  // one is the mutation. meta/GENERATED is the conditional third and is NOT
-  // here, because this fixture stands for a production tree. Nothing else may
-  // be under /usr/share/mos/meta/, which is what
-  // `packed-meta-is-the-public-set` reads this tree to say.
-  file('/etc/rauc/keyring.pem', FIXTURE_CA_CERT)
-  file(BAKED_MANIFEST_PATH, FIXTURE_META_MANIFEST)
-
+  if (board.radios.includes('bluetooth')) file('/usr/share/dbus-1/system.d/bluetooth.conf', '<busconfig/>')
   seedDbus(root, file)
   seedEngine(root, board, file)
-  seedHomes(root, board, file)
   seedConnd(root, board, file)
   seedShadow(root, file)
   seedMqtt(root, file)
   seedBusybox(root, file)
   seedFirewall(root, file)
   seedUdev(root, file)
-  seedBoardShape(root, board, file)
   // LAST: it prepends an ELF header to the two daemons seeded above and writes
   // the ssh.service the shadow family also touches, so it has to see their
   // final contents rather than be overwritten by them.
-  seedSystem(root, board, file)
 
-  // Nothing at /builtin and nothing under /mos/ui: absence is the shipped state
-  // for both, and seeding either would make the fixture red before a test had
-  // mutated anything. /etc/rauc/keyring.pem is the opposite case and is seeded
-  // above -- every image stages one from meta/, so its ABSENCE is the mutation.
 }
-
-// M4f: the D-Bus policies
-
-/**
- * The system bus and mosd's sole local-management policy.
- *
- * com.mos.mosd.conf is seeded by `seedHealthyRoot` above, beside the sq_grep
- * that reads it; the parse-level facts this batch asserts are mutations OF that
- * file, so it stays in one place.
- */
 function seedDbus(root: string, file: WriteFile): void {
   file('/usr/lib/systemd/system/dbus.service', '[Unit]\n')
   file('/usr/lib/systemd/system/dbus.socket', '[Unit]\n')
 }
 
-// M4f: the container engine, the purge, and the trust store
-
-/**
- * How many `copyright` files and CA certificates the fixture seeds.
- *
- * EXACTLY the oracle's threshold, on purpose. The real images carry 162 and 150,
- * and a fixture that carried those numbers would need twenty-odd deletions
- * before a check noticed -- so the mutation that drives it red would be a bulk
- * edit rather than one edit, and it would not say where the boundary is. At the
- * threshold, removing ONE file is the whole test.
- */
-const PURGE_THRESHOLD = 100
-
-/**
- * The engine installed and INERT, its configuration, and what the purge left.
- *
- * Nothing here is a stand-in: the units, the mount and the config keys are the
- * ones the checks read, in the shapes the shipped image has. The two things
- * Deliberately absent are the ones absence is the correct state for -- there is
- * no /usr/share/containers/containers.conf (a second config layer podman would
- * merge before /etc, so an operator reading /etc would see half the settings)
- * and no local-fs.target.wants symlink for the Quadlet mount (a static
- * enablement is what makes the container switch gate nothing).
- */
 function seedEngine(root: string, board: Board, file: WriteFile): void {
   for (const b of [
     '/usr/bin/podman', '/usr/bin/crun', '/usr/libexec/podman/conmon',
@@ -521,12 +184,11 @@ function seedEngine(root: string, board: Board, file: WriteFile): void {
   file('/etc/containers/registries.conf', 'unqualified-search-registries = ["docker.io"]\n')
   file('/etc/containers/containers.conf',
     '[engine]\nhelper_binaries_dir = ["/usr/libexec/podman"]\nlog_driver = "journald"\n')
-  // DATA, not /var: /var is the EPHEMERAL partition, 512 MiB and wiped by
-  // design, so images there are capped and then silently destroyed.
+  // Container images belong on DATA; /var parents remain immutable.
   file('/etc/containers/storage.conf', '[storage]\ndriver = "overlay"\ngraphroot = "/mos/containers/storage"\n')
 
   file('/etc/systemd/system/etc-containers-systemd.mount',
-    '[Mount]\nWhat=/mnt/state/quadlet\nWhere=/etc/containers/systemd\nType=none\nOptions=bind\n')
+    '[Mount]\nWhat=/mnt/data/state/quadlet\nWhere=/etc/containers/systemd\nType=none\nOptions=bind\n')
 
   // The purge's positive half: the licences Debian ships to satisfy the
   // redistribution terms of the GPL and everything else in the image.
@@ -541,27 +203,6 @@ function seedEngine(root: string, board: Board, file: WriteFile): void {
       `-----BEGIN CERTIFICATE-----\ncert${i}\n-----END CERTIFICATE-----`).join('\n')}\n`)
 }
 
-// RFCT-281: the emergency BusyBox binary, and the shape around it
-
-/**
- * The binary, the GNU commands it must not have shadowed, the files that decide
- * PATH, and the initramfs-tools tree.
- *
- * THE INITRAMFS FILES ARE THE POINT OF THIS SEED and not decoration. The shipped
- * root really does say `BUSYBOX=auto` in initramfs.conf and really does read
- * `${BUSYBOX}` and `${BUSYBOXDIR}` in initramfs-tools' own klibc-utils hook, so
- * a check written as "no initramfs file mentions busybox" would be RED on a
- * correct image. Both lines are transcribed here, from the composed x64 root, so
- * that the fixture's green is the same green a real image gets -- and so that
- * narrowing the check to the three mechanisms that actually put busybox in an
- * initrd (a file NAMED for it, a BUSYBOXDIR assignment, BUSYBOX=y) is a decision
- * the fixture holds rather than a claim in a comment.
- *
- * /usr/bin/sh is a SYMLINK to dash, as the shipped root has it. That is what
- * makes `packed-gnu-commands-unshadowed` a resolution test rather than an
- * existence test: the check follows the chain a shell would, and a fixture whose
- * every command was a regular file would never exercise the follow.
- */
 function seedBusybox(root: string, file: WriteFile): void {
   file('/usr/bin/busybox', 'ELF ... busybox\n')
   chmodSync(join(root, '/usr/bin/busybox'), 0o755)
@@ -603,40 +244,6 @@ function seedBusybox(root: string, file: WriteFile): void {
     '#!/bin/sh\nif [ "${BUSYBOX}" = "n" ] || [ -z "${BUSYBOXDIR}" ]; then\n\tcopy_exec_klibc\nfi\n')
 }
 
-// RFCT-296: the base image's firewall tools, the chain iptables resolves by,
-// and the unit that must stay disabled
-
-/**
- * Both front-ends, `nftables.service`, and the presets that decide it.
- *
- * `iptables` is seeded in the four-hop alternatives shape a trixie root really has it.
- *
- * TRANSCRIBED FROM A MEASURED ROOT and not invented: in a clean
- * debian:trixie-slim at the pinned digest, with mos-system's Depends installed,
- * /usr/sbin/iptables links to /etc/alternatives/iptables, which links to
- * /usr/sbin/iptables-nft, which links to xtables-nft-multi -- the only regular
- * file of the four. A fixture that put the binary straight at /usr/sbin/iptables
- * would be green under a check that never followed a link, which is exactly the
- * check this shape exists to rule out.
- *
- * The last hop is RELATIVE, as the package spells it, so a resolution that
- * joined every target against the root would break on it while the three
- * absolute hops kept working.
- *
- * xtables-legacy-multi is HERE, with its three iptables-legacy front-ends,
- * because the Debian package ships it and this image removes nothing. Its
- * presence is what makes `packed-iptables-nft-backend` green over a root that
- * HAS the legacy binary rather than over one that happens to lack it -- a check
- * that only ever saw the second could not tell the two apart.
- *
- * THE PRESET SET IS THE SHIPPED ONE, both files, plus systemd's own
- * 90-systemd.preset with the two rules it really carries that sort near
- * nftables alphabetically and match nothing here. That last file is not
- * decoration: `packed-nftables-service-disabled` reads the merged set in
- * basename order and takes the FIRST match, so a fixture holding only the mos
- * preset would be green under an implementation that ignored ordering
- * entirely.
- */
 function seedFirewall(root: string, file: WriteFile): void {
   // The native front-end, a regular file in /usr/sbin as the package ships it.
   file('/usr/sbin/nft', 'ELF ... nft\n')
@@ -684,129 +291,6 @@ function seedFirewall(root: string, file: WriteFile): void {
   }
 }
 
-// M4f: /home, /root, the mos account, and the STATE binds
-
-/**
- * The two persistent homes, their seeds, and the binds that keep precious state
- * off the discardable /var.
- *
- * The seed SCRIPTS are seeded in the shape the checks read them, which is a
- * static read of a handful of anchored lines -- `mkdir /mos/root`,
- * `chmod 0700 /mos/root`, `chown 0:0 /mos/root` at the start of a line and
- * nothing else. That is deliberately the oracle's own reading rather than a
- * plausible script: the check greps for those exact lines, so a fixture written
- * to be realistic instead of to be READ would pass for the wrong reason.
- *
- * `/root` is chmod-ed and chown-ed because the mountpoint's own mode is asserted
- * -- Debian ships it 0700 root:root and nothing guaranteed it stayed that way
- * through the pack stage, and DATA is not verity-protected, so the mode is not
- * implied by anything.
- */
-function seedHomes(root: string, board: Board, file: WriteFile): void {
-  file('/bin/bash')
-
-  // /root's own mode, which is a separate fact from its existence.
-  chmodSync(join(root, '/root'), 0o700)
-  ownAsRoot(root, '/root', 0)
-
-  const mount = (unit: string, what: string, where: string): void => {
-    file(`/etc/systemd/system/${unit}`,
-      `[Mount]\nWhat=${what}\nWhere=${where}\nType=none\nOptions=bind\n[Install]\nWantedBy=local-fs.target\n`)
-    enableEtcUnit(root, unit, 'local-fs.target.wants')
-  }
-  mount('mos.mount', '/mnt/data/mos', '/mos')
-  mount('srv.mount', '/mnt/data/srv', '/srv')
-  mount('home.mount', '/mos/home', '/home')
-  mount('root.mount', '/mos/root', '/root')
-  mount('usr-local-lib-systemd-system.mount', '/mnt/state/systemd-units', '/usr/local/lib/systemd/system')
-  // var-lib-mos.mount is written by seedMqtt (the bridge's EnvironmentFile lives
-  // on it); enabling it is this family's business, and a unit installed and not
-  // enabled is precisely the failure both families exist to catch.
-  enableEtcUnit(root, 'var-lib-mos.mount', 'local-fs.target.wants')
-  if ((board.radios ?? []).includes('bluetooth')) {
-    mount('var-lib-bluetooth.mount', '/mnt/state/bluetooth', '/var/lib/bluetooth')
-  }
-
-  for (const [unit, before] of [
-    ['mos-seed-home.service', 'home.mount'],
-    ['mos-seed-root.service', 'root.mount'],
-  ] as const) {
-    file(`/etc/systemd/system/${unit}`,
-      `[Unit]\nBefore=${before}\n[Service]\nType=oneshot\nExecStart=/usr/lib/mos/${unit.replace('.service', '')}\n`)
-    enableEtcUnit(root, unit, 'local-fs.target.wants')
-  }
-
-  file('/usr/lib/mos/mos-seed-home',
-    '#!/bin/sh\n'
-    + '# The pair is PINNED, not resolved: the home on DATA outlives this rootfs.\n'
-    + 'MOS_UID=1000\n'
-    + 'MOS_GID=1000\n'
-    + '[ -d /mos/home/mos ] && exit 0\n'
-    + 'mkdir /mos/home/mos\n'
-    + 'chmod 0700 /mos/home/mos\n'
-    + 'chown "${MOS_UID}:${MOS_GID}" /mos/home/mos\n')
-
-  file('/usr/lib/mos/mos-seed-root',
-    '#!/bin/sh\n'
-    + '# Everything here is under /mos: /root before the bind is the verity root.\n'
-    + '[ -d /mos/root ] && exit 0\n'
-    + 'mkdir /mos/root\n'
-    + 'chmod 0700 /mos/root\n'
-    + 'chown 0:0 /mos/root\n')
-  chmodSync(join(root, '/usr/lib/mos/mos-seed-root'), 0o755)
-}
-
-/** The profile KEY mosd reads, out of mosd's own source. */
-function profileKeyFromMosd(): string {
-  const key = readProfileContract().key
-  if (key === '') {
-    throw new ToolOutputError(
-      'pkgs/mosd/mosd/src/provisioning.rs no longer declares PROFILE_KEY. A fixture that wrote the key '
-      + 'down would keep passing while the image and mosd disagreed about it.',
-    )
-  }
-  return key
-}
-
-/** The one crypt(3) prefix transient.rs pins, for the fixture's libcrypt to carry. */
-function cryptPrefixFromMosd(): string {
-  const prefixes = cryptPrefixes()
-  if (prefixes.length !== 1) {
-    throw new ToolOutputError(
-      `pkgs/mosd/mosd/src/transient.rs pins ${prefixes.length} crypt(3) prefixes; the fixture cannot make `
-      + `the libcrypt check green against an ambiguous source, and pinning one here would test this `
-      + `file's idea of the format rather than mosd's.`,
-    )
-  }
-  return prefixes[0] as string
-}
-
-/** A `*.wants` symlink for a unit that lives in /etc/systemd/system, not /usr/lib. */
-function enableEtcUnit(root: string, unit: string, target: string): void {
-  const dir = join(root, '/etc/systemd/system', target)
-  mkdirSync(dir, { recursive: true })
-  symlinkSync(`/etc/systemd/system/${unit}`, join(dir, unit))
-}
-
-// M4f: the Wi-Fi userland, on the boards that declare a radio
-
-/**
- * hostapd, wpa_supplicant, their unit templates and the STATE binds behind them.
- *
- * Every name here comes from the CONND contract, read out of `pkgs/mosd/` by the same
- * function the checks read it with. That is the same trade `healthyGpt` makes
- * one layer up and for the same reason: the fixture's job is to be green until
- * it is MUTATED, so a baseline built from the contract is the baseline, and
- * every assertion below comes from an edit to it. Writing `wpa_supplicant` down
- * here instead would make the fixture stop tracking a rename in mosd while the
- * checks followed it -- and the tests would then fail for a reason that is not
- * about the image.
- *
- * The two ExecStart lines use DIFFERENT instance specifiers on purpose: the
- * station's `%I` and the access point's `%i`, which is what both shipped images
- * actually carry. A port that accepted only one of them would fail one of the
- * two on a correct image, and only a fixture carrying both can show it does not.
- */
 function seedConnd(root: string, board: Board, file: WriteFile): void {
   if (!(board.radios ?? []).includes('wifi')) return
   const c = CONTRACT
@@ -829,7 +313,7 @@ function seedConnd(root: string, board: Board, file: WriteFile): void {
   for (const where of [c.staDir, c.apDir]) {
     const unit = mountUnitFor(where)
     file(`/etc/systemd/system/${unit}`,
-      `[Mount]\nWhat=/mnt/state/${where.split('/').at(-1)}\nWhere=${where}\nType=none\nOptions=bind\n`)
+      `[Mount]\nWhat=/mnt/data/state/${where.split('/').at(-1)}\nWhere=${where}\nType=none\nOptions=bind\n`)
     enableEtcUnit(root, unit, 'local-fs.target.wants')
   }
 
@@ -863,253 +347,6 @@ function seedConnd(root: string, board: Board, file: WriteFile): void {
   // Nothing at /usr/sbin/dnsmasq: the AP's DHCP server is systemd-networkd's own
   // DHCPServer=yes, and a second one on the same link is a conflict.
 }
-
-// M4f: the small root-side families -- networkd, the ELF headers, the
-// bootloader environment, repart, sshd, the profile and libcrypt
-
-/** ELF magic, then padding, then `e_machine` as the 16-bit LE field at offset 18. */
-function elfHeader(arch: string | undefined): Buffer {
-  const head = Buffer.alloc(64)
-  head.write('\x7fELF', 0, 'latin1')
-  // Not a written-down pair of magic numbers on each side of the comparison:
-  // the CHECK reads MOS_ARCH out of the board and so does this, so a third
-  // architecture is a change in one place.
-  head.writeUInt16LE(arch === 'amd64' ? 0x3E : 0xB7, 18)
-  return head
-}
-
-/**
- * What the ten small families read.
- *
- * Board-shaped throughout, from the board's own declarations: the ELF machine
- * follows MOS_ARCH, the bootloader helpers follow RAUC_BOOTLOADER, fw_env.config
- * addresses the two UENV partitions by the GUIDs and the size the board
- * declares, and the multiarch directory libcrypt lands in follows MOS_ARCH too.
- * Pinning any of them would make `packedRootFixture(x64)` an arm64 tree with
- * the wrong names.
- */
-function seedSystem(root: string, board: Board, file: WriteFile): void {
-  enable(root, 'systemd-networkd.service')
-
-  for (const p of ['/usr/bin/mosd', '/usr/bin/apid']) {
-    const existing = readFileSync(join(root, p))
-    writeFileSync(join(root, p), Buffer.concat([elfHeader(board.arch), existing]))
-  }
-
-  if (board.bootloader === 'uboot') {
-    file('/usr/bin/fw_printenv')
-    // A SYMLINK, which is what trixie's libubootenv ships: one multi-call
-    // binary. The check accepts either spelling, and this is the one that would
-    // fail a naive "is a regular file" assertion.
-    symlinkSync('fw_printenv', join(root, '/usr/bin/fw_setenv'))
-    const size = Number(board.get('UENV_SIZE_BYTES') ?? 0)
-    const hex = `0x${size.toString(16)}`
-    file('/etc/fw_env.config',
-      ['UENV_A', 'UENV_B']
-        .map(k => `/dev/disk/by-partuuid/${(board.partition(k)?.guid ?? '').toLowerCase()}\t0x0\t${hex}`)
-        .join('\n') + '\n')
-  }
-  else {
-    file('/usr/bin/grub-editenv')
-  }
-
-  file('/usr/bin/curl')
-  seedBootScripts(root, file)
-
-  // systemd's own gpt-auto generator, and mos-system's mask over it. Both
-  // halves, because the two conclusions fail for different reasons: the mask
-  // being gone is a mos regression, and the generator being gone is systemd
-  // renaming a file the mask names.
-  file('/usr/lib/systemd/system-generators/systemd-gpt-auto-generator')
-  mkdirSync(join(root, '/etc/systemd/system-generators'), { recursive: true })
-  symlinkSync('/dev/null', join(root, '/etc/systemd/system-generators/systemd-gpt-auto-generator'))
-
-  // One repart definition per linux-generic partition in the board's own walk,
-  // and exactly ONE of them growing. The count the check compares against comes
-  // from the GPT, so a fixture that wrote its own number would hand the check
-  // the same value on both sides of its own comparison.
-  for (const [i, name] of linuxGenericDefinitions(board).entries()) {
-    file(`/etc/repart.d/${name}`,
-      `[Partition]\nType=linux-generic\n${name === '80-data.conf' ? 'Weight=1000\n' : `Priority=${i}\n`}`)
-  }
-
-  file('/etc/ssh/sshd_config', 'Port 22\nPermitRootLogin prohibit-password\n')
-  file('/etc/ssh/sshd_config.d/05-mos-authorized-keys.conf',
-    'AuthorizedKeysFile /etc/ssh/authorized_keys.d/%u\n')
-  file('/etc/systemd/system/etc-ssh.mount',
-    '[Mount]\nWhat=/mnt/state/ssh\nWhere=/etc/ssh\nType=none\nOptions=bind\n')
-  enableEtcUnit(root, 'etc-ssh.mount', 'local-fs.target.wants')
-
-  // The profile: mode 0444, one lowercase value, and ssh.service NOT enabled.
-  file('/usr/lib/mos/profile.conf', `${profileKeyFromMosd()}=dev\n`)
-  chmodSync(join(root, '/usr/lib/mos/profile.conf'), 0o444)
-  file('/usr/lib/systemd/system/ssh.service',
-    '[Service]\nKillMode=process\nExecReload=/bin/kill -HUP $MAINPID\n')
-
-  // libcrypt, at the multiarch directory this board's MOS_ARCH selects, reached
-  // through the SONAME symlink the login stack loads -- and carrying the crypt(3)
-  // prefix transient.rs pins, read from transient.rs rather than typed here.
-  const triplet = board.arch === 'amd64' ? 'x86_64-linux-gnu' : 'aarch64-linux-gnu'
-  file(`/usr/lib/${triplet}/libcrypt.so.1.1.0`, `\x7fELF...${cryptPrefixFromMosd()}...\n`)
-  symlinkSync('libcrypt.so.1.1.0', join(root, `/usr/lib/${triplet}/libcrypt.so.1`))
-}
-
-/**
- * A /usr/lib/mos script with enough shape to exercise the command extractor, and
- * the binaries it names.
- *
- * Sixteen commands, because the check refuses fewer than ten: an extractor that
- * stopped seeing commands would make the presence test pass while proving
- * nothing, and the oracle guards that with a vacuity floor. A fixture sitting
- * below the floor could not tell a working extractor from a broken one.
- *
- * The body is deliberately awkward in the ways the pipeline is about: a `case`
- * block whose PATTERNS are not commands, a command substitution inside a
- * double-quoted string, an escaped `#` in a message, a line continuation, a
- * locally defined function, and a wrapper call. Each of those is a stage of the
- * extractor and each has a case beside it.
- */
-/**
- * The device-management surface, in the state PLAN-086 S4 leaves it in.
- *
- * checks-hwdb.ts asserts four negatives -- no compiled database, no sources, no
- * update unit, no query clause -- and a negative passes by finding nothing, so
- * the fixture's job here is to be a root where finding nothing MEANS something:
- * udevd is present, the rules directory is populated, and the rules carry the
- * IMPORT{builtin} vocabulary a scanner has to be able to see.
- *
- * The rule bodies are the POST-REMOVAL shape of the Debian originals, abridged
- * to the actions the survivor table names. They are transcribed rather than read
- * out of a real image on purpose: a fixture built from the artifact under test
- * would agree with it whatever either one became.
- *
- * systemd-udevd.service is seeded with `After=systemd-sysusers.service` and
- * nothing else on that line. That is the line rootfs/scripts/hwdb-remove.sh
- * edits, and it is what `packed-hwdb-update-machinery-absent` uses to know its
- * walk reached the unit trees at all.
- */
-function seedUdev(root: string, file: WriteFile): void {
-  file('/usr/lib/systemd/systemd-udevd')
-  file('/usr/bin/udevadm')
-  file('/usr/lib/systemd/system/systemd-udevd.service',
-    '[Unit]\nDescription=Rule-based Manager for Device Events and Files\n'
-    + 'After=systemd-sysusers.service\n[Service]\nType=notify\n')
-
-  const rules: ReadonlyArray<readonly [string, string]> = [
-    ['50-udev-default.rules',
-      'SUBSYSTEM=="usb", ENV{DEVTYPE}=="usb_device", IMPORT{builtin}="usb_id"\n'
-      + 'SUBSYSTEM=="net", IMPORT{builtin}="net_driver"\n'
-      + 'SUBSYSTEM=="tty", KERNEL=="ptmx", GROUP="tty", MODE="0666"\n'
-      + 'SUBSYSTEM=="block", GROUP="disk"\n'
-      + 'KERNEL=="tun", MODE="0666", OPTIONS+="static_node=net/tun"\n'],
-    ['60-input-id.rules',
-      'SUBSYSTEM=="input", ENV{ID_INPUT}=="", IMPORT{builtin}="input_id"\n'],
-    ['60-persistent-storage.rules',
-      'ENV{ID_FS_UUID_ENC}=="?*", SYMLINK+="disk/by-uuid/$env{ID_FS_UUID_ENC}"\n'],
-    ['60-serial.rules',
-      'SUBSYSTEMS=="usb", IMPORT{builtin}="usb_id"\n'
-      + 'IMPORT{builtin}="path_id"\n'
-      + 'ENV{ID_PATH}=="?*", SYMLINK+="serial/by-path/$env{ID_PATH}"\n'
-      + 'ENV{ID_BUS}=="?*", SYMLINK+="serial/by-id/$env{ID_BUS}-$env{ID_SERIAL}"\n'],
-    ['71-seat.rules',
-      'SUBSYSTEM=="drm", KERNEL=="card[0-9]*", TAG+="seat", TAG+="master-of-seat"\n'],
-    ['75-net-description.rules',
-      'SUBSYSTEM!="net", GOTO="net_end"\n'
-      + 'SUBSYSTEMS=="usb", IMPORT{builtin}="usb_id"\n'
-      + 'IMPORT{builtin}="net_id"\n'
-      + 'LABEL="net_end"\n'],
-    ['78-sound-card.rules',
-      'KERNEL!="card*", GOTO="sound_end"\n'
-      + 'ENV{SOUND_INITIALIZED}="1"\n'
-      + 'IMPORT{builtin}="path_id"\n'
-      + 'LABEL="sound_end"\n'],
-    ['80-drivers.rules',
-      'ENV{MODALIAS}=="?*", RUN{builtin}+="kmod load"\n'],
-    ['90-iocost.rules',
-      'ENV{IOCOST_SOLUTIONS}!="", RUN+="iocost apply $env{DEVNAME}"\n'],
-    ['99-systemd.rules',
-      'SUBSYSTEM=="block", TAG+="systemd"\n'],
-  ]
-  for (const [name, body] of rules) file(`/usr/lib/udev/rules.d/${name}`, body)
-}
-
-function seedBootScripts(root: string, file: WriteFile): void {
-  for (const c of [
-    'awk', 'cat', 'chmod', 'chown', 'cp', 'grep', 'head', 'mkdir',
-    'mktemp', 'mv', 'od', 'rm', 'sed', 'sleep', 'sync', 'tr',
-  ]) file(`/usr/bin/${c}`)
-
-  file('/usr/lib/mos/mos-health',
-    '#!/bin/sh\n'
-    + 'set -eu\n'
-    + '\n'
-    + 'have() { command -v "$1" >/dev/null 2>&1; }\n'
-    + 'probe() {\n'
-    + '    # a wrapper call: curl is OPTIONAL and must not be extracted\n'
-    + '    have curl || return 0\n'
-    + '}\n'
-    + '\n'
-    + 'tmp="$(mktemp -d)"\n'
-    + 'mkdir -p "${tmp}/work"\n'
-    + 'chmod 0700 "${tmp}"\n'
-    + 'chown 0:0 "${tmp}"\n'
-    + 'cat /proc/uptime | awk \'{ print $1 }\' >"${tmp}/uptime"\n'
-    + 'grep -q booted "${tmp}/uptime" || true\n'
-    + 'head -n1 "${tmp}/uptime" | tr -d \'\\n\' >"${tmp}/short"\n'
-    + 'sed -e \'s/x/y/\' "${tmp}/short" >"${tmp}/edited"\n'
-    + 'od -An -c "${tmp}/edited" >"${tmp}/dump"\n'
-    + 'cp "${tmp}/dump" "${tmp}/dump.bak"\n'
-    + 'mv "${tmp}/dump.bak" "${tmp}/dump.old"\n'
-    + 'printf \'%s\\n\' "state \\# ok" >"${tmp}/note"\n'
-    + 'case "${1:-status}" in\n'
-    + 'status)\n'
-    + '    probe\n'
-    + '    ;;\n'
-    + 'reset)\n'
-    + '    rm -rf "${tmp}/work"\n'
-    + '    ;;\n'
-    + 'esac\n'
-    + 'sleep 0 \\\n'
-    + '    && sync\n')
-}
-
-/** `80-data.conf` plus one definition per other linux-generic partition. */
-function linuxGenericDefinitions(board: Board): string[] {
-  const walk = walkLayout(board, Number(board.partition('ROOTFS_A')?.sizeSectors ?? 0))
-  const generic = walk.rows.filter(r => r.typecode.toLowerCase() === '0fc63daf-8483-4772-8e79-3d69d8477de4')
-  return generic.map((r, i) => (r.label.toLowerCase() === 'data' ? '80-data.conf' : `${10 + i}-${r.label}.conf`))
-}
-
-/** What `seedHealthyRoot` hands its helpers: write a file, making its parents. */
-type WriteFile = (path: string, content?: string) => void
-
-// M4d: the accounts, the credential template, and the reconciler
-
-/**
- * The gid the image gives the `shadow` group. 42 on Debian, and the value both
- * shipped images carry -- read back out of the fixture's own /etc/group by the
- * check, never restated there.
- */
-const SHADOW_GID = 42
-
-/**
- * The accounts, as `/etc/passwd` and the factory `/etc/shadow` template.
- *
- * Small on purpose -- the real images carry 25 -- because what the checks read
- * is the RELATION between the two files: every name in passwd has an entry in
- * the template, and every entry in the template is locked. A hundred accounts
- * would test the same relation more slowly.
- *
- * `mos-mqttd` and `mos-mqtt-broker` are here because the MQTT checks assert
- * their units run as identities the image actually defines; that is one fact
- * about one file and it belongs in one place.
- */
-const ACCOUNTS: readonly { name: string, uid: number, gid: number, shell: string }[] = [
-  { name: 'root', uid: 0, gid: 0, shell: '/bin/bash' },
-  { name: 'mos', uid: 1000, gid: 1000, shell: '/bin/bash' },
-  { name: 'mos-mqttd', uid: 970, gid: 970, shell: '/usr/sbin/nologin' },
-  { name: 'mos-mqtt-broker', uid: 969, gid: 969, shell: '/usr/sbin/nologin' },
-]
 
 function seedShadow(root: string, file: WriteFile): void {
   file('/etc/passwd', `${ACCOUNTS.map(a =>
@@ -1155,44 +392,18 @@ function seedShadow(root: string, file: WriteFile): void {
     + '  printf \'%s\\n\' "${line}" | awk -F: \'{ $2 = "!"; print }\'\n'
     + 'done <"$FACTORY"\n')
 
-  // ...and mos-seed-state, which must put NO shadow file on STATE -- and which
-  // M4f also reads for the two connd render targets. The `for d in ...` loop is
-  // the shape the connd checks grep for, not decoration: the seed creates both
-  // directories from ONE loop, so the assertion is in two halves and either
-  // half alone would pass for a script that created the other twice.
-  file('/usr/lib/mos/mos-seed-state',
-    '#!/bin/sh\n'
-    + 'mkdir -p /mnt/state/mos /mnt/state/ssh\n'
-    + 'for d in wpa_supplicant hostapd; do\n'
-    + '    mkdir -p "/mnt/state/$d"\n'
-    + '    chmod 0700 "/mnt/state/$d"\n'
-    + 'done\n')
+  // Current state initializer: private radio leaves are created by ensure_dir.
+  file('/usr/lib/mos/mos-seed-state', `#!/bin/sh
+state=/mnt/data/state
+ensure_dir() {
+    [ ! -L "$state/$1" ] || exit 1
+    mkdir -p "$state/$1"
+    chmod "$2" "$state/$1"
 }
+for name in mos ssh bluetooth wpa_supplicant hostapd; do ensure_dir "$name" 0700; done
+`)
 
-/**
- * `chown 0:gid`, or a sentence saying why it could not.
- *
- * The suite runs as root -- on the host and in the pinned bun container -- and
- * the mode/ownership assertion this seeds for is one the real image satisfies
- * by being packed as root. A bare EPERM here would surface as four unrelated
- * check failures with no hint that the cause was the test user.
- */
-function ownAsRoot(root: string, path: string, gid: number): void {
-  try {
-    chownSync(join(root, path), 0, gid)
-  }
-  catch (error) {
-    throw new ToolOutputError(
-      `the packed-root fixture cannot own ${path} as 0:${gid}: `
-      + `${error instanceof Error ? error.message : String(error)}.\n`
-      + `  The image packs that file 0640 root:shadow and a check asserts it, so the fixture has to `
-      + `reproduce it -- which needs root. This suite runs as root on the host and in the pinned bun `
-      + `container; a non-root run cannot seed this fixture.`,
-    )
-  }
 }
-
-// M4d: the MQTT bridge and broker, installed and INERT
 
 function seedMqtt(root: string, file: WriteFile): void {
   file('/usr/bin/mos-mqttd')
@@ -1216,7 +427,7 @@ function seedMqtt(root: string, file: WriteFile): void {
   // for a unit whose Where= is the EnvironmentFile's directory, so the fixture
   // ships the same unit the image does rather than a stand-in.
   file('/etc/systemd/system/var-lib-mos.mount',
-    '[Mount]\nWhat=/mnt/state/mos\nWhere=/var/lib/mos\nType=none\nOptions=bind\n')
+    '[Mount]\nWhat=/mnt/data/state/mos\nWhere=/var/lib/mos\nType=none\nOptions=bind\n')
 
   // Empty is valid: no application is remotely published until its package
   // installs both an exact enrollment file and its exact Item1 policy.
@@ -1227,410 +438,106 @@ function seedMqtt(root: string, file: WriteFile): void {
   // switch cannot override.
 }
 
-// What the BOARD's own declarations say this image carries
+function seedUdev(root: string, file: WriteFile): void {
+  file('/usr/lib/systemd/systemd-udevd')
+  file('/usr/bin/udevadm')
+  file('/usr/lib/systemd/system/systemd-udevd.service',
+    '[Unit]\nDescription=Rule-based Manager for Device Events and Files\n'
+    + 'After=systemd-sysusers.service\n[Service]\nType=notify\n')
 
-/**
- * The board-conditional payload.
- *
- * Everything below is driven by the board definition's own lists, which is what
- * makes `packedRootFixture(x64)` a genuinely x64-shaped tree rather than a
- * cx3576 one loaded with the wrong GUIDs: x64 declares no firmware, no hwinit
- * fact, no radio and BOARD_HAS_STATUS_LED=0, so it gets none of these files.
- * That is precisely what `status-led-absent` asserts, and its FAILING direction
- * -- a board declaring no indicator that ships the unit anyway -- had never been
- * driven anywhere in this tree before: the image fixture contract sources
- * cx3576's board.env, which declares 1, so the =0 branch had only ever been
- * observed passing.
- */
-function seedBoardShape(root: string, board: Board, file: WriteFile): void {
-  const hwinit = board.hwinitConfs ?? []
-  const radios = board.radios ?? []
-  const firmware = board.firmwareFiles ?? []
+  const rules: ReadonlyArray<readonly [string, string]> = [
+    ['50-udev-default.rules',
+      'SUBSYSTEM=="usb", ENV{DEVTYPE}=="usb_device", IMPORT{builtin}="usb_id"\n'
+      + 'SUBSYSTEM=="net", IMPORT{builtin}="net_driver"\n'
+      + 'SUBSYSTEM=="tty", KERNEL=="ptmx", GROUP="tty", MODE="0666"\n'
+      + 'SUBSYSTEM=="block", GROUP="disk"\n'
+      + 'KERNEL=="tun", MODE="0666", OPTIONS+="static_node=net/tun"\n'],
+    ['60-input-id.rules',
+      'SUBSYSTEM=="input", ENV{ID_INPUT}=="", IMPORT{builtin}="input_id"\n'],
+    ['60-persistent-storage.rules',
+      'ENV{ID_FS_UUID_ENC}=="?*", SYMLINK+="disk/by-uuid/$env{ID_FS_UUID_ENC}"\n'],
+    ['60-serial.rules',
+      'SUBSYSTEMS=="usb", IMPORT{builtin}="usb_id"\n'
+      + 'IMPORT{builtin}="path_id"\n'
+      + 'ENV{ID_PATH}=="?*", SYMLINK+="serial/by-path/$env{ID_PATH}"\n'
+      + 'ENV{ID_BUS}=="?*", SYMLINK+="serial/by-id/$env{ID_BUS}-$env{ID_SERIAL}"\n'],
+    ['71-seat.rules',
+      'SUBSYSTEM=="drm", KERNEL=="card[0-9]*", TAG+="seat", TAG+="master-of-seat"\n'],
+    ['75-net-description.rules',
+      'SUBSYSTEM!="net", GOTO="net_end"\n'
+      + 'SUBSYSTEMS=="usb", IMPORT{builtin}="usb_id"\n'
+      + 'IMPORT{builtin}="net_id"\n'
+      + 'LABEL="net_end"\n'],
+    ['78-sound-card.rules',
+      'KERNEL!="card*", GOTO="sound_end"\n'
+      + 'ENV{SOUND_INITIALIZED}="1"\n'
+      + 'IMPORT{builtin}="path_id"\n'
+      + 'LABEL="sound_end"\n'],
+    ['80-drivers.rules',
+      'ENV{MODALIAS}=="?*", RUN{builtin}+="kmod load"\n'],
+    ['90-iocost.rules',
+      'ENV{IOCOST_SOLUTIONS}!="", RUN+="iocost apply $env{DEVNAME}"\n'],
+    ['99-systemd.rules',
+      'SUBSYSTEM=="block", TAG+="systemd"\n'],
+  ]
+  for (const [name, body] of rules) file(`/usr/lib/udev/rules.d/${name}`, body)
+}
 
-  for (const fw of firmware) file(fw)
-  if (firmware.length > 0) {
-    // The module list is about this board's radio: the driver it must load, the
-    // BT core of the same combo chip, and the superseded driver it must not.
-    // The comment line is deliberate -- the file may legitimately EXPLAIN the
-    // drop, and a reader that did not strip comments would call that a defect.
-    file('/etc/mos/modules.conf', '# bcmdhd was dropped with the AIC-only fleet decision\n'
-      + 'aic8800_fdrv\naic8800_btlpm\n')
+function ownAsRoot(root: string, path: string, gid: number): void {
+  try {
+    chownSync(join(root, path), 0, gid)
   }
-
-  for (const c of hwinit) {
-    if (c !== 'modules') file(`/etc/mos/${c}.conf`, `# ${c}\n`)
-    file(`/usr/lib/mos/hwinit-${c}`)
-    // One unit per fact, ENABLED. A unit installed and not enabled is the M4
-    // failure this family exists to catch, and it is invisible: nothing logs it.
-    file(`/usr/lib/systemd/system/mos-${c}.service`, '[Service]\n')
-    enable(root, `mos-${c}.service`)
-  }
-
-  if (hwinit.includes('gadget')) {
-    file('/usr/lib/udev/rules.d/60-mos-gadget-getty.rules',
-      'ACTION=="add", SUBSYSTEM=="tty", KERNEL=="ttyGS0", TAG+="systemd", '
-      + 'ENV{SYSTEMD_WANTS}="serial-getty@ttyGS0.service"\n')
-  }
-
-  if (hwinit.includes('mac')) {
-    file('/usr/lib/udev/rules.d/60-mos-mac-stable.rules',
-      'ACTION=="add", SUBSYSTEM=="net", KERNEL=="eth*", '
-      + 'RUN+="/usr/lib/mos/hwinit-mac %k"\n')
-    // The naming policies are the DEFAULT's own lines rather than a second copy
-    // of them here: what the check asserts is that the two files agree, and a
-    // fixture that wrote its own pair would pass a board whose shipped file had
-    // stopped agreeing with the shipped default.
-    file('/usr/lib/systemd/network/60-mos-mac-stable.link',
-      '[Match]\nOriginalName=eth*\n\n[Link]\n'
-      + DEFAULT_LINK.split('\n').filter(l => /^(Name|AlternativeNames)Policy=/.test(l)).join('\n')
-      + '\nMACAddressPolicy=none\n')
-  }
-
-  if (radios.includes('bluetooth')) {
-    file('/usr/bin/btattach')
-    // No `Name =` line: pinning it blocks bluez's hostname plugin and every
-    // device in the fleet then advertises the same name.
-    file('/etc/bluetooth/main.conf', '[General]\nAlwaysPairable = false\n')
-    file('/usr/lib/systemd/system/bluetooth.service', '[Unit]\n')
-    // The VENDOR path, which is where trixie's bluez installs it. The oracle
-    // accepts /etc/dbus-1/system.d too, because dbus-daemon reads both and a
-    // correct bookworm image puts it there.
-    file('/usr/share/dbus-1/system.d/bluetooth.conf',
-      '<busconfig>\n  <policy user="root">\n    <allow own="org.bluez"/>\n  </policy>\n</busconfig>\n')
-    enable(root, 'bluetooth.service', 'bluetooth.target.wants')
-  }
-
-  if (board.hasStatusLed === '1') {
-    file('/usr/lib/systemd/system/mos-status-led.service',
-      '[Unit]\n'
-      + 'After=mos-health.service\n'
-      + 'Requires=mos-health.service\n'
-      + 'After=multi-user.target\n'
-      + '[Service]\n'
-      + 'Type=oneshot\n'
-      + 'RemainAfterExit=yes\n'
-      + 'ExecStart=/usr/lib/mos/mos-status-led start\n'
-      + 'ExecStop=/usr/lib/mos/mos-status-led stop\n')
-    enable(root, 'mos-status-led.service')
-    // The branch labels sit at column 0 and each region is closed by a bare
-    // `;;`, because that is what the oracle's awk scopes on -- and the
-    // destination colour is switched ON before the source is switched off, so
-    // neither transition passes through an instant with both LEDs dark.
-    file('/usr/lib/mos/mos-status-led',
-      '#!/bin/sh\n'
-      + 'led_on() { echo 1 >"/sys/class/leds/status-$1/brightness"; }\n'
-      + 'led_off() { echo 0 >"/sys/class/leds/status-$1/brightness"; }\n'
-      + 'case "$1" in\n'
-      + 'start)\n'
-      + '\tled_on BLUE\n'
-      + '\tled_off RED\n'
-      + '\t;;\n'
-      + 'stop)\n'
-      + '\tled_on RED\n'
-      + '\tled_off BLUE\n'
-      + '\t;;\n'
-      + 'esac\n')
-    chmodSync(join(root, '/usr/lib/mos/mos-status-led'), 0o755)
-  }
-
-  // Nothing at /etc/modules-load.d/wifi.conf on ANY board: mos-modules
-  // superseded it, and the check that says so is board-unconditional.
-
-  // The kernel's own record of itself, for the kernel-floor checks.
-  // Seeded on every board because the fixture describes a healthy root and a
-  // root with no /boot/config-* is not one -- which was true while only x64
-  // registered the config check, and is now what that check reads on every
-  // board (RFCT-343). The modprobe check is still x64's alone.
-  //
-  // The symbol names, the module names and the index format are written out
-  // HERE as independent literals rather than imported from checks-kernel.ts.
-  // Seeding from the very constants the check reads would make the passing
-  // direction true by construction: one edit would move the check and its own
-  // fixture together and the case would stay green while the image contract
-  // changed underneath it.
-  //
-  // EVERY FLOOR SYMBOL IS =y AND EVERY FLOOR MODULE IS BUILT IN, which is what
-  // a healthy root looks like since PLAN-074: this board's kernel assembles a
-  // dm-verity root from the kernel command line with no initramfs, so nothing
-  // on the floor can be a module. This fixture used to mirror Debian's artefact
-  // -- the netfilter set =m, one lone builtin -- because the board ran Debian's
-  // kernel. It does not any more.
-  //
-  // THREE KINDS ARE STILL SEEDED, and the distinction is what lets the modprobe
-  // check skip a symbol without going blind. The floor modules below are in
-  // modules.builtin. The nine symbols that name NO module -- the eBPF bools,
-  // the three nf_tables family bools, the bridge family bool, and DM_INIT,
-  // which compiles into dm-mod -- are =y with no entry in either index, so a
-  // lookup for them could never succeed and the config check is their whole
-  // assertion. And modules.dep is NOT empty: this kernel still ships a few
-  // loadable modules, which are the only subjects the dependency walk has left.
-  const release = '6.12.107'
-  file(`/boot/config-${release}`,
-    '# Automatically generated file; DO NOT EDIT.\n'
-    + 'CONFIG_BLK_DEV_DM=y\n'
-    + 'CONFIG_DM_INIT=y\n'
-    + 'CONFIG_DM_VERITY=y\n'
-    // The signed half of the verity floor, and the anchor the second kernel
-    // check reads. The path is a literal here for the same reason every symbol
-    // name is: seeding it from the fragment the build merges would make both
-    // directions true by construction.
-    + 'CONFIG_DM_VERITY_VERIFY_ROOTHASH_SIG=y\n'
-    + 'CONFIG_SYSTEM_TRUSTED_KEYRING=y\n'
-    + 'CONFIG_SYSTEM_TRUSTED_KEYS="certs/mos-verity-anchor.pem"\n'
-    + 'CONFIG_BLK_DEV_LOOP=y\n'
-    + 'CONFIG_SQUASHFS=y\n'
-    + 'CONFIG_OVERLAY_FS=y\n'
-    + 'CONFIG_DM_CRYPT=y\n'
-    + 'CONFIG_VLAN_8021Q=y\n'
-    + 'CONFIG_BRIDGE=y\n'
-    + 'CONFIG_WIREGUARD=y\n'
-    + 'CONFIG_VETH=y\n'
-    + 'CONFIG_NFT_FIB_INET=y\n'
-    + 'CONFIG_NFT_FIB_IPV4=y\n'
-    + 'CONFIG_NFT_FIB_IPV6=y\n'
-    + 'CONFIG_BPF=y\n'
-    + 'CONFIG_BPF_SYSCALL=y\n'
-    + 'CONFIG_BPF_JIT=y\n'
-    + 'CONFIG_CGROUP_BPF=y\n'
-    + 'CONFIG_NF_TABLES=y\n'
-    + 'CONFIG_NF_TABLES_INET=y\n'
-    + 'CONFIG_NF_TABLES_IPV4=y\n'
-    + 'CONFIG_NF_TABLES_IPV6=y\n'
-    + 'CONFIG_NFT_COMPAT=y\n'
-    + 'CONFIG_NETFILTER_XTABLES=y\n'
-    + 'CONFIG_NF_CONNTRACK=y\n'
-    + 'CONFIG_NFT_CT=y\n'
-    + 'CONFIG_NF_NAT=y\n'
-    + 'CONFIG_NFT_NAT=y\n'
-    + 'CONFIG_NFT_MASQ=y\n'
-    + 'CONFIG_NETFILTER_XT_MARK=y\n'
-    + 'CONFIG_NETFILTER_XT_NAT=y\n'
-    + 'CONFIG_NETFILTER_XT_MATCH_ADDRTYPE=y\n'
-    + 'CONFIG_NETFILTER_XT_MATCH_CONNTRACK=y\n'
-    + 'CONFIG_NETFILTER_XT_TARGET_CHECKSUM=y\n'
-    + 'CONFIG_NETFILTER_XT_TARGET_CT=y\n'
-    + 'CONFIG_NETFILTER_XT_TARGET_MASQUERADE=y\n'
-    + 'CONFIG_NETFILTER_XT_TARGET_REDIRECT=y\n'
-    + 'CONFIG_BRIDGE_NETFILTER=y\n'
-    + 'CONFIG_NF_TABLES_BRIDGE=y\n'
-    + 'CONFIG_NF_CONNTRACK_BRIDGE=y\n'
-    + 'CONFIG_BRIDGE_VLAN_FILTERING=y\n'
-    // The boot logo, and the symbol whose PRESENCE would suppress it.
-    // FRAMEBUFFER_CONSOLE_DEFERRED_TAKEOVER is deliberately absent rather than
-    // spelled `# ... is not set`: both are what a real config carries for an
-    // unset symbol, and the check must read the absence as the decision.
-    + 'CONFIG_LOGO=y\n'
-    + 'CONFIG_LOGO_LINUX_CLUT224=y\n'
-    + 'CONFIG_FRAMEBUFFER_CONSOLE=y\n')
-  const mod = `/lib/modules/${release}`
-  file(`${mod}/modules.builtin`,
-    'kernel/drivers/md/dm-mod.ko\n'
-    + 'kernel/drivers/md/dm-verity.ko\n'
-    + 'kernel/drivers/block/loop.ko\n'
-    + 'kernel/fs/squashfs/squashfs.ko\n'
-    + 'kernel/fs/overlayfs/overlay.ko\n'
-    + 'kernel/drivers/md/dm-crypt.ko\n'
-    + 'kernel/net/8021q/8021q.ko\n'
-    + 'kernel/net/bridge/bridge.ko\n'
-    + 'kernel/drivers/net/wireguard/wireguard.ko\n'
-    + 'kernel/drivers/net/veth.ko\n'
-    + 'kernel/net/netfilter/nft_fib_inet.ko\n'
-    + 'kernel/net/ipv4/netfilter/nft_fib_ipv4.ko\n'
-    + 'kernel/net/ipv6/netfilter/nft_fib_ipv6.ko\n'
-    + 'kernel/net/netfilter/nf_tables.ko\n'
-    + 'kernel/net/netfilter/nft_compat.ko\n'
-    + 'kernel/net/netfilter/x_tables.ko\n'
-    + 'kernel/net/netfilter/nf_conntrack.ko\n'
-    + 'kernel/net/netfilter/nft_ct.ko\n'
-    + 'kernel/net/netfilter/nf_nat.ko\n'
-    + 'kernel/net/netfilter/nft_nat.ko\n'
-    + 'kernel/net/netfilter/nft_masq.ko\n'
-    + 'kernel/net/netfilter/xt_mark.ko\n'
-    + 'kernel/net/netfilter/xt_nat.ko\n'
-    + 'kernel/net/netfilter/xt_addrtype.ko\n'
-    + 'kernel/net/netfilter/xt_conntrack.ko\n'
-    + 'kernel/net/netfilter/xt_CHECKSUM.ko\n'
-    + 'kernel/net/netfilter/xt_CT.ko\n'
-    + 'kernel/net/netfilter/xt_MASQUERADE.ko\n'
-    + 'kernel/net/netfilter/xt_REDIRECT.ko\n'
-    + 'kernel/net/bridge/br_netfilter.ko\n'
-    + 'kernel/net/bridge/netfilter/nf_conntrack_bridge.ko\n\n')
-  // The loadable remainder, small and deliberately not empty: "every object is
-  // present" over an empty modules.dep and over a full one are the same
-  // sentence, and only one of them means anything.
-  file(`${mod}/modules.dep`,
-    'kernel/net/netfilter/nf_log_common.ko:\n'
-    + 'kernel/net/netfilter/nf_log_syslog.ko: kernel/net/netfilter/nf_log_common.ko\n'
-    + 'kernel/net/netfilter/xt_LOG.ko: kernel/net/netfilter/nf_log_syslog.ko\n')
-  for (const object of [
-    'kernel/net/netfilter/nf_log_common.ko',
-    'kernel/net/netfilter/nf_log_syslog.ko',
-    'kernel/net/netfilter/xt_LOG.ko',
-
-  ]) {
-    file(`${mod}/${object}`, '\x7fELF\n')
+  catch (error) {
+    throw new ToolOutputError(
+      `the packed-root fixture cannot own ${path} as 0:${gid}: `
+      + `${error instanceof Error ? error.message : String(error)}.\n`
+      + `  The image packs that file 0640 root:shadow and a check asserts it, so the fixture has to `
+      + `reproduce it -- which needs root. This suite runs as root on the host and in the pinned bun `
+      + `container; a non-root run cannot seed this fixture.`,
+    )
   }
 }
 
-/** A `*.wants` enablement symlink, in the tree /etc owns. */
+function enableEtcUnit(root: string, unit: string, target: string): void {
+  const dir = join(root, '/etc/systemd/system', target)
+  mkdirSync(dir, { recursive: true })
+  symlinkSync(`/etc/systemd/system/${unit}`, join(dir, unit))
+}
+
 function enable(root: string, unit: string, target = 'multi-user.target.wants'): void {
   const dir = join(root, '/etc/systemd/system', target)
   mkdirSync(dir, { recursive: true })
   symlinkSync(`/usr/lib/systemd/system/${unit}`, join(dir, unit))
 }
+const SHADOW_GID = 42
 
 /**
- * The trust root's CA certificate, as the fixture spells it.
+ * The accounts, as `/etc/passwd` and the factory `/etc/shadow` template.
  *
- * Not a real certificate: `packed-keyring-from-meta` compares BYTES, which is
- * what ties an image's keyring to the one place a trust root may enter a build.
- * Nothing in that comparison parses PEM, so a real certificate here would
- * assert nothing extra and would date.
+ * Small on purpose -- the real images carry 25 -- because what the checks read
+ * is the RELATION between the two files: every name in passwd has an entry in
+ * the template, and every entry in the template is locked. A hundred accounts
+ * would test the same relation more slowly.
+ *
+ * `mos-mqttd` and `mos-mqtt-broker` are here because the MQTT checks assert
+ * their units run as identities the image actually defines; that is one fact
+ * about one file and it belongs in one place.
  */
-export const FIXTURE_CA_CERT = '-----BEGIN CERTIFICATE-----\nfixture trust root\n-----END CERTIFICATE-----\n'
-
-/**
- * The baked update configuration, as the fixture spells it: the WHOLE document
- * `meta.example/updates/manifest.json` ships, not the fields a check happens to
- * read.
- *
- * **It used to be two keys, and the reasoning that allowed that is dead.** The
- * comment here said `packed-meta-is-the-public-set` compares BYTES and nothing
- * parses the JSON, so a faithful copy would assert nothing extra. That stopped
- * being true when the manifest row grew a derivation: the check now hands these
- * bytes to `derivedManifest`, which requires the committed schema and a `trust`
- * object, and a two-key document throws before any check can conclude.
- *
- * **`signingKeys` is populated on purpose.** An empty array satisfies
- * `derivedManifest` — it derives an empty id list, which matches — and it does
- * so *vacuously*: the per-key validation and the SHA-256 never run, and the
- * positive control's own verdict line ("manifest signingKeyIds derived from key
- * bytes") would be asserting a derivation that did not happen. One real
- * 32-byte value in canonical base64, with the id it actually hashes to, is what
- * makes that verdict a measurement. `meta.example` carries empty arrays because
- * no ceremony stands behind an example; a released image's manifest does not,
- * and the device anchor reader refuses one that does.
- *
- * The key is bytes 1..32 — recognisably a fixture, and no real key ever has to
- * be rotated out of this file.
- *
- * It carries no `-----BEGIN` armour, no PKCS#8 header and no key-container
- * extension in its path, which is what makes it the NEGATIVE control for
- * `no-private-key-in-baked-meta`: the healthy fixture is a populated search
- * space in which the detector finds nothing. A base64 PUBLIC key in a JSON
- * string trips none of the three detectors, which is the point.
- */
-export const FIXTURE_META_MANIFEST = `{
-  "schema": "mos/meta/v1",
-
-  "product": { "vendor": "example", "model": "mos-appliance" },
-
-  "update": {
-    "source": null,
-    "channel": "stable",
-    "policy": "check",
-    "checkIntervalMinutes": 1440
-  },
-
-  "trust": {
-    "signingKeys": ["AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA="],
-    "signingKeyIds": ["ae216c2ef5247a3782c135efa279a3e4cdc61094270f5d2be58c6204b7a612c9"]
-  },
-
-  "http": { "credentialHosts": [] },
-
-  "fleet": { "enabled": false, "url": null }
-}
-`
-
-/**
- * `meta/GENERATED` as `pkgs/rauc/gen-dev-keys.sh` writes it: prose, then the
- * `DOMAINS=` line naming what the generator covered.
- *
- * Short rather than verbatim -- the checks read the DOMAINS line and compare
- * the bytes, and neither cares about the paragraph above it. The healthy
- * fixture does NOT carry this: it is production-shaped, and a test that wants
- * the development branch writes the marker itself.
- */
-export const FIXTURE_META_MARKER = 'DEVELOPMENT-GRADE, generated by pkgs/rauc/gen-dev-keys.sh.\n\nDOMAINS=rauc\n'
-
-/** Where the baked manifest lands in the image, in the check's own spelling. */
-export const BAKED_MANIFEST_PATH = '/usr/share/mos/meta/updates/manifest.json'
-
-/** A context over a synthetic packed root. Everything that reads the IMAGE throws. */
-/**
- * The pool version every first-party package in the fixture carries.
- *
- * ONE constant for the manifest row and the identity file, because the check
- * that compares them is the thing under test: two literals that happened to
- * agree would go red the day either was edited, for a reason that is not about
- * an image.
- */
-export const FIXTURE_POOL_VERSION = '0.1.0+git0123456789ab-1'
-
-/**
- * The commit date `rootfs/compose/compose-install.sh` records beside that
- * version: `git show -s --format=%cI` for the commit the stamp above names.
- * A literal here rather than a `git` call, so the fixture is one tree's worth
- * of facts and not this checkout's.
- */
-export const FIXTURE_COMMIT_DATE = '2026-08-30T18:40:27+08:00'
+const ACCOUNTS: readonly { name: string, uid: number, gid: number, shell: string }[] = [
+  { name: 'root', uid: 0, gid: 0, shell: '/bin/bash' },
+  { name: 'mos', uid: 1000, gid: 1000, shell: '/bin/bash' },
+  { name: 'mos-mqttd', uid: 970, gid: 970, shell: '/usr/sbin/nologin' },
+  { name: 'mos-mqtt-broker', uid: 969, gid: 969, shell: '/usr/sbin/nologin' },
+]
 
 export function packedRootFixture(board: Board): RootFixture {
   const dir = mkdtempSync(join(tmpdir(), 'mos-root-fixture-'))
   const root = join(dir, 'root')
-  mkdirSync(root, { recursive: true })
+  mkdirSync(root)
   seedHealthyRoot(root, board)
-
-  // The fixture's own meta/, so the suite never reads the real one: whether
-  // THIS host has built an image, and whether its material happens to be
-  // generated, must not decide a verdict. PRODUCTION-shaped by default --
-  // material present, no GENERATED marker -- because that is the released state
-  // the healthy fixture stands for; a test that wants the development branch
-  // writes the marker itself.
-  //
-  // Only the PUBLIC half is seeded. meta/rauc/ca.key.pem and
-  // meta/updates/root.key are absent here on purpose: they never reach an image
-  // and no check reads them, so seeding them would put private material in a
-  // fixture to prove a property about a file that does not carry it.
-  const metaDir = join(dir, 'meta')
-  mkdirSync(join(metaDir, 'rauc'), { recursive: true })
-  mkdirSync(join(metaDir, 'updates'), { recursive: true })
-  writeFileSync(join(metaDir, 'rauc', 'ca.cert.pem'), FIXTURE_CA_CERT)
-  writeFileSync(join(metaDir, 'updates', 'manifest.json'), FIXTURE_META_MANIFEST)
-
-  const refuse = (what: string): never => {
-    throw new ToolOutputError(`the packed-root fixture has no ${what}; this check reads more than the tree.`)
-  }
-
-  const ctx: ImageContext = {
-    board,
-    image: join(dir, '(no image)'),
-    tools: NO_TOOLS,
-    workDir: dir,
-    outDir: dir,
-    metaDir,
-    gpt: async () => refuse('partition table'),
-    partition: async () => refuse('partition table'),
-    fatSlot: async () => refuse('FAT slots'),
-    extractAt: async () => refuse('image byte ranges'),
-    extract: async () => refuse('extracted partition payloads'),
-    unpackRoot: async () => root,
-  }
-
-  return { ctx, root, dispose: () => rmSync(dir, { recursive: true, force: true }) }
+  const ctx: ImageContext = { board, image: '(fixture)', tools: NO_TOOLS, workDir: dir, outDir: dir, unpackRoot: async () => root }
+  return { root, ctx, dispose: () => rmSync(dir, { recursive: true, force: true }) }
 }
-
-// ---------------------------------------------------------------- ELF fixtures
-//
-// PLAN-086 S2's checks read ELF section tables and the GNU build-id note out of
-// the packed root, so driving them needs files that ARE ELF. Copying a real
-// binary in would be 40 MB of vendored artefact whose sections nobody chose;
-// this writes the smallest thing `verify/src/elf.ts` has to be able to read, and
-// the test decides which sections it has -- which is the only way to drive
-// "still carries .debug_info" and "carries no build-id" at all.
-
-/** ET_EXEC. */
 export const ELF_TYPE_EXEC = 2
 /** ET_REL -- what a kernel module is. */
 export const ELF_TYPE_REL = 1

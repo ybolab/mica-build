@@ -15,19 +15,19 @@
 // nothing on a machine that is not.
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { loadGeometry } from './geometry.ts'
+import { parseBoardEnv } from './verify-package.ts'
 import { makeWorkDir, REPO_ROOT } from './paths.ts'
 import { inUseInodes, pinSeededTimes, refuseUnlessCountsAgree, timeCommands } from './pin-seeded-times.ts'
 import { OPEN_TIMEOUT_MS, TOOL_TIMEOUT_MS } from './testing.ts'
 import { Toolbox } from './toolbox.ts'
-import { CX3576_ASSEMBLY } from './toolsets.ts'
+import { FILE_IMAGE_TOOLS } from './file-image.ts'
 import { debugfsApply, dumpe2fsFull, dumpe2fsHeader, mke2fs } from './tools/e2fsprogs.ts'
 import { truncate } from './tools/dd.ts'
 
-const g = loadGeometry('cx3576')
-const FILE_MTIME = g.ext4.fileMtime          // @1577836800
+const env = parseBoardEnv(readFileSync(join(REPO_ROOT, 'boards/cx3576/board.env'), 'utf8'), 'board.env').values
+const FILE_MTIME = env.get('FILE_MTIME')!          // @1577836800
 const PINNED_EPOCH = 1577836800
 
 let tb: Toolbox
@@ -35,7 +35,7 @@ let dir: string
 
 beforeAll(async () => {
   dir = makeWorkDir('pin-times')
-  tb = await Toolbox.open(CX3576_ASSEMBLY, { mounts: [REPO_ROOT] })
+  tb = await Toolbox.open(FILE_IMAGE_TOOLS, { mounts: [REPO_ROOT] })
 }, OPEN_TIMEOUT_MS)
 
 afterAll(async () => {
@@ -61,10 +61,10 @@ async function seededImage(name: string, seedDir: string): Promise<string> {
   await mke2fs(tb, {
     image,
     label: 'ephemeral',
-    uuid: g.requirePartition('EPHEMERAL').require('FS_UUID'),
-    blockSize: g.ext4.blockSize,
-    features: g.ext4.features,
-    fakeTime: g.ext4.fakeTime,
+    uuid: env.get('DATA_FS_UUID')!,
+    blockSize: BigInt(env.get('EXT4_BLOCK_SIZE')!),
+    features: env.get('EXT4_FEATURES')!,
+    fakeTime: env.get('E2FSPROGS_FAKE_TIME')!,
     seedDir,
   })
   return image

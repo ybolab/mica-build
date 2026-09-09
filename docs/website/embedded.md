@@ -40,7 +40,7 @@ carries the features the OS depends on.
 
 A device must become configurable before it has a network, an account or a
 cloud to phone. mos provisions itself: the first boot seeds a device identity
-and its settings onto the writable STATE partition, and a validated
+and its settings under DATA/state, and a validated
 provisioning document placed on the boot partition or a removable medium can
 carry a first configuration — network, credential, hostname — onto a unit that
 has never seen a network. The whole journey, from choosing an artifact through

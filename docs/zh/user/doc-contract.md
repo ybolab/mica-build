@@ -17,7 +17,7 @@ mos 是嵌入式一体机操作系统。用户文档服务三类读者，按此�
    路线图之间诚实的边界。
 
 工程设计记录保留在 [`docs/design/`](../README.md) 和
-[`docs/architecture.md`](../architecture.md)。用户页面陈述当前受支持的
+[`docs/architecture.md`](../../architecture.md)。用户页面陈述当前受支持的
 行为并链接回设计记录以获得理由；它们不复述设计历史，设计理由也不在这里
 重复。
 

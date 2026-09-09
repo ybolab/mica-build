@@ -8,7 +8,6 @@
       "url": "https://snapshot.debian.org/archive/debian/20260905T000000Z/pool/main/u/util-linux/libuuid1_2.41-5_amd64.deb",
       "consumers": [
         "base",
-        "mos-rauc",
         "mos-system"
       ]
     },
@@ -19,7 +18,6 @@
       "url": "https://snapshot.debian.org/archive/debian/20260905T000000Z/pool/main/u/util-linux/libuuid1_2.41-5_arm64.deb",
       "consumers": [
         "base",
-        "mos-rauc",
         "mos-system"
       ]
     }

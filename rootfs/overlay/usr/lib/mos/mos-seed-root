@@ -1,11 +1,8 @@
 #!/bin/sh
 # Seed the persistent root home directory on the DATA partition.
 #
-# root.mount binds /mos/root onto /root. DATA rather than STATE because a root
-# home accumulates USER DATA of unbounded size -- shell history, a scratch
-# script, a staged update bundle at ~72 MiB against a 64 MiB STATE partition --
-# and DATA is the only tier systemd-repart grows. See root.mount for the full
-# reasoning.
+# root.mount binds /mos/root from the growing DATA filesystem.
+# The physical source is created before its mount and retains existing files.
 #
 # ORDERING. This writes ONLY under /mos, never under /root, and it runs BEFORE
 # root.mount. Both halves matter:

@@ -11,7 +11,6 @@
         "mos-bluetooth",
         "mos-mqtt-broker",
         "mos-mqttd",
-        "mos-rauc",
         "mos-system",
         "mos-wifi",
         "mosd"
@@ -28,7 +27,6 @@
         "mos-board-cx3576",
         "mos-mqtt-broker",
         "mos-mqttd",
-        "mos-rauc",
         "mos-system",
         "mos-wifi",
         "mosd"

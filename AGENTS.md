@@ -8,7 +8,7 @@ update this file.
 ### Skill stack
 
 - `/pma` — workflow control, three-phase gate, task and plan tracking
-- `/pma-rust` — `pkgs/mosd/` (mosd, apid, mos-mqttd, broker, settings), `pkgs/rauc-sign/`
+- `/pma-rust` — `pkgs/mosd/` (mosd, apid, mos-mqttd, broker, settings), `pkgs/mos-deploy/`
 - `/pma-bun` — `verify/`, `build/`, `update-server/`, `pkgs/mosd/tests/apid-api/`
 - `/pma-web` — `pkgs/mosd/apid/ui/` (React + Vite, embedded into apid)
 
@@ -26,9 +26,9 @@ the fast path; everything else waits for explicit approval such as `proceed`.
 ### Project-specific facts
 
 - Primary language / runtime: Rust `1.96` (`pkgs/mosd/Cargo.toml` `rust-version`); Bun `1` pinned by digest as `IMAGE_BUN_1` in `build-env/images.env`
-- Database / storage: none — mosd persists to the `state` and `meta` partitions as files (`docs/design/`)
+- Database / storage: none — mosd persists to `DATA/state` and `DATA/meta` as files (`docs/design/`)
 - Dev URL routing: not used; the API is exercised through `pkgs/mosd/tests/apid-api/` against a QEMU guest
-- Deployment target: embedded Linux images (squashfs + dm-verity root, RAUC A/B) for the boards under `boards/`
+- Deployment target: embedded Linux images (signed file deployments, independent kernel/support and root components) for the boards under `boards/`
 - Quality-gate command: `make docs-verify` for documentation; the full gate set is the `make os-*` targets `.github/workflows/check.yml` runs — there is no single aggregate target yet (see `docs/decisions/`)
 - Fast path: enabled (default)
 

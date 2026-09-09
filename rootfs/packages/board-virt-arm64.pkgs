@@ -1,17 +1,2 @@
-# The virt-arm64 board's packages: its kernel and the rendered layout files for
-# the QEMU/aarch64 UEFI target.
-#
-# Two entries and not one, because they are two decisions. mos-board-virt-arm64
-# is the layout -- /etc/fstab, the ESP mount unit, the RAUC grub configuration
-# -- and moves when boards/virt-arm64/board.env does. mos-kernel-virt-arm64 is
-# the kernel this repository builds from boards/virt-arm64/bsp, and moves when
-# its pin or its config does. The split is x64's, and for x64's reason: a
-# kernel bump and a layout change are different reviews.
-#
-# NAMED HERE ALTHOUGH mos-board-virt-arm64 ALREADY DEPENDS ON IT. A package
-# reachable only through another package's Depends is one no resolution names,
-# so it never appears in _out/<board>/rootfs-packages.txt and
-# tests/rootfs-manifest-test.sh reports it unreachable -- which is the right
-# answer for a package nothing selects and the wrong one for the kernel.
+# Board storage policy; kernel components are packaged independently.
 mos-board-virt-arm64
-mos-kernel-virt-arm64

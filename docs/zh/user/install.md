@@ -1,191 +1,62 @@
-# 安装
+# 安装当前开发镜像
 
-安装 mos 就是把一个完整磁盘镜像写到设备的存储上。镜像携带全部分区——引导
-加载区、两个 A/B 槽，以及全新的 META、STATE 和 DATA 文件系统——因此
-**安装是破坏性的：它替换目标磁盘上的一切**，包括之前的配置、凭据和应用
-数据。不存在从运行中的系统就地升级到全新安装的路径；已经在跑 mos 的设备
-走的是 [update-rollback.md](update-rollback.md)，不是本页。
+使用刚构建的完整 MOS 镜像，目标为 x64、virt-arm64 或 cx3576。不提供旧分区布局
+转换或升级路径。完整写入替换镜像覆盖范围内的系统及数据，需要保留的文件先另存。
 
-本页是按板卡和 profile 划分的安装旅程：选择产物、验证它、烧写它、抵达首次
-启动、识别"它成功了"，以及在它没成功时如何回到恢复路径。本页只写这个仓库
-能证明的东西。**本页没有任何一次安装是在物理硬件上执行过的**——cx3576
-板卡档案里每一条依赖硬件的验收行都是 `not tested`，x64 的证据只有 QEMU 和
-CI。第 7 节会按步骤把这条边界再讲一遍，好让略读的读者也不会误解。
+> status: shipped — evidence: `build/src/file-image.ts`, `boards/x64/board.env`, `boards/virt-arm64/board.env`, `boards/cx3576/board.env`
 
-## 1. 选择产物
+## 准备并识别
 
-三个维度，都在构建时固定，之后都不可选：
-
-- **板卡**——一个镜像只为一块板卡构建，在别的板卡上不会启动。现有两块板卡：
-  `cx3576`（CX3576-Z，Rockchip RK3576，arm64）和 `x64`（通用 UEFI
-  x86_64）。
-- **Profile**——`dev` 或 `prod`，不可变地写进 verity 根，因此生产设备无法被
-  改成开发设备。两者都默认关闭 SSH，出厂 shadow 文件里也都没有可用的 root
-  密码；profile 今天不决定任何访问相关的事。
-- **版本**——镜像以构建 epoch 命名。发布版的选择与组成由
-  [download.md](download.md) 负责。
-
-你要的产物是 `_out/<board>/<board>-mos-<epoch>.img`，或旁边的
-`<board>-mos-latest.img` 符号链接。
-
-> status: board-dependent — evidence: `boards/cx3576/board.env`, `boards/x64/board.env`, `rootfs/packages-src/profile`
-
-## 2. 写入之前先验证
-
-如果你拿到的是一个发布目录，先在那里查：它带有 `SHA256SUMS` 和一份固定了
-每个产物摘要的清单，具体命令见 [download.md](download.md) 第 4 节。没有的是
-把发布版发布出去的地方，所以通过其他任何途径到你手上的镜像，都没有可以对照
-的摘要。
-
-无论哪种情况，都要跑镜像契约检查：它打开装配好的镜像，逐项断言分区表、
-槽内载荷、verity 参数和信任材料，红的那一项会说明它读到了什么、期望什么。
+使用确切板卡的镜像，通过可信交付取得元数据公钥，再验证：
 
 ```sh
-make os-verify-cx3576                        # cx3576
-bash verify/run.sh --verify --board x64      # x64
+bash verify/run.sh --verify --board x64 \
+  --image /path/to/image/disk.img --public-key /path/to/metadata-public.key
 ```
 
-不要跳过 keyring 的判定。构建时找不到签名材料会生成开发信任根，验证器会
-报出它读到的等级；**开发 keyring 的镜像是台架镜像，不得烧进任何会离开你
-桌面的设备**（`docs/design/manufacturing.md` 第 1 节把这条写成了工厂规则）。
+只为对应板卡的产物替换 `--board`。该检查验证签名对象和布局，不注册平台启动密钥。
+启动签名者必须被该 UEFI 平台或强制 FIT 签名的 U-Boot 接受；开发密钥不代表生产信任。
 
-> status: shipped — evidence: `make os-verify-cx3576`, `verify/run.sh`
+> status: shipped — evidence: `verify/src/file-image.ts`, `docs/design/key-delivery.md`
 
-## 3. 明白这次写入会毁掉什么
+## x64 与 virt-arm64
 
-在任何板卡上写下第一个字节之前：
-
-- **目标磁盘上的每个分区都会被替换。**设置、管理员凭据、SSH 主机密钥、
-  设备身份和每设备密钥都在 STATE 上，没了。应用数据和操作者文件在 DATA
-  上，没了。更新记账在 META 上，没了。
-- **设备会拿到一个新身份。**身份是首次启动时在设备上抽取的，永不重新签发，
-  所以回来的这台是另一台设备，任何按 `deviceId` 记录它的系统都对不上了
-  （`docs/design/manufacturing.md` 第 5 节）。车队侧记录必须人工重新关联。
-- **重刷不等于擦除。**上一次首次启动时 DATA 已经扩展到镜像范围之外；把
-  镜像写回去只覆盖它自己的范围，超出部分的块保留原内容，只是新文件系统
-  不再引用它们。要处置、转售或退回的设备需要销毁介质，而不是重刷——
-  [recovery.md](recovery.md) 第 5、6 节是这条规则的正文，这里只是指路。
-- **先收集证据。**如果设备还能启动，先按
-  [troubleshooting.md](troubleshooting.md) 收集，再烧写；烧写会把故障连同
-  其他一切一起销毁。
-
-> status: shipped — evidence: `docs/design/access.md`, `docs/design/manufacturing.md`
-
-## 4. x64（通用 UEFI）
-
-x64 镜像是面向任何 UEFI x86_64 机器的普通 GPT 磁盘镜像。固件找到 ESP，
-GRUB 选择活动槽；没有板卡侧烧写工具，因为没有任何板卡特定的东西需要烧写。
-
-**在 QEMU 里——经过测试的那条路。**测试装置启动构建出的镜像，转发 apid 的
-HTTPS 端口，通过真实套接字驱动管理 API。它既是启动 x64 镜像的受支持方式，
-也是 API 验收套件：
+使用平台写盘工具向明确识别的一次性目标介质写入完整镜像，刷新缓存并回读比较后
+启动。UEFI 使用可移动介质 EFI 入口。磁盘包含 ESP/SYSTEM/DATA，仅 DATA 扩容。
 
 ```sh
-bash pkgs/mosd/tests/apid-api/run.sh --dry-run   # 只检查前置条件
-bash pkgs/mosd/tests/apid-api/run.sh             # 启动并跑套件
+MOS_BOARD=x64 MOS_QEMU_IMAGE=/path/to/image/disk.img \
+MOS_QEMU_BOOT_CERT=/path/to/boot-signer.cert.pem \
+  bash pkgs/mosd/tests/apid-api/run.sh
 ```
 
-> status: shipped — evidence: `pkgs/mosd/tests/apid-api/run.sh`, `boards/x64/grub.cfg`
+虚拟验收使用全新副本和显式启动公钥证书。ARM64 改为 `MOS_BOARD=virt-arm64` 并使用
+对应产物；物理 PC 的平台密钥注册由平台操作者管理。
 
-**在物理 UEFI 机器上。**在目标机上启动任意 live 介质，用原始镜像工具
-（`dd` 或等价物）把镜像写到整盘，然后重新上电从内置磁盘启动。mos 既不配置
-固件也不配置它的启动菜单：机器从哪个设备启动、Secure Boot 是否接受这个
-镜像，都是平台所有者的设置，mos 对此不作任何声明。**这条路径从本仓库出发
-从未在物理机器上跑过**；它就是 QEMU 那条路换了介质位置，没有任何板卡档案
-记录过它在哪台机器上成功过。
+> status: board-dependent — evidence: `pkgs/mosd/tests/apid-api/src/qemu.ts`, `docs/design/release-signing.md`
 
-> status: board-dependent — evidence: `boards/x64/board.env`
+## cx3576
 
-## 5. cx3576（CX3576-Z，Rockchip RK3576）
+通过本地台架板的 RockUSB loader/maskrom 接口操作，写入前识别所连接设备。
 
-cx3576 从 eMMC 启动，镜像通过 USB 走 Rockchip loader（"rockusb"）路径写入：
+```sh
+make -C boards/cx3576/bsp flash-mos MOS_IMAGE=/path/to/image/disk.img
+```
 
-1. **进入 loader 模式。**上电时按住 recovery 键。在已经运行 mos U-Boot 的
-   板卡上，找不到可用槽的启动会自己落入 rockusb。
-2. **写入镜像。**板卡通过 USB 连接后：
+预检先检查当前 GPT 和 loader 位置。写入后比较全部镜像字节，回读不符时保持恢复
+接口而不复位。固件从 LBA 64 开始，其保留分区还包含两份启动尝试记录。
 
-   ```sh
-   make -C boards/cx3576/bsp flash-mos
-   ```
+实际 loader/maskrom 进入、刷写、启动、看门狗和断电恢复仍需台架验收。主机桩测试
+只证明预检及回读控制流程，不能作为某块实物板已刷写或启动的证据。
 
-   它用 `rkdeveloptool wl 0` 把 `_out/cx3576/cx3576-mos-latest.img` 写进
-   eMMC——要写别的构建就传 `MOS_IMAGE=<文件>`——然后**把整个镜像从板卡读
-   回来，和刚写下去的那个文件逐字节比对**，比对通过之后才复位板卡。
-   `make flash` 和 `make flash-maskrom` 对 BSP 的 Alpine 演示镜像做同样
-   的事。
-3. **重新上电。**U-Boot 从扇区 64 启动，带着每槽尝试计数器走 `BOOT_ORDER`，
-   引导槽 A。
+> status: board-dependent — evidence: `boards/cx3576/bsp/Makefile`, `boards/cx3576/bsp/scripts/verify-flash.py`, `docs/task/20260908-2229-file-ab-delivery-x64-first.md`
 
-**回读覆盖什么，又证明了什么。**覆盖写下去的那个文件的每一个字节，比对的对象
-就是那个文件本身，而不是由它重新算出来的校验和；比对发生在 `rkdeveloptool rd`
-之前——所以出现差异时，整个流程停在板卡仍处于 loader 模式的时刻，重写一遍只
-需要一条命令。它之所以存在，是因为有一次烧写报告成功，却把启动分区里的内核
-留成了两次构建的混合体，板卡死在 `paging_init`：当时的回读只覆盖前 16 MiB，
-而损坏在它之后 22 MiB 处。**没有任何一次针对板卡的运行被记录下来**——主机
-这一侧是拿一个桩工具测的，`rkdeveloptool` 那几条调用本身从未在这棵树里被
-执行过。
+## 首次启动及恢复
 
-如果 loader 区本身不可启动——刷过 pre-A/B 镜像的板卡，或一次被打断的 loader
-写入——BootROM 会通过 USB 呈现 **maskrom**，`rkdeveloptool` 从那里重刷。
-这是最后手段，也是工厂烧写路径。
+正常启动认证部署并挂载匹配的签名 root/support，在 DATA 上建立持久身份、扩容
+DATA 并启动管理服务。健康确认保留可用回退部署，后续操作见[更新](update-rollback.md)。
 
-两种进入 loader 模式的入口都在树里，也都没有在台架单元上作为安装流程被
-执行过：板卡档案的 Recovery method 一节描述了它们，而它的验收矩阵里
-`Recovery` 一行是 `not tested`。
+共享存储缺失或损坏、启动记录全部耗尽时必须显式恢复。不会无签名重试、读取旧布局、
+重建默认凭据或悄悄补充尝试次数。见[恢复](recovery.md)及[存储](storage.md)。
 
-> status: board-dependent — evidence: `boards/cx3576/bsp/Makefile`, `boards/cx3576/bsp/scripts/verify-flash.sh`, `boards/cx3576/boot.cmd`, `docs/bsp/cx3576-example.md`
-
-## 6. 首次启动，以及"它成功了"长什么样
-
-从空 STATE 的首次启动在没有任何网络的情况下做三件事：
-
-- **DATA 扩展到占满磁盘。**镜像只保留一小段尾部；`systemd-repart` 把 DATA
-  边界外移，文件系统随之扩展。扩展是单向的，没有东西会把它缩回去。
-- **设备完成自我配置**——设备 id、主机名、每设备密钥、SSH 主机密钥——全都
-  在设备上生成，没有一样烤进镜像。[first-run.md](first-run.md) 负责讲这件
-  事，包括可以在这一步之前预置配置的离线配置文档。
-- **健康闸运行。**它探测 systemd、mosd 和 apid，全部通过时才确认已启动的槽
-  并给它重新充满启动信用。
-
-一次成功的安装是可观察的，按这个顺序：
-
-| 检查 | 在哪看 | 好的结果是什么 |
-|---|---|---|
-| 引导加载器选了一个槽 | 串口控制台（cx3576）或外接显示器（x64） | 一行 `mos: booting slot …`，没有反复复位 |
-| 这次启动被确认了 | `journalctl -u mos-health` | 每一项探测都通过，确认动作跑了 |
-| 设备给自己命名了 | DHCP 服务器的租约列表，或控制台上的 `hostnamectl` | 形如 `mos-xxxxxxxx` 的主机名 |
-| 管理面在应答 | `https://<address>/api/v1/session` | 尚未被认领的设备返回 `state: "setup"` |
-| 控制台可达 | `https://<address>/_ui/` | 设置界面，前面挡着一个首次访问必然出现的自签名证书警告 |
-
-一直复位而没有稳定下来的设备并没有装好：去
-[recovery.md](recovery.md) 第 2 节，那里解读这个症状。
-
-> status: shipped — evidence: `make os-repart-test`, `rootfs/overlay/usr/lib/mos/mos-health`, `pkgs/mosd/apid/openapi.json`
-
-## 7. 如何回到恢复路径，以及哪些没有被证明
-
-**每块板卡的退路**就是你安装时用的那条传输通道，它位于操作系统之下：
-
-- **cx3576**——上电时按 recovery 键，或者没有槽能启动时自动落入 rockusb；
-  loader 区也没了时用 maskrom。这些能挺过死掉的 rootfs 和损坏的引导环境。
-- **x64**——没有带内 loader 模式。退路是平台自己的启动菜单加另一份介质，
-  或者把磁盘拿到另一台机器上。
-
-**上面没有一步在硬件上做过。**这条安装旅程是从代码树和 QEMU 写出来的：
-x64 的 QEMU 启动和它的 API 套件在 CI 里跑，repart 扩展逻辑和 U-Boot 握手
-脚本各有一个主机侧测试，这些都不是一台烧过的板子。没有任何板卡档案的行
-记录过在物理硬件上执行的安装、首次启动或恢复入口。请把本页每一步都当作
-等待在第一台台架单元上验证的流程，并把结果记进板卡档案：
-`docs/bsp/qualification.md` 第 13 行是一次安装及其首次启动的落点（并写明是在
-哪个 profile 上跑的），第 12 行是恢复入口的落点。
-
-> status: board-dependent — evidence: `docs/bsp/qualification.md`, `docs/bsp/cx3576-example.md`
-
-## 8. 工厂侧安装
-
-在制造环节注入配置不是上面步骤的一个变体：它是配置文档，在烧写后的首次
-启动时应用，由 [first-run.md](first-run.md) 第 3 节负责。围绕它的归属规则
-——谁生成身份、工厂保留哪些记录、过站失败的单元怎么办——在
-[manufacturing.md](manufacturing.md)。
-
-> status: shipped — evidence: `pkgs/mosd/mosd/src/provisioning_doc.rs`, `docs/design/manufacturing.md`
+> status: shipped — evidence: `pkgs/mos-deploy/src/bin/mos-init.rs`, `rootfs/overlay/usr/lib/mos/mos-health`

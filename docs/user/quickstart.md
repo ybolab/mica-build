@@ -1,85 +1,69 @@
 # Quickstart
 
-The shortest honest path to a running mos system is the x64 board — a generic
-UEFI x86_64 target that boots in QEMU with no hardware, no flashing tool and no
-cross toolchain. It is the CI baseline, and everything it proves about the OS
-core, the management plane and the API is the same code that ships on real
-boards. What it deliberately does not exercise is a bootloader: the A/B U-Boot
-handshake is a cx3576 fact, and a green QEMU run says nothing about it.
-
-There is no hosted download today, so the quickstart builds the image from
-source. See [download.md](download.md) for what a release consists of and
-[install.md](install.md) for real hardware.
+Start with x64 under QEMU. It boots the complete current system through UEFI
+Secure Boot, systemd-boot and a signed kernel package. virt-arm64 uses the same
+flow with ARM64 artifacts. Physical cx3576 qualification is a separate step.
 
 ## 1. Prerequisites
 
-An amd64 Linux host with docker (with buildx), bash, make and git. Nothing
-else: no toolchain is installed on the host, and every compiler comes out of a
-builder image pinned by digest.
+Use Docker with buildx, Bash, Make and git. Compilers, signing tools and filesystem
+makers run in the pinned build containers. The Bun orchestration drivers also
+support a pinned container. There is no hosted public image download.
 
 > status: shipped — evidence: `docs/design/build.md`, `build-env/images.env`
 
-## 2. Build the image
+## 2. Build the complete image
 
-In order, from the repository root:
-
-```sh
-MOS_BUILD_PLATFORM=linux/amd64 bash build-env/build.sh   # builder images
-make os-debs                                             # the package pool
-MOS_BOARD=x64 bash rootfs/build.sh                       # the rootfs slot
-bash build/run.sh --mkimage-uefi --board x64                          # the A/B disk image
-bash verify/run.sh --verify --board x64                  # the image contract
-```
-
-Notes worth knowing before the first run:
-
-- `make os-debs` builds every mos Debian package. The `rauc` and `podman`
-  producers compile their upstreams on first run; podman alone is roughly
-  three quarters of an hour. Later runs reuse the build cache.
-- A build that finds no signing material generates a development trust root in
-  the repository-root `meta/` directory and says so loudly. That image trusts a
-  development keyring, and the verifier says so in its verdict.
-- Each step refuses missing or stale inputs by name rather than rebuilding
-  them silently; the refusal messages name the command to run.
-
-The result is `_out/x64/x64-mos-latest.img`, a whole-disk A/B image.
-
-> status: shipped — evidence: `make os-debs`, `make os-rootfs-x64-composed`, `docs/design/build.md`
-
-## 3. Boot it in QEMU
-
-The QEMU harness under `pkgs/mosd/tests/apid-api/` boots the built image with
-apid's HTTPS port forwarded and drives the management API over a real socket —
-it is both the supported way to boot the x64 image and the API acceptance
-suite. It builds nothing and refuses a missing image by name:
+Follow [the component build sequence](../design/build.md): build the package pool
+and BSP kernel, compile native init, compose root, package kernel/support and
+firmware, sign two deployment records, and assemble a new factory image.
+Supply separate boot/content/metadata signing inputs explicitly. Public factory
+defaults are a separate root-composition input. Missing inputs fail; builds do
+not generate keys or convert an existing system implicitly.
 
 ```sh
-bash pkgs/mosd/tests/apid-api/run.sh --dry-run   # check preconditions, boot nothing
-bash pkgs/mosd/tests/apid-api/run.sh             # boot and run the API suite
+MOS_BUILD_PLATFORM=linux/amd64 bash build-env/build.sh
+make os-deb-preflight
+# See the build guide for the component inputs and architecture-specific steps.
+bash build/run.sh --components --help
 ```
 
-To pre-seed configuration into the image's STATE partition before a boot —
-for example a Quadlet container definition — use
-`bash tools/qemu-seed-state.sh`; its header documents the order of operations.
+The resulting `disk.img` has ESP, SYSTEM and DATA. Keep its signed deployment
+records, public metadata keys, public boot certificate and component directories
+with the test evidence. Every test starts from a complete current image.
 
-> status: shipped — evidence: `pkgs/mosd/tests/apid-api/run.sh`, `tools/qemu-seed-state.sh`
+> status: shipped — evidence: `build/src/component-cli.ts`, `docs/design/build.md`
+
+## 3. Run the QEMU API acceptance suite
+
+```sh
+MOS_BOARD=x64 MOS_QEMU_IMAGE=/path/to/image/disk.img \
+MOS_QEMU_BOOT_CERT=/path/to/public-boot.cert.pem \
+  bash pkgs/mosd/tests/apid-api/run.sh
+```
+
+The harness copies the image, seeds its DATA test service units and enrolls
+throwaway Secure Boot variables. It boots through firmware and exercises the
+HTTPS API. It requires explicit image and certificate paths. Use `--dry-run`
+with the same inputs to check prerequisites without starting the guest.
+
+For isolated offline DATA fixtures, `tools/qemu-seed-data.ts` accepts bounded
+regular files below `/state` and explicitly enabled seeded service units. Run it
+only on a disposable image before boot; its CLI prints the accepted arguments.
+
+> status: shipped — evidence: `pkgs/mosd/tests/apid-api/run.sh`, `tools/qemu-seed-data.ts`
 
 ## 4. First contact
 
-On first boot the device provisions itself with no network input: it mints its
-identity, names itself `mos-` followed by the first eight hex characters of its
-device id, and brings up DHCP on wired interfaces. The management surface is
-apid over HTTPS; the built-in UI is at `/_ui/`, and the first visit runs setup —
-creating the administrator credential. SSH ships off by default.
+The first boot creates a machine identity on DATA before services start. mosd
+initializes its device identity and configuration, wired interfaces use DHCP,
+and apid serves HTTPS. The UI at `/_ui/` guides administrator setup. SSH is off
+by default. See [first run](first-run.md) and [configuration](configuration.md).
 
-See [first-run.md](first-run.md) for the whole first-boot story and
-[configuration.md](configuration.md) for what can be configured afterwards.
+> status: shipped — evidence: `pkgs/mos-deploy/src/bin/mos-init.rs`, `docs/design/provisioning.md`, `pkgs/mosd/apid/openapi.json`
 
-> status: shipped — evidence: `docs/design/provisioning.md`, `pkgs/mosd/apid/openapi.json`
+## 5. Next steps
 
-## 5. Where to go next
-
-- Real hardware: [install.md](install.md), and for boards mos does not ship,
-  the porting manual at [../bsp/porting.md](../bsp/porting.md).
-- Updating a running device: [update-rollback.md](update-rollback.md).
-- Running applications: [applications.md](applications.md).
+- [Installation](install.md) covers complete images and physical boards.
+- [Update and rollback](update-rollback.md) describes signed deployments.
+- [Applications](applications.md) covers workloads and persistent data.

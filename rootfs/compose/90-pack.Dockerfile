@@ -79,7 +79,7 @@ RUN dpkg-query -W -f='${Package}\t${Installed-Size}\n' > /rootfs-report.pkgs
 # The purge below takes /var/lib/dpkg away, so on the device this file is the
 # only record of what was installed and at which version -- and since the
 # upstream-versioned packages the version column actually says something
-# (mos-podman 5.8.6+git…, mos-rauc 1.13+git…). Sorted under LC_ALL=C so two
+# (mos-podman 5.8.6+git…, mos-deploy 0.1.0+git…). Sorted under LC_ALL=C so two
 # builds of one set are byte-identical. Written before the purge for the same
 # reason the inventory above is; verify asserts the file, its shape, and
 # the one git stamp its mos rows share.
@@ -88,16 +88,7 @@ RUN install -d -m 0755 /usr/share/mos && \
     dpkg-query -W -f='${Package}\t${Version}\t${Architecture}\n' | LC_ALL=C sort; } \
     >/usr/share/mos/manifest.tsv
 
-# The exact RAUC the image will run, recorded so the thing that BUILDS bundles
-# can refuse to build one with a different version.
-#
-# The bundle format and the slot model are a contract between two programs that
-# never meet: rauc on a build machine writes the bundle, rauc on the device
-# installs it, and nothing else makes them the same version. A bundle builder
-# on rauc 1.8 refuses this board's slot model outright.
-#
-# /rootfs-report.rauc is written where rauc is INSTALLED, further up, from the
-# version pkgs/rauc/ pinned; there is no rauc package to query.
+
 
 # The package-manager logs, taken out of the tree before the purge below
 # removes them. They are not image content and never were -- the packed root
@@ -180,7 +171,7 @@ RUN --mount=type=bind,source=rootfs/scripts,target=/mos-scripts \
 
 # Remove package management from the packed root. Nothing can install a
 # package on this device: the root is a read-only dm-verity squashfs and
-# updates arrive as whole RAUC slots, so apt, dpkg and the perl-base dpkg
+# updates replace immutable signed root objects, so apt, dpkg and the perl-base dpkg
 # pre-depends on are build-time tools. Shipping them costs ~21 MB of dead
 # weight and hands a working package manager to anyone who reaches a shell on a
 # device whose whole security model is that its root cannot change. The
@@ -247,10 +238,7 @@ RUN --mount=type=bind,source=rootfs/scripts,target=/mos-scripts \
 # much and the budget gate would weigh a root nothing flashes. It is measured
 # over /rootfs in `pack`, at the last moment before mksquashfs reads it, and
 # appended to this same report in this same position.
-RUN { cat /rootfs-report.pkgs; \
-      echo; \
-      echo "RAUC_VERSION $(cat /rootfs-report.rauc)"; \
-    } > /rootfs-report.txt && rm -f /rootfs-report.pkgs /rootfs-report.rauc
+RUN mv /rootfs-report.pkgs /rootfs-report.txt
 
 # Pack: squashfs-zstd + appended dm-verity hash tree.
 FROM --platform=$BUILDPLATFORM ${MOS_IMAGE_DEBIAN_BOOKWORM} AS pack
@@ -328,49 +316,20 @@ RUN --mount=type=bind,source=rootfs/scripts,target=/mos-scripts \
 # bind-mounts the file during RUN or because it would break dpkg.
 #  - /etc/resolv.conf -> /run, the only writable place with / read-only.
 #  - /etc/machine-id must exist and be empty: systemd cannot write it on a
-#    read-only /etc, and falls back to bind-mounting a transient id from /run
-#    over it. U-Boot passes systemd.machine_id= to make it stable.
-#  - /var becomes an empty mountpoint for EPHEMERAL; the built tree moves to
-#    /usr/share/factory/var, from where mos-seed-var restores it on first boot.
-
-#  - Except /var/tmp, which is created in that mountpoint on purpose. "Empty
-#    mountpoint" is right for everything a running system uses and wrong for
-#    the window before the mount: systemd-resolved.service is ordered
-#    `Before=sysinit.target`, so it starts ahead of local-fs.target and sees
-#    the image's own /var. Its PrivateTmp= mounts a tmpfs on both /tmp and
-#    /var/tmp, and a mount point that does not exist cannot be created on a
-#    read-only root -- the service dies with 226/NAMESPACE on every boot and
-#    every restart.
-
-#    Nothing about that failure names /var/tmp. The console says "[FAILED]
-#    Failed to start systemd-resolved.service" and the child's own message
-#    never reaches the journal, because it dies during namespace setup. What it
-#    costs is all DNS: /etc/resolv.conf is a symlink to resolved's stub, so the
-#    device cannot resolve an update server, an MQTT broker or a container
-#    registry. /var/tmp is created here and not with the other mountpoints
-#    above because this mkdir replaces /var wholesale, so anything an earlier
-#    stage put there is gone.
+#    read-only /etc. mos-init binds the persistent DATA identity over it
+#    before executing systemd.
+#  - /var remains an immutable skeleton. Required writable leaf mountpoints
+#    exist before systemd creates service mount namespaces.
 RUN --mount=type=bind,source=rootfs/scripts,target=/mos-scripts \
     sh /mos-scripts/pack-tree-surgery.sh
 
-# /var is declared DISPOSABLE (fixed-size EPHEMERAL, wipeable for log
-# cleanup), and that contract is only real if nothing that matters lives there.
-# Assert it instead of trusting the design: every precious path under /var must
-# be redirected onto STATE by a bind mount that is actually ENABLED, and its
-# mountpoint must exist in the factory /var that gets restored on first boot.
-# A silently-missing bind here would mean losing the apid admin password hash
-# or every Bluetooth pairing on a /var wipe.
+# Assert the immutable parent skeleton and every explicitly writable leaf.
+# Persistent sources live under DATA/state; disposable leaves use DATA/cache
+# or DATA/tmp under project quotas.
 RUN --mount=type=bind,source=rootfs/scripts,target=/mos-scripts \
     sh /mos-scripts/pack-assert-var-disposable.sh
 
-# The writable unit directory for third-party extensions. Deliberately NOT
-# folded into the loop above: that loop is about /var being disposable and ends
-# by requiring a /usr/share/factory template, which is right for /var/lib/mos
-# and wrong here -- there is no factory content for this directory and, by
-# design, no seed copy at all. What this defends is different too: the bind is
-# what makes a third-party unit survive a reboot, and its mountpoint cannot be
-# created at runtime on a verity root, so a missing directory here is a mount
-# unit that fails at boot rather than a feature that quietly does nothing.
+# Persistent extensions require a pre-existing mountpoint on the immutable root.
 RUN --mount=type=bind,source=rootfs/scripts,target=/mos-scripts \
     sh /mos-scripts/pack-assert-extension-dir.sh
 
@@ -417,25 +376,8 @@ RUN --mount=type=bind,source=rootfs/scripts,target=/mos-scripts \
 # reads /rootfs, so a removal made after any of it would be a removal none of
 # those numbers describe.
 
-# THE BOOT INPUTS. The kernel a slot boots lives on the boot partition and the
-# bootloader lives in the loader region, so a second copy inside the
-# verity-protected root is 54 MB on cx3576 and 53 MB on a UEFI board that no
-# running system reads. They stay in the board and kernel PACKAGES -- that is
-# what makes "which blobs was this image assembled from" a property of the
-# package set rather than of the directory the build was run beside, which is
-# the argument boards/cx3576/deb/board-cx3576/Dockerfile records -- and this is
-# the finalizer performing the export that argument always described. GRUB has
-# no squashfs driver, so on a UEFI board the kernel HAS to sit on the ESP as a
-# plain file; cx3576 has had the same arrangement from the start. Either way the
-# kernel is not covered by dm-verity, and what protects it is that RAUC replaces
-# the boot slot from the same signed bundle as the rootfs slot.
-#
-# _out/<board>/boot/ is now the ONE place the assembler and the bundle builder
-# read a boot input from -- build/src/mkimage-cx3576-cli.ts and
-# build/src/bundle-cli.ts both take it from there, where cx3576's half used to
-# reach back into BSP_OUT. The image contract's bsp-compare family still
-# compares each slot's Image and device tree against ${BSP_OUT}/kernel/, so the
-# export cannot drift from the BSP build without a check going red.
+# Root owns userspace only. Reject boot and support payloads in this tree;
+# independent kernel and firmware producers package them from explicit inputs.
 RUN --mount=type=bind,source=rootfs/scripts,target=/mos-scripts \
     MOS_BOARD="${MOS_BOARD}" sh /mos-scripts/pack-export-boot.sh
 
@@ -517,43 +459,13 @@ RUN --mount=type=bind,source=rootfs/scripts,target=/mos-scripts \
 # remaining source of variation and the pack stays reproducible with one pin
 # instead of two.
 #
-# --no-superblock is not an optimisation. This image is assembled by dm-init off
-# `dm-mod.create=` (rootfs/build.sh's write_cmdline), and a verity v1
-# table has no superblock concept: the kernel reads the block at
-# hash_start_block as the tree's TOP LEVEL. A superblock sits exactly there and
-# pushes the tree one hash block down, so every boot fails with
-# "device-mapper: verity: metadata block <n> is corrupted" -- deterministically,
-# on both boards, since x64's GRUB builds the same table. It went unseen because
-# `veritysetup verify` reads the superblock back by the same convention that
-# wrote it, so the gate and the artifact agreed with each other and both
-# disagreed with the kernel; verify's `verity-hash-start-no-superblock` is
-# the check that asks the kernel's question instead.
-#
-# The hash tree is appended to the squashfs in the same file via --hash-offset,
-# and the result is padded to a whole MiB because the image assembler dd's it
-# into the slot at a MiB boundary.
+# The native early loader uses the explicit no-superblock verity geometry
+# bound by the signed root descriptor. Append the tree after the SquashFS data.
 RUN --mount=type=bind,source=rootfs/scripts,target=/mos-scripts \
     sh /mos-scripts/pack-verity.sh
 
 
-# The factory /var tree, exported so the image assembler can seed EPHEMERAL at
-# assembly instead of copying it out on first boot. Seeding at runtime puts
-# mos-seed-var at the same moment as every other unit that writes /var: Debian
-# 13's systemd ships systemd-networkd-persistent-storage.service, which creates
-# /var/lib/systemd/network as soon as /var appears, the two race, and losing
-# the race fails the seed, which fails var-lib-mos.mount, which fails mosd,
-# apid and the health gate -- a first boot that looks like a device that will
-# not come up. Ordering against that one unit is a list to keep current.
-
-# A filesystem that is already seeded when it is first mounted has nothing to
-# race. mos-seed-var stays for the path where EPHEMERAL has been wiped, and its
-# ConditionPathExists on the stamp means it does not run otherwise. The tree is
-# 390 KB and 93 entries, so carrying it through the build costs nothing.
-RUN --mount=type=bind,source=rootfs/scripts,target=/mos-scripts \
-    sh /mos-scripts/pack-export-factory-var.sh
-
 FROM scratch AS artifact
-COPY --from=pack /out/factory-var/ /factory-var/
 COPY --from=pack /out/pkg-logs/ /pkg-logs/
 COPY --from=pack /out/rootfs-verity.img /
 COPY --from=pack /out/rootfs-verity.env /
@@ -568,7 +480,7 @@ COPY --from=pack /out/debug/ /debug/
 # The factory root as an OCI image.
 
 # Eleven artifacts in this image are built by this repository -- mosd, apid,
-# mos-mqttd, mos-mqtt-broker, rauc, podman, quadlet, crun, conmon, netavark,
+# mos-mqttd, mos-mqtt-broker, mos-deploy, podman, quadlet, crun, conmon, netavark,
 # aardvark-dns -- and "it linked" and "it runs" are different claims: a
 # wrong-architecture binary, a missing soname, or a version that does not match
 # the pin in versions.env all survive to first boot. The smoke runner executes

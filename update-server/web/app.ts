@@ -1,15 +1,6 @@
-import type { Release } from '../src/db/schema'
+import type { Deployment } from '../../build/src/components'
+import type { FirmwareView, ReleaseView as Release, Status } from '../src/modules/contract'
 
-interface Status {
-  revision: number
-  issuedAt: string
-  expiresAt: string
-  expired: boolean
-  manifestUrl: string
-  maxUploadBytes: number
-  metadataTtlHours: number
-  signing: { publicKey: string, keyId: string, generated: boolean }
-}
 interface AuditEvent { id: number, action: string, detail: string, createdAt: string }
 
 function element<T extends HTMLElement = HTMLElement>(id: string) {
@@ -36,11 +27,13 @@ const errors: Record<string, string> = {
   invalid_token: '管理员令牌不正确。',
   unauthorized: '登录已过期，请重新登录。',
   invalid_origin: '访问地址与服务配置的 PUBLIC_URL 不一致。请使用配置的地址登录。',
-  duplicate_epoch: '该板型与渠道已经存在这个 Epoch，请使用新的发布序号。',
-  epoch_not_increasing: 'Epoch 必须高于该板型与渠道曾经发布过的最高值。',
+  duplicate_generation: '该板型与渠道已经存在这个部署序号，请使用新的部署序号。',
+  generation_not_increasing: '部署序号必须高于该板型与渠道曾经发布过的最高值。',
   upload_too_large: '文件超过服务器的上传限制。',
-  immutable_artifact: '此草稿已上传文件。需要更换文件时，请创建新版本。',
-  not_publishable: '请先完成升级包上传，再发布草稿。',
+  immutable_object: '该组件已经上传，组件内容不可更换。',
+  invalid_deployment: '部署描述符的签名或组件元数据无效。',
+  invalid_firmware: '固件清单的签名、板型或写入范围无效。',
+  not_publishable: '请先完成组件上传，再发布草稿。',
   rate_limited: '尝试次数过多，请稍等一分钟再登录。',
   session_limit: '当前登录会话过多，请稍后重试。',
   internal_error: '服务器处理失败，请检查服务日志后重试。',
@@ -81,13 +74,18 @@ function formatDate(value: string) {
 }
 
 let releases: Release[] = []
+let firmwares: FirmwareView[] = []
+let createKind: 'releases' | 'firmware' = 'releases'
+let selectedFirmware: string | undefined
 let status: Status | undefined
 let selected: string | undefined
 let busy = false
 let createdDraft: string | undefined
 let toastTimer: ReturnType<typeof setTimeout>
 const statusLabels = { draft: '草稿', published: '已发布', withdrawn: '已撤回' }
-const actionLabels: Record<string, string> = { create: '创建草稿', upload: '上传升级包', publish: '发布版本', withdraw: '撤回版本', refresh: '清单续期' }
+const actionLabels: Record<string, string> = { create: '创建草稿', upload: '上传组件', publish: '发布版本', withdraw: '撤回版本', refresh: '清单续期' }
+for (const [action, label] of Object.entries({ create: '创建固件草稿', upload: '上传固件', publish: '发布固件', withdraw: '撤回固件' }))
+  actionLabels[`firmware-${action}`] = label
 
 function toast(text: string, error = false) {
   const box = element('toast')
@@ -135,7 +133,7 @@ function renderReleases() {
   const board = element<HTMLSelectElement>('board-filter').value
   const channel = element<HTMLSelectElement>('channel-filter').value
   const state = element<HTMLSelectElement>('status-filter').value
-  const filtered = releases.filter(release => (!search || `${release.version} ${release.epoch}`.toLowerCase().includes(search)) && (!board || release.board === board) && (!channel || release.channel === channel) && (!state || release.status === state))
+  const filtered = releases.filter(release => (!search || `${release.version} ${release.generation}`.toLowerCase().includes(search)) && (!board || release.board === board) && (!channel || release.channel === channel) && (!state || release.status === state))
   element('release-count').textContent = String(releases.length)
   element('published-count').textContent = String(releases.filter(release => release.status === 'published').length)
   element('draft-count').textContent = String(releases.filter(release => release.status === 'draft').length)
@@ -146,14 +144,14 @@ function renderReleases() {
     const row = node('tr')
     row.toggleAttribute('data-selected', selected === release.id)
     const version = node('button', release.version, 'version-button')
-    version.append(node('small', String(release.epoch)))
+    version.append(node('small', String(release.generation)))
     version.addEventListener('click', () => {
       selected = release.id
       renderReleases()
     })
     const versionCell = node('td')
     versionCell.append(version)
-    row.append(versionCell, node('td', release.board, 'mono'), node('td', release.channel, 'mono'), node('td', formatSize(release.size), 'size'))
+    row.append(versionCell, node('td', release.board, 'mono'), node('td', release.channel, 'mono'), node('td', formatSize(release.objects.reduce((sum, object) => sum + object.bytes, 0)), 'size'))
     const stateCell = node('td')
     stateCell.append(node('span', statusLabels[release.status], `badge ${release.status}`))
     const actionCell = node('td')
@@ -170,7 +168,7 @@ function renderReleases() {
   element('empty').hidden = filtered.length > 0
   const noReleases = releases.length === 0
   element('empty-title').textContent = noReleases ? '准备好第一次发布' : '没有匹配的版本'
-  element('empty-description').textContent = noReleases ? '创建版本，上传 RAUC 升级包，审核后发布到指定渠道。' : '尝试更换筛选条件或搜索关键词。'
+  element('empty-description').textContent = noReleases ? '创建版本，上传 签名部署和组件，审核后发布到指定渠道。' : '尝试更换筛选条件或搜索关键词。'
   element('empty-create').hidden = !noReleases
   renderDetail()
 }
@@ -194,24 +192,25 @@ function renderDetail() {
   heading.append(title, close)
   panel.append(heading, node('span', statusLabels[release.status], `badge ${release.status}`))
   const details = node('dl')
-  for (const [key, value] of [['板型', release.board], ['渠道', release.channel], ['Epoch', String(release.epoch)], ['升级包', formatSize(release.size)], ['创建时间', formatDate(release.createdAt)]]) {
+  for (const [key, value] of [['板型', release.board], ['渠道', release.channel], ['部署序号', String(release.generation)], ['组件', formatSize(release.objects.reduce((sum, object) => sum + object.bytes, 0))], ['创建时间', formatDate(release.createdAt)]]) {
     const entry = node('div')
     entry.append(node('dt', key), node('dd', value))
     details.append(entry)
   }
   panel.append(details)
-  if (release.sha256) {
+  {
     const checksum = node('div')
-    checksum.append(node('p', 'SHA-256', 'detail-label'), node('p', release.sha256, 'checksum'))
+    checksum.append(node('p', 'DEPLOYMENT ID', 'detail-label'), node('p', release.deploymentId, 'checksum'))
     panel.append(checksum)
   }
   panel.append(node('p', release.notes || '暂无发布说明。', 'notes'))
   const actions = node('div', '', 'detail-actions')
   if (release.status === 'draft') {
-    const action = node('button', release.sha256 ? '发布到渠道' : '上传升级包', 'primary')
+    const complete = release.objects.every(object => object.available)
+    const action = node('button', complete ? '发布到渠道' : '上传组件', 'primary')
     action.disabled = busy
     action.addEventListener('click', () => {
-      if (release.sha256)
+      if (complete)
         void changeRelease(release, 'publish')
       else
         element<HTMLInputElement>('retry-file').click()
@@ -219,17 +218,26 @@ function renderDetail() {
     actions.append(action)
   }
   if (release.status === 'published') {
-    const link = node('a', '下载升级包 ↗')
-    link.href = `/v1/artifacts/${release.id}`
     const withdraw = node('button', '撤回此版本', 'secondary danger')
     withdraw.disabled = busy
     withdraw.addEventListener('click', () => {
       void changeRelease(release, 'withdraw')
     })
-    actions.append(link, withdraw)
+    actions.append(withdraw)
   }
   if (release.status === 'withdrawn')
-    actions.append(node('p', '已停止公开分发。再次发布请创建更高 Epoch 的新版本。', 'muted'))
+    actions.append(node('p', '已停止公开分发。再次发布请创建更高部署序号 的新版本。', 'muted'))
+  const names = objectNames(release)
+  for (const object of release.objects) {
+    const label = names.get(object.sha256)?.join(' / ') ?? object.sha256
+    const item = node('p', `${label} · ${formatSize(object.bytes)} · ${object.available ? '已上传' : '待上传'}`, 'muted')
+    if (release.status === 'published') {
+      const link = node('a', ' 下载 ↗')
+      link.href = `/v1/objects/${object.sha256}`
+      item.append(link)
+    }
+    panel.append(item)
+  }
   panel.append(actions)
 }
 
@@ -245,18 +253,21 @@ function renderStatus(value: Status) {
   element<HTMLTextAreaElement>('public-key').value = value.signing.publicKey
   element<HTMLTextAreaElement>('key-id').value = value.signing.keyId
   element('key-source').textContent = value.signing.generated ? '服务本地生成的密钥' : '配置文件提供的密钥'
-  element('upload-limit').textContent = `选择 .raucb 文件，最大 ${formatSize(value.maxUploadBytes)}`
+  element('upload-limit').textContent = `选择组件文件，每个最大 ${formatSize(value.maxUploadBytes)}`
 }
 
 async function reload() {
-  const [releaseResponse, nextStatus, auditResponse] = await Promise.all([
+  const [releaseResponse, nextStatus, auditResponse, firmwareResponse] = await Promise.all([
     api<{ releases: Release[] }>('/releases'),
     api<Status>('/status'),
     api<{ events: AuditEvent[] }>('/audit'),
+    api<{ firmware: FirmwareView[] }>('/firmware'),
   ])
   releases = releaseResponse.releases
+  firmwares = firmwareResponse.firmware
   status = nextStatus
   renderReleases()
+  renderFirmware()
   renderStatus(status)
   const rows = element('audit-rows')
   rows.replaceChildren()
@@ -282,7 +293,7 @@ async function confirmAction(title: string, description: string, action: string,
 
 async function changeRelease(release: Release, action: 'publish' | 'withdraw') {
   const publish = action === 'publish'
-  if (!await confirmAction(publish ? `发布 ${release.version}` : `撤回 ${release.version}`, publish ? `发布后，${release.board} 的 ${release.channel} 渠道将能发现并下载此版本。请确认升级包已完成验证。` : '此版本将从清单中移除，公开下载立即停止。已下载的升级包不会被收回。', publish ? '确认发布' : '确认撤回', !publish))
+  if (!await confirmAction(publish ? `发布 ${release.version}` : `撤回 ${release.version}`, publish ? `发布后，${release.board} 的 ${release.channel} 渠道将能发现并下载此版本。请确认组件已完成验证。` : '此版本将从清单中移除。其他已发布版本仍引用的组件继续提供下载，已安装的部署不受影响。', publish ? '确认发布' : '确认撤回', !publish))
     return
   await perform(async () => {
     await api(`/releases/${release.id}/${action}`, 'POST')
@@ -291,16 +302,94 @@ async function changeRelease(release: Release, action: 'publish' | 'withdraw') {
   })
 }
 
-function validateFile(file: File) {
-  if (!file.name.toLowerCase().endsWith('.raucb') || file.size === 0)
-    throw new Error('请选择非空的 .raucb 升级包。')
-  if (status && file.size > status.maxUploadBytes)
-    throw new Error(`文件超过 ${formatSize(status.maxUploadBytes)} 的上传限制。`)
+function renderFirmware() {
+  const rows = element('firmware-rows')
+  rows.replaceChildren()
+  element('firmware-empty').hidden = firmwares.length > 0
+  for (const firmware of firmwares) {
+    const row = node('tr')
+    row.append(node('td', firmware.version), node('td', firmware.board), node('td', String(firmware.generation)), node('td', statusLabels[firmware.status]), node('td', formatSize(firmware.artifactBytes)))
+    const actions = node('td')
+    if (firmware.status !== 'withdrawn') {
+      const complete = firmware.objects.every(object => object.available)
+      const action = firmware.status === 'published' ? 'withdraw' : 'publish'
+      const button = node('button', !complete ? '上传固件' : action === 'publish' ? '发布固件' : '撤回固件', 'secondary')
+      button.addEventListener('click', () => {
+        if (!complete) {
+          selectedFirmware = firmware.id
+          element<HTMLInputElement>('firmware-retry-file').click()
+          return
+        }
+        void (async () => {
+          if (!await confirmAction(`${action === 'publish' ? '发布' : '撤回'} ${firmware.version}`, action === 'publish'
+            ? '发布后提供独立固件下载。固件维护需要单独安排，不会随系统版本自动安装。'
+            : '停止公开分发这份固件。已安装的固件保持原状。', action === 'publish' ? '确认发布' : '确认撤回', action === 'withdraw')) {
+            return
+          }
+          await perform(async () => {
+            await api(`/firmware/${firmware.id}/${action}`, 'POST')
+            await reload()
+          })
+        })()
+      })
+      actions.append(button)
+    }
+    if (firmware.status === 'published') {
+      const manifest = node('button', '下载签名清单', 'quiet')
+      manifest.addEventListener('click', () => {
+        const url = URL.createObjectURL(new Blob([firmware.firmware], { type: 'application/json' }))
+        const link = node('a')
+        link.href = url
+        link.download = 'firmware.json'
+        link.click()
+        setTimeout(() => URL.revokeObjectURL(url), 1000)
+      })
+      const artifact = node('a', '下载固件', 'quiet')
+      artifact.href = `/v1/objects/${firmware.artifactSha256}`
+      actions.append(manifest, artifact)
+    }
+    row.append(actions)
+    rows.append(row)
+  }
 }
-function upload(id: string, file: File, progress?: (percent: number) => void) {
+
+function objectNames(release: Release | FirmwareView) {
+  if ('firmware' in release) {
+    const name = release.board === 'cx3576' ? 'u-boot-rockchip.bin' : release.board === 'x64' ? 'BOOTX64.EFI' : 'BOOTAA64.EFI'
+    return new Map([[release.artifactSha256, [name]]])
+  }
+  const envelope = JSON.parse(release.deployment) as { payload: string }
+  const bytes = Uint8Array.from(atob(envelope.payload), character => character.charCodeAt(0))
+  const d = JSON.parse(new TextDecoder().decode(bytes)) as Deployment
+  const names = new Map<string, string[]>()
+  for (const [name, artifact] of [
+    [d.kernel.boot.format === 'uki' ? 'boot.efi' : 'boot.itb', d.kernel.boot.artifact],
+    ['support.img', d.kernel.support.image],
+    ['support.roothash.p7s', d.kernel.support.signature],
+    ['rootfs.img', d.rootfs.content.image],
+    ['rootfs.roothash.p7s', d.rootfs.content.signature],
+  ] as const) {
+    names.set(artifact.sha256, [...(names.get(artifact.sha256) ?? []), name])
+  }
+  return names
+}
+async function uploadFiles(release: Release | FirmwareView, files: File[], progress?: (percent: number) => void) {
+  const names = objectNames(release)
+  const missing = release.objects.filter(object => !object.available)
+  for (const [index, object] of missing.entries()) {
+    const file = files.find(file => file.name === object.sha256 || names.get(object.sha256)?.includes(file.name))
+    if (!file)
+      throw new Error(`缺少组件：${names.get(object.sha256)?.join(' / ') ?? object.sha256}。草稿已保留。`)
+    if (file.size !== object.bytes)
+      throw new Error(`${file.name} 的长度与签名描述符不一致。`)
+    await upload(`/${'firmware' in release ? 'firmware' : 'releases'}/${release.id}`, object.sha256, file, percent => progress?.(Math.round((index + percent / 100) / missing.length * 100)))
+    object.available = true
+  }
+}
+function upload(path: string, digest: string, file: File, progress?: (percent: number) => void) {
   return new Promise<void>((resolve, reject) => {
     const xhr = new XMLHttpRequest()
-    xhr.open('PUT', `/api/releases/${id}/artifact`)
+    xhr.open('PUT', `/api${path}/objects/${digest}`)
     xhr.setRequestHeader('Content-Type', 'application/octet-stream')
     xhr.timeout = 30 * 60 * 1000
     xhr.upload.onprogress = (event) => {
@@ -327,12 +416,13 @@ function upload(id: string, file: File, progress?: (percent: number) => void) {
   })
 }
 
-function openCreate() {
+function openCreate(kind: 'releases' | 'firmware' = 'releases') {
+  createKind = kind
+  element('create-title').textContent = kind === 'firmware' ? '新建固件' : '新建版本'
+  element('descriptor-label').textContent = kind === 'firmware' ? '签名固件清单' : '签名部署描述符'
   createdDraft = undefined
   const form = element<HTMLFormElement>('create-form')
   form.reset()
-  const epoch = form.elements.namedItem('epoch') as HTMLInputElement
-  epoch.value = new Date().toISOString().replace(/\D/g, '').slice(0, 14)
   form.querySelectorAll<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>('input,select,textarea').forEach((input) => {
     input.disabled = false
   })
@@ -350,28 +440,32 @@ element<HTMLFormElement>('create-form').addEventListener('submit', (event) => {
     showError('create-error', '')
     const form = element<HTMLFormElement>('create-form')
     try {
-      const file = element<HTMLInputElement>('artifact-file').files?.[0]
-      if (!file)
-        throw new Error('请选择升级包。')
-      validateFile(file)
+      const files = Array.from(element<HTMLInputElement>('artifact-file').files ?? [])
       setBusy(true)
-      if (!createdDraft) {
+      let release: Release | FirmwareView | undefined = [...releases, ...firmwares].find(item => item.id === createdDraft)
+      if (!release) {
+        const descriptor = element<HTMLInputElement>('deployment-file').files?.[0]
+        if (!descriptor || descriptor.size === 0 || descriptor.size > 24576)
+          throw new Error('请选择不超过 24 KiB 的签名部署描述符。')
         const data = new FormData(form)
-        const release = await api<Release>('/releases', 'POST', { board: data.get('board'), channel: data.get('channel'), version: data.get('version'), epoch: Number(data.get('epoch')), notes: data.get('notes') })
+        release = await api<Release | FirmwareView>(`/${createKind}`, 'POST', { channel: data.get('channel'), [createKind === 'firmware' ? 'firmware' : 'deployment']: await descriptor.text(), notes: data.get('notes') })
         createdDraft = release.id
-        form.querySelectorAll<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>('input:not([type=file]),select,textarea').forEach((input) => {
+        if ('firmware' in release)
+          firmwares.unshift(release)
+        else releases.unshift(release)
+        form.querySelectorAll<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>('input:not(#artifact-file),select,textarea').forEach((input) => {
           input.disabled = true
         })
       }
-      selected = createdDraft
+      selected = release.id
       element('upload-progress').hidden = false
-      await upload(createdDraft, file, (percent) => {
+      await uploadFiles(release, files, (percent) => {
         element<HTMLProgressElement>('progress-bar').value = percent
-        element('progress-label').textContent = percent === 100 ? '上传完成，正在保存并计算校验值…' : `正在上传 ${percent}%`
+        element('progress-label').textContent = percent === 100 ? '上传完成，正在校验并保存…' : `正在上传 ${percent}%`
       })
       element<HTMLDialogElement>('create-dialog').close()
       await reload()
-      toast('草稿与升级包已保存，确认后即可发布。')
+      toast('草稿与组件已保存，确认后即可发布。')
     }
     catch (error) {
       showError('create-error', message(error))
@@ -387,15 +481,31 @@ element<HTMLFormElement>('create-form').addEventListener('submit', (event) => {
 })
 
 element<HTMLInputElement>('retry-file').addEventListener('change', () => {
-  const file = element<HTMLInputElement>('retry-file').files?.[0]
-  const id = selected
+  const files = Array.from(element<HTMLInputElement>('retry-file').files ?? [])
+  const release = releases.find(item => item.id === selected)
   element<HTMLInputElement>('retry-file').value = ''
-  if (file && id) {
+  if (files.length && release) {
     void perform(async () => {
-      validateFile(file)
-      await upload(id, file)
-      await reload()
-      toast('升级包已上传。')
+      try {
+        await uploadFiles(release, files)
+      }
+      finally { await reload() }
+      toast('组件已上传。')
+    })
+  }
+})
+element<HTMLInputElement>('firmware-retry-file').addEventListener('change', () => {
+  const input = element<HTMLInputElement>('firmware-retry-file')
+  const files = Array.from(input.files ?? [])
+  input.value = ''
+  const firmware = firmwares.find(record => record.id === selectedFirmware)
+  if (files.length && firmware) {
+    void perform(async () => {
+      try {
+        await uploadFiles(firmware, files)
+      }
+      finally { await reload() }
+      toast('固件已上传。')
     })
   }
 })
@@ -427,7 +537,8 @@ element('reload').addEventListener('click', () => {
   })
 })
 for (const id of ['new-release', 'empty-create'])
-  element(id).addEventListener('click', openCreate)
+  element(id).addEventListener('click', () => openCreate())
+element('new-firmware').addEventListener('click', () => openCreate('firmware'))
 for (const id of ['close-create', 'cancel-create']) {
   element(id).addEventListener('click', () => {
     if (!busy)
@@ -450,7 +561,7 @@ document.querySelectorAll<HTMLButtonElement>('[data-page]').forEach((button) => 
       nav.removeAttribute('aria-current')
     })
     button.setAttribute('aria-current', 'page')
-    element('breadcrumb').textContent = { releases: '发布管理', connection: '接入与签名', audit: '操作记录' }[page ?? ''] ?? ''
+    element('breadcrumb').textContent = { releases: '发布管理', firmware: '固件维护', connection: '接入与签名', audit: '操作记录' }[page ?? ''] ?? ''
   })
 })
 async function copy(text: string) {
@@ -468,7 +579,7 @@ element('copy-url').addEventListener('click', () => {
 })
 element('copy-trust').addEventListener('click', () => {
   if (status)
-    void copy(JSON.stringify({ trust: { signingKeys: [status.signing.publicKey], signingKeyIds: [status.signing.keyId] } }, null, 2))
+    void copy(status.signing.publicKey)
 })
 element('refresh-metadata').addEventListener('click', () => {
   void perform(async () => {

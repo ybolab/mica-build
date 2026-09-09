@@ -17,7 +17,7 @@ import {
   unclaimedFaults,
   type Artifact,
 } from './smoke-register.ts'
-import { PODMAN_VERSIONS_ENV, RAUC_VERSIONS_ENV, pinKeys, VERSIONS_ENV_FILES } from './smoke-pins.ts'
+import { PODMAN_VERSIONS_ENV, pinKeys, VERSIONS_ENV_FILES } from './smoke-pins.ts'
 
 let SCRATCH = ''
 beforeAll(() => {
@@ -45,7 +45,7 @@ function fixture(name: string, body: string): string {
  * no `versions.env` pin at all, so three of the four could vanish without any
  * coverage direction noticing. This is what notices.
  *
- * Scope: "for mosd, apid, mos-mqttd, mos-mqtt-broker, rauc, podman, quadlet,
+ * Scope: "for mosd, apid, mos-mqttd, mos-mqtt-broker, mos-deploy, podman, quadlet,
  * crun, conmon, netavark, aardvark-dns -- minimal invocation inside that image
  * ... catatonit (static, no --version contract) gets an exec-only check."
  */
@@ -54,7 +54,7 @@ const SCOPE_ARTIFACTS = [
   'apid',
   'mos-mqttd',
   'mos-mqtt-broker',
-  'rauc',
+  'mos-deploy',
   'podman',
   'quadlet',
   'crun',
@@ -351,9 +351,9 @@ describe('pinCoverageFaults -- reverse, the direction that catches a NEW artifac
     expect(faults[0]!.message).not.toContain('NEWTHING_SHA256')
   })
 
-  test('the rauc pin is read from its own file, not from the podman one', () => {
-    const rauc = ARTIFACTS.find(a => a.name === 'rauc')!
-    expect(rauc.pin().file).toBe(RAUC_VERSIONS_ENV)
-    expect(rauc.pin().key).toBe('RAUC_VERSION')
+  test('the deployment client reads its crate version', () => {
+    const deploy = ARTIFACTS.find(a => a.name === 'mos-deploy')!
+    expect(deploy.pin().file).toBe(join(REPO_ROOT, 'pkgs/mos-deploy/Cargo.toml'))
+    expect(deploy.pin().key).toBe('package.version')
   })
 })

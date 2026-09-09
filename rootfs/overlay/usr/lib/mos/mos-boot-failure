@@ -1,0 +1,15 @@
+#!/bin/sh
+# Shared DATA failure needs recovery; changing root deployments cannot repair it.
+set -eu
+if ! systemctl is-active --quiet mos-data-layout.service || [ -e /run/mos/shared-data-failure ]; then
+    echo 'mos-boot-failure: shared DATA unavailable; recovery required' >&2
+    systemctl --no-block poweroff
+    exit 0
+fi
+if ! timeout 30 mos-deploy fail-boot; then
+    echo 'mos-boot-failure: cannot persist fallback selection; recovery required' >&2
+    systemctl --no-block poweroff
+    exit 0
+fi
+echo 'mos-boot-failure: health gate failed; rebooting for bounded fallback' >&2
+systemctl --no-block reboot

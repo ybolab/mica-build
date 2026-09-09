@@ -10,7 +10,7 @@
 // find commands this misses and miss commands this finds, and every difference
 // would be a divergence attributable to the port rather than to the image. The
 // extractor is deliberately conservative and the oracle says so -- commands the
-// scripts invoke through their own `run`/`have` wrappers (busctl, rauc,
+// scripts invoke through their own `run`/`have` wrappers (busctl, mos-deploy,
 // systemctl, curl, wget) are not in this set and must not be, because
 // `mos-health` reaches curl and wget only through `have`, which is what marks
 // them optional to this extractor.

@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 // The shipped boards, and the predicates a board-conditional check is scoped by.
 //
 // They live here rather than in any one check module because several families
@@ -21,7 +22,7 @@ import { loadBoard, type Board } from './board.ts'
 import { boardEnvPath, requireShippedBoards } from './paths.ts'
 
 /** Every board under `boards/`, modelled once at module load. */
-export const SHIPPED: readonly Board[] = requireShippedBoards().map(name => loadBoard(boardEnvPath(name)))
+export const SHIPPED: readonly Board[] = requireShippedBoards().filter(name => !/^BOARD_RELEASE_TARGET=0$/m.test(readFileSync(boardEnvPath(name), 'utf8'))).map(name => loadBoard(boardEnvPath(name)))
 
 /** The names of the shipped boards satisfying `predicate`, for a `boards:` list. */
 export function boardsWhere(predicate: (board: Board) => boolean): string[] {
@@ -29,7 +30,7 @@ export function boardsWhere(predicate: (board: Board) => boolean): string[] {
 }
 
 /** `is_uboot_board`, asked of a definition. */
-export const isUBoot = (board: Board): boolean => board.bootloader === 'uboot'
+export const isUBoot = (board: Board): boolean => board.bootloader === 'uboot-fit'
 
 /** `board_has_radio`. */
 export const hasRadio = (board: Board, kind: string): boolean => (board.radios ?? []).includes(kind)

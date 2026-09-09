@@ -1,104 +1,52 @@
-# 发布版与镜像获取
+# 获取并识别镜像
 
-本页说明一个 mos 发布版由什么组成、如何为板卡选择发布版、以及如何获取产物。
-先把诚实的结论放在最前面：**目前没有托管下载服务。**发布版从本仓库组装——
-由你自己，或由交付你产品的集成商——成为一个通过门禁的发布目录；不存在的是
-把它发布出去的地方。
+从源码构建当前系统，或向集成商获取完整镜像。本仓库没有公开托管的下载服务。
 
-## 1. 一个发布版由什么组成
+## 1. 选择目标
 
-一次板卡构建在 `_out/<board>/` 下产出三类产物：
+当前系统镜像目标为 `x64`、`virt-arm64`、`cx3576`。产物绑定确切板卡和架构，
+用户态 profile（`dev` 或 `prod`）记录在已验证根中。所有验收都刷完整最新版工厂
+镜像，不支持旧布局安装或迁移。
 
-| 产物 | 是什么 |
+> status: shipped — evidence: `boards/x64/board.env`, `boards/virt-arm64/board.env`, `boards/cx3576/board.env`, `build/src/file-layout.ts`
+
+## 2. 保留完整产物集合
+
+| 产物 | 用途 |
 |---|---|
-| `<board>-mos-<epoch>.img`（以及 `<board>-mos-latest.img` 符号链接） | 刷写到新设备上的完整磁盘 A/B 镜像 |
-| `rootfs-verity.img` + `rootfs-verity.env` | 一个 rootfs 槽——带 dm-verity 哈希树的 squashfs——以及标识它的参数 |
-| RAUC bundle（`.raucb`） | 面向已运行 mos 的设备的签名更新包 |
+| `disk.img` | 带两个已认证部署记录的完整工厂镜像 |
+| 签名部署信封 | 绑定板卡、代次及 kernel/root 组合 |
+| kernel 包 | 签名 UKI/FIT 和匹配的 verity support 数据 |
+| root 组件 | 用户态映像、verity 参数和独立根哈希签名 |
+| 固件包 | 独立签名、独立维护的启动固件 |
+| `.mosupd` | 有边界的离线部署更新，携带所需对象 |
 
-`rootfs-verity.env` 中的 dm-verity 根哈希是一个发布版根文件系统的身份：
-两次构建若哈希相同，则字节相同。镜像的完整软件包清单随镜像一起发布，位于
-`/usr/share/mos/manifest.tsv`，含每个包的版本和源码树的 git 标记。
+开发验收刷完整镜像。组件更新用于已经运行当前系统的设备，只改变指定组件；
+普通系统更新操作不会安装引导固件。
 
-`make os-release-cx3576` 把镜像与 bundle 连同第 4 节描述的那些记录一起组装成
-一个**发布目录**（`_out/<board>/release`），并对它跑门禁。一个发布版*是*那个
-目录，而不是一个孤零零的镜像。
+> status: shipped — evidence: `build/src/component-cli.ts`, `build/src/file-image.ts`, `build/src/component-archive.ts`
 
-> status: shipped — evidence: `docs/design/build.md`, `rootfs/compose/90-pack.Dockerfile`
+## 3. 构建和验证
 
-## 2. 选择发布版
-
-三个维度选定一个产物：
-
-- **板卡。**一个镜像只为一块板卡构建，不能在另一块上启动。现有两块板卡：
-  `cx3576`（CX3576-Z，Rockchip RK3576，arm64）和 `x64`（通用 UEFI x86_64，
-  QEMU 与 CI 基线）。支持的硬件及其地位见 [support.md](support.md) 和硬件
-  页面 [../../website/hardware.md](../../website/hardware.md)。
-- **Profile。**`dev` 或 `prod`，在构建时选定并不可变地写入镜像。两个
-  profile 都默认关闭 SSH；profile 记录在 verity 根内部，因此一台生产设备
-  无法被改成开发设备。
-- **版本。**镜像以构建 epoch 命名；更新 bundle 携带构建时给定的版本字符串。
-  发布版如何标识见 [release-notes.md](release-notes.md)。
-
-> status: board-dependent — evidence: `boards/cx3576/board.env`, `boards/x64/board.env`, `rootfs/packages-src/profile`
-
-## 3. 今天获取镜像的方式：自己构建
-
-受支持的获取路径是源码构建。构建完全在 docker 里进行，点名拒绝过期输入，
-并有端到端的文档——x64 序列见 [quickstart.md](quickstart.md)，cx3576 序列
-（在 amd64 主机上交叉编译，不需要主机级模拟）见构建指南。
+按[快速上手](quickstart.md)及[构建指南](../../design/build.md)操作。元数据公钥必须
+来自独立的可信交付渠道，不能只相信与下载文件放在一起的密钥或校验和。
 
 ```sh
-# cx3576, end to end — see docs/design/build.md for each step's role
-MOS_BUILD_PLATFORM=linux/arm64 bash build-env/build.sh
-make cx3576-uboot cx3576-uboot-mos
-make cx3576-kernel
-make os-debs
-bash rootfs/build.sh
-bash build/run.sh --mkimage-cx3576
-make os-verify-cx3576
+bash verify/run.sh --verify --board x64 \
+  --image /path/to/image/disk.img --public-key /path/to/metadata-public.key
 ```
 
-如果你是基于 mos 构建的产品的最终客户，你的镜像来自你的产品集成商，而不是
-本仓库；你收到哪个 mos 发布版由集成商的发布流程决定。
+离线验证认证签名记录并检查内容、几何、固件回执和根策略。启动验收另外证明选定
+启动锚下的 UEFI/FIT 强制验证行为。
 
-> status: shipped — evidence: `make os-image-cx3576`, `docs/design/build.md`
+> status: shipped — evidence: `verify/src/file-image.ts`, `verify/run.sh`, `docs/design/release-signing.md`
 
-## 4. 验证你拿到的东西
+## 4. 发布和证据
 
-对更新 bundle 而言，验证链在主机侧今天就真实可用：bundle 带 CMS 签名并在
-安装时对照密钥环验证，TUF 工具（`rauc-sign verify`，对照一个带外持有的信任
-锚）验证已发布的仓库元数据。签名 runbook——密钥仪式、保管、轮换——是
-[../design/release-signing.md](../design/release-signing.md)。
+更新服务器接收独立组件对象和签名元数据，验证发布条件并提供选定渠道；固件维护
+产物单独发布。服务器及其目录由操作者管理，工具存在不意味着公共托管已提供。
+交付镜像时保留软件包清单、BSP 标识、组件摘要、源码提交、发布说明和确切测试日志。
+实机能力必须附对应硬件证据，见[发布标识](release-notes.md)及
+[发布产物](../../design/release-artifacts.md)。
 
-其余部分由发布目录携带：覆盖每个产物的 `SHA256SUMS`；把发布版的版本、渠道、
-板卡、profile、源码 commit 以及每个产物的大小与摘要绑在一起的 `manifest.json`；
-一份 CycloneDX SBOM；一份来源（provenance）记录；一份许可证与源码提供清单；
-以及发布说明。用 coreutils 和 `jq`：`sha256sum -c SHA256SUMS` 证明这些字节就是
-发布版声明的字节，清单则打印出发布身份——而这几行命令由本仓库自己的测试对着
-一个生成出来的夹具发布版实际执行，所以这段流程不会和工具悄悄走散。
-
-`SHA256SUMS` 与 `manifest.json` 提供的是完整性而非真实性：它们和产物一起走。
-真实性来自上面那两条信任链。除此之外，`make os-verify-cx3576`
-（或 `bash verify/run.sh --verify --board x64`）逐项对照镜像契约检查组装好的
-镜像。
-
-> status: shipped — evidence: `docs/design/release-artifacts.md`, `make os-release-gate`, `make os-verify-cx3576`
-
-## 5. 渠道，以及发布这件事还缺什么
-
-一个发布版在自己的清单里写明渠道——`development`、`candidate` 或 `stable`——
-这个名字是关于"合格性"的声明，不是一个目录：`development` 不带任何承诺，
-`candidate` 正在合格化过程中，`stable` 才是客户部署的那一档。发布门禁会从零
-重新检查一个已组装的发布目录，并逐项点名拒绝：缺少某个角色的产物、字节变了
-的文件、空的发布说明、没有任何组件的 SBOM、缺失或不一致的板卡证据。它没有
-豁免开关。
-
-> status: shipped — evidence: `docs/design/release-artifacts.md`, `make os-release-gate`
-
-缺的是另一半：**托管**。没有下载主机，没有按渠道晋级进去的目录，因此也没有
-任何可获取的已发布版本——今天的"下载"意思是"拿到那个通过门禁的发布目录"。
-支持窗口与生命周期终止日期同样只有政策、没有机制（[support.md](support.md)）。
-官方站点的下载页简报是
-[../../website/downloads.md](../../website/downloads.md)。
-
-> status: unsupported
+> status: shipped — evidence: `update-server/src`, `docs/design/updates.md`

@@ -52,12 +52,8 @@ ARG SOURCE_DATE_EPOCH
 #        reads one pool at a time, and these two packages do not share a pool
 #        until the workstreams merge -- a duplicate claim would stay invisible
 #        until then, which is the most expensive place to find it.
-#   /etc/fstab.in, /etc/fw_env.config.in, /etc/repart.d/{10-uenv-a,20-uenv-b}.conf,
-#   /etc/systemd/system/boot.mount
-#     -> the board packages. Each is rendered from boards/<b>/board.env and
-#        cannot be board-independent; the two uenv definitions are cx3576's and
-#        the .in templates are not even valid files until rendered.
-#   /etc/rauc/**            -> `mos-rauc` and the board packages
+#   /etc/fstab.in, /etc/repart.d and board boot.mount -> board packages,
+#     rendered from the current three-partition board policy.
 #   /usr/lib/mos/profile.conf -> mos-profile-dev / mos-profile-prod
 #   the TLS trust bundle    -> `mos-ca-trust`
 #   wpa_supplicant, hostapd and bluetooth units and mounts -> the radio packages
@@ -146,10 +142,7 @@ ARG SOURCE_DATE_EPOCH
 # itself Before=mosd.service from its own [Unit] section, so nothing in mosd's
 # package has to know it exists.
 #
-# mos-health.service and mos-machine-id.service are enabled by symlinks that
-# ship as symlinks INSIDE overlay, pointing into /usr/lib/systemd/system
-# where those two units live; they are copied with `cp -a` so their targets are
-# the tree's and not this file's guess at them.
+# The health service enablement is copied from the immutable overlay.
 #
 # /var/lib/mos is an empty directory and is load-bearing: it and
 # var-lib-mos.mount are two halves of one mechanism, mosd.service declares
@@ -160,29 +153,42 @@ ARG SOURCE_DATE_EPOCH
 # from the one root.mount fixes.
 RUN set -eu; \
     R=/stage/mos-system; \
-    for f in mos-data-layout mos-health mos-machine-id mos-provisioning-import mos-seed-home \
-             mos-seed-root mos-seed-state mos-seed-var mos-shadow-reconcile; do \
+    for f in mos-boot-failure mos-data-layout mos-grow-data mos-health mos-provisioning-import mos-seed-home \
+             mos-seed-root mos-seed-state mos-shadow-reconcile; do \
         install -D -m 0755 "/in/overlay/usr/lib/mos/${f}" "${R}/usr/lib/mos/${f}"; \
     done; \
-    for f in mos-health.service mos-machine-id.service; do \
+    for f in mos-health.service; do \
         install -D -m 0644 "/in/overlay/usr/lib/systemd/system/${f}" \
             "${R}/usr/lib/systemd/system/${f}"; \
     done; \
-    for f in mos-apply-hostname.service mos-data-layout.service mos-provisioning-import.service \
+    for f in mos-load-extensions.service mos-boot-failure.service mos-apply-hostname.service mos-data-layout.service mos-provisioning-import.service \
              mos-seed-home.service mos-seed-root.service \
-             mos-seed-state.service mos-seed-var.service mos-shadow-reconcile.service \
+             mos-seed-state.service mos-shadow-reconcile.service \
              mos.mount srv.mount var-lib-mos.mount var-lib-systemd-timesync.mount \
+             var-lib-systemd-timers.mount \
+             var-lib-systemd-linger.mount var-lib-systemd-network.mount var-tmp.mount \
              etc-hostname.mount etc-ssh.mount home.mount root.mount \
              usr-local-lib-systemd-system.mount; do \
         install -D -m 0644 "/in/overlay/etc/systemd/system/${f}" \
             "${R}/etc/systemd/system/${f}"; \
     done; \
-    for f in 30-rootfs-a.conf 40-rootfs-b.conf 50-meta.conf 60-state.conf \
-             70-ephemeral.conf 80-data.conf; do \
-        install -D -m 0644 "/in/overlay/etc/repart.d/${f}" "${R}/etc/repart.d/${f}"; \
-    done; \
     install -D -m 0644 /in/overlay/etc/tmpfiles.d/mos-var.conf \
         "${R}/etc/tmpfiles.d/mos-var.conf"; \
+    for unit in systemd-random-seed.service timers.target systemd-logind.service \
+                systemd-networkd-persistent-storage.service systemd-networkd.service \
+                systemd-tmpfiles-setup.service systemd-timesyncd.service; do \
+        install -D -m 0644 "/in/overlay/etc/systemd/system/${unit}.d/10-data.conf" \
+            "${R}/etc/systemd/system/${unit}.d/10-data.conf"; \
+    done; \
+    install -d -m 0755 "${R}/etc/systemd/system.conf.d"; \
+    printf '%s\n' '[Manager]' 'RuntimeWatchdogSec=90s' 'RebootWatchdogSec=120s' \
+        >"${R}/etc/systemd/system.conf.d/10-data-quota.conf"; \
+    for dir in service.d systemd-growfs@.service.d; do \
+        cp -a "/in/overlay/etc/systemd/system/$dir" "${R}/etc/systemd/system/"; \
+    done; \
+    for unit in systemd-bless-boot.service quota.service quotacheck.service rpc-rquotad.service; do \
+        ln -s /dev/null "${R}/etc/systemd/system/$unit"; \
+    done; \
     install -D -m 0644 /in/overlay/etc/mos/health.conf "${R}/etc/mos/health.conf"; \
     install -D -m 0644 /in/overlay/etc/ssh/sshd_config.d/05-mos-authorized-keys.conf \
         "${R}/etc/ssh/sshd_config.d/05-mos-authorized-keys.conf"; \
@@ -199,37 +205,11 @@ RUN set -eu; \
     printf '%s\n' '[Journal]' 'Storage=volatile' \
         >"${R}/etc/systemd/journald.conf.d/00-volatile.conf"; \
     chmod 0644 "${R}/etc/systemd/journald.conf.d/00-volatile.conf"; \
-    # GPT AUTO-DISCOVERY IS OFF, and it is masked rather than left to be
-    # harmless. `systemd-gpt-auto-generator` mounts partitions it recognises by
-    # GPT TYPE, and every mos boot slot is typed ESP -- so on cx3576 it writes
-    # an `efi.automount` for a RAUC-owned boot partition, picked by disk order
-    # rather than by which slot is running, read-WRITE, on a device where /boot
-    # is deliberately not a mountpoint. Nothing in this tree asked for that
-    # unit, and nothing has ever failed because of it for an accident: the
-    # kernel builds no CONFIG_AUTOFS_FS, so the unit is refused as unsupported.
-    #
-    # The UEFI boards are not exposed today for a second accident, which is why
-    # this mask is not board-scoped: `process_loader_partitions()` mounts
-    # unconditionally on a non-EFI boot and, on an EFI boot, only when the boot
-    # loader set LoaderDevicePartUUID. systemd-boot sets it; GRUB, which x64
-    # and virt-arm64 boot through, does not. The exposure follows the BOOT PATH,
-    # so it moves without anyone editing a mount.
-    #
-    # A symlink to /dev/null in /etc/systemd/system-generators is systemd's own
-    # masking mechanism: generators are enumerated with
-    # CONF_FILES_FILTER_MASKED (src/shared/exec-util.c), which stats through
-    # the link, sees the null device and drops the name for every
-    # lower-priority directory -- /etc beats /usr/lib in
-    # `system_generator_paths` (src/libsystemd/sd-path/path-lookup.c).
-    #
-    # Nothing here loses a mount by it: the verity root comes from the kernel
-    # command line, /mnt/{data,state,meta}, /var and /tmp come from /etc/fstab,
-    # and the ESP on the two UEFI boards comes from their own boot.mount unit.
-    # The generator's other subjects -- /home, /srv, /var, swap and root-rw --
-    # are all keyed on discoverable-partition type GUIDs that no mos layout
-    # uses. What is bought is that the guarantee stops being a kernel symbol.
+    # Explicit authenticated boot and board mounts own the current disk layout.
+    # Disable generic GPT discovery so it cannot introduce writable mounts.
     install -d -m 0755 "${R}/etc/systemd/system-generators"; \
     ln -s /dev/null "${R}/etc/systemd/system-generators/systemd-gpt-auto-generator"; \
+    ln -s /dev/null "${R}/etc/systemd/system-generators/systemd-ssh-generator"; \
     install -d -m 0755 "${R}/usr/lib/systemd/system-preset"; \
     printf '%s\n' 'disable ssh.service' \
         >"${R}/usr/lib/systemd/system-preset/50-mos-ssh.preset"; \
@@ -237,9 +217,9 @@ RUN set -eu; \
     printf '%s\n' 'disable nftables.service' \
         >"${R}/usr/lib/systemd/system-preset/50-mos-nftables.preset"; \
     chmod 0644 "${R}/usr/lib/systemd/system-preset/50-mos-nftables.preset"; \
-    install -d -m 0755 "${R}/srv" "${R}/mos" "${R}/mnt/data" "${R}/mnt/state" "${R}/mnt/meta" "${R}/home" \
+    install -d -m 0755 "${R}/srv" "${R}/mos" "${R}/mnt/data" "${R}/mnt/system" "${R}/home" \
         "${R}/usr/local/lib/systemd" "${R}/usr/local/lib/systemd/system" \
-        "${R}/var/lib/mos" \
+        "${R}/var/lib/mos" "${R}/usr/lib/modules" "${R}/usr/lib/firmware" \
         "${R}/etc/systemd/system/local-fs.target.wants" \
         "${R}/etc/systemd/system/timers.target.wants" \
         "${R}/etc/systemd/system/multi-user.target.wants" \
@@ -247,19 +227,20 @@ RUN set -eu; \
         "${R}/etc/systemd/system/network-online.target.wants" \
         "${R}/etc/systemd/system/sysinit.target.wants"; \
     install -d -m 0700 "${R}/root"; \
-    for u in mos-data-layout.service mos.mount srv.mount mos-seed-var.service mos-seed-state.service \
+    for u in mos-data-layout.service mos.mount srv.mount mos-seed-state.service \
              mos-seed-home.service mos-seed-root.service var-lib-mos.mount \
-             var-lib-systemd-timesync.mount etc-ssh.mount etc-hostname.mount \
+             var-lib-systemd-timesync.mount var-lib-systemd-timers.mount \
+             var-lib-systemd-linger.mount var-lib-systemd-network.mount var-tmp.mount etc-ssh.mount etc-hostname.mount \
              home.mount root.mount usr-local-lib-systemd-system.mount \
              mos-apply-hostname.service; do \
         ln -s "/etc/systemd/system/${u}" \
             "${R}/etc/systemd/system/local-fs.target.wants/${u}"; \
     done; \
-    for u in mos-shadow-reconcile.service mos-provisioning-import.service; do \
+    for u in mos-load-extensions.service mos-shadow-reconcile.service mos-provisioning-import.service; do \
         ln -s "/etc/systemd/system/${u}" \
             "${R}/etc/systemd/system/multi-user.target.wants/${u}"; \
     done; \
-    for u in mos-health.service mos-machine-id.service; do \
+    for u in mos-health.service; do \
         cp -a "/in/overlay/etc/systemd/system/multi-user.target.wants/${u}" \
             "${R}/etc/systemd/system/multi-user.target.wants/${u}"; \
     done; \

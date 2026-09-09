@@ -54,6 +54,7 @@ export interface Mke2fsSpec {
    */
   readonly fakeTime: string
   /** `-n`: lay the superblock out and write nothing. For probing a host's mke2fs. */
+  readonly bytesPerInode?: number
   readonly dryRun?: boolean
 }
 
@@ -80,6 +81,7 @@ export function mke2fsArgs(spec: Mke2fsSpec): string[] {
     // keeps the container's uid map out of the image.
     '-E', `root_owner=0:0,hash_seed=${spec.uuid}`,
   )
+  if (spec.bytesPerInode !== undefined) argv.push('-i', String(spec.bytesPerInode))
   if (spec.seedDir !== undefined) argv.push('-d', spec.seedDir)
   argv.push(spec.image)
   return argv
@@ -188,7 +190,7 @@ export async function debugfsApply(tb: Toolbox, image: string, commandsFile: str
   // and the one failure neither signal carries. pin_seeded_times builds this
   // file by parsing dumpe2fs's free-inode ranges, so an empty one is what a
   // parse that understood nothing produces: the pass runs, pins no timestamps,
-  // reports success, and EPHEMERAL quietly stops rebuilding byte-identically.
+  // reports success, and the seeded filesystem quietly stops rebuilding byte-identically.
   // That function cross-checks its own count upstream; this is the same refusal
   // at the tool, for every other caller.
   const script = existsSync(commandsFile) ? readFileSync(commandsFile, 'utf8') : undefined

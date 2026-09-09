@@ -1,5 +1,5 @@
 // The twelve artifacts this repository BUILDS -- mosd, apid, mos-mqttd,
-// mos-mqtt-broker, rauc, podman, quadlet, crun, conmon, netavark, aardvark-dns
+// mos-mqtt-broker, mos-deploy, podman, quadlet, crun, conmon, netavark, aardvark-dns
 // and catatonit -- where each lands in the factory root, and how each is asked
 // what version it is. No version STRING is written down here, only identity:
 // every `pin` is a function that reads the value from the file that owns it at
@@ -18,7 +18,7 @@
 import { join } from 'node:path'
 import { REPO_ROOT } from './paths.ts'
 import { cratePath, readCratePackageVersion, readPin, pinKeys, type Pin } from './smoke-pins.ts'
-import { PODMAN_VERSIONS_ENV, RAUC_VERSIONS_ENV, VERSIONS_ENV_FILES } from './smoke-pins.ts'
+import { PODMAN_VERSIONS_ENV, VERSIONS_ENV_FILES } from './smoke-pins.ts'
 
 /**
  * How an artifact is asked what it is.
@@ -149,11 +149,11 @@ export const ARTIFACTS: readonly Artifact[] = [
     contract: { kind: 'version', argv: ['--version'] },
   },
 
-  // RAUC, built from source by pkgs/rauc/.
+  // The authenticated file-deployment client.
   {
-    name: 'rauc',
-    path: '/usr/bin/rauc',
-    pin: () => readPin(RAUC_VERSIONS_ENV, 'RAUC_VERSION'),
+    name: 'mos-deploy',
+    path: '/usr/bin/mos-deploy',
+    pin: () => readCratePackageVersion(join(REPO_ROOT, 'pkgs/mos-deploy/Cargo.toml')),
     contract: { kind: 'version', argv: ['--version'] },
   },
 
@@ -265,11 +265,6 @@ export function artifactsForPackages(packages: ReadonlySet<string>): readonly Ar
   if (packages.has('mos-mqtt-reference')) result.push({
     name: 'mos-mqtt-reference', path: '/usr/bin/mos-mqtt-reference',
     pin: crate('mqtt-reference'), contract: { kind: 'version', argv: ['--version'] },
-  })
-  if (packages.has('mos-s905x5m-bluetooth')) result.push({
-    name: 'skw_vhci_bridge', path: '/usr/sbin/skw_vhci_bridge',
-    pin: () => readPin(join(REPO_ROOT, 'boards/s905x5m/bsp/userland/versions.env'), 'SKW_BRIDGE_VERSION'),
-    contract: { kind: 'version', argv: ['--version'] },
   })
   return result
 }

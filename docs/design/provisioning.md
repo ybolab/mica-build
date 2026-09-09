@@ -102,7 +102,7 @@ The original Layer 1 sketch said "fresh per-device **PKI**". No PKI is generated
 — there is no device certificate and no device CA, because nothing on the
 systemd base consumes one. What is generated is described in §3. sshd host keys
 are separate and predate this work: `mos-seed-state` generates them into
-`/mnt/state/ssh` on first boot.
+`/mnt/data/state/ssh` on first boot.
 
 ## 3. The credential model — stated once, here
 
@@ -565,10 +565,10 @@ unreachable on any filesystem.
 
 | Source | Where | Order |
 |---|---|---|
-| `boot` | the FAT boot slot partitions, by GPT partition label `boot-a` then `boot-b` (`boards/*/board.env`) | first |
+| `boot` | the current UEFI ESP, by GPT partition label `esp`; cx3576 has no ESP and uses removable media | first |
 | `media` | an attached removable block device — the kernel's own `removable` flag, so the internal eMMC or NVMe this device boots from is never a candidate — its partitions first, then the bare disk | only when `boot` carried nothing |
 
-The BOOT medium wins because physical possession of it already implies full
+The ESP medium wins because physical possession of it already implies full
 control of the device (`access.md` §7), so a document written there with any
 card reader is the most authoritative one available and a stick left in a
 socket cannot displace it.
@@ -589,11 +589,10 @@ more force because this is the channel that exists *because* there is no
 network. As in §2 it is a claim about the SOURCE, mechanically checkable by
 reading it, and not a proof that the process issues no network syscall.
 
-**Boot assurance is unchanged by any of this.** Both boards are honestly I1 on
-`security-model.md` §5's ladder, and a provisioning document neither raises nor
-depends on that rung: it is authorised by physical possession of a medium, and
-`access.md` §7 already states that physical possession of the boot medium
-implies full control.
+Provisioning does not raise boot assurance. A provisioning document is
+authorized through its declared physical-medium flow, while boot trust depends
+on the separately enforced firmware, kernel and content chain. See
+[security model](security-model.md) for software evidence and physical limits.
 
 #### 4.1.6 The document on the medium: it stays, untouched
 

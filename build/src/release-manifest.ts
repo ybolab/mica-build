@@ -1,1049 +1,238 @@
-// The release identity: one manifest.json binding a version, a channel, a
-// board and every artifact a customer downloads, plus the publication gate
-// that refuses a release directory the manifest does not fully describe.
-//
-// PLAN-043's release unit is the signed whole-system image/bundle set -- no
-// on-device package manager -- so what a customer verifies is files: the
-// flashable image, the RAUC bundle, and the records generated beside them
-// (SBOM, provenance, license/source-offer inventory, release notes). The
-// manifest binds each by role, byte size and sha256; SHA256SUMS repeats the
-// digests in the one format `sha256sum -c` reads, and manifest.json then pins
-// SHA256SUMS itself, so the two cannot drift without the gate noticing.
-//
-// Digests and versions are MEASURED, never invented: sizes and sha256 come off
-// the files as staged, the package list comes out of the image's own
-// /usr/share/mos/manifest.tsv (the only record of what an image is made of --
-// the finalizer purges dpkg's database), the source identity comes from git,
-// and the boot-assurance level comes from the committed per-board evidence
-// file (boards/<board>/evidence.json). checkBoardEvidence holds that file's
-// semantics -- the I1-I4 ladder's per-level evidence floor and the
-// unsupported-claim wording refusal -- against the ladder defined in
-// docs/design/security-model.md §5.
-//
-// The refusal order in the gate is stable so the first actionable problem is
-// deterministic, the same rule buildBundle states for itself.
-
 import { createHash } from 'node:crypto'
-import { copyFileSync, mkdirSync, readFileSync, realpathSync, statSync, writeFileSync } from 'node:fs'
-import { basename, join } from 'node:path'
-import { checkVersion } from './bundle-cli.ts'
+import { closeSync, copyFileSync, existsSync, lstatSync, mkdirSync, openSync, readFileSync, readdirSync, readSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { authenticateDeployment, canonicalJson, componentId } from './components.ts'
+import { authenticateFirmware } from './firmware.ts'
 
-/**
- * The manifest schema this tree writes, and the FLOOR the validator holds.
- *
- * 2 is the schema that added the required `trust` block. It is a bump and not
- * an addition-in-place for the reason the neighbouring snapshot schema had to
- * relearn (RFCT-302): two shapes claiming one version is the one thing a
- * schema version exists to make impossible. A version-1 directory assembled
- * before that block existed is refused by the equality below, saying so --
- * rather than by a field check saying it "carries no trust block", which reads
- * like a corrupted manifest instead of an older one.
- */
-export const RELEASE_SCHEMA_VERSION = 2
-
-/** The channels a release may be published to. A misspelt one is refused. */
-export const RELEASE_CHANNELS = ['development', 'candidate', 'stable'] as const
-export type ReleaseChannel = (typeof RELEASE_CHANNELS)[number]
-
-/** Every role an artifact may carry. */
-export const ARTIFACT_ROLES = [
-  'image', 'bundle', 'checksums', 'sbom', 'provenance', 'licenses', 'release-notes',
-] as const
-export type ArtifactRole = (typeof ARTIFACT_ROLES)[number]
-
-/**
- * The roles a publishable release must carry at least one artifact of --
- * today, all of them. A written list rather than an alias of ARTIFACT_ROLES,
- * because the two answer different questions: adding an OPTIONAL role to the
- * schema must not silently make every existing release unpublishable.
- */
-export const REQUIRED_ROLES: readonly ArtifactRole[] = [
-  'image', 'bundle', 'checksums', 'sbom', 'provenance', 'licenses', 'release-notes',
-]
-
-/**
- * The written source offer, carried verbatim in the SBOM and the license
- * inventory. It cites the recorded source commit rather than a URL, because
- * the commit is the one identity this tooling can measure; where the request
- * is addressed is product documentation, not build output.
- */
-export const SOURCE_OFFER =
-  'Source code for the packages in this inventory, including any modifications, is available '
-  + 'on request from the distributor of this image; cite the source commit recorded beside '
-  + 'this statement.'
-
-export interface ReleaseArtifact {
-  readonly filename: string
-  readonly role: ArtifactRole
-  readonly bytes: number
-  readonly sha256: string
-}
-
-/**
- * The grade of the signing material an image was built from. Two values, and
- * the absence of a third is deliberate: "cannot tell" is a throw rather than a
- * grade, because a release nobody can grade is not a release
- * (`readBakedTrust`).
- */
-export const TRUST_GRADES = ['development', 'production'] as const
-export type TrustGrade = (typeof TRUST_GRADES)[number]
-
-/**
- * The channels a development-grade image may not be published to.
- *
- * `development` is absent on purpose, and it is the whole reason this is a
- * list rather than a boolean: `docs/design/release-artifacts.md` §2 fixes the
- * meanings -- `development` carries no promise, `candidate` is under
- * qualification, `stable` is what customers deploy -- and no production
- * material exists yet, so an unconditional refusal would make the release path
- * unrunnable and ship this gate untested. A gate nobody can run is a gate
- * nobody notices breaking (`docs/plan/PLAN-077.md` §4.2).
- */
-export const CUSTOMER_CHANNELS: readonly ReleaseChannel[] = ['candidate', 'stable']
-
-/** What the baked `/usr/share/mos/meta/` of an image says about its trust. */
-export interface BakedTrust {
-  readonly grade: TrustGrade
-  /** The domains `GENERATED` names; empty on a production image. */
-  readonly developmentDomains: readonly string[]
-  /** `update.source` as the baked manifest states it; null when it names none. */
-  readonly updateSource: string | null
-  /** How many keys `trust.signingKeys` carries. */
-  readonly signingKeyCount: number
-}
-
+const FILES = {
+  'image.img': 'image', 'update.mosupd': 'update', 'firmware.json': 'firmware-manifest',
+  'firmware.bin': 'firmware', 'package-manifest.tsv': 'packages', 'baked-meta.json': 'meta',
+  'development-marker.txt': 'development-marker', 'board-evidence.json': 'evidence',
+  'builder-images.json': 'build-inputs', 'sbom.cdx.json': 'sbom', 'licenses.json': 'licenses',
+  'provenance.json': 'provenance', 'release-notes.md': 'notes', 'SHA256SUMS': 'checksums',
+} as const
+const CHANNELS = ['development', 'candidate', 'stable'] as const
+export type ReleaseChannel = typeof CHANNELS[number]
+type Source = { commit: string, dirty: boolean }
+type Artifact = { filename: string, role: string, bytes: number, sha256: string }
 export interface ReleaseManifest {
-  readonly schemaVersion: number
-  readonly release: { readonly version: string, readonly channel: ReleaseChannel }
-  readonly board: { readonly name: string, readonly profile: string }
-  readonly source: { readonly commit: string, readonly dirty: boolean }
-  /** build-env/images.env's pins, transcribed. Empty when none were readable. */
-  readonly build: { readonly builderImages: Readonly<Record<string, string>> }
-  /** The boot-assurance level the board evidence asserts, e.g. "I1". */
-  readonly bootAssurance: string
-  /**
-   * The grade of the signing material the image was built from, measured from
-   * the image's own baked `meta/` and re-measured by the gate. Recorded rather
-   * than only refused, so a `development` release directory says what it is
-   * instead of being distinguishable only by having been let through.
-   */
-  readonly trust: { readonly grade: TrustGrade, readonly developmentDomains: readonly string[] }
-  readonly artifacts: readonly ReleaseArtifact[]
+  schema: 'mos/release/v1'
+  board: 'x64' | 'virt-arm64' | 'cx3576'
+  version: string
+  channel: ReleaseChannel
+  profile: 'dev' | 'prod'
+  source: Source
+  bootAssurance: string
+  developmentDomains: string[]
+  artifacts: Artifact[]
 }
-
-/** The evidence schema this tree commits, held as an equality like the manifest's. */
-export const EVIDENCE_SCHEMA_VERSION = 2
-
-/** The I1-I4 boot-assurance ladder (docs/design/security-model.md §5). */
-export const BOOT_ASSURANCE_LEVELS = ['I1', 'I2', 'I3', 'I4'] as const
-export type BootAssuranceLevel = (typeof BOOT_ASSURANCE_LEVELS)[number]
-
-/**
- * Every class an evidence ref may carry. Each ref pairs one of these with a
- * repo-verifiable reference -- a Makefile target, a tests/ suite, a verify/
- * check name, or a docs/design section -- so a claim is auditable by running
- * or reading what it cites. The set is closed: a misspelt class must not
- * silently satisfy nothing.
- */
-export const EVIDENCE_CLASSES = [
-  'verity-root', 'ab-fallback', 'update-negative', 'vendor-boot-capability', 'signature-negative',
-] as const
-export type EvidenceClass = (typeof EVIDENCE_CLASSES)[number]
-
-/**
- * The machine-enforced evidence FLOOR per claimed level -- necessary, not
- * sufficient; the ladder's full qualification bar (on-board runs, dated
- * evidence) lives in the qualification prose and the board record. Additive
- * like the ladder itself: each level's set contains the one below.
- */
-export const LEVEL_REQUIRED_CLASSES: Readonly<Record<BootAssuranceLevel, readonly EvidenceClass[]>> = {
-  I1: ['verity-root'],
-  I2: ['verity-root', 'ab-fallback', 'update-negative'],
-  I3: ['verity-root', 'ab-fallback', 'update-negative', 'vendor-boot-capability', 'signature-negative'],
-  I4: ['verity-root', 'ab-fallback', 'update-negative', 'vendor-boot-capability', 'signature-negative'],
+export interface ReleaseInputs {
+  out: string, board: ReleaseManifest['board'], version: string, channel: ReleaseChannel,
+  profile: ReleaseManifest['profile'], source: Source, builderImages: Record<string, string>,
+  image: string, update: string, firmware: string, packages: string, meta: string,
+  notes: string, evidence: string, keys: string[],
 }
-
-/**
- * The unsupported-claim wording: "secure boot" and "tamper-proof" in any
- * case, joined, spaced, underscored or hyphenated. Deliberately DUMB -- no
- * negation analysis, so even "no secure boot" trips it below I3/I4; honest
- * prose rewords instead (docs/design/release-artifacts.md §4 states the
- * exact rule, docs/design/security-model.md §0 bans the words from prose).
- */
-const UNSUPPORTED_CLAIM_WORDING = /secure[\s_-]?boot|tamper[\s_-]?proof/i
-
-export interface EvidenceRef {
-  readonly class: EvidenceClass
-  readonly ref: string
+const OFFER = 'Source code for the packages in this inventory, including any modifications, is available on request from the distributor of this image; cite the source commit recorded beside this statement.'
+function requireValue(value: unknown, message: string): asserts value {
+  if (!value) throw new Error(`Invalid release: ${message}`)
 }
-
-/** The physical/debug posture, one honest sentence per port. */
-export interface PhysicalBoundaries {
-  readonly jtag: string
-  readonly serialConsole: string
-  readonly recoveryPath: string
+function object(value: unknown, fields: string[]): Record<string, unknown> {
+  requireValue(value !== null && typeof value === 'object' && !Array.isArray(value), 'expected object')
+  const record = value as Record<string, unknown>
+  requireValue(Object.keys(record).sort().join() === [...fields].sort().join(), 'unknown or missing fields')
+  return record
 }
-
-export interface BoardEvidence {
-  readonly board: string
-  /** The board revision this record covers; "all" when one record covers every revision. */
-  readonly revision: string
-  readonly bootAssurance: BootAssuranceLevel
-  readonly qualification: string
-  readonly evidenceRefs: readonly EvidenceRef[]
-  readonly physicalBoundaries: PhysicalBoundaries
+function regular(path: string) {
+  const stat = lstatSync(path)
+  requireValue(stat.isFile(), `regular file required: ${path}`)
+  return stat
 }
-
-/** sha256 of a file's bytes, hex. The caller has already named the file. */
+function read(path: string, limit = 16 * 1048576): string {
+  requireValue(regular(path).size <= limit, `bounded record exceeded: ${path}`)
+  return readFileSync(path, 'utf8')
+}
 export function fileSha256(path: string): string {
-  return createHash('sha256').update(readFileSync(path)).digest('hex')
-}
-
-// The schema validator. Field by field, each refusal carrying its own
-// sentence, because the gate's whole product is the sentence.
-
-function isRecord(v: unknown): v is Record<string, unknown> {
-  return v !== null && typeof v === 'object' && !Array.isArray(v)
-}
-
-function requireString(v: unknown, what: string, path: string): string {
-  if (typeof v !== 'string' || v === '') {
-    throw new Error(`${path} carries no ${what} (found ${JSON.stringify(v)})`)
-  }
-  return v
-}
-
-/**
- * A filename that is a filename: same character class as a version string,
- * because both are concatenated into paths and command lines. In particular
- * no `/` and no leading `.` -- an artifact entry must not be able to point
- * the gate, or a customer's `sha256sum -c`, outside the release directory.
- */
-export function checkArtifactFilename(filename: string, path: string): string {
-  if (!/^[A-Za-z0-9][A-Za-z0-9._+-]*$/.test(filename)) {
-    throw new Error(`${path} lists artifact filename ${JSON.stringify(filename)}, which is not a plain filename`)
-  }
-  if (filename === 'manifest.json') {
-    throw new Error(`${path} lists manifest.json as its own artifact; the manifest cannot pin itself`)
-  }
-  return filename
-}
-
-/**
- * The manifest, checked shape-first so every later reader holds a typed value.
- *
- * schemaVersion is an EQUALITY against the floor, not a `>=`: a manifest
- * written by a NEWER schema may bind fields this validator has never heard
- * of, and accepting it would verify less than the writer claimed.
- */
-export function checkReleaseManifest(value: unknown, path: string): ReleaseManifest {
-  if (!isRecord(value)) {
-    throw new Error(`${path} is not a JSON object`)
-  }
-  if (value.schemaVersion !== RELEASE_SCHEMA_VERSION) {
-    throw new Error(
-      `${path} carries schemaVersion ${JSON.stringify(value.schemaVersion)} and this validator `
-      + `holds the floor at ${RELEASE_SCHEMA_VERSION}; an unknown schema would verify less than `
-      + `the writer claimed`,
-    )
-  }
-  const release = isRecord(value.release) ? value.release : {}
-  const version = checkVersion(typeof release.version === 'string' ? release.version : '')
-  const channel = release.channel
-  if (typeof channel !== 'string' || !(RELEASE_CHANNELS as readonly string[]).includes(channel)) {
-    throw new Error(
-      `release.channel ${JSON.stringify(channel)} in ${path} is not one of `
-      + `${RELEASE_CHANNELS.join('/')}`,
-    )
-  }
-  const board = isRecord(value.board) ? value.board : {}
-  const boardName = requireString(board.name, 'board.name', path)
-  const profile = requireString(board.profile, 'board.profile', path)
-  const source = isRecord(value.source) ? value.source : {}
-  const commit = typeof source.commit === 'string' ? source.commit : ''
-  if (!/^[0-9a-f]{40}$/.test(commit)) {
-    throw new Error(
-      `source.commit ${JSON.stringify(source.commit)} in ${path} is not a full 40-hex git commit; `
-      + `an abbreviated or absent commit is an identity a support case cannot resolve years later`,
-    )
-  }
-  if (typeof source.dirty !== 'boolean') {
-    throw new Error(`source.dirty in ${path} is ${JSON.stringify(source.dirty)}, not a boolean`)
-  }
-  const build = isRecord(value.build) ? value.build : {}
-  const builderImagesRaw = build.builderImages
-  if (!isRecord(builderImagesRaw)) {
-    throw new Error(`build.builderImages in ${path} is not an object`)
-  }
-  const builderImages: Record<string, string> = {}
-  for (const [k, v] of Object.entries(builderImagesRaw)) {
-    if (typeof v !== 'string') {
-      throw new Error(`build.builderImages.${k} in ${path} is ${JSON.stringify(v)}, not a string`)
-    }
-    builderImages[k] = v
-  }
-  const bootAssurance = value.bootAssurance
-  if (typeof bootAssurance !== 'string' || bootAssurance === '') {
-    throw new Error(
-      `${path} carries no bootAssurance level; it is populated from the board-evidence file `
-      + `(checkBoardEvidence), and a release with none is a release nobody has qualified`,
-    )
-  }
-  const trustRaw = value.trust
-  if (!isRecord(trustRaw)) {
-    throw new Error(
-      `${path} carries no trust block; it records the grade of the signing material the image was `
-      + `built from, measured from the image's own /usr/share/mos/meta/, and a release that does `
-      + `not say whether it was signed with development keys is one nobody can refuse`,
-    )
-  }
-  const grade = trustRaw.grade
-  if (typeof grade !== 'string' || !(TRUST_GRADES as readonly string[]).includes(grade)) {
-    throw new Error(
-      `trust.grade ${JSON.stringify(grade)} in ${path} is not one of ${TRUST_GRADES.join('/')}`,
-    )
-  }
-  const domainsRaw = trustRaw.developmentDomains
-  if (!Array.isArray(domainsRaw) || domainsRaw.some(d => typeof d !== 'string')) {
-    throw new Error(
-      `trust.developmentDomains in ${path} is not an array of strings; a production release `
-      + `carries the empty array rather than omitting the field, so an absent one is a manifest `
-      + `written by something that did not measure`,
-    )
-  }
-  const developmentDomains = domainsRaw as string[]
-
-  const artifactsRaw = value.artifacts
-  if (!Array.isArray(artifactsRaw) || artifactsRaw.length === 0) {
-    throw new Error(`${path} lists no artifacts; a release of nothing is not a release`)
-  }
-  const artifacts: ReleaseArtifact[] = []
-  const seen = new Set<string>()
-  for (const a of artifactsRaw) {
-    if (!isRecord(a)) throw new Error(`${path} carries an artifact entry that is not an object`)
-    const filename = checkArtifactFilename(requireString(a.filename, 'artifact filename', path), path)
-    const role = a.role
-    if (typeof role !== 'string' || !(ARTIFACT_ROLES as readonly string[]).includes(role)) {
-      throw new Error(
-        `artifact ${filename} in ${path} carries role ${JSON.stringify(role)}, not one of `
-        + `${ARTIFACT_ROLES.join('/')}`,
-      )
-    }
-    const bytes = a.bytes
-    if (typeof bytes !== 'number' || !Number.isInteger(bytes) || bytes < 0) {
-      throw new Error(`artifact ${filename} in ${path} records bytes ${JSON.stringify(bytes)}, not a non-negative integer`)
-    }
-    const sha256 = a.sha256
-    if (typeof sha256 !== 'string' || !/^[0-9a-f]{64}$/.test(sha256)) {
-      throw new Error(`artifact ${filename} in ${path} records sha256 ${JSON.stringify(sha256)}, not 64 hex digits`)
-    }
-    if (seen.has(filename)) {
-      throw new Error(`${path} lists ${filename} twice; two entries under one name is not a pin`)
-    }
-    seen.add(filename)
-    artifacts.push({ filename, role: role as ArtifactRole, bytes, sha256 })
-  }
-  const missing = REQUIRED_ROLES.filter(r => !artifacts.some(a => a.role === r))
-  if (missing.length > 0) {
-    throw new Error(
-      `${path} carries no artifact with role ${missing.join(', ')}; the publication floor is one `
-      + `of each of ${REQUIRED_ROLES.join(', ')}, and an incomplete release is not published`,
-    )
-  }
-  return {
-    schemaVersion: RELEASE_SCHEMA_VERSION,
-    release: { version, channel: channel as ReleaseChannel },
-    board: { name: boardName, profile },
-    source: { commit, dirty: source.dirty },
-    build: { builderImages },
-    bootAssurance,
-    trust: { grade: grade as TrustGrade, developmentDomains },
-    artifacts,
-  }
-}
-
-/**
- * What an image's baked `/usr/share/mos/meta/` says about the trust it ships.
- *
- * `dir` is that directory as EXTRACTED from the image, handed in the way
- * `--package-manifest` already is: `docs/design/release-artifacts.md` §3
- * records the reason -- the extraction needs the verify toolset and the
- * extracted bytes are the same either way -- and the bound that comes with it,
- * that a caller who hands over the wrong directory gets an answer about the
- * wrong directory, is inherited rather than invented.
- *
- * **The vacuity guard is the manifest, and it is the point of this function.**
- * A grade read as "no GENERATED marker" out of a missing or empty directory is
- * `production` for every image ever built on a host that never extracted one.
- * `updates/manifest.json` is a REQUIRED member of the baked public set
- * (`rootfs/build.sh`'s `META_PUBLIC`), so its absence means the extraction is
- * wrong or the image provisions no anchor -- and neither of those is a release.
- * Both are a throw.
- */
-export function readBakedTrust(dir: string): BakedTrust {
-  const manifestPath = join(dir, 'updates', 'manifest.json')
-  const st = statSync(manifestPath, { throwIfNoEntry: false })
-  if (st === undefined || !st.isFile()) {
-    throw new Error(
-      `${manifestPath} does not exist, so ${dir} is not the /usr/share/mos/meta/ of a mos image. `
-      + `That document is a required member of the baked public set, so an extraction without it `
-      + `is either the wrong directory or an image that provisions no trust anchor at all -- and `
-      + `reading "no development marker here" out of a directory nobody populated would report `
-      + `every such image as production`,
-    )
-  }
-  let parsed: unknown
+  regular(path)
+  const fd = openSync(path, 'r'), hash = createHash('sha256'), buffer = Buffer.alloc(1048576)
   try {
-    parsed = JSON.parse(readFileSync(manifestPath, 'utf8'))
-  } catch (e) {
-    throw new Error(`${manifestPath} is not JSON: ${e instanceof Error ? e.message : String(e)}`)
-  }
-  if (!isRecord(parsed)) {
-    throw new Error(`${manifestPath} is not a JSON object; it is the baked update configuration`)
-  }
-  // Two fields, read defensively rather than a second validator: the schema is
-  // PLAN-070 F5's and mosd's reader owns it. What is refused here is a value
-  // this gate cannot READ, because "cannot tell" must never render as "fine".
-  const update = isRecord(parsed.update) ? parsed.update : {}
-  const rawSource = update.source
-  if (rawSource !== null && rawSource !== undefined && typeof rawSource !== 'string') {
-    throw new Error(
-      `update.source in ${manifestPath} is ${JSON.stringify(rawSource)}, neither a string nor `
-      + `null; this gate cannot tell whether the image names an update server`,
-    )
-  }
-  const trust = isRecord(parsed.trust) ? parsed.trust : {}
-  const keys = trust.signingKeys
-  if (!Array.isArray(keys)) {
-    throw new Error(
-      `trust.signingKeys in ${manifestPath} is ${JSON.stringify(keys)}, not an array. It is the `
-      + `image's package-trust anchor and rootfs/build.sh refuses to bake a manifest without it, `
-      + `so an image carrying none was not staged by this build`,
-    )
-  }
-
-  const markerPath = join(dir, BAKED_TRUST_MARKER)
-  const markerStat = statSync(markerPath, { throwIfNoEntry: false })
-  const marker = markerStat === undefined ? undefined : readFileSync(markerPath, 'utf8')
-  return {
-    grade: marker === undefined ? 'production' : 'development',
-    developmentDomains: marker === undefined ? [] : markerDomains(marker),
-    updateSource: typeof rawSource === 'string' ? rawSource : null,
-    signingKeyCount: keys.length,
-  }
+    for (;;) { const n = readSync(fd, buffer); if (!n) break; hash.update(buffer.subarray(0, n)) }
+    return hash.digest('hex')
+  } finally { closeSync(fd) }
 }
-
-/** The development-grade marker's name, in the image and in the tree's `meta/`. */
-export const BAKED_TRUST_MARKER = 'GENERATED'
-
-/**
- * The domains a `GENERATED` marker names, from its `DOMAINS=` line.
- *
- * The LAST such line wins, which is `pkgs/rauc/gen-dev-keys.sh`'s own rule when
- * it merges a second domain into an existing marker. A marker naming none is
- * still a marker: its presence is the claim and the line only says which half.
- */
-export function markerDomains(text: string): string[] {
-  const lines = text.split('\n').filter(l => l.startsWith('DOMAINS='))
-  const last = lines[lines.length - 1]
-  return last === undefined ? [] : last.slice('DOMAINS='.length).split(/\s+/).filter(d => d !== '')
+function measure(dir: string, filename: string): Artifact {
+  const path = join(dir, filename)
+  return { filename, role: FILES[filename as keyof typeof FILES], bytes: regular(path).size, sha256: fileSha256(path) }
 }
-
-/**
- * The board-evidence file: the per-board/revision claim record, held against
- * the I1-I4 ladder's semantics -- this validator and security-model.md §5 are
- * together the ONE place those semantics live.
- *
- * Beyond shape, three things are enforced: every claimed level is backed by
- * its LEVEL_REQUIRED_CLASSES floor (a missing class is a refusal naming it),
- * the physical/debug posture is stated per port, and unsupported-claim
- * wording ("secure boot"/"tamper-proof") is refused anywhere in the file's
- * prose unless the claim is an evidenced I3/I4 -- the class floor for which
- * has, by that point in this function, already been enforced.
- */
-/**
- * Refuse a board that declares it has no release path.
- *
- * `BOARD_RELEASE_TARGET` is the board's own statement of whether a release is a
- * thing it HAS: an assembled directory, an SBOM, provenance, release notes, and
- * an evidence file held to the assurance ladder. x64 and cx3576 declare 1;
- * virt-arm64 declares 0, because it exists so that arm64 code can be run rather
- * than so that an artifact can be shipped.
- *
- * WHY THIS IS A CHECK AND NOT A CONVENTION. Before it, "virt-arm64 is outside
- * the release set" was true only in prose. `bash build/run.sh --release
- * assemble --board virt-arm64` would have been accepted -- release-cli takes
- * any board with a board.env -- and it would have assembled a release for a
- * board with no dossier, no SBOM and no evidence file, failing much later and
- * somewhere else, or not at all. An exclusion nothing can see is not an
- * exclusion.
- *
- * The message names the key rather than the board, so a board promoted to a
- * product target is told exactly what to change.
- */
-export function requireReleaseTarget(
-  board: string,
-  releaseTarget: string | undefined,
-  boardEnvPathForMessage: string,
-): void {
-  if (releaseTarget === '1') return
-  if (releaseTarget === undefined || releaseTarget === '') {
-    throw new Error(
-      `${boardEnvPathForMessage} declares no BOARD_RELEASE_TARGET, so whether '${board}' has a `
-      + 'release path is unstated. A release assembled past this point would carry whatever '
-      + 'evidence, SBOM and notes happened to exist. Declare 1 (has a release path) or 0 (a test '
-      + 'target).',
-    )
-  }
-  throw new Error(
-    `board '${board}' declares BOARD_RELEASE_TARGET=${releaseTarget}, so it has no release path and `
-    + 'no release may be assembled or gated for it. It is a TEST target: it exists so that code can '
-    + 'be run on its architecture, and it ships no evidence file, no SBOM and no release notes. If '
-    + `that has changed, ${boardEnvPathForMessage} is where it is changed -- and the board then owes `
-    + 'an evidence.json that satisfies the assurance ladder.',
-  )
+function json(dir: string, filename: string, value: unknown) {
+  writeFileSync(join(dir, filename), `${JSON.stringify(value, null, 2)}\n`)
 }
-
-export function checkBoardEvidence(value: unknown, path: string, board: string): BoardEvidence {
-  if (!isRecord(value)) {
-    throw new Error(`${path} is not a JSON object`)
-  }
-  if (value.schemaVersion !== EVIDENCE_SCHEMA_VERSION) {
-    throw new Error(
-      `${path} carries evidence schemaVersion ${JSON.stringify(value.schemaVersion)}; this reader `
-      + `holds ${EVIDENCE_SCHEMA_VERSION}`,
-    )
-  }
-  const evBoard = requireString(value.board, 'evidence board name', path)
-  if (evBoard !== board) {
-    throw new Error(
-      `${path} is evidence for board '${evBoard}' and this release is for '${board}'; `
-      + `evidence is per board and the wrong board's proves nothing here`,
-    )
-  }
-  const revision = requireString(value.revision, 'board revision ("all" when one record covers every revision)', path)
-  const bootAssurance = value.bootAssurance
-  if (typeof bootAssurance !== 'string' || !(BOOT_ASSURANCE_LEVELS as readonly string[]).includes(bootAssurance)) {
-    throw new Error(
-      `${path} claims boot-assurance ${JSON.stringify(bootAssurance)}, not one of `
-      + `${BOOT_ASSURANCE_LEVELS.join('/')} (the ladder in docs/design/security-model.md §5)`,
-    )
-  }
-  const level = bootAssurance as BootAssuranceLevel
-  const qualification = requireString(value.qualification, 'qualification statement', path)
-
-  const refsRaw = value.evidenceRefs
-  if (!Array.isArray(refsRaw) || refsRaw.length === 0) {
-    throw new Error(
-      `${path} lists no evidenceRefs; a boot-assurance claim with nothing behind it is exactly `
-      + `what this file exists to refuse`,
-    )
-  }
-  const evidenceRefs: EvidenceRef[] = []
-  for (const r of refsRaw) {
-    if (!isRecord(r)) {
-      throw new Error(`${path} carries an evidenceRefs entry that is not an object`)
-    }
-    const cls = r.class
-    if (typeof cls !== 'string' || !(EVIDENCE_CLASSES as readonly string[]).includes(cls)) {
-      throw new Error(
-        `${path} carries an evidenceRefs entry of class ${JSON.stringify(cls)}, not one of `
-        + `${EVIDENCE_CLASSES.join('/')}; a class outside the set satisfies no level and hides a typo`,
-      )
-    }
-    const ref = requireString(r.ref, `repo-verifiable reference on its '${cls}' evidence entry`, path)
-    evidenceRefs.push({ class: cls as EvidenceClass, ref })
-  }
-
-  const pbRaw = value.physicalBoundaries
-  if (!isRecord(pbRaw)) {
-    throw new Error(
-      `${path} carries no physicalBoundaries block; the jtag/serialConsole/recoveryPath posture `
-      + `is part of the claim (docs/design/manufacturing.md §6)`,
-    )
-  }
-  const jtag = requireString(pbRaw.jtag, 'physicalBoundaries.jtag statement', path)
-  const serialConsole = requireString(pbRaw.serialConsole, 'physicalBoundaries.serialConsole statement', path)
-  const recoveryPath = requireString(pbRaw.recoveryPath, 'physicalBoundaries.recoveryPath statement', path)
-
-  const present = new Set(evidenceRefs.map(r => r.class))
-  for (const cls of LEVEL_REQUIRED_CLASSES[level]) {
-    if (!present.has(cls)) {
-      throw new Error(
-        `${path} claims boot-assurance ${level} with no evidenceRefs entry of class '${cls}'; `
-        + `${level} requires every class of [${LEVEL_REQUIRED_CLASSES[level].join(', ')}], and a `
-        + `claim above its evidence fails publication`,
-      )
-    }
-  }
-
-  if (level !== 'I3' && level !== 'I4') {
-    const texts = [qualification, ...evidenceRefs.map(r => r.ref), jtag, serialConsole, recoveryPath]
-    const hit = texts.find(t => UNSUPPORTED_CLAIM_WORDING.test(t))
-    if (hit !== undefined) {
-      const word = (UNSUPPORTED_CLAIM_WORDING.exec(hit) as RegExpExecArray)[0]
-      throw new Error(
-        `${path} says ${JSON.stringify(word)} while claiming boot-assurance ${level}; that wording `
-        + `is refused below an evidenced I3/I4 claim, even in a negation -- reword the statement `
-        + `(matching rule: docs/design/release-artifacts.md §4)`,
-      )
-    }
-  }
-
-  return {
-    board: evBoard,
-    revision,
-    bootAssurance: level,
-    qualification,
-    evidenceRefs,
-    physicalBoundaries: { jtag, serialConsole, recoveryPath },
-  }
+function sums(artifacts: Artifact[]): string {
+  return artifacts.filter(a => a.role !== 'checksums').map(a => `${a.sha256}  ${a.filename}\n`).join('')
 }
-
-// The SBOM inputs: /usr/share/mos/manifest.tsv, the image's own bill of
-// materials, in the shape rootfs/compose/90-pack.Dockerfile writes and
-// verify's packed-mos-manifest check holds.
-
-export interface PackageRow {
-  readonly name: string
-  readonly version: string
-  readonly architecture: string
+function manifest(value: unknown): ReleaseManifest {
+  const m = object(value, ['schema', 'board', 'version', 'channel', 'profile', 'source', 'bootAssurance', 'developmentDomains', 'artifacts'])
+  requireValue(m.schema === 'mos/release/v1', 'unsupported schema')
+  requireValue(['x64', 'virt-arm64', 'cx3576'].includes(m.board as string), 'unsupported board')
+  requireValue(typeof m.version === 'string' && /^[A-Za-z0-9][A-Za-z0-9._+-]{0,127}$/.test(m.version), 'invalid version')
+  requireValue(CHANNELS.includes(m.channel as ReleaseChannel) && ['dev', 'prod'].includes(m.profile as string), 'channel or profile')
+  const source = object(m.source, ['commit', 'dirty'])
+  requireValue(typeof source.commit === 'string' && /^[a-f0-9]{40}$/.test(source.commit) && typeof source.dirty === 'boolean', 'source identity')
+  requireValue(['I1', 'I2', 'I3', 'I4'].includes(m.bootAssurance as string), 'boot assurance')
+  requireValue(Array.isArray(m.developmentDomains) && m.developmentDomains.every(d => ['boot', 'verity', 'updates'].includes(d))
+    && new Set(m.developmentDomains).size === m.developmentDomains.length, 'development domains')
+  requireValue(Array.isArray(m.artifacts) && m.artifacts.length === Object.keys(FILES).length, 'artifact count')
+  const seen = new Set<string>()
+  for (const value of m.artifacts) {
+    const a = object(value, ['filename', 'role', 'bytes', 'sha256'])
+    requireValue(typeof a.filename === 'string' && Object.hasOwn(FILES, a.filename)
+      && FILES[a.filename as keyof typeof FILES] === a.role && !seen.has(a.filename), 'artifact filename or role')
+    seen.add(a.filename)
+    requireValue(Number.isSafeInteger(a.bytes) && (a.bytes as number) >= 0
+      && typeof a.sha256 === 'string' && /^[a-f0-9]{64}$/.test(a.sha256), 'artifact digest or length')
+  }
+  return value as ReleaseManifest
 }
-
-/**
- * The manifest.tsv rows, refused three ways before an SBOM is derived from
- * them -- the same three facts packed-mos-manifest asserts about the shipped
- * file, because an SBOM derived from a file that would fail that check is an
- * SBOM about a broken image: every row is package<TAB>version<TAB>arch, the
- * file names packages at all, and it names mos packages at all.
- */
-export function packageRows(tsvText: string, path: string): PackageRow[] {
-  const rows = tsvText.split('\n').filter(l => l !== '' && !l.startsWith('#'))
-  const malformed = rows.filter(l => l.split('\t').length !== 3)
-  if (malformed.length > 0) {
-    throw new Error(
-      `${path} carries ${malformed.length} of ${rows.length} row(s) that are not `
-      + `package<TAB>version<TAB>architecture, the first being ${JSON.stringify(malformed[0])}`,
-    )
+function domains(marker: string): string[] {
+  if (marker === '') return []
+  const match = /^DEVELOPMENT-GRADE\nDOMAINS=((?:boot|verity|updates)(?: (?:boot|verity|updates))*)\n$/.exec(marker)
+  requireValue(match, 'malformed development marker')
+  const result = match[1]!.split(' ')
+  requireValue(new Set(result).size === result.length, 'duplicate development marker domain')
+  return result.sort()
+}
+function evidence(value: unknown, board: string): string {
+  const e = object(value, ['schemaVersion', 'board', 'revision', 'bootAssurance', 'qualification', 'evidenceRefs', 'physicalBoundaries'])
+  requireValue(e.schemaVersion === 2 && e.board === board, 'evidence board or schema')
+  for (const field of ['revision', 'qualification']) requireValue(typeof e[field] === 'string' && (e[field] as string).trim(), `evidence ${field}`)
+  const levels: Record<string, string[]> = {
+    I1: ['verity-root'], I2: ['verity-root', 'ab-fallback', 'update-negative'],
+    I3: ['verity-root', 'ab-fallback', 'update-negative', 'vendor-boot-capability', 'signature-negative'],
+    I4: ['verity-root', 'ab-fallback', 'update-negative', 'vendor-boot-capability', 'signature-negative'],
   }
-  if (rows.length === 0) {
-    throw new Error(`${path} lists no packages; an SBOM derived from it would be empty and say nothing`)
+  requireValue(typeof e.bootAssurance === 'string' && Object.hasOwn(levels, e.bootAssurance), 'evidence assurance')
+  requireValue(Array.isArray(e.evidenceRefs) && e.evidenceRefs.length > 0, 'evidence references')
+  const classes = new Set<string>()
+  for (const value of e.evidenceRefs) {
+    const ref = object(value, ['class', 'ref'])
+    requireValue(typeof ref.class === 'string' && levels.I4!.includes(ref.class)
+      && typeof ref.ref === 'string' && ref.ref.trim(), 'evidence reference')
+    classes.add(ref.class)
   }
-  const parsed = rows.map((l) => {
-    const [name, version, architecture] = l.split('\t') as [string, string, string]
+  requireValue(levels[e.bootAssurance]!.every(c => classes.has(c)), 'evidence below claimed assurance')
+  const boundary = object(e.physicalBoundaries, ['jtag', 'serialConsole', 'recoveryPath'])
+  requireValue(Object.values(boundary).every(v => typeof v === 'string' && v.trim()), 'evidence physical boundaries')
+  return e.bootAssurance
+}
+function packages(text: string) {
+  const seen = new Set<string>()
+  const rows = text.split('\n').filter(line => line && !line.startsWith('#')).map(line => {
+    const fields = line.split('\t')
+    requireValue(fields.length === 3 && fields.every(f => f && !/[\x00-\x20]/.test(f)), 'package inventory row')
+    const [name, version, architecture] = fields as [string, string, string]
+    const identity = `${name}:${architecture}`
+    requireValue(!seen.has(identity), 'duplicate package'); seen.add(identity)
     return { name, version, architecture }
   })
-  if (!parsed.some(r => r.name.startsWith('mos'))) {
-    throw new Error(
-      `${path} names no mos package, so the image it describes installed none of this `
-      + `repository's packages; an SBOM over it would describe a base system, not a release`,
-    )
-  }
-  return parsed
+  requireValue(rows.some(r => r.name.startsWith('mos')), 'empty MOS package inventory')
+  return rows.sort((a, b) => `${a.name}:${a.architecture}`.localeCompare(`${b.name}:${b.architecture}`))
 }
-
-export interface SbomIdentity {
-  readonly board: string
-  readonly version: string
-  readonly commit: string
-  readonly dirty: boolean
-}
-
-/**
- * A CycloneDX 1.5 document over the rows. CycloneDX rather than SPDX for one
- * reason a release cares about: it requires no creation timestamp, so the
- * document is a pure function of its inputs and two builds of one image emit
- * identical bytes. The source offer rides in metadata rather than per
- * component, because it is one statement about the whole inventory.
- */
-export function sbomFromRows(rows: readonly PackageRow[], identity: SbomIdentity): object {
+function derived(dir: string, m: Omit<ReleaseManifest, 'artifacts'>) {
+  const rows = packages(read(join(dir, 'package-manifest.tsv')))
+  const images: unknown = JSON.parse(read(join(dir, 'builder-images.json')))
+  requireValue(images !== null && typeof images === 'object' && !Array.isArray(images)
+    && Object.keys(images).length > 0 && Object.entries(images).every(([k, v]) => /^(IMAGE|LOCAL)_[A-Z0-9_]+$/.test(k) && typeof v === 'string' && v), 'builder image records')
   return {
-    bomFormat: 'CycloneDX',
-    specVersion: '1.5',
-    version: 1,
-    metadata: {
-      component: {
-        type: 'operating-system',
-        name: `mos-${identity.board}`,
-        version: identity.version,
-      },
-      properties: [
-        { name: 'mos:source-commit', value: identity.commit },
-        { name: 'mos:source-dirty', value: String(identity.dirty) },
-        { name: 'mos:source-offer', value: SOURCE_OFFER },
-      ],
-    },
-    components: rows.map(r => ({
-      type: 'library',
-      name: r.name,
-      version: r.version,
-      properties: [{ name: 'mos:architecture', value: r.architecture }],
-    })),
+    'sbom.cdx.json': { bomFormat: 'CycloneDX', specVersion: '1.5', version: 1,
+      metadata: { component: { type: 'operating-system', name: `mos-${m.board}`, version: m.version },
+        properties: [{ name: 'mos:source-commit', value: m.source.commit }, { name: 'mos:source-dirty', value: String(m.source.dirty) }, { name: 'mos:source-offer', value: OFFER }] },
+      components: rows.map(r => ({ type: 'library', name: r.name, version: r.version, properties: [{ name: 'mos:architecture', value: r.architecture }] })) },
+    'licenses.json': { schemaVersion: 1, statement: OFFER, source: m.source, packages: rows },
+    'provenance.json': { schema: 'mos/provenance/v1', source: m.source, board: m.board, version: m.version, profile: m.profile, builderImages: images,
+      inputs: ['image.img', 'update.mosupd', 'firmware.json', 'firmware.bin', 'package-manifest.tsv', 'baked-meta.json', 'development-marker.txt', 'board-evidence.json', 'builder-images.json', 'release-notes.md'].map(filename => measure(dir, filename)) },
   }
 }
-
-/**
- * The license/source-offer inventory: the offer statement, the identity it is
- * redeemable against, and the package list it covers. The list repeats the
- * SBOM's on purpose -- this file is the one a compliance request is answered
- * from, and an answer that says "see the other file" is not an inventory.
- */
-export function licensesFromRows(rows: readonly PackageRow[], source: { commit: string, dirty: boolean }): object {
-  return {
-    schemaVersion: 1,
-    statement: SOURCE_OFFER,
-    source,
-    packages: rows.map(r => ({ name: r.name, version: r.version, architecture: r.architecture })),
+/** Authenticate every MOSUPD01 object using bounded reads, without unpacking it. */
+export function verifyArchive(path: string, keys: readonly string[]) {
+  regular(path)
+  const fd = openSync(path, 'r')
+  const exact = (length: number) => {
+    const bytes = Buffer.alloc(length)
+    let offset = 0
+    while (offset < length) { const n = readSync(fd, bytes, offset, length - offset, null); requireValue(n > 0, 'truncated update archive'); offset += n }
+    return bytes
   }
-}
-
-/**
- * build-env/images.env's IMAGE_/LOCAL_ assignments, transcribed verbatim.
- *
- * A TRANSCRIPTION, not a resolution: build-env/from.sh stays the tree's one
- * resolver and validator of these pins (src/images.ts says why a second one
- * is a defect), and nothing here checks that a value is a digest or that a
- * registry has it. What a release manifest needs is the record of which pins
- * the tree carried when the release was cut, byte for byte as written.
- */
-export function builderImagesFrom(imagesEnvText: string): Record<string, string> {
-  const out: Record<string, string> = {}
-  for (const line of imagesEnvText.split('\n')) {
-    const m = /^((?:IMAGE|LOCAL)_[A-Z0-9_]+)=(.*)$/.exec(line)
-    if (m !== null) out[m[1] as string] = m[2] as string
-  }
-  return out
-}
-
-/**
- * SHA256SUMS, in the two-space form `sha256sum -c` reads, over every artifact
- * except the checksums file itself -- a file cannot pin its own digest, which
- * is why manifest.json pins SHA256SUMS instead. Handing this function a
- * checksums-role artifact is that contradiction, so it is refused rather
- * than quietly skipped: the caller's list is wrong, not long.
- */
-export function sha256SumsText(artifacts: readonly ReleaseArtifact[]): string {
-  const self = artifacts.find(a => a.role === 'checksums')
-  if (self !== undefined) {
-    throw new Error(
-      `sha256SumsText was handed ${self.filename} (role checksums); the checksums file cannot `
-      + `list its own digest, and silently dropping it here would hide a wrong caller`,
-    )
-  }
-  return artifacts.map(a => `${a.sha256}  ${a.filename}\n`).join('')
-}
-
-// The publication gate.
-
-export interface GateReport {
-  readonly manifest: ReleaseManifest
-  readonly evidence: BoardEvidence
-  readonly artifactsChecked: number
-  readonly bytesTotal: number
-  /** What the image's own baked meta/ said when the gate re-measured it. */
-  readonly trust: BakedTrust
-}
-
-/**
- * The gate: a release directory re-checked from scratch, refusing the first
- * gap by name. Nothing is trusted from the assembly that wrote it -- the
- * manifest is re-validated, every artifact is re-measured and re-hashed,
- * SHA256SUMS is re-derived and compared, and the board evidence is re-read --
- * so the same command answers "may this be published?" whether the directory
- * was written a minute ago or restored from an archive.
- */
-export function gateReleaseDir(dir: string, evidencePath: string, bakedMetaDir: string): GateReport {
-  const manifestPath = join(dir, 'manifest.json')
-  const st = statSync(manifestPath, { throwIfNoEntry: false })
-  if (st === undefined || !st.isFile()) {
-    throw new Error(`${manifestPath} does not exist; without the manifest there is no release to gate, only files`)
-  }
-  let parsed: unknown
   try {
-    parsed = JSON.parse(readFileSync(manifestPath, 'utf8'))
-  } catch (e) {
-    throw new Error(`${manifestPath} is not JSON: ${e instanceof Error ? e.message : String(e)}`)
-  }
-  const manifest = checkReleaseManifest(parsed, manifestPath)
-
-  let bytesTotal = 0
-  for (const a of manifest.artifacts) {
-    const p = join(dir, a.filename)
-    const ast = statSync(p, { throwIfNoEntry: false })
-    if (ast === undefined || !ast.isFile()) {
-      throw new Error(
-        `${a.filename} (role ${a.role}) is listed in manifest.json and missing from ${dir}; `
-        + `an incomplete release is not published`,
-      )
+    requireValue(exact(8).toString() === 'MOSUPD01', 'update archive format')
+    const size = exact(4).readUInt32BE(); requireValue(size > 0 && size <= 16384, 'update envelope length')
+    const deployment = authenticateDeployment(exact(size).toString('utf8'), keys)
+    const objects = new Map<string, number>()
+    for (const a of [deployment.kernel.boot.artifact, deployment.kernel.support.image, deployment.kernel.support.signature, deployment.rootfs.content.image, deployment.rootfs.content.signature]) {
+      requireValue(!objects.has(a.sha256) || objects.get(a.sha256) === a.bytes, 'conflicting object lengths')
+      objects.set(a.sha256, a.bytes)
     }
-    if (ast.size !== a.bytes) {
-      throw new Error(
-        `${a.filename} is ${ast.size} bytes and manifest.json records ${a.bytes}; `
-        + `the artifact changed after it was manifested`,
-      )
+    requireValue(exact(4).readUInt32BE() === objects.size, 'update object count')
+    for (const [sha, bytes] of [...objects].sort(([a], [b]) => a.localeCompare(b))) {
+      requireValue(exact(64).toString() === sha && exact(8).readBigUInt64BE() === BigInt(bytes), 'update object header')
+      const hash = createHash('sha256')
+      for (let remaining = bytes; remaining > 0;) { const count = Math.min(65536, remaining); hash.update(exact(count)); remaining -= count }
+      requireValue(hash.digest('hex') === sha, 'update object digest')
     }
-    const got = fileSha256(p)
-    if (got !== a.sha256) {
-      throw new Error(
-        `${a.filename} hashes to sha256 ${got} and manifest.json records ${a.sha256}; `
-        + `a byte of this release changed after it was manifested`,
-      )
-    }
-    bytesTotal += a.bytes
-  }
-
-  // The role floor guarantees exactly one pass through each of these finds
-  // its artifact; `find` is over the validated list, so a miss is impossible
-  // here and needs no second sentence.
-  const sums = manifest.artifacts.find(a => a.role === 'checksums') as ReleaseArtifact
-  const wantSums = sha256SumsText(manifest.artifacts.filter(a => a.role !== 'checksums'))
-  const gotSums = readFileSync(join(dir, sums.filename), 'utf8')
-  if (gotSums !== wantSums) {
-    throw new Error(
-      `${sums.filename} does not agree with manifest.json about the artifact digests; the two `
-      + `are written from one measurement, so a divergence means the generator that wrote this `
-      + `directory is broken, not that a byte rotted`,
-    )
-  }
-
-  const notes = manifest.artifacts.find(a => a.role === 'release-notes') as ReleaseArtifact
-  if (statSync(join(dir, notes.filename)).size === 0) {
-    throw new Error(`the release notes ${notes.filename} in ${dir} are empty; a release nobody described is not published`)
-  }
-
-  const sbomEntry = manifest.artifacts.find(a => a.role === 'sbom') as ReleaseArtifact
-  let sbom: unknown
-  try {
-    sbom = JSON.parse(readFileSync(join(dir, sbomEntry.filename), 'utf8'))
-  } catch (e) {
-    throw new Error(`${sbomEntry.filename} is not JSON: ${e instanceof Error ? e.message : String(e)}`)
-  }
-  const components = isRecord(sbom) && Array.isArray(sbom.components) ? sbom.components : []
-  if (!isRecord(sbom) || sbom.bomFormat !== 'CycloneDX' || components.length === 0) {
-    throw new Error(
-      `${sbomEntry.filename} is not a CycloneDX SBOM listing at least one component; an empty `
-      + `SBOM verifies nothing and would pass every later audit by saying nothing`,
-    )
-  }
-
-  const est = statSync(evidencePath, { throwIfNoEntry: false })
-  if (est === undefined || !est.isFile()) {
-    throw new Error(
-      `no board evidence at ${evidencePath}; the publication gate refuses a release no evidence `
-      + `qualifies. The evidence file asserts the board's boot-assurance level and qualification `
-      + `state (see docs/design/release-artifacts.md)`,
-    )
-  }
-  let evidenceRaw: unknown
-  try {
-    evidenceRaw = JSON.parse(readFileSync(evidencePath, 'utf8'))
-  } catch (e) {
-    throw new Error(`${evidencePath} is not JSON: ${e instanceof Error ? e.message : String(e)}`)
-  }
-  const evidence = checkBoardEvidence(evidenceRaw, evidencePath, manifest.board.name)
-  if (evidence.bootAssurance !== manifest.bootAssurance) {
-    throw new Error(
-      `${evidencePath} asserts boot-assurance '${evidence.bootAssurance}' and manifest.json `
-      + `records '${manifest.bootAssurance}'; the manifest is populated FROM the evidence, so a `
-      + `divergence means the evidence changed after the release was assembled -- re-assemble`,
-    )
-  }
-
-  // The trust refusals, LAST, because they are about publication policy and
-  // everything above is about whether there is a release here at all. Telling
-  // somebody their bench image may not go to stable before telling them their
-  // SBOM is empty answers a question they have not reached yet.
-  const trust = readBakedTrust(bakedMetaDir)
-  if (trust.grade !== manifest.trust.grade
-    || trust.developmentDomains.join(' ') !== manifest.trust.developmentDomains.join(' ')) {
-    throw new Error(
-      `${bakedMetaDir} measures trust grade '${trust.grade}'`
-      + `${trust.developmentDomains.length > 0 ? ` (domains ${trust.developmentDomains.join(' ')})` : ''} `
-      + `and manifest.json records '${manifest.trust.grade}'`
-      + `${manifest.trust.developmentDomains.length > 0 ? ` (domains ${manifest.trust.developmentDomains.join(' ')})` : ''}; `
-      + `the manifest is populated FROM the image's baked meta/, so a divergence means the two are `
-      + `not from one build -- re-extract and re-assemble`,
-    )
-  }
-  if (trust.grade === 'development' && CUSTOMER_CHANNELS.includes(manifest.release.channel)) {
-    throw new Error(
-      `this release is on the '${manifest.release.channel}' channel and its image carries `
-      + `/usr/share/mos/meta/${BAKED_TRUST_MARKER}, which marks the signing material it was built `
-      + `from DEVELOPMENT-GRADE in ${trust.developmentDomains.length > 0 ? `the ${trust.developmentDomains.join(' and ')} domain(s)` : 'a domain it does not name'}. `
-      + `Every device flashed from it trusts bundles signed by a key that lives unprotected in a `
-      + `working tree, or verifies packages against one. A development image may be published to `
-      + `the '${RELEASE_CHANNELS[0]}' channel, which carries no promise; it may not be published `
-      + `to a customer. Put production material in meta/ -- without meta/${BAKED_TRUST_MARKER} `
-      + `beside it -- and rebuild (docs/design/release-signing.md §2.5)`,
-    )
-  }
-  if (CUSTOMER_CHANNELS.includes(manifest.release.channel) && trust.signingKeyCount === 0) {
-    throw new Error(
-      `this release is on the '${manifest.release.channel}' channel and its image's `
-      + `trust.signingKeys is empty, so it trusts no package signing key at all`
-      + `${trust.updateSource === null
-        ? ' and bakes no update source either'
-        : ` while baking the source ${trust.updateSource}`}. `
-      + `Under PLAN-070 §5.3 the source URL is operator-changeable, so "this image will never `
-      + `fetch a package" stopped being a fact the build can establish: an authenticated operator `
-      + `can point any device of this release at a server, and every package it then downloads is `
-      + `refused as unauthentic with no remedy but a new image. An empty key list is a supported `
-      + `steady state on the '${RELEASE_CHANNELS[0]}' channel, which carries no promise; a customer `
-      + `release carries the key a ceremony produced (docs/design/release-signing.md §2.1)`,
-    )
-  }
-
-  return { manifest, evidence, artifactsChecked: manifest.artifacts.length, bytesTotal, trust }
+    requireValue(readSync(fd, Buffer.alloc(1)) === 0, 'trailing update archive bytes')
+    return deployment
+  } finally { closeSync(fd) }
 }
-
-// Assembly.
-
-export interface AssembleInputs {
-  readonly board: string
-  readonly profile: string
-  readonly channel: string
-  readonly version: string
-  readonly imagePath: string
-  readonly bundlePath: string
-  /** The image's /usr/share/mos/manifest.tsv content, as a file. */
-  readonly packageManifestPath: string
-  /**
-   * The image's `/usr/share/mos/meta/` directory, as extracted -- the same
-   * shape as `packageManifestPath` and for the same recorded reason.
-   */
-  readonly bakedMetaDir: string
-  readonly notesPath: string
-  readonly evidencePath: string
-  readonly outDir: string
-  readonly commit: string
-  readonly dirty: boolean
-  readonly builderImages: Readonly<Record<string, string>>
+export function gateRelease(dir: string, keys: readonly string[]) {
+  const m = manifest(JSON.parse(read(join(dir, 'manifest.json'))))
+  requireValue(readdirSync(dir).sort().join() === ['manifest.json', ...Object.keys(FILES)].sort().join(), 'release file set differs')
+  for (const a of m.artifacts) {
+    const measured = measure(dir, a.filename)
+    requireValue(measured.bytes === a.bytes && measured.sha256 === a.sha256, `artifact digest or length: ${a.filename}`)
+  }
+  requireValue(read(join(dir, 'SHA256SUMS')) === sums(m.artifacts), 'checksum list differs')
+  requireValue(read(join(dir, 'release-notes.md')).trim(), 'empty release notes')
+  const meta = JSON.parse(read(join(dir, 'baked-meta.json'))) as Record<string, unknown>
+  requireValue(meta.schema === 'mos/meta/v1' && !Object.hasOwn(meta, 'trust'), 'current baked defaults required')
+  const developmentDomains = domains(read(join(dir, 'development-marker.txt')))
+  requireValue(canonicalJson(developmentDomains) === canonicalJson(m.developmentDomains), 'development marker differs')
+  requireValue(m.channel === 'development' || developmentDomains.length === 0, 'development keys cannot use customer channels')
+  requireValue(evidence(JSON.parse(read(join(dir, 'board-evidence.json'))), m.board) === m.bootAssurance, 'evidence assurance differs')
+  const deployment = verifyArchive(join(dir, 'update.mosupd'), keys)
+  requireValue(deployment.board === m.board && deployment.version === m.version, 'update board or version differs')
+  const firmware = authenticateFirmware(read(join(dir, 'firmware.json'), 16384), keys)
+  requireValue(firmware.board === m.board, 'firmware board differs')
+  requireValue(regular(join(dir, 'firmware.bin')).size === firmware.artifact.bytes
+    && fileSha256(join(dir, 'firmware.bin')) === firmware.artifact.sha256, 'firmware digest or length')
+  for (const [name, expected] of Object.entries(derived(dir, m))) {
+    requireValue(canonicalJson(JSON.parse(read(join(dir, name)))) === canonicalJson(expected), `derived record differs: ${name}`)
+  }
+  return { manifest: m, deploymentId: componentId(deployment), firmwareId: firmware.id, artifactsChecked: m.artifacts.length }
 }
-
-export interface AssembleResult {
-  readonly outDir: string
-  readonly manifestPath: string
-  readonly gate: GateReport
-}
-
-/** A staged artifact entry: the file measured where it will be published. */
-function measure(dir: string, filename: string, role: ArtifactRole): ReleaseArtifact {
-  return { filename, role, bytes: statSync(join(dir, filename)).size, sha256: fileSha256(join(dir, filename)) }
-}
-
-function requireInputFile(path: string, what: string, hint: string): string {
-  const st = statSync(path, { throwIfNoEntry: false })
-  if (st === undefined || !st.isFile()) {
-    throw new Error(`${path} not found; ${what}. ${hint}`)
-  }
-  return path
-}
-
-/**
- * Assemble a release directory: copy the built artifacts in, derive the
- * records beside them, write SHA256SUMS and manifest.json -- and then run the
- * publication gate over the result, because the one way to prove the
- * directory this wrote is publishable is to ask the same question a fresh
- * gate run asks. Every size and digest is measured off the STAGED copy, so
- * what the manifest pins is what a customer downloads, not what the build
- * tree held a moment earlier.
- *
- * The image and bundle paths may be the -latest symlinks; the published
- * filename is the real name they resolve to, because "latest" is a fact
- * about a build tree and not an identity a support case can cite.
- */
-export function assembleRelease(inputs: AssembleInputs): AssembleResult {
-  const version = checkVersion(inputs.version)
-  if (!(RELEASE_CHANNELS as readonly string[]).includes(inputs.channel)) {
-    throw new Error(
-      `release channel ${JSON.stringify(inputs.channel)} is not one of ${RELEASE_CHANNELS.join('/')}; `
-      + `a channel is a promise about qualification, so a misspelt one is refused rather than invented`,
-    )
-  }
-  if (!/^[0-9a-f]{40}$/.test(inputs.commit)) {
-    throw new Error(`source commit ${JSON.stringify(inputs.commit)} is not a full 40-hex git commit`)
-  }
-
-  requireInputFile(inputs.imagePath, 'it is the flashable disk image this release publishes',
-    `Build it with 'make os-image-${inputs.board}' (or the board's assembler mode of build/run.sh)`)
-  requireInputFile(inputs.bundlePath, 'it is the signed RAUC update bundle this release publishes',
-    `Build it with 'bash build/run.sh --bundle --board ${inputs.board}'`)
-  requireInputFile(inputs.packageManifestPath,
-    'it is the image\'s /usr/share/mos/manifest.tsv, the bill of materials the SBOM is derived from',
-    'The image ships it at that path; extract it from the built rootfs (verify reads the same file)')
-  // Measured before anything is copied: a release whose grade cannot be read
-  // is refused before it exists as a directory, and readBakedTrust throws on
-  // an extraction that does not carry the public set's required member.
-  const trust = readBakedTrust(inputs.bakedMetaDir)
-  requireInputFile(inputs.notesPath, 'a release without release notes is refused by the publication gate',
-    'Write the notes and pass their path')
-  if (statSync(inputs.notesPath).size === 0) {
-    throw new Error(`the release notes at ${inputs.notesPath} are empty; a release nobody described is not published`)
-  }
-  requireInputFile(inputs.evidencePath, 'the publication gate refuses a release no board evidence qualifies',
-    'See the board-evidence seam in docs/design/release-artifacts.md')
-  const evidence = checkBoardEvidence(
-    JSON.parse(readFileSync(inputs.evidencePath, 'utf8')),
-    inputs.evidencePath,
-    inputs.board,
-  )
-
-  const rows = packageRows(readFileSync(inputs.packageManifestPath, 'utf8'), inputs.packageManifestPath)
-
-  const imageReal = realpathSync(inputs.imagePath)
-  const bundleReal = realpathSync(inputs.bundlePath)
-  const imageName = checkArtifactFilename(basename(imageReal), imageReal)
-  const bundleName = checkArtifactFilename(basename(bundleReal), bundleReal)
-
-  mkdirSync(inputs.outDir, { recursive: true })
-  copyFileSync(imageReal, join(inputs.outDir, imageName))
-  copyFileSync(bundleReal, join(inputs.outDir, bundleName))
-  copyFileSync(inputs.notesPath, join(inputs.outDir, 'release-notes.md'))
-  const source = { commit: inputs.commit, dirty: inputs.dirty }
-  writeFileSync(join(inputs.outDir, 'sbom.cdx.json'), `${JSON.stringify(
-    sbomFromRows(rows, { board: inputs.board, version, commit: inputs.commit, dirty: inputs.dirty }),
-    null, 2,
-  )}\n`)
-  writeFileSync(join(inputs.outDir, 'licenses.json'), `${JSON.stringify(licensesFromRows(rows, source), null, 2)}\n`)
-  writeFileSync(join(inputs.outDir, 'provenance.json'), `${JSON.stringify({
-    schemaVersion: 1,
-    source,
-    builderImages: inputs.builderImages,
-    // The inputs as consumed, hashed at their source paths: the record of
-    // what the assembly was HANDED, where the manifest records what it WROTE.
-    inputs: [
-      { name: 'image', path: imageReal, sha256: fileSha256(imageReal) },
-      { name: 'bundle', path: bundleReal, sha256: fileSha256(bundleReal) },
-      { name: 'package-manifest', path: inputs.packageManifestPath, sha256: fileSha256(inputs.packageManifestPath) },
-      { name: 'board-evidence', path: inputs.evidencePath, sha256: fileSha256(inputs.evidencePath) },
-      { name: 'baked-meta', path: inputs.bakedMetaDir, sha256: fileSha256(join(inputs.bakedMetaDir, 'updates', 'manifest.json')) },
-    ],
-  }, null, 2)}\n`)
-
-  const content: ReleaseArtifact[] = [
-    measure(inputs.outDir, imageName, 'image'),
-    measure(inputs.outDir, bundleName, 'bundle'),
-    measure(inputs.outDir, 'sbom.cdx.json', 'sbom'),
-    measure(inputs.outDir, 'provenance.json', 'provenance'),
-    measure(inputs.outDir, 'licenses.json', 'licenses'),
-    measure(inputs.outDir, 'release-notes.md', 'release-notes'),
-  ]
-  writeFileSync(join(inputs.outDir, 'SHA256SUMS'), sha256SumsText(content))
-  const artifacts = [...content, measure(inputs.outDir, 'SHA256SUMS', 'checksums')]
-
-  const manifest: ReleaseManifest = {
-    schemaVersion: RELEASE_SCHEMA_VERSION,
-    release: { version, channel: inputs.channel as ReleaseChannel },
-    board: { name: inputs.board, profile: inputs.profile },
-    source,
-    build: { builderImages: inputs.builderImages },
-    bootAssurance: evidence.bootAssurance,
-    trust: { grade: trust.grade, developmentDomains: trust.developmentDomains },
-    artifacts,
-  }
-  const manifestPath = join(inputs.outDir, 'manifest.json')
-  writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`)
-
-  const gate = gateReleaseDir(inputs.outDir, inputs.evidencePath, inputs.bakedMetaDir)
-  return { outDir: inputs.outDir, manifestPath, gate }
+export function assembleRelease(inputs: ReleaseInputs) {
+  requireValue(!existsSync(inputs.out), 'output exists')
+  requireValue(read(inputs.notes).trim(), 'empty release notes')
+  packages(read(inputs.packages))
+  const hasMarker = lstatSync(join(inputs.meta, 'GENERATED'), { throwIfNoEntry: false }) !== undefined
+  const marker = hasMarker ? read(join(inputs.meta, 'GENERATED')) : ''
+  requireValue(!hasMarker || marker.length > 0, 'empty development marker')
+  const developmentDomains = domains(marker)
+  requireValue(inputs.channel === 'development' || developmentDomains.length === 0, 'development keys cannot use customer channels')
+  const bootAssurance = evidence(JSON.parse(read(inputs.evidence)), inputs.board)
+  const deployment = verifyArchive(inputs.update, inputs.keys)
+  requireValue(deployment.board === inputs.board && deployment.version === inputs.version, 'update board or version differs')
+  const m: ReleaseManifest = { schema: 'mos/release/v1', board: inputs.board, version: inputs.version, channel: inputs.channel,
+    profile: inputs.profile, source: inputs.source, bootAssurance, developmentDomains, artifacts: [] }
+  const files = { 'image.img': inputs.image, 'update.mosupd': inputs.update, 'firmware.json': join(inputs.firmware, 'firmware.json'),
+    'firmware.bin': join(inputs.firmware, inputs.board === 'cx3576' ? 'u-boot-rockchip.bin' : inputs.board === 'x64' ? 'BOOTX64.EFI' : 'BOOTAA64.EFI'), 'package-manifest.tsv': inputs.packages,
+    'baked-meta.json': join(inputs.meta, 'updates/manifest.json'), 'board-evidence.json': inputs.evidence, 'release-notes.md': inputs.notes }
+  for (const path of Object.values(files)) regular(path)
+  mkdirSync(inputs.out)
+  for (const [name, path] of Object.entries(files)) copyFileSync(path, join(inputs.out, name))
+  writeFileSync(join(inputs.out, 'development-marker.txt'), developmentDomains.length ? `DEVELOPMENT-GRADE\nDOMAINS=${developmentDomains.join(' ')}\n` : '')
+  json(inputs.out, 'builder-images.json', inputs.builderImages)
+  for (const [name, value] of Object.entries(derived(inputs.out, m))) json(inputs.out, name, value)
+  m.artifacts = Object.keys(FILES).filter(name => name !== 'SHA256SUMS').map(name => measure(inputs.out, name))
+  writeFileSync(join(inputs.out, 'SHA256SUMS'), sums(m.artifacts))
+  m.artifacts.push(measure(inputs.out, 'SHA256SUMS'))
+  json(inputs.out, 'manifest.json', m)
+  return gateRelease(inputs.out, inputs.keys)
 }

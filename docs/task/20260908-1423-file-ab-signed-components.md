@@ -8,13 +8,16 @@
 
 ## Description
 
-Prepare a complete proposal for a smaller partition layout, independently updatable boot firmware, kernel packages and rootfs images, and kernel verification of signed dm-verity root hashes. The user requests a plan before implementation and does not require backward compatibility during development.
+Prepare a complete proposal for a smaller partition layout, independently updatable boot firmware, kernel packages and rootfs images, and kernel verification of signed dm-verity root hashes. The user approved implementation after the proposal and prohibits backward compatibility during development.
 
-Acceptance for this phase: a reviewable plan covering current evidence, trust boundaries, component ownership, disk layout, boot and update transactions, rollback, key lifecycle, implementation steps, tests, and explicit unresolved hardware evidence. Implementation remains pending approval.
+The proposal is approved and implementation is authorized. The plan covers
+trust, component ownership, layout, native boot/update transactions, key lifecycle
+and acceptance. Current implementation results and remaining physical evidence
+are tracked in the linked delivery task.
 
 ## ActiveForm
 
-P2 contracts are complete; P3 producer separation is the next phase.
+P3-P9 software acceptance passes; P10 cleanup and cx3576 physical qualification are tracked in the delivery task.
 
 ## Dependencies
 
@@ -23,6 +26,12 @@ P2 contracts are complete; P3 producer separation is the next phase.
 
 ## Notes
 
+- 2026-09-09: x64 and virt-arm64 signed startup, component updates, panic/
+  watchdog fallback, interrupted reset and latest API acceptance pass. cx3576
+  image/FIT/firmware packaging, offline verification and DATA growth pass;
+  physical bench evidence remains open. The [delivery task](20260908-2229-file-ab-delivery-x64-first.md)
+  owns exact artifacts, current gate results and the authorized documentation
+  and dead-code cleanup. RAUC is removed; lode is not an OS update dependency.
 - 2026-09-08: the user resumed work after reviewing P1 and reconfirmed that
   development requires no backward compatibility. Local P2 work is tracked in
   [20260908-2115-p2-descriptor-contracts-x64](20260908-2115-p2-descriptor-contracts-x64.md).

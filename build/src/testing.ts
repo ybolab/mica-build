@@ -7,7 +7,7 @@
 //   Toolbox.open, host route                      ~4 ms
 //   Toolbox.open, alpine + apk (assembly toolset) ~2.1 s
 //   Toolbox.open, alpine + apk coreutils          ~4.6 s
-//   Toolbox.open, debian + apt (rauc, bundle)     ~7-40 s
+//   Toolbox.open, pinned component tooling     ~7-40 s
 //   one docker exec into an open toolbox          ~40 ms
 //   one docker run --rm (what a session avoids)   ~320 ms
 //

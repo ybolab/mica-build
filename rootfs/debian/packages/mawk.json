@@ -9,7 +9,6 @@
       "consumers": [
         "base",
         "mos-bluetooth",
-        "mos-rauc",
         "mos-system",
         "mosd"
       ]
@@ -23,7 +22,6 @@
         "base",
         "mos-bluetooth",
         "mos-board-cx3576",
-        "mos-rauc",
         "mos-system",
         "mosd"
       ]

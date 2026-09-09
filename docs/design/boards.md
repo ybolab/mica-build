@@ -1,6 +1,6 @@
 # Design: Board Support (BSP) Contract
 
-> English | [中文](../zh/design/boards.md)
+> English | [中文](boards.md)
 >
 > How a board joins mos: what it must produce, what the OS build consumes, and
 > the hard assertions between them. Reference implementation: `boards/cx3576/bsp`.
@@ -15,59 +15,41 @@ in the OS build chain.
 
 ## 2. Board directory layout
 
-A board is a directory under `boards/`. `board.env` is the definition and the
-only member every board has; the rest appear when the board needs them.
+`boards/<name>/board.env` declares current geometry, architecture and capability
+facts. `overlay/`, `hwinit/` and board Debian packaging contain userspace board
+integration. `bsp/kernel/` builds the pinned kernel, resolved configuration,
+modules and device tree. cx3576 also has `bsp/uboot/` and vendor firmware inputs.
+Independent BSP/demo artifacts remain inside the BSP and are not MOS image inputs
+unless explicitly named by a component producer.
 
-```
-boards/<name>/
-├── board.env          # partition layout, MOS_ARCH, console and cmdline extras,
-│                      #   RAUC backend, firmware / radio / hwinit lists
-├── overlay/           # files this board adds to the image root
-├── boot.cmd           # U-Boot boot script source      (uboot-chain boards)
-├── grub.cfg           # ESP GRUB configuration         (UEFI boards)
-├── hwinit/            # the board's systemd hardware-init units
-└── bsp/               # only where the board builds its own boot chain
-    ├── Makefile       # make uboot | uboot-mos | kernel | rootfs | image
-    ├── uboot/Dockerfile    # -> bootloader binary (u-boot-rockchip.bin)
-    ├── kernel/             # -> Image, modules.tar, *.dtb
-    │   ├── Dockerfile
-    │   ├── config/         # kernel config baseline (vendor ikconfig + mos additions)
-    │   ├── dts/            # in-tree board dts (open-source route, no overlay stacking)
-    │   └── patches/        # ordered *.patch series
-    ├── init/               # board hardware facts the hwinit units read
-    └── rootfs/             # firmware drop + demo/smoke-test rootfs (NOT the product)
-```
-
-Boards with an upstream-supported boot chain (`boards/x64`, UEFI) compile no
-bootloader: "a UEFI machine's firmware provides the boot chain, so nothing here
-compiles one" (`boards/x64/board.env`). They still build a KERNEL. x64's
-`bsp/` has exactly one target — mainline pinned by tag and source hash,
-configured by a fragment merged over `x86_64_defconfig` and recorded resolved
-(`boards/x64/bsp/kernel/`) — and it is packaged as `mos-kernel-x64`, which
-`mos-board-x64` depends on. It replaced Debian's `linux-image-amd64`, whose
-kernel has no `CONFIG_DM_INIT` and therefore ignored this board's own
-`dm-mod.create=` verity table (PLAN-074).
+Shared `pkgs/mos-boot/` builds systemd-boot/stubs, signed kernel packaging and
+initramfs tools. `pkgs/mos-deploy/` builds native init and the runtime installer.
+No root-owned kernel Debian package, persistent boot command script or raw-slot
+assembler is part of the current MOS image path.
 
 ## 3. Artifact interface into the OS image
 
 | Artifact | Producer | Consumer |
 |---|---|---|
-| `Image` + `modules.tar` + `*.dtb` | `boards/<name>/bsp/kernel` | `boards/<name>/deb/board-<name>/render.sh` stages them and the board package unpacks `modules.tar` into `/usr/lib/modules`, refusing an unpack that yields no module; `build/src/mkimage-cx3576.ts` writes `Image` and the dtb into each boot slot, requiring each because "it is a BSP artifact" (`build/src/mkimage-cx3576.ts`) |
-| bootloader binary | `boards/<name>/bsp/uboot` | `build/src/mkimage-cx3576.ts`: raw write at the board's `UBOOT_SEEK_SECTOR`, and it refuses the v1 debug blob — "A mos image must carry the uboot-mos variant" (`build/src/mkimage-cx3576.ts`) |
-| `board.env` | `boards/<name>/` | every consumer: both assemblers, the rootfs driver, RAUC's config renderer, verify. Read as data, never sourced — "Nothing here ever hands the file to a shell" (`verify/src/board-env.ts`) |
-| firmware blobs | `boards/<name>/bsp/rootfs/firmware` | `rootfs/build.sh` stages only what `BOARD_FIRMWARE_FILES` names, because "only the confirmed runtime set may enter a signed root" (`rootfs/build.sh`) |
+| Kernel, `modules.tar`, `kernel.release`, config and DTB | Board BSP kernel build | Independent signed kernel/support packager |
+| cx3576 MOS loader | Fixed-policy BSP U-Boot build | Independent authenticated firmware package |
+| UEFI boot manager | Pinned systemd-boot build | Independent authenticated firmware package |
+| Userspace root | Root package composer | Signed root component packager |
+| Board firmware and regulatory data | Explicit BSP/support inputs | Verity-protected support image |
+| Exact component association | Deployment signer | Factory assembler and native installer |
 
-Modules/kernel version coupling is absolute: the modules tree inside the rootfs
-MUST match the BSP kernel release, asserted at image assembly.
+Modules and kernel release must match inside the kernel package. Root images
+contain empty mountpoints for modules/firmware; verified support is mounted there
+before udev. The factory assembler consumes already built components, so building
+root does not rebuild kernel or firmware.
 
 ## 4. Kernel config assertions (CI gate per board)
 
-Vendor defconfigs never ship these correctly; every board kernel build must
-assert (grep on the final .config, fail the build otherwise):
+Every board kernel build validates its resolved configuration before export:
 
-- Boot path: `DM_INIT=y`, `DM_VERITY=y`, `BLK_DEV_DM=y`, `SQUASHFS=y` (+zstd),
-  storage controller built-in, `OVERLAY_FS=y` — no-initramfs verity boot
- cannot load modules before root is mounted.
+- Boot path: built-in loop, device mapper, signed verity, trusted content keys,
+  ext4, SquashFS/Zstd and the storage/watchdog drivers required before root.
+  Authenticated native init establishes mappings and mounts support before udev.
 - Runtime: cgroup v2 set, containerd/netfilter prerequisites (the docker set
   already asserted in cx3576's Dockerfile), seccomp.
 - Shared baseline fragment: maintained once for all boards at
@@ -77,19 +59,12 @@ assert (grep on the final .config, fail the build otherwise):
   SELinux + LSM boot list). Board-specific requirements stay in the board's own
   config baseline.
 
-**A common requirement must be satisfiable by BOTH kernels, or it is not
-common.** x64 builds no kernel: it installs Debian's `linux-image-amd64` whole,
-and that config is not this project's to change. So every symbol below was
-measured against the config Debian actually ships — `/boot/config-*` in a
-composed x64 root — before it entered the fragment, and the x64 half of the same
-guarantee is read back off the built artefact by
-`verify/src/checks-kernel.ts` (`=y` **or** `=m` there, because x64 ships `kmod`
-and a full module set, plus a second check that the `.ko` the `=m` promises was
-actually packed). A symbol only one board could satisfy is not dropped into the
-fragment and quietly enforced on one board; by
-`docs/design/security-model.md` §4 it would become a per-board capability that
-the flows needing it refuse — visibly — where it is absent. Nothing in the two
-groups below needed that: Debian satisfies all fifteen.
+The shared fragment is enforced by each current BSP build; board-specific
+requirements are checked against that board's resolved config. Kernel packaging
+independently checks the early-boot signed-verity/watchdog floor. Root packaging
+does not contain or inspect an exported kernel. Historical Debian configuration
+comparisons below explain why runtime requirements entered the shared fragment;
+they do not replace assertions on the current BSP kernel.
 
 ### 4.1 eBPF runtime
 
@@ -427,100 +402,32 @@ so this task does not enable it; closing the gap is now one config line, and
 the alternative — dropping `bpf` from the boot list — is a security-posture
 change that belongs with `docs/design/security-model.md`.
 
-### 4.5 The other direction: symbols a board must NOT build
+### 4.5 Explicit mount policy and board exclusions
 
-Everything above is a floor. There is also a ceiling, and it needs its own
-mechanism because the two failures are not each other's mirror: a missing
-required symbol is a capability the image promised and does not have, while an
-**excluded** symbol that appears is a capability nobody asked for that changes
-what the device does the moment it exists — there is no code to add and no unit
-to enable, so nothing else in the image contract would notice.
+The root masks `systemd-gpt-auto-generator`. Native init supplies the verified
+root/support and mounts SYSTEM; current fstab/mount units explicitly own DATA,
+ESP and audited writable leaves. Automatic discovery must not create a writable
+ESP or broad `/var` mount. The root verifier checks the shipped mask and mounts.
 
-`verify/src/checks-kernel.ts` carries the list, per board, as
-`EXCLUDED_BY_BOARD`, and reads it off the shipped `/boot/config-*` in the
-opposite direction from the floor. It is per board and not shared, which is the
-inverse of how `boards/common/mos-required.fragment` works; that asymmetry is
-the point, and the one entry on it says why.
+cx3576's vendor configuration leaves autofs disabled; this is a board capability
+fact, not the mechanism protecting current storage. A future kernel capability
+change must still preserve the explicit mount policy and pass complete boot,
+service-namespace and shutdown checks.
 
-**cx3576: `CONFIG_AUTOFS_FS` and `CONFIG_AUTOFS4_FS`.** x64 and virt-arm64
-build autofs (their configs derive from a mainline defconfig that sets it) and
-cx3576 does not (a Rockchip vendor tree that does not). The difference was
-invisible until the board booted and systemd printed
-`Failed to find module 'autofs4'` — which is not evidence that anything wanted
-it, because `kmod_setup()` asks on every boot whatever the unit set is.
+## 5. cx3576 fixed FIT policy
 
-Making the three agree is the obvious repair and it is not free, because
-building autofs into this board's kernel would not add a capability nothing
-uses — it would arm `efi.automount`, a read-write automount of a RAUC-owned
-boot partition on a device where `/boot` is deliberately not a mountpoint.
-On the hardware that unit is inert and systemd says exactly why: `Starting of
-efi.automount - EFI System Partition Automount unsupported.`
-(`automount_supported()` is `access("/dev/autofs")`).
+The MOS U-Boot build pins required FIT configuration verification and embeds the
+explicit public boot-key set. Persistent command imports are disabled. The native
+C policy checks the current three-partition geometry, arms the watchdog before
+storage, reads bounded redundant records, and persists/flushes/read-backs an
+attempt decrement before loading FIT. No shell environment command is used to
+select deployments or refill attempts.
 
-So automount units are **unsupported on cx3576**, deliberately, and the
-`autofs4` line is expected. The packed root carries exactly one `.automount`
-subject of its own, `proc-sys-fs-binfmt_misc.automount`, which is skipped on
-its own `ConditionPathExists=/proc/sys/fs/binfmt_misc` because
-`CONFIG_BINFMT_MISC` is not set either; `efi.automount` was never in it,
-because a generator writes it at boot.
-
-**Which generator, and why the other two boards are not exposed** (RFCT-358,
-measured against systemd 257.13's own sources and a virt-arm64 QEMU boot).
-RFCT-355 was right about which board and wrong about why, and the why is what
-says how thin the other two boards' safety is.
-
-It is not that "x64 and virt-arm64 mount their ESP from `fstab`". No board's
-`fstab` has an ESP row; the two UEFI boards mount theirs from `boot.mount`, a
-UNIT, and a unit cannot suppress this generator — what it writes is an
-`.automount`, which no `.mount` unit shadows, and `process_loader_partitions()`
-consults `fstab` (`fstab_has_mount_point_prefix_strv`, then `fstab_has_node`)
-and nothing else.
-
-What decides it is `is_efi_boot()`. On a NON-EFI boot — cx3576, booted by
-U-Boot — the generator logs `Not an EFI boot, skipping loader partition UUID
-check` and goes straight to mounting, so the ESP-typed BOOT-A becomes
-`efi.automount`: at `/efi` rather than `/boot` because `path_is_busy("/boot")`
-is true (the packed root carries `/boot/config-<release>`), and BOOT-A rather
-than BOOT-B because `dissect_image()` keeps the first partition of each
-designator. On an EFI boot it first requires `LoaderDevicePartUUID`, which the
-boot loader must set — systemd-boot does, GRUB does not — and returns early
-without it. Measured on a virt-arm64 QEMU boot 2026-09-08: startup finished,
-`boot.mount` mounted the ESP at `/boot`, and the only `.automount` subject in
-the whole boot was `proc-sys-fs-binfmt_misc.automount`, skipped on its own
-condition.
-
-So each board is safe for a different accident and none of them chose one:
-cx3576 builds no autofs, so the unit it does generate is refused; x64 and
-virt-arm64 boot through GRUB, which sets no `LoaderDevicePartUUID`. A board
-that gains an EFI boot path (RFCT-357's question for cx3576) or a loader that
-sets that variable moves the exposure with nobody editing a mount.
-
-**Closed by masking the generator**, in `mos-system`:
-`/etc/systemd/system-generators/systemd-gpt-auto-generator -> /dev/null`, which
-is systemd's own mechanism (generators are enumerated with
-`CONF_FILES_FILTER_MASKED`, and `/etc` outranks `/usr/lib` in
-`system_generator_paths`). Nothing is lost by it: the verity root comes from
-the kernel command line, `/mnt/*`, `/var` and `/tmp` from `/etc/fstab`, and the
-ESP on a UEFI board from `boot.mount`; every other subject the generator has —
-`/home`, `/srv`, `/var`, swap, root-rw — is keyed on a discoverable-partition
-type GUID no mos layout uses. Masking the generated unit by name was rejected
-because the name is a systemd internal (`/efi` today, `boot.automount` the
-moment `/boot` is empty), and naming the boot slots in `fstab` was rejected
-because it declares a mount of a RAUC-owned partition in order to suppress
-one. `verify/src/checks-system.ts` asserts the mask and, separately, that the
-generator it names is still in the image — a mask over a renamed generator
-protects nothing and would otherwise go on passing.
-
-## 5. U-Boot requirements (uboot-chain boards)
-
-The A/B design requires: `CONFIG_BOOTCOUNT_LIMIT`, redundant env
-(`CONFIG_ENV_OFFSET_REDUND`), `CONFIG_FIT` + `CONFIG_FIT_SIGNATURE`,
-`CONFIG_SYS_BOOTM_LEN ≥ 0x8000000`, RAUC BOOT_ORDER handshake script, and a
-rescue path (cx3576: recovery-key → rockusb, boot-failure → rockusb fallback).
-The boot script and RAUC `system.conf` are generated from one source — the
-board definition, since "the template plus boards/cx3576/board.env are the
-single source of truth" (`pkgs/rauc/render-config.sh`) — to prevent
-drift.
+`make os-fit-records-test` exercises the parser and complete production C entry
+point under block write/flush/readback failures. Required signature tests reject
+missing, changed and unknown-key FITs. Recovery-key or exhausted/invalid records
+enter local rockusb. Physical watchdog handoff and eMMC power-loss behavior need
+separate board evidence.
 
 ## 6. Kernel support policy
 
@@ -542,33 +449,30 @@ merge the same shared fragment before `olddefconfig`. Board intake tiers:
 | 2 | 5.4 | Per-board evaluation; small shims expected, no structural work |
 | — | 4.x | **Out of support.** Options in order: (a) uplift the vendor kernel, or mainline the SoC; (b) a separate profile for that board on a smaller base with the mos services as containers, which gives up the signed A/B verity root the rest of this document assumes |
 
-## 7. Adding a new board — checklist
+## 7. Adding a current board
 
-1. Create `boards/<name>/` with a `board.env`, plus a `bsp/` only if the
-   board builds its own boot chain. The definition must first pass
-   `bash verify/run.sh --lint boards/<name>/board.env`,
-   "the board-definition schema lint" (`verify/run.sh`).
-2. Kernel: vendor tree + `boards/common/mos-required.fragment` merged before
-   olddefconfig, every `=y` line then asserted against the built `.config` — a
-   "missing mos-required option" (`boards/cx3576/bsp/kernel/configure.sh`)
-   fails the build.
-3. U-Boot: §5 config; verified boot keys enrolled. A UEFI board has none of it
-   and ships a `grub.cfg` for the ESP instead.
-4. Smoke path first — a stock or vendor image — to validate hardware bring-up
-   before the full image is worth building.
-5. Rootfs composed from the package pool (`rootfs/compose/`, sequenced by
-   `build/src/stages-cli.ts`, which "decides the order and the tags"
-   (`build/src/stages-cli.ts`)); the board's own content ships as
-   `mos-board-<name>`. Image assembled by
-   `bash build/run.sh --mkimage-cx3576` or `--mkimage-uefi --board x64`, green against
-   `bash verify/run.sh --verify --board <name>`, then apid liveness on
-   hardware — `/healthz`, which proves only that the apid process is listening,
-   not that mosd or any other service on the board is healthy.
-6. Power-cut rig run before the board is called supported.
+1. Declare a current `board.env` and extend the strict layout/component contract
+   where required; exercise `make os-layout-lint` and schema negatives.
+2. Build the BSP kernel with public content anchors and the common runtime floor.
+   Export matching modules, indexes, config and DTB.
+3. Package authenticated early init and signed UKI/FIT. UEFI needs explicit Secure
+   Boot enrollment; a FIT target needs fixed required-signature firmware policy.
+4. Compose root and independent firmware, sign two factory deployment records,
+   and assemble a complete current image using the component CLI.
+5. Verify the explicit image/public-key inputs, then boot through actual firmware.
+   Run full services/API, updates, fault recovery, quotas, reset and shutdown.
+6. Record physical peripheral, power-cut, watchdog and recovery evidence before
+   claiming hardware qualification. Every test begins with the complete current
+   system, without an old-layout compatibility path.
 
 ## 8. Current boards
 
-| Board | Arch | Boot chain | Status |
+| Board | Architecture | Boot policy | Evidence |
 |---|---|---|---|
-| cx3576 (CX3576-Z, RK3576) | arm64 ("MOS_ARCH=arm64", `boards/cx3576/board.env`) | U-Boot at eMMC sector 64 -> `boot.scr` -> `booti` on `Image` + `rk3576-src.dtb` (`boards/cx3576/boot.cmd`) | BSP builds `uboot-mos` and the kernel; the §4 assertion set is enforced in the kernel build, and the RAUC `BOOT_ORDER` handshake is implemented in `boards/cx3576/boot.cmd`. `CONFIG_FIT_SIGNATURE` (§5) is configured nowhere in the tree |
-| x64 (generic UEFI) | amd64 ("MOS_ARCH=amd64", `boards/x64/board.env`) | UEFI firmware -> GRUB from one static ESP -> the slot's own boot partition (`boards/x64/grub.cfg`) | QEMU/CI baseline. `bsp/` builds the kernel and nothing else; no bootloader is compiled, because the firmware is one |
+| x64 | amd64 | UEFI Secure Boot → counted systemd-boot entry → signed UKI | Full QEMU runtime, API, updates, faults and shutdown |
+| virt-arm64 | arm64 | AAVMF Secure Boot → counted systemd-boot entry → signed UKI | Full QEMU runtime/API and common update/fault policy |
+| cx3576 | arm64 | Fixed MOS U-Boot → required signed FIT | Current full-image offline/FIT/IO proof; physical bench qualification pending |
+| s905x5m | arm64 | Independent BSP retained | Not a current MOS system-image release target |
+
+Exact current artifact IDs and gate results are recorded in the
+[file-deployment delivery task](../task/20260908-2229-file-ab-delivery-x64-first.md).

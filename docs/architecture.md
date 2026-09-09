@@ -1,7 +1,5 @@
 # mos System Architecture
 
-> English | [中文](zh/architecture.md)
-
 The top-level map; each section names the record it summarises.
 
 ---
@@ -9,7 +7,7 @@ The top-level map; each section names the record it summarises.
 ## 1. What mos is
 
 An embedded appliance operating system: a read-only Debian root under systemd,
-updated whole in A/B slots, managed by a small Rust plane that owns the
+updated through signed file deployments, managed by a small Rust plane that owns the
 device's settings and drives systemd to match them.
 
 | Layer | What it is | Where |
@@ -18,23 +16,23 @@ device's settings and drives systemd to match them.
 | Management plane | `mosd` — a settings tree, reconcilers that drive units, and a D-Bus surface | `pkgs/mosd/mosd/`, `docs/design/mosd.md` |
 | API | `apid` — the HTTPS daemon; the dashboard is one client of the API it serves | `pkgs/mosd/apid/`, `docs/design/api.md` |
 | Application data | `mos-mqttd` bridges only exact package-enrolled `com.mos.<class>[.<suffix>]` application item trees to MQTT; `com.mos.mosd` is forbidden | `pkgs/mosd/mqttd/`, `pkgs/mosd/broker/`, `docs/design/bus.md` |
-| A/B installer | RAUC, with a U-Boot `BOOT_ORDER` handshake on cx3576 and GRUB on x64 | `pkgs/rauc/`, `docs/design/uboot-ab-handshake.md` |
-| Update trust | TUF metadata pinning a CMS-signed RAUC bundle | `pkgs/rauc-sign/`, `docs/design/release-signing.md` |
+| A/B installer | Native durable file transactions with UEFI/FIT trial records | `pkgs/mos-deploy/`, `docs/design/uboot-ab-handshake.md` |
+| Update trust | Signed deployment/catalog envelopes and kernel-enforced root/support signatures | `pkgs/mos-deploy/`, `docs/design/release-signing.md` |
 | BSP artifacts | per-board buildkit Dockerfiles producing kernel, device tree and bootloader | `boards/`, `docs/design/boards.md` |
 | Workloads | podman plus the Quadlet systemd generator, off by default | `pkgs/podman/`, `docs/design/containers.md` |
 
 ## 2. Component inventory (runtime)
 
 ```
-                  settings tree (TOML, STATE partition)
+                  settings tree (TOML, DATA namespaces)
                                   |
                      mosd  --  com.mos.mosd1, system bus
      _____________________________|_________________________
     |            |             |          |        |
-  apid      reconcilers   RAUC control   sshd    podman
+  apid      reconcilers   Deployments    sshd    podman
   HTTPS     wifi, sshd,   InstallUpdate OpenSSH  Quadlet
   API +     hostname,     GetUpdateState driven   units,
-  dashboard network,      MarkUpdate     by mosd   off
+  dashboard network,      Confirm/Reject     by mosd   off
             mqtt, container                       by default
                     |
             /run/mos/mqttd-device.env -> mos-mqttd -> MQTT
@@ -45,7 +43,7 @@ device's settings and drives systemd to match them.
 - **systemd** is PID 1. Every piece above is a unit, and mosd starts, stops and
   re-renders those units rather than supervising processes of its own
   (`docs/design/connd.md`).
-- **`mosd`** owns the settings tree persisted on STATE, exports it over the
+- **`mosd`** owns the settings tree persisted on DATA/state, exports it over the
   system bus as `com.mos.mosd`, and runs one reconciler per concern in
   `pkgs/mosd/mosd/src/reconciler/`. Its unit is `Type=dbus` (`pkgs/mosd/dist/mosd.service`).
 - **`apid`** terminates TLS, authenticates the operator, and reads and writes
@@ -84,51 +82,32 @@ device's settings and drives systemd to match them.
 
 ## 3. Storage and boot
 
-The disk is one GPT; the partition set is declared per board in
-`boards/<board>/board.env`. On cx3576, where x64 replaces the loader and the
-two U-Boot environment partitions with an ESP:
+Current images contain ESP/SYSTEM/DATA on x64 and virt-arm64, or
+FIRMWARE/SYSTEM/DATA on cx3576. SYSTEM owns immutable root/support objects and
+signed deployment records. DATA owns persistent state, metadata, applications,
+user data and bounded disposable namespaces. Only DATA grows.
 
-```
-loader | uenv-a | uenv-b | boot-a | boot-b | rootfs-a | rootfs-b | meta | state | ephemeral | data
-```
+The signed UKI/FIT starts `mos-init`. It authenticates the selected descriptor,
+opens signed root/support verity mappings, establishes persistent identity and
+binds modules and firmware before systemd. Native trial records are decremented
+before launch and confirmed only by the health path. Shutdown uses a bounded
+exitramfs to release loops/mappings before their backing filesystem.
 
-- **Root is read-only.** Each `rootfs-` slot holds a squashfs image with its
-  dm-verity hash tree appended, assembled by `rootfs/build.sh`.
-- **No initramfs in the normal boot path.** The verity device is described
-  entirely on the kernel command line with `dm-mod.create=`, composed per slot
-  from that slot's verity parameters and the board's `BOARD_CMDLINE_ARGS`
-  (`rootfs/build.sh`, `docs/design/ro-root.md` §2).
-- **Each boot slot carries** `Image`, the device tree, the shared `boot.scr` and
-  a per-slot `mos-verity-<slot>.env` holding that slot's verity arguments
-  (`build/src/mkimage-cx3576.ts`). Deliberately no `extlinux/extlinux.conf`:
-  U-Boot tries extlinux first, so one there would bypass the handshake.
-- **The handshake** is `BOOT_ORDER` plus a per-slot attempt counter in the
-  redundant U-Boot environment at `uenv-a` / `uenv-b`. A slot that fails to boot
-  burns its credits and the next reset moves on
-  (`docs/design/uboot-ab-handshake.md`).
-- **Four storage tiers** answer "what happens if this is lost?" — STATE
-  (`/mnt/state`, configuration and identity), DATA (`/mnt/data`, exposed as
-  appliance-owned `/mos` and operator-owned `/srv`), META (`/mnt/meta`, update metadata), EPHEMERAL (`/var`,
-  disposable residue). The table is `docs/design/ro-root.md` §4.
+Selected DATA leaves are bound into service paths. The var parent skeleton
+remains immutable; project byte/inode quotas contain bulk and disposable writers.
+See [storage](design/storage.md) and [read-only root](design/ro-root.md).
 
 ## 4. Trust chain
 
-```
-dm-verity root hash on the kernel cmdline -> root filesystem verified per block at runtime
-RAUC bundle -> CMS signature, verified against /etc/rauc/keyring.pem
-TUF metadata -> four ed25519 role keys, root offline; pins the bundle's sha256,
-                its length and its verity root hash
-```
+Boot, content and metadata signing use independent keys. Firmware authenticates
+the UKI/FIT; the kernel authenticates signed verity roots; native tools authenticate
+strict component/deployment/catalog metadata against embedded public policy.
+Normal updates never write firmware. Firmware publication and offline maintenance
+have a separate signed receipt and mandatory readback.
 
-A release is signed twice by two unrelated hierarchies, and the separation is
-the point: a TUF online key cannot sign a bundle and the bundle key cannot sign
-metadata. Ceremonies, key custody and rotation are
-`docs/design/release-signing.md`; `rauc-sign` signs and `rauc-verify`
-verifies, both in `pkgs/rauc-sign/`.
-
-Two gaps are recorded rather than assumed: nothing in the build signs SPL or
-U-Boot, and no production keyring ships in the image
-(`docs/design/uboot-ab-handshake.md` §9, `pkgs/rauc/system.conf.in`).
+See [release signing](design/release-signing.md) for overlap/removal and measured
+limits. Development signing does not establish physical ROM/SPL provisioning.
+QEMU evidence and pending cx3576 bench evidence are tracked separately.
 
 ## 5. Access model
 
@@ -149,7 +128,7 @@ profile — `dev` or `prod`, written into `/usr/lib` inside the verity root, so 
 production device cannot be edited into a development one. The profile is a
 package — `mos-profile-dev` or `mos-profile-prod`, whose whole payload is that
 one immutable file (`rootfs/packages-src/profile`) — and they `Conflict` by
-name, so an image carries exactly one. The one-way META lockdown between them
+name, so an image carries exactly one. The one-way DATA/meta lockdown between them
 is designed, and marked not implemented (`docs/design/access.md` §5.2).
 
 ## 6. Repository map
@@ -159,19 +138,17 @@ mos/
 ├── docs/          plans (docs/plan/), tasks (docs/task/), design records (docs/design/)
 ├── boards/    one board.env per board — the partition geometry and every layout
 │              constant — plus that board's BSP: kernel, U-Boot and firmware
-├── build/     TypeScript: the image assemblers, the bundle builder, the toolset wrappers
+├── build/     TypeScript: the image assemblers, the component and archive producers, the toolset wrappers
 ├── build-env/ the pinned builder images every component build is FROM
 ├── pkgs/      source this repository compiles into a shipped artefact:
-│              podman/ (the container engine), rauc/ (the RAUC binary, its slot
-│              config and the manifest templates), rauc-sign/ (TUF release trust
-│              tooling, its own cargo workspace) and mosd/ — the Rust workspace:
-│              mosd, apid, mos-mqttd, mos-mqtt-broker, mosd-settings; workspace-level
+│              podman/, mos-boot/, mos-deploy/ and the mosd Rust workspace
+│              (mosd, apid, mos-mqttd, mos-mqtt-broker, mosd-settings); shared
 │              black-box harnesses are kept together under mosd/tests/
 ├── rootfs/    the root filesystem: compose/ (the two composition Dockerfiles),
 │              packages/ (the manifests and the resolver), packages-src/ (the
 │              system, profile, radio and CA-trust producers), plus build.sh
 ├── tests/     shell suites over the built image
-├── tools/     three QEMU helper scripts
+├── tools/     QEMU and development helpers
 ├── verify/    TypeScript: the board model, and the checks an assembled image must pass
 └── Makefile       top-level routing; `make help` lists every target
 ```
@@ -185,13 +162,12 @@ producer, not a stage. `docs/design/build.md` §1.1 has the whole model.
 
 ## 7. Boards
 
-- **`cx3576`** — CX3576-Z, Rockchip RK3576, arm64. Vendor kernel tree, mainline
-  U-Boot built in `boards/cx3576/bsp/uboot/`, WiFi and Bluetooth. Its RAUC bootloader
-  backend is `uboot`, so this is the board the `BOOT_ORDER` handshake is for.
-- **`x64`** — generic UEFI x86_64, the QEMU and CI baseline. Its `bsp/` builds
-  a mainline kernel and nothing else: the firmware is the boot chain, so no
-  bootloader is compiled. Its bootloader backend is `grub` and its assembler is
-  `build/src/mkimage-uefi.ts`.
+- **`x64`** — generic UEFI x86_64, signed UKI and patched systemd-boot;
+  the QEMU baseline.
+- **`virt-arm64`** — ARM64 UEFI/QEMU using the same signed-file contracts.
+- **`cx3576`** — CX3576-Z, Rockchip RK3576, vendor kernel, signed-policy U-Boot
+  and FIT, Wi-Fi and Bluetooth. Physical acceptance remains a separate gate.
+- **`s905x5m`** — independent BSP retained; no current MOS system-image target.
 
 A board produces artifacts and the OS build consumes artifacts; neither side
 reaches into the other's build. Kernel configs must satisfy the shared
@@ -205,7 +181,7 @@ assertion set in `boards/common/mos-required.fragment` (`docs/design/boards.md`)
 | What is on the bus, and what are the item conventions? | `docs/design/bus.md` |
 | What does the HTTPS API serve? | `docs/design/api.md`, `docs/design/dashboard.md` |
 | Why is the root read-only, and where do writes go? | `docs/design/ro-root.md` |
-| How does an update reach the other slot and commit? | `docs/design/uboot-ab-handshake.md` |
+| How is a deployment installed and confirmed? | `docs/design/updates.md` |
 | How is a release signed, and by whom? | `docs/design/release-signing.md` |
 | How does a device get its first credentials? | `docs/design/provisioning.md` |
 | How do I run a container here? | `docs/design/containers.md` |

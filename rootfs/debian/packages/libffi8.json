@@ -9,7 +9,6 @@
       "consumers": [
         "mos-bluetooth",
         "mos-podman",
-        "mos-rauc",
         "mos-system"
       ]
     },
@@ -21,7 +20,6 @@
       "consumers": [
         "mos-bluetooth",
         "mos-podman",
-        "mos-rauc",
         "mos-system"
       ]
     }

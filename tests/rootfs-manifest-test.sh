@@ -151,24 +151,19 @@ VIRT_ARM64_RADIOS="$(board_radios virt-arm64)"
 # rootfs/packages/common.pkgs holding it means: the emergency binary is not
 # declinable, because the build that declined it is the image an operator is
 # holding when they need it (RFCT-281).
-CX_DEV="mos-apid mos-bluetooth mos-board-cx3576 mos-busybox mos-ca-trust mos-mqtt-broker mos-mqttd mos-podman mos-profile-dev mos-rauc mos-rauc-update mos-system mos-wifi mos-wifi-ap mosd"
-CX_PROD="mos-apid mos-bluetooth mos-board-cx3576 mos-busybox mos-ca-trust mos-mqtt-broker mos-mqttd mos-podman mos-profile-prod mos-rauc mos-rauc-update mos-system mos-wifi mos-wifi-ap mosd"
-# mos-kernel-x64 is named by board-x64.pkgs beside mos-board-x64 rather than
-# arriving only through its Depends: a package no resolution names is one the
-# reachability check at the bottom of this file reports unreachable, which is
-# the right answer for a package nothing selects and the wrong one for the
-# kernel. cx3576 needs no counterpart -- its kernel is inside
-# mos-board-cx3576.
-X64_DEV="mos-apid mos-board-x64 mos-busybox mos-ca-trust mos-kernel-x64 mos-mqtt-broker mos-mqttd mos-podman mos-profile-dev mos-rauc mos-rauc-update mos-system mosd"
-X64_PROD="mos-apid mos-board-x64 mos-busybox mos-ca-trust mos-kernel-x64 mos-mqtt-broker mos-mqttd mos-podman mos-profile-prod mos-rauc mos-rauc-update mos-system mosd"
+CX_DEV="mos-apid mos-bluetooth mos-board-cx3576 mos-busybox mos-ca-trust mos-deploy mos-mqtt-broker mos-mqttd mos-podman mos-profile-dev mos-system mos-wifi mos-wifi-ap mosd"
+CX_PROD="mos-apid mos-bluetooth mos-board-cx3576 mos-busybox mos-ca-trust mos-deploy mos-mqtt-broker mos-mqttd mos-podman mos-profile-prod mos-system mos-wifi mos-wifi-ap mosd"
+# Kernel and module payloads are independent of every user-space root.
+X64_DEV="mos-apid mos-board-x64 mos-busybox mos-ca-trust mos-deploy mos-mqtt-broker mos-mqttd mos-podman mos-profile-dev mos-system mosd"
+X64_PROD="mos-apid mos-board-x64 mos-busybox mos-ca-trust mos-deploy mos-mqtt-broker mos-mqttd mos-podman mos-profile-prod mos-system mosd"
 # virt-arm64 is x64's set with its own board and kernel packages: the two
 # boards differ in architecture and firmware, not in what userland the image
 # carries, and BOARD_RADIOS is empty on both. Spelled out rather than derived
 # from X64_DEV by substitution -- a set computed from another set agrees with
 # it by construction and would not notice the day they stop agreeing.
-VA_DEV="mos-apid mos-board-virt-arm64 mos-busybox mos-ca-trust mos-kernel-virt-arm64 mos-mqtt-broker mos-mqttd mos-podman mos-profile-dev mos-rauc mos-rauc-update mos-system mosd"
-VA_PROD="mos-apid mos-board-virt-arm64 mos-busybox mos-ca-trust mos-kernel-virt-arm64 mos-mqtt-broker mos-mqttd mos-podman mos-profile-prod mos-rauc mos-rauc-update mos-system mosd"
-CX_MINIMAL="mos-board-cx3576 mos-busybox mos-ca-trust mos-profile-dev mos-system"
+VA_DEV="mos-apid mos-board-virt-arm64 mos-busybox mos-ca-trust mos-deploy mos-mqtt-broker mos-mqttd mos-podman mos-profile-dev mos-system mosd"
+VA_PROD="mos-apid mos-board-virt-arm64 mos-busybox mos-ca-trust mos-deploy mos-mqtt-broker mos-mqttd mos-podman mos-profile-prod mos-system mosd"
+CX_MINIMAL="mos-board-cx3576 mos-busybox mos-ca-trust mos-deploy mos-profile-dev mos-system"
 
 expect_set "cx3576 dev, radios '${CX_RADIOS}', nothing declined" "${CX_DEV}" \
     "${PACKAGES_DIR}" --board cx3576 --profile dev --radios "${CX_RADIOS}" --without ""
@@ -215,8 +210,8 @@ done
 # Declining ONE radio keeps the other: wifi and bluetooth are independent
 # decline tokens, which is the whole point of the split -- the retired umbrella
 # token dropped both together.
-CX_NO_BT="mos-apid mos-board-cx3576 mos-busybox mos-ca-trust mos-mqtt-broker mos-mqttd mos-podman mos-profile-dev mos-rauc mos-rauc-update mos-system mos-wifi mos-wifi-ap mosd"
-CX_NO_WIFI="mos-apid mos-bluetooth mos-board-cx3576 mos-busybox mos-ca-trust mos-mqtt-broker mos-mqttd mos-podman mos-profile-dev mos-rauc mos-rauc-update mos-system mosd"
+CX_NO_BT="mos-apid mos-board-cx3576 mos-busybox mos-ca-trust mos-deploy mos-mqtt-broker mos-mqttd mos-podman mos-profile-dev mos-system mos-wifi mos-wifi-ap mosd"
+CX_NO_WIFI="mos-apid mos-bluetooth mos-board-cx3576 mos-busybox mos-ca-trust mos-deploy mos-mqtt-broker mos-mqttd mos-podman mos-profile-dev mos-system mosd"
 expect_set "cx3576 dev, --without bluetooth keeps Wi-Fi" "${CX_NO_BT}" \
     "${PACKAGES_DIR}" --board cx3576 --profile dev --radios "${CX_RADIOS}" --without "bluetooth"
 expect_set "cx3576 dev, --without wifi keeps Bluetooth" "${CX_NO_WIFI}" \
@@ -233,9 +228,9 @@ fi
 
 # Declining every feature drops exactly the feature packages and leaves a legal
 # image set: common, one profile, one board.
-expect_set "cx3576 dev, --without 'mosd mqtt containers rauc wifi bluetooth'" "${CX_MINIMAL}" \
+expect_set "cx3576 dev, --without 'mosd mqtt containers wifi bluetooth'" "${CX_MINIMAL}" \
     "${PACKAGES_DIR}" --board cx3576 --profile dev --radios "${CX_RADIOS}" \
-    --without "mosd mqtt containers rauc wifi bluetooth"
+    --without "mosd mqtt containers wifi bluetooth"
 dropped=""
 for pkg in ${CX_DEV}; do
     case " ${CX_MINIMAL} " in
@@ -243,11 +238,11 @@ for pkg in ${CX_DEV}; do
     *) dropped="${dropped}${pkg} " ;;
     esac
 done
-want_dropped="mos-apid mos-bluetooth mos-mqtt-broker mos-mqttd mos-podman mos-rauc mos-rauc-update mos-wifi mos-wifi-ap mosd"
+want_dropped="mos-apid mos-bluetooth mos-mqtt-broker mos-mqttd mos-podman mos-wifi mos-wifi-ap mosd"
 if [ "${dropped% }" = "${want_dropped}" ]; then
-    pass "declining all six features drops exactly: ${want_dropped}"
+    pass "declining all five features drops exactly: ${want_dropped}"
 else
-    fail "declining all six features dropped [${dropped% }], expected [${want_dropped}]"
+    fail "declining all five features dropped [${dropped% }], expected [${want_dropped}]"
 fi
 
 # ---------------------------------------------------------------------------
@@ -273,17 +268,17 @@ mutate() {
 # (a) an unknown feature name in --without.
 expect_refusal "unknown feature in --without" "zigbee" "${PACKAGES_DIR}" \
     --board cx3576 --profile dev --radios "${CX_RADIOS}" --without "zigbee"
-run_resolve "${PACKAGES_DIR}" --board cx3576 --profile dev --radios "${CX_RADIOS}" --without "rauc"
+run_resolve "${PACKAGES_DIR}" --board cx3576 --profile dev --radios "${CX_RADIOS}" --without "mqtt"
 if [ "${resolve_rc}" -eq 0 ]; then
     pass "a legal --without does not trip the unknown-feature refusal"
 else
-    fail "--without rauc was refused on the tracked tree: ${resolve_err}"
+    fail "--without mqtt was refused on the tracked tree: ${resolve_err}"
 fi
 # The mutation runs the other way for this one, and it is the stronger
 # direction: a NEW feature manifest makes a previously illegal name legal, which
 # a hardcoded list of features could not do.
 dir="$(mutate feature-added)"
-printf '# scratch mutation\nmos-rauc\n' >"${dir}/feature-zigbee.pkgs"
+printf '# scratch mutation\nmos-mqttd\n' >"${dir}/feature-zigbee.pkgs"
 run_resolve "${dir}" --board cx3576 --profile dev --radios "${CX_RADIOS}" --without "zigbee"
 if [ "${resolve_rc}" -eq 0 ]; then
     pass "adding feature-zigbee.pkgs to a copy makes --without zigbee legal there: the feature list is read from the tree"
@@ -423,16 +418,6 @@ for board in "${ALL_BOARDS[@]}"; do
     done
 done
 
-# Optional board components are reachable only in their supported dev profile.
-for component in bm201-front-panel mqtt-reference; do
-    run_resolve "${PACKAGES_DIR}" --board s905x5m --profile dev --radios 'wifi bluetooth' --without '' --components "$component"
-    if [ "${resolve_rc}" -eq 0 ]; then
-        REACHED="${REACHED}${resolve_out//$'\n'/ } "
-        RESOLUTIONS_N=$((RESOLUTIONS_N + 1))
-    else
-        fail "optional component ${component} cannot be resolved: ${resolve_err}"
-    fi
-done
 REACHED=$(printf '%s\n' $REACHED | sort -u | tr '\n' ' ')
 REACHED_N=0
 for _pkg in ${REACHED}; do REACHED_N=$((REACHED_N + 1)); done

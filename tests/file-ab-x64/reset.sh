@@ -1,0 +1,66 @@
+#!/bin/bash
+# Interrupt the production reset applier and verify retry on full current images.
+set -euo pipefail
+cd "$(dirname "${BASH_SOURCE[0]}")/../.."
+root=$(realpath "${1:?full production root image required}")
+kernel=$(realpath "${2:?BSP kernel directory required}")
+cert=$(realpath "${3:?content certificate required}")
+key=$(realpath "${4:?content key required}")
+init=$(realpath "${5:?production init required}")
+board=${6:?board required}
+case "$board" in x64) compiler=gcc;; virt-arm64) compiler=aarch64-linux-gnu-gcc;; *) exit 1;; esac
+work=$(mktemp -d "$PWD/_out/reset-runtime.XXXXXX")
+printf 'Evidence: %s\n' "$work"
+# The Rust builder supplies the pinned native and cross C linkers.
+builder=$(bash build-env/from.sh --arch=amd64 --ref LOCAL_MOS_BUILD_RUST)
+timeout -k 15 180 docker run --rm --platform linux/amd64 --label ai-agent=true --network traefik \
+    -v "$work:/w" -v "$PWD/tests/file-ab-x64:/harness:ro" --entrypoint /bin/bash "$builder" \
+    -c 'set -euo pipefail; command -v "$1"; "$1" -Wall -Wextra -Werror -shared -fPIC /harness/reset-fault.c -o /w/reset-fault.so -ldl' reset-compiler "$compiler"
+for tier in configuration application-data full-factory; do
+    out="$work/$tier"
+    mkdir "$out"
+    # mos-build-side: container-block -- extract with the pinned component tools.
+    timeout -k 15 240 docker run --rm --label ai-agent=true --network traefik \
+        -v "$out:/w" -v "$root:/root.img:ro" ai-agent/mos-boot-tools-amd64 \
+        unsquashfs -no-progress -d /w/tree /root.img > "$out/extract.log" 2>&1
+    # mos-build-side: host
+    install -m 0755 tests/file-ab-x64/reset-runtime.sh "$out/tree/usr/lib/mos/reset-runtime"
+    install -m 0644 "$work/reset-fault.so" "$out/tree/usr/lib/mos/reset-fault.so"
+    printf '%s\n' "$tier" > "$out/tree/usr/lib/mos/reset-test-tier"
+    mkdir -p "$out/tree/etc/systemd/system/mosd.service.d"
+    cat > "$out/tree/etc/systemd/system/mosd.service.d/90-reset-acceptance.conf" <<'UNIT'
+[Service]
+Environment=LD_PRELOAD=/usr/lib/mos/reset-fault.so
+UNIT
+    cat > "$out/tree/etc/systemd/system/reset-acceptance.service" <<'UNIT'
+[Unit]
+Description=Interrupted reset acceptance
+After=multi-user.target mos-load-extensions.service mos-health.service
+[Service]
+Type=exec
+ExecStart=/usr/lib/mos/reset-runtime
+RuntimeMaxSec=240
+[Install]
+WantedBy=multi-user.target
+UNIT
+    ln -s /etc/systemd/system/reset-acceptance.service "$out/tree/etc/systemd/system/multi-user.target.wants/reset-acceptance.service"
+    timeout -k 20 900 bun tests/file-ab-x64/build.ts "$out/boot" "$board" "$kernel" "$cert" "$key" "$init" "$out/tree" > "$out/build.log" 2>&1
+    truncate -s 4G "$out/boot/image/disk.img"
+    for boot in 1 2 3; do
+        timeout -k 15 600 docker run --rm --label ai-agent=true --network traefik \
+            -v "$out/boot:/w" -v "$PWD/tests/file-ab-x64:/harness:ro" ai-agent/mos-p2-lab \
+            bash /harness/boot.sh image/disk.img writable 540 "$board" > "$out/boot-$boot.log" 2>&1
+        if [ "$boot" = 1 ]; then
+            grep -F "FILE_AB_RESET_STAGED: $tier" "$out/boot-$boot.log"
+        else
+            grep -F "FILE_AB_RESET_RETRY_PASS: $tier" "$out/boot-$boot.log"
+            if [ "$boot" = 2 ]; then
+                [ "$(grep -c FILE_AB_RESET_INTERRUPTION "$out/boot-$boot.log")" = 1 ]
+            else
+                ! grep -F FILE_AB_RESET_INTERRUPTION "$out/boot-$boot.log"
+            fi
+        fi
+        bash tests/file-ab-x64/shutdown-check.sh "$out/boot-$boot.log"
+    done
+    echo "FILE_AB_INTERRUPTED_RESET_PASS: $board $tier"
+done

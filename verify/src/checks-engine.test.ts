@@ -9,10 +9,9 @@
 //     podman unit of ANY name rather than for a mask list.
 //   - nft missing. It is reached by exec, so no NEEDED-soname check can see it,
 //     and an image can ship without it while passing every other assertion.
-//   - graphroot on /var. Containers work, and then one day the partition resets
-//     and every pulled image is gone, with no error anywhere.
+//   - graphroot on /var, where the immutable parent prevents image writes.
 //   - the Quadlet mount STATICALLY ENABLED, which is the branch with teeth:
-//     anything able to write /mnt/state/quadlet gets a root-capable container at
+//     anything able to write /mnt/data/state/quadlet gets a root-capable container at
 //     the next reboot with no operator decision in the path.
 //   - apt's TIMERS surviving a purge that removed only /usr/bin/apt. Found by
 //     booting the x64 image, in an arm64 image that had already shipped.
@@ -398,14 +397,14 @@ describe('the engine reads the configuration mos wrote', () => {
 })
 
 describe('image storage is on DATA', () => {
-  test('a graphroot on /var fails, and the message says images vanish silently', async () => {
+  test('a graphroot on /var fails with the current immutable-parent diagnosis', async () => {
     const fx = await mutated('container-engine-graphroot-on-data',
       root => rewrite(root, STORAGE_CONF, t =>
         t.replace('/mos/containers/storage', '/var/lib/containers/storage')))
     try {
       expect(await verdictOf(fx, 'container-engine-graphroot-on-data')).toBe('fail')
       expect(await messageOf(fx, 'container-engine-graphroot-on-data'))
-        .toContain('on the EPHEMERAL partition')
+        .toContain('under the immutable /var parent')
     }
     finally {
       fx.dispose()
@@ -482,7 +481,7 @@ describe('the Quadlet directory is writable, persistent and NOT enabled', () => 
 
   test('a mount backed by a tmpfs rather than STATE fails', async () => {
     const fx = await mutated('container-engine-quadlet-bind',
-      root => rewrite(root, QUADLET_MOUNT, t => t.replace('What=/mnt/state/quadlet', 'What=/run/quadlet')))
+      root => rewrite(root, QUADLET_MOUNT, t => t.replace('What=/mnt/data/state/quadlet', 'What=/run/quadlet')))
     try {
       expect(await messageOf(fx, 'container-engine-quadlet-bind'))
         .toContain('Installed containers would not survive an A/B update')

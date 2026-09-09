@@ -20,211 +20,102 @@ mechanism below carries one of:
   equivalent of access.md's `[not implemented]`, chosen because most entries
   here are boundaries a later plan must build, not gaps in shipped features.
 
-Two words are banned from this document except where they are being refuted or
-scoped: **"secure boot"** and **"tamper-proof"**. §4 is where both get their
-honest treatment.
+## 1. Physical-access boundary
 
-## 1. The boundary axiom: physical possession is full control
+Current qualification uses development images and explicit test keys. No
+hardware-rooted boot, fused key state or closed debug policy is claimed. A person
+with storage access can read or destroy unencrypted DATA and use available
+reflash/recovery transports. UEFI/FIT signatures still reject unauthorized boot
+objects when their enforcing boot stage and enrolled anchors remain trusted;
+those software checks do not authenticate an unqualified first mutable stage.
 
-**Physical possession of the boot medium implies full control of the device.**
-This is already the stated boundary of the provisioning design
-(`docs/design/provisioning.md` §3.4) and the access design
-(`docs/design/access.md` §7): the preferred provisioning path is literally
-"edit a file on the SD card with any reader", the factory recovery path is a
-whole-disk reflash over the SoC loader mode, and anyone holding the medium can
-rewrite the rootfs regardless of what it contains.
+Offline provisioning is authorized by physical possession of its medium and is
+bounded by the already-claimed device policy. It is distinct from a signed OS
+update. Each physical board must record recovery and debug exposure explicitly.
 
-Every boundary below inherits this axiom. Where a boundary claims protection,
-it claims it against the *online* attacker — one who reaches the device over
-the network, the management API or the update channel — and against the
-*unprivileged local* process, never against the person holding the hardware.
-A board that reaches I4 on the ladder in §5 moves this axiom, and only such a
-board does; today no board has (§4).
+## 2. Boundary (a): runtime content integrity — **[implemented]**
 
-## 2. Boundary (a): runtime rootfs integrity — **[implemented]**
+Authenticated native init verifies the selected deployment, board/kernel
+association and geometry. The kernel requires detached root-hash signatures
+under embedded content anchors before creating read-only dm-verity mappings for
+root and support. Blocks are verified on demand; a corrupted unread block is
+detected on access. There is no compulsory complete-image hash scan at boot.
 
-The root filesystem is a squashfs with an appended dm-verity hash tree, opened
-by the kernel's dm-init from a `dm-mod.create=` table on the kernel command
-line, read-only, no initramfs (`docs/design/ro-root.md` §1–2,
-`rootfs/build.sh`). Every read from `/` is verified against the tree whose
-root hash is on the command line; a modified block fails the read rather than
-returning altered content.
+Support owns matching modules and board firmware and is mounted before udev.
+Root owns userspace and an immutable `/var` skeleton. Selected persistent leaves
+bind DATA namespaces; volatile paths have explicit memory or disposable quotas.
+No unverified writable module directory or whole-tree writable `/var` is used.
 
-What this defends: a runtime compromise cannot persist itself into the root
-filesystem, and a corrupted or tampered slot fails loudly instead of running
-altered code. Writes land only on the mutable tiers — STATE, DATA, META,
-EPHEMERAL (`docs/design/ro-root.md` §4) — which is where persistence, and
-therefore forensics and reset, live.
+This protects verified content under the authenticated running kernel. It does
+not encrypt DATA or confine a deliberately privileged administrator. See
+[read-only root](ro-root.md) and [writable storage](storage.md).
 
-What this does **not** defend, stated because the rounding-off is the classic
-error: the root hash is *chosen by whatever booted the kernel*. dm-verity
-proves the root filesystem matches a hash; it proves nothing about who picked
-the hash, the kernel or the command line. That is boundary (c), and it is a
-different, weaker story (§4). dm-verity also covers only `/`: the mutable
-tiers are plain ext4 with no integrity protection **[proposed]** — a
-physically present attacker can edit STATE (settings, credentials hashes,
-authorized SSH keys) offline, consistent with §1's axiom.
+## 3. Boundary (b): update authenticity — **[implemented]**
 
-## 3. Boundary (b): update authenticity — **[partial]**
+Three separate signing domains authenticate boot executables, immutable content
+and release metadata. Native installation verifies strict signed deployments and
+exact object lengths/digests before durable publication. Catalog expiry and
+monotonic acquisition policy apply to downloading new releases. An installed
+valid deployment remains bootable offline after catalog expiry or without
+network time.
 
-A release is signed twice, by two unrelated hierarchies
-(`docs/design/release-signing.md` §0):
+Installation, confirmation, GC and reset share a DATA transaction lock. Current,
+fallback and staged references protect their immutable objects; failed/partial
+publication cannot expose an incomplete candidate. A staged release has unchanged
+persistent schemas. Rollback switches component references and does not restore
+DATA writes. Hardware monotonic counters and physical-media replay protection
+are not claimed.
 
-- **RAUC CMS** — **[implemented]** on the build/verify side: `rauc bundle`
-  signs the bundle payload with an X.509 signer chained to a CA; the device
-  verifies against `/etc/rauc/keyring.pem`, staged at build time from the
-  repository-root `meta/rauc/` seam. A development-grade CA is unmissably marked
-  (`meta/GENERATED`, `pkgs/rauc/gen-dev-keys.sh`) and the image verifier fails a
-  marked root and names it development-grade in the verdict
-  (`verify/src/checks-root.ts`, both directions proven by
-  `verify/src/checks-root.test.ts`).
-- **TUF metadata** — **[implemented]** on the device side, and the sentence
-  that used to stand here is retired. `rauc-sign` maintains the four-role
-  repository pinning each bundle's sha256, length and verity root hash;
-  `rauc-verify` performs the device-side walk with persistent rollback
-  protection; and both binaries ship in the image as `mos-rauc-update`, with
-  `rauc-update sync` as the transport that fetches metadata onto a device.
-  **The anchor is delivered**: `trust.signingKeys` is baked inline in
-  `/usr/share/mos/meta/updates/manifest.json` and the client will read one
-  from nowhere else — no environment variable, no flag, no operator document
-  (`docs/design/release-signing.md` §3.1, `docs/design/updates.md` §2.3).
+Development key creation is explicit and requires a new output directory.
+Private inputs are external to images; metadata anchors come from authenticated
+kernel policy, not editable userspace defaults. The system-info marker reports
+development provenance, not measured firmware enforcement. See
+[release signing](release-signing.md) and [updates](updates.md).
 
-The honest claim today, which is narrower than "not fielded" and narrower
-than "fielded":
+## 4. Boundary (c): boot-chain authenticity — board-specific evidence
 
-- **The road exists and it is the image.** Both hierarchies reach a device
-  the same way, so the update trust chain is exactly as strong as the image
-  signing path that carries it: whoever controls what gets baked controls
-  what the package gate trusts. The two gates are independent **at install
-  time** — forging a package still does not install a system
-  (`release-signing.md` §2.6) — and not at provisioning time.
-- **A default build trusts nothing for packages, and says so.**
-  `pkgs/rauc/gen-dev-keys.sh` writes the RAUC domain by default and the
-  updates domain only on `--domain updates`, so an image built from a fresh
-  checkout carries an empty `trust.signingKeys` and can verify **no** update
-  package. The build prints that in one line rather than failing: with no key
-  there is nothing claiming a trust relationship the build does not have.
-- **What remains [proposed]** is a trust channel *outside* the image, for the
-  two cases the image cannot carry: a device that misses a CA rollover's
-  overlap window, and rotation away from a CA that is already compromised
-  (`release-signing.md` §2.3, §2.4). That is a keyring question now; the
-  package anchor's channel is settled.
+On x64 and virt-arm64, the signed systemd-boot manager chooses counted entries
+and firmware authenticates UKIs under enrolled Secure Boot anchors. Failure to
+persist an attempt refuses launch. On cx3576, fixed C firmware policy requires
+signed FIT configurations, disables persistent command import, arms its watchdog
+before eMMC access and flushes/read-backs the attempt update before FIT loading.
 
-## 4. Boundary (c): boot-chain authenticity — per board, and honest
+The health gate alone confirms a deployment. Three failed trials exhaust without
+refill. Unusable shared storage and exhausted deployments reach explicit recovery
+outcomes. Kernel panic uses a restart policy; hangs require independently proven
+watchdog coverage. QEMU and sandbox results cannot establish physical eMMC
+power-loss behavior or a board's full firmware-to-health watchdog handoff.
 
-**dm-verity is not secure boot.** When an earlier boot stage is untrusted, it
-picks the kernel, the command line and the verity root hash, and §2's
-integrity guarantee then attests a root filesystem *of the attacker's
-choosing*. Boot-chain authenticity is the property that each stage verifies
-the next before running it, anchored somewhere an attacker cannot rewrite —
-and it is per-board, because the early stages belong to the SoC vendor.
-
-Per board today:
-
-- **cx3576 (RK3576)** — **[proposed]** beyond integrity. The mask ROM and the
-  Rockchip loader stages in partition p1 are binary, vendor-supplied and
-  opaque; U-Boot itself is built from pinned mainline source
-  (`boards/cx3576/bsp/uboot/Dockerfile`), but `CONFIG_FIT_SIGNATURE` is
-  configured nowhere in the tree (`docs/design/boards.md` §8), so U-Boot
-  verifies nothing it boots, and nothing verifies U-Boot. The chain is:
-  opaque ROM → opaque loader → unauthenticated U-Boot → unauthenticated
-  kernel/dtb/cmdline → verity root. Every link left of the verity root is
-  unverified.
-- **x64 (generic UEFI)** — **[proposed]**. The firmware is the machine
-  owner's; mos configures no UEFI Secure Boot signing, GRUB and the kernel
-  are unsigned by mos, and whatever verification the platform performs is the
-  platform's own claim, not this project's.
-
-This is the deliberate posture, not an oversight: customer-selected boards
-routinely ship binary-only early stages, and the project's position is
-best-effort trusted boot with the evidence level stated per board rather than
-a universal promise. No mos release material may describe any current board
-as having secure boot; a claim above a board's evidenced ladder level (§5)
-must fail release publication — that gate is **[implemented]**
-(`checkBoardEvidence`, `build/src/release-manifest.ts`; rules in
-`docs/design/release-artifacts.md` §4), with the policy stated in
-`docs/design/security-lifecycle.md` §2.
-
-**No TEE is part of any mos trust chain, on any board.** The trust chain is
-`meta/` key material and RAUC CMS signature verification (§3) — an ordinary
-userspace verification against a keyring baked into the signed root — plus
-dm-verity underneath it (§2). A Trusted Execution Environment holds no mos
-key, verifies no mos artifact, and is not a fallback for any of the gaps §4
-lists above. This was an unwritten assumption until RFCT-355, and writing it
-down is the whole of the change: nothing in the codebase moved.
-
-It is written down because a working device looks like evidence for the
-opposite. The cx3576 vendor device tree declares `firmware/optee` and the
-kernel probes it on every boot:
-
-```
-optee: probing for conduit method.
-optee: api uid mismatch
-optee: probe of firmware:optee failed with error -22
-```
-
-The probe fails — the Rockchip BL31 in `boards/cx3576/bsp/uboot` answers the
-SMC with a UID that is not OP-TEE's, because no OP-TEE OS is loaded on this
-board — so there is no `/dev/tee0`, no `tee-supplicant`, and no
-`OP-TEE`-backed anything. **That failure costs the device nothing**, and that
-is the point of recording it: a reader who finds the node in the device tree,
-or the line in a boot log, must not conclude that a TEE is holding up a corner
-of the design, and a reader who sees the probe *succeed* on some future board
-must not conclude that anything started using it. Introducing a TEE into the
-trust chain would be an I3/I4 claim (§5) with its own evidence rows, not a
-side effect of a vendor blob beginning to answer.
-
-**A guard built on a board-specific mechanism is a per-board claim, not a
-system property.** This generalises beyond the boot chain and has decided two
-designs already: a rollback guard keyed on the bootloader environment would
-have read per-slot flags that x64's grubenv carries and cx3576's U-Boot
-environment does not, and a physical-presence assertion keyed on a recovery
-button would exist on cx3576 and nowhere on x64 (`docs/design/recovery.md`
-§4.4, §8). Both were rejected for the same reason, and it is not
-effort: a mechanism that is present on one board and absent on another
-produces a protection that is strong where it was written and *silently*
-absent everywhere else, while every gate stays green. That is worse than
-having no guard at all, because a documented gap is visible to the operator
-planning around it and a board-dependent one is not. Either the guard is
-board-neutral, or the capability is declared per board and the flows that
-depend on it refuse — visibly — where it is absent.
+Boot-key, content-key and metadata-key overlap/removal are separate operations.
+Firmware maintenance is an authenticated offline workflow with a recovery artifact
+and readback. Ordinary root/kernel updates do not write loader firmware. No OTP
+or fuse change is part of current acceptance. Evidence and exact limitations are
+in the [delivery task](../task/20260908-2229-file-ab-delivery-x64-first.md).
 
 ## 5. The I1–I4 boot-assurance ladder
 
-Defined here, minimally, because no shipped document defines it and the board
-qualification and release-publication work both need to cite it. Levels are
-**additive** — each presumes the ones below — and are claimed **per board and
-revision**, with dated evidence, never for "mos" as a whole:
+These additive qualification levels are recorded per board/revision with dated
+physical evidence. Mechanism-level software proofs are listed separately:
 
-- **I1 — verity-protected root.** The running root filesystem is dm-verity
-  verified (§2), and A/B update, recovery and negative update tests pass on
-  the board. Binary-only boot stages are acceptable at this level. This is
-  the common target for every supported board.
-- **I2 — authenticated normal system update.** The device verifies update
-  authenticity end to end against production trust anchors (§3): RAUC CMS
-  against a provisioned production keyring, TUF walk from a provisioned
-  anchor, with negative tests (tampered bundle, rollback) on the board.
-- **I3 — authenticated kernel, DTB and verity parameters.** The boot stage
-  verifies a signed FIT (or the board's equivalent) covering kernel, DTB and
-  the command line that carries the verity root hash, with a negative
-  signature test on the board. Requires actual bootloader capability;
-  binary-only U-Boot qualifies only if the capability is real and testable.
-- **I4 — hardware-rooted boot plus production debug policy.** The chain is
-  anchored in ROM/fused state the attacker cannot rewrite, and the board's
-  production debug policy (`docs/design/manufacturing.md` §6–7) is applied
-  and validated. Only at I4 does §1's possession axiom weaken.
+- **I1:** verified read-only content, update/fallback and recovery evidence.
+- **I2:** authenticated normal deployment acquisition/installation with the
+  intended trust inputs and meaningful negative cases.
+- **I3:** authenticated kernel, DTB/initramfs and boot policy under an enforcing
+  boot stage, with board-specific substitution/signature refusal evidence.
+- **I4:** hardware-authenticated first mutable stages and a validated debug and
+  recovery policy that preserves that chain.
 
-Today: **cx3576 and x64 stand at I1** (with I1's own on-hardware evidence
-rows owed to the board qualification record, not granted by this document);
-I2 is blocked on trust-anchor provisioning; I3/I4 are board-specific best
-effort and are **never promised universally**.
+The current code implements the I1–I3 mechanisms and tests them in development
+QEMU/sandbox environments. Board evidence remains conservative; physical cx3576
+qualification is pending. No I4 claim is made. The [BSP assurance page](../bsp/assurance.md)
+applies this distinction to dossiers and release wording.
 
 ## 6. Boundary (d): data confidentiality at rest — **[proposed]**
 
 **Nothing on a mos device is encrypted at rest today.** Stated as the current
 limit, explicitly:
 
-- STATE, DATA and META are plain ext4. Settings, the apid admin password
+- DATA and its state/meta namespaces are plain ext4. Settings, the apid admin password
   hash, sshd host keys, authorized SSH keys, WiFi credentials, Bluetooth
   pairing keys and the two per-device plaintext secrets
   (`/var/lib/mos/secrets/`, `docs/design/provisioning.md` §3.4) are readable
@@ -244,35 +135,31 @@ material overstates it.
 
 ## 7. Boundary (e): recovery and provisioning — **[partial]**
 
-- **Recovery** — what exists is the board's SoC loader mode (cx3576:
-  rockusb), a physical-access whole-disk reflash that replaces every
-  partition including STATE/META/DATA (`docs/design/access.md` §9.2)
-  **[implemented]**, and U-Boot's A/B attempt-counter fallback
-  (`docs/design/uboot-ab-handshake.md`) **[implemented]**. The rescue FIT
-  entry and factory reset are **[proposed]** (`docs/design/access.md` §2,
-  §5.2). There is deliberately no software path back in for an operator who
-  loses every credential (`docs/design/access.md` §9.1).
-- **Provisioning** — first-boot self-provisioning mints per-device identity
-  and secrets on the device, never in the image
-  (`docs/design/provisioning.md` §2–3) **[implemented]**. Every offline
-  provisioning channel (BOOT-partition file, signed USB drop, captive
-  portal, serial wizard) is **[proposed]**; the only configuration path is
-  apid over an existing network.
+Native trial fallback and guarded manual rollback restore a retained component
+association. Directory-scoped reset preserves identity, credentials and lifecycle
+records according to the selected tier, under the shared transaction lock. A
+complete-image reflash replaces the system and DATA, including identity.
 
-The threat statement for this boundary: recovery *is* the physical-access
-capability of §1, so any future I4 board must redesign it deliberately —
-closing rockusb-class access without a validated alternative recovery path
-bricks the device class, which is why `docs/design/manufacturing.md` §7
-requires board-specific validation before any irreversible policy is fused.
+Offline provisioning stages a fixed document from the UEFI ESP or removable
+media read-only. cx3576 has raw FIRMWARE and uses removable media. mosd validates
+the entire document and the already-claimed policy before applying it. It leaves
+credential-bearing media unchanged. This transport does not authenticate a
+signature and must not be confused with the signed deployment importer.
+
+Current boards declare no OS physical-presence recovery action. cx3576's loader
+button opens rockusb; it does not authorize credential recovery through apid.
+Those presence-gated requests remain refused. Captive/serial provisioning wizards
+and a device secure-erase primitive are not implemented. See
+[provisioning](provisioning.md) and [recovery](recovery.md).
 
 ## 8. Boundary (f): rootful applications and containers — **[implemented]**, with stated limits
 
 The container capability's own document says it plainly and this one must not
 be softer: **containers on this device run as root**
 (`docs/design/containers.md`). Rootless mode is not built; anything that can
-write a `.container` file into the STATE-backed Quadlet directory runs code
+write a `.container` file into the DATA-backed Quadlet directory runs code
 with root's authority. Likewise `/usr/local/lib/systemd/system` is a
-root-writable unit directory on STATE (`docs/design/ro-root.md` §4), so the
+root-writable unit directory on DATA (`docs/design/ro-root.md` §4), so the
 set of things that start at boot is not determined by the image hash.
 
 The current containment is honesty, not isolation: the capability is off by

@@ -8,7 +8,7 @@
 // It used to open COREUTILS on the host route and COREUTILS in a container and
 // compare the two. There is one route now (docs/design/build.md section 0), so
 // the pair below is two TOOLSETS instead: COREUTILS installs `coreutils` and
-// CX3576_ASSEMBLY installs it alongside seven other packages, in the same
+// FILE_IMAGE_TOOLS installs it alongside seven other packages, in the same
 // image. That is the comparison the byte-identity gates actually rest on --
 // src/toolsets.ts's "which package provided mkfs.vfat or mksquashfs is exactly
 // the kind of thing that decides bytes" -- and a route pair could not make it.
@@ -19,7 +19,8 @@ import { join } from 'node:path'
 import { makeWorkDir, REPO_ROOT } from '../paths.ts'
 import { Toolbox, ToolError } from '../toolbox.ts'
 import { OPEN_TIMEOUT_MS, TOOL_TIMEOUT_MS } from '../testing.ts'
-import { COREUTILS, CX3576_ASSEMBLY } from '../toolsets.ts'
+import { COREUTILS } from '../toolsets.ts'
+import { FILE_IMAGE_TOOLS } from '../file-image.ts'
 import { dd, ddArgs, truncate } from './dd.ts'
 
 let assembly: Toolbox
@@ -28,7 +29,7 @@ let work = ''
 
 beforeAll(async () => {
   work = makeWorkDir('dd')
-  assembly = await Toolbox.open(CX3576_ASSEMBLY, { mounts: [REPO_ROOT], cwd: work })
+  assembly = await Toolbox.open(FILE_IMAGE_TOOLS, { mounts: [REPO_ROOT], cwd: work })
   container = await Toolbox.open(COREUTILS, { mounts: [REPO_ROOT], cwd: work })
 }, OPEN_TIMEOUT_MS)
 afterAll(async () => {

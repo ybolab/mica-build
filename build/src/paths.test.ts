@@ -29,7 +29,7 @@ import {
 describe('every ascent is anchored, and the neighbours miss', () => {
   test('src is where this module lives', () => {
     expect(basename(SRC_DIR)).toBe('src')
-    expect(existsSync(join(SRC_DIR, 'geometry.ts'))).toBe(true)
+    expect(existsSync(join(SRC_DIR, 'file-layout.ts'))).toBe(true)
   })
 
   test('the package directory: 1 up, and neither 0 nor 2', () => {

@@ -52,7 +52,7 @@ nothing:
    string, a zero, or a missing key that reads like health.
 2. **Nothing is restated.** Every fact is read from the seam that already
    carries it (the shipped manifest, `/etc/machine-id`, the kernel's own
-   files, RAUC, networkd, wpa_supplicant, resolved, sysfs, the journal),
+   files, the native deployment backend, networkd, wpa_supplicant, resolved, sysfs, the journal),
    and no second copy is written anywhere.
 
 ## 2. The system-information surface
@@ -69,24 +69,17 @@ is an object with `available`; the present shape is:
 | `system` | `version`, `package`, `gitStamp`, `commitDate`, `fileEpoch` | the manifest row of `mos-system`, else of `mosd`; `/usr/share/mos/release-identity.env`; the manifest file's mtime |
 | `daemon` | `name`, `version`, `commit` (null when the build supplied none) | what `mosd --version` prints, from the same embedded values |
 | `packages` | `count`, `mosCount`, `malformedRows`, `truncated`, `entries[]` of `name`, `version`, `architecture`, `mos` | `/usr/share/mos/manifest.tsv` |
-| `slot` | `booted`, `bootname`, `bundleVersion`, `bootStatus`, `primary` | RAUC's slot status, through the client mosd already holds |
+| `deployment` | `id`, `version`, `generation`, `kernelId`, `kernelRelease`, `rootfsId`, `confirmed`, `contentVerified`, `secureBoot`, `backend`, `bootVerified` | Authenticated native boot receipt and deployment state |
 | `trust` | `grade` (`development`/`production`), and on a development image `developmentDomains` and `marker` | `/usr/share/mos/meta/`: the baked update configuration, and the `GENERATED` marker beside it |
 | `uptime` | `seconds` | `/proc/uptime` |
 
-`trust` is what the image says about the signing material it was built from,
-and it is not guessed from any certificate: `rootfs/build.sh` bakes
-`/usr/share/mos/meta/GENERATED` if and only if the tree's `meta/GENERATED` is
-there, and `verify`'s `packed-meta-is-the-public-set` refuses an image in which
-those two disagree in either direction. A development image names the domains
-its marker covers, so a mixed one — a production RAUC ceremony's output beside
-a development package signing key — reports which half.
-
-**Absent is not `production`.** The member reads
-`/usr/share/mos/meta/updates/manifest.json` first, because that document is a
-required member of the baked set: an image that does not carry it provisions no
-trust anchor and has no marker for a different reason than a production image
-has none. Such a root reports `available: false` with the reason rather than
-claiming a production CA it cannot see.
+`trust` reports the supplied public defaults and development marker baked into
+`/usr/share/mos/meta`. It is provenance, not an active firmware attestation.
+Current marker domains are `boot`, `verity` and `updates`; malformed, duplicate or
+unknown domain declarations do not turn marker presence into production grade.
+An absent public-defaults manifest makes the observation unavailable. Public
+defaults do not contain signature anchors: metadata/content policy comes from the
+authenticated kernel package and boot anchors from its firmware trust domain.
 
 `system.gitStamp` is the `+git<commit>[.dirty]-<rev>` stamp the mos rows of
 the manifest share: `commit`, `dirty`, `revision`, and `consistent` with the
@@ -114,7 +107,7 @@ imply otherwise. A root whose identity states no `COMMIT_DATE` reports
 `system.fileEpoch` is the manifest file's mtime: the `SOURCE_DATE_EPOCH` that
 `rootfs/scripts/pack-squashfs.sh` pins every file time in the root to. It is
 **not** a build date and is deliberately not named as one.
-`build/src/geometry.ts` fixes that epoch to a constant so two builds of one
+`rootfs/scripts/pack-squashfs.sh` fixes that epoch to a constant so two builds of one
 tree are byte-identical, which makes it the same instant — 2020-01-01 — in
 every image this repository has ever produced. It is reported because it is
 what the filesystem actually says, and it answers "what time do this image's
@@ -127,10 +120,10 @@ row that is not three tab-separated fields is counted in `malformedRows`
 and skipped. A mos row is one whose package name starts with `mos`, the
 rule `verify` applies.
 
-The RAUC query behind `slot` is bounded (2 s) and non-fatal: an installer
-that is absent, slow or wedged makes `slot` absent with the reason, never the
-whole answer. Under `MOSD_DRY_RUN=1` the observer is never attached and the
-bus member answers `Failed`, so no test can read the build host's identity.
+The deployment observation is bounded and nonfatal. An unavailable backend
+produces an unavailable member with a reason, without hiding other system facts.
+Under `MOSD_DRY_RUN=1` the observer is not attached; the bus call fails instead of
+reading the build host's identity.
 
 ## 3. The observed network state
 

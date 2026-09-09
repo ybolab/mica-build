@@ -10,7 +10,6 @@
         "base",
         "mos-bluetooth",
         "mos-podman",
-        "mos-rauc",
         "mos-system",
         "mos-wifi",
         "mos-wifi-ap"
@@ -25,9 +24,7 @@
         "base",
         "mos-bluetooth",
         "mos-board-cx3576",
-        "mos-board-s905x5m",
         "mos-podman",
-        "mos-rauc",
         "mos-system",
         "mos-wifi",
         "mos-wifi-ap"

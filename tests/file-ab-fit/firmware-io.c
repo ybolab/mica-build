@@ -1,0 +1,157 @@
+// Exercise the actual firmware policy with deterministic block-device failures.
+#include <assert.h>
+#include <setjmp.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+typedef long long loff_t;
+#define __noreturn __attribute__((noreturn))
+#define ARCH_DMA_MINALIGN 64
+#define UCLASS_WDT 1
+#define UCLASS_MMC 2
+#define BUTTON_ON 1
+#define FS_TYPE_EXT 1
+#define IS_SD(mmc) 0
+struct blk_desc { unsigned int blksz; int uclass_id, devnum; };
+struct mmc { int unused; };
+struct udevice { int unused; };
+struct disk_partition { unsigned long start, size; unsigned char name[16]; };
+static struct blk_desc disk = {512, UCLASS_MMC, 0};
+static struct mmc mmc;
+static struct udevice device;
+static unsigned char medium[2][65536], buffer[131072];
+static jmp_buf stopped;
+static int fault, reads, writes, flushes, invalidations, loads, launches, armed;
+static int fail_copy = -1;
+static uint32_t crc32(uint32_t crc, const unsigned char *p, size_t size)
+{
+    crc = ~crc;
+    while (size--) {
+        crc ^= *p++;
+        for (int bit = 0; bit < 8; bit++)
+            crc = (crc >> 1) ^ (0xedb88320U & (0U - (crc & 1)));
+    }
+    return ~crc;
+}
+static uint32_t get_unaligned_le32(const unsigned char *p)
+{ return p[0] | (uint32_t)p[1] << 8 | (uint32_t)p[2] << 16 | (uint32_t)p[3] << 24; }
+static void put_unaligned_le32(uint32_t value, unsigned char *p)
+{ for (int n = 0; n < 4; n++) p[n] = value >> (8 * n); }
+static unsigned long blk_dread(struct blk_desc *d, unsigned long sector, unsigned long blocks, void *out)
+{
+    assert(armed && d == &disk && blocks == 128);
+    int copy = sector == 32768 ? 0 : 1;
+    assert(sector == 32768 || sector == 34816);
+    reads++;
+    if (copy == fail_copy || (fault == 3 && writes)) return 127;
+    memcpy(out, medium[copy], 65536);
+    if (fault == 4 && writes) ((unsigned char *)out)[100] ^= 1;
+    return blocks;
+}
+static unsigned long blk_dwrite(struct blk_desc *d, unsigned long sector, unsigned long blocks, const void *in)
+{
+    assert(d == &disk && sector == 34816 && blocks == 128 && loads == 0);
+    writes++;
+    memcpy(medium[1], in, fault == 1 ? 32768 : 65536);
+    return fault == 1 ? 64 : blocks;
+}
+static int mmc_flush_cache(struct mmc *m)
+{ assert(m == &mmc && writes == 1 && loads == 0); flushes++; return fault == 2 ? -1 : 0; }
+static void blkcache_invalidate(int kind, int number)
+{ assert(kind == UCLASS_MMC && number == 0 && flushes == 1); invalidations++; }
+static struct blk_desc *mmc_get_blk_desc(struct mmc *m) { assert(m == &mmc); return &disk; }
+static int part_get_info(struct blk_desc *d, int number, struct disk_partition *p)
+{
+    const unsigned long starts[] = {64, 36864, 4231168}, sizes[] = {36800, 4194304, 524288};
+    const char *names[] = {"firmware", "system", "data"};
+    assert(d == &disk);
+    if (number == 4) return -1;
+    p->start = starts[number - 1]; p->size = sizes[number - 1];
+    strcpy((char *)p->name, names[number - 1]); return 0;
+}
+static void disable_ctrlc(int disable) { assert(disable == 1); }
+static int env_set(const char *key, const char *value)
+{ assert(!strcmp(key, "verify") && !strcmp(value, "yes")); return 0; }
+static int button_get_by_label(const char *label, struct udevice **out)
+{ (void)label; (void)out; return -1; }
+static int button_get_state(struct udevice *d) { (void)d; return 0; }
+static int uclass_get_device(int kind, int number, struct udevice **out)
+{ assert(kind == UCLASS_WDT && number == 0); *out = &device; return 0; }
+static int wdt_start(struct udevice *d, unsigned long timeout, int flags)
+{ assert(d == &device && timeout == 120000 && flags == 0); armed = 1; return 0; }
+static void wdt_reset(struct udevice *d) { assert(d == &device); }
+static struct mmc *find_mmc_device(int n) { assert(armed && n == 0); return &mmc; }
+static int mmc_init(struct mmc *m) { assert(m == &mmc); return 0; }
+static int blk_select_hwpart_devnum(int kind, int device_number, int partition)
+{ assert(kind == UCLASS_MMC && device_number == 0 && partition == 0); return 0; }
+static void *memalign(size_t align, size_t size)
+{ assert(align == 64 && size == sizeof(buffer)); return buffer; }
+static void release_buffer(void *p) { assert(p == buffer); }
+#define free release_buffer
+static int fs_set_blk_dev(const char *kind, const char *part, int type)
+{ assert(!strcmp(kind, "mmc") && !strcmp(part, "0:2") && type == FS_TYPE_EXT); return 0; }
+static int fs_size(const char *path, loff_t *size) { assert(strstr(path, "/boot.itb")); *size = 4096; return 0; }
+static int fs_read(const char *path, unsigned long address, loff_t offset, loff_t size, loff_t *loaded)
+{
+    (void)path; assert(address == 0x60000000UL && offset == 0 && size == 4096);
+    assert(!fault && writes == 1 && flushes == 1 && invalidations == 1 && reads == 3);
+    loads++; *loaded = size; return 0;
+}
+static int fdt_check_header(const void *p) { (void)p; return 0; }
+static loff_t fdt_totalsize(const void *p) { (void)p; return 4096; }
+static void bootm_boot_start(unsigned long address, const char *args)
+{ assert(address == 0x60000000UL && strstr(args, "dm_verity.require_signatures=1")); launches++; longjmp(stopped, 1); }
+static int run_command(const char *command, int flag)
+{ assert(!strcmp(command, "rockusb 0 mmc 0") && flag == 0); return 0; }
+static void __noreturn hang(void) { longjmp(stopped, 2); }
+static void do_reset(void *command, int flag, int argc, void *argv)
+{ (void)command; (void)flag; (void)argc; (void)argv; longjmp(stopped, 3); }
+#include "../../boards/cx3576/bsp/uboot/mos-file-boot.c"
+
+static void prepare(void)
+{
+    char id[65], kernel[65], text[513];
+    memset(id, 'a', 64); id[64] = 0;
+    memset(kernel, 'b', 64); kernel[64] = 0;
+    snprintf(text, sizeof(text), "v1|%s,%s,2,3", id, kernel);
+    memset(medium, 0, sizeof(medium));
+    for (int n = 0; n < 2; n++) {
+        medium[n][4] = n == 0 ? 2 : 1;
+        memcpy(medium[n] + 5, "mos_entries=", 12);
+        memcpy(medium[n] + 17, text, strlen(text));
+        put_unaligned_le32(crc32(0, medium[n] + 5, 65531), medium[n]);
+    }
+    reads = writes = flushes = invalidations = loads = launches = armed = 0;
+    fail_copy = -1;
+}
+int main(void)
+{
+    unsigned char original[65536];
+    for (fault = 0; fault <= 4; fault++) {
+        prepare(); memcpy(original, medium[0], sizeof(original));
+        int outcome = setjmp(stopped);
+        if (!outcome) mos_file_boot();
+        assert(!memcmp(original, medium[0], sizeof(original)));
+        assert(armed && writes == 1);
+        if (!fault) {
+            struct mos_boot_records records;
+            assert(outcome == 1 && launches == 1 && loads == 1);
+            assert(valid_environment(medium[1]) && !decode_environment(medium[1], &records));
+            assert(records.entry[0].tries == 2 && medium[1][4] == 3);
+        } else {
+            assert(outcome == 2 && launches == 0 && loads == 0);
+            assert(flushes == (fault == 1 ? 0 : 1));
+        }
+    }
+    // One unreadable copy may use the other; two corrupt copies must stop.
+    fault = 0; prepare(); fail_copy = 1; armed = 1;
+    assert(read_environment(&disk, buffer, &(struct mos_boot_records){0}) == 0);
+    prepare(); medium[0][0] ^= 1; medium[1][0] ^= 1;
+    int outcome = setjmp(stopped);
+    if (!outcome) mos_file_boot();
+    assert(outcome == 2 && writes == 0 && loads == 0 && launches == 0);
+    puts("FIT_FIRMWARE_IO_PASS: actual C policy refuses write, flush and readback failures before FIT load");
+    return 0;
+}

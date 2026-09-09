@@ -2,9 +2,11 @@
 
 > [English](../README.md) | 中文
 
-本目录是 mos 的中文文档，按**当前版本**重写，不是英文文档的逐行翻译。
+The Chinese user guides below describe the current complete-image workflow.
+Superseded engineering translations have been removed. Use the linked English
+contracts for current boot, storage, updates, API and build behavior.
 
-- [`architecture.md`](architecture.md) — 系统架构总览与组件地图（从这里开始）
+- [`architecture.md`](../architecture.md) — 系统架构总览与组件地图（从这里开始）
 - `user/` — 用户文档（**覆盖全部 16 篇**，含文档契约本身）
   - [`quickstart.md`](user/quickstart.md) — 快速上手：QEMU 里的 x64 基线
   - [`download.md`](user/download.md) — 发布版组成与镜像获取（今天：自己构建）
@@ -15,7 +17,7 @@
   - [`applications.md`](user/applications.md) — 原生软件包与容器两条交付路径
   - [`update-rollback.md`](user/update-rollback.md) — A/B 更新、健康门与回滚
   - [`recovery.md`](user/recovery.md) — 从自动回滚到整盘重刷的恢复阶梯
-  - [`storage.md`](user/storage.md) — 四个存储层级与数据归属规则
+  - [`storage.md`](user/storage.md) — DATA 命名空间与数据归属规则
   - [`troubleshooting.md`](user/troubleshooting.md) — 诊断顺序：访问、识别、证据
   - [`security.md`](user/security.md) — 安全姿态与点名的缺口
   - [`release-notes.md`](user/release-notes.md) — 发布版标识与发布说明政策
@@ -23,27 +25,26 @@
   - [`support.md`](user/support.md) — 支持层级与生命周期归属
   - [`doc-contract.md`](user/doc-contract.md) — 用户文档契约（读者、真实状态分类法、中英规则）
 - `design/` — 子系统设计与专项开发指南
-  - [`api.md`](design/api.md) — API 优先的 apid：表面、认证、静态托管、可替换界面
-  - [`applications.md`](design/applications.md) — 计划中的托管应用：精选 OCI 优先目录、签名 manifest、生命周期、信任与 API 边界
+  - [`api.md`](../design/api.md) — API 优先的 apid：表面、认证、静态托管、可替换界面
+  - [`applications.md`](../design/applications.md) — 计划中的托管应用：精选 OCI 优先目录、签名 manifest、生命周期、信任与 API 边界
   - [`access.md`](design/access.md) — 调试与运维通道：入口、认证、分层关闭
-  - [`boards.md`](design/boards.md) — BSP 契约：产物、内核断言、新板卡清单
+  - [`boards.md`](../design/boards.md) — BSP 契约：产物、内核断言、新板卡清单
   - [`bsp-cx3576-sync.md`](design/bsp-cx3576-sync.md) — cx3576 上游 BSP 同步记录与偏离登记
-  - [`build-harness.md`](design/build-harness.md) — 本仓库的检查怎么跑：固定容器、临时空间、文档门禁
-  - [`build.md`](design/build.md) — 镜像构建指南：产物、x64 与 cx3576 的构建序列、哪些步骤交叉编译/在 buildkit 内模拟/需要主机 binfmt、如何读懂构建拒绝
+  - [`build-harness.md`](../design/build-harness.md) — 本仓库的检查怎么跑：固定容器、临时空间、文档门禁
+  - [`build.md`](../design/build.md) — 镜像构建指南：产物、x64 与 cx3576 的构建序列、哪些步骤交叉编译/在 buildkit 内模拟/需要主机 binfmt、如何读懂构建拒绝
   - [`bus.md`](design/bus.md) — 系统管理与应用数据边界、按包登记的 `com.mos.Item1` 应用契约、D-Bus 策略与 MQTT topic 语法
   - [`connd.md`](design/connd.md) — 连接性关注点：WiFi station/AP 的两个协调器
   - [`containers.md`](design/containers.md) — 集成商指南：Quadlet unit、互联、持久化
-  - [`dashboard.md`](design/dashboard.md) — 仪表盘提案：着陆页、信息架构、技术姿态
+  - [`dashboard.md`](../design/dashboard.md) — Current dashboard and development contract (English)
   - [`display.md`](design/display.md) — HDMI kiosk 界面
-  - [`mosd.md`](design/mosd.md) — 管理面：设置树、协调器、D-Bus 接口
+  - [`mosd.md`](../design/mosd.md) — 管理面：设置树、协调器、D-Bus 接口
   - [`native-applications.md`](../design/native-applications.md) — 原生交付路径的集成商指南：`.deb` producer、单元与启动、专用账户、可写状态、健康闸、具名设备、资源上限（仅英文）
   - [`provisioning.md`](design/provisioning.md) — 无网络配置：三层模型与凭据模型
-  - [`release-signing.md`](design/release-signing.md) — 生产密钥仪式：TUF root、RAUC CA、签名 runbook
+  - [`release-signing.md`](../design/release-signing.md) — Current signing and rotation contract (English)
   - [`key-delivery.md`](../design/key-delivery.md) — 密钥交付：仪式产出什么、什么可以流转而什么绝不流转、本仓库尚未定义的交付形式、接收方在构建前跑的检查（仅英文）
-  - [`remote-management.md`](design/remote-management.md) — 远程管理的现状与缺口
-  - [`ro-root.md`](design/ro-root.md) — 只读根：squashfs + dm-verity，以及写入去哪里
-  - [`uboot-ab-handshake.md`](design/uboot-ab-handshake.md) — U-Boot / RAUC / 健康闸之间的 A/B 启动契约
-  - [`built-in-ui-development-guide.md`](design/built-in-ui-development-guide.md) — 内置 UI 的自包含开发、交互、API 映射与分阶段交付指南
+  - [`remote-management.md`](../design/remote-management.md) — 远程管理的现状与缺口
+  - [`ro-root.md`](../design/ro-root.md) — 只读根：squashfs + dm-verity，以及写入去哪里
+  - [`uboot-ab-handshake.md`](../design/uboot-ab-handshake.md) — Current signed FIT and native-record contract (English)
   - [`built-in-ui-design.md`](design/built-in-ui-design.md) — 面向产品/UI 设计师的完整功能、页面、流程、状态与原型指南
 - `research/` — 调研笔记:作为基准阅读的外部产品,不属于设计记录
   - [`venus-gui-v2.md`](research/venus-gui-v2.md) — Venus OS gui-v2 功能参考,源码通读,映射到 apid/dashboard 归属
@@ -103,9 +104,8 @@
 | `../bsp/s905x5m.md` | 1d2a5e49 | not-translated |
 | `../bsp/virt-arm64.md` | 2b443f42 | not-translated |
 
-`docs/design/` 下的每一篇都有中文对应。中文版是**面向当前版本的概览**，
-不是逐行翻译：英文版里可直接执行的命令序列、完整配置清单和逐块数据来源表格不在这里重复，
-需要照着做的时候请看英文版。
+Engineering coverage is intentionally partial. Links to English contracts are
+authoritative; the coverage table above governs the maintained user guides.
 
 ## 文档不解释代码
 

@@ -28,21 +28,11 @@
 #      with no unresolved soname; and each self-built component asked for its
 #      version.
 #
-#   2  THE SAME MANIFEST WITH `rauc` DECLINED, and the same ldd sweep over it.
-#      The retired stage chain installed libglib2.0-0t64, libjson-glib-1.0-0 and
-#      libfdisk1 unconditionally; on the composed path they arrive only through
-#      mos-rauc's `${shlibs:Depends}`, so a rauc-declined composed image does not
-#      have them. That was ruled RECORD, DO NOT GATE -- the composed world is the
-#      more correct one, since a library arriving with its consumer and leaving
-#      with it is the dependency system working. The condition riding on that
-#      ruling is that any OTHER component silently relying on those libraries
-#      declares its own dependency, and the FULL root cannot check it: with
-#      mos-rauc installed the libraries are there and every ELF resolves whether
-#      or not the component needing them declared it. This root is where that
-#      omission becomes loud. Its ELF count is reported SEPARATELY from the full
-#      root's, and the packages the two roots differ by are printed -- a sweep
-#      over a root that lost nothing could not have failed, and it says so
-#      instead of being quoted as a proof.
+#   2  THE SAME MANIFEST WITH `mqtt` DECLINED. Install the reduced package set
+#      in a separate clean root and repeat the ELF closure checks. Require the
+#      MQTT payload to be absent and report the package delta and ELF count.
+#      Other components must declare their own dependencies without relying on
+#      an optional feature to bring them in.
 #
 #   3  BOTH ARCHITECTURES. arm64 is the half nothing had ever apt-installed. It
 #      runs under the emulated buildkit executor, because this host has no
@@ -89,9 +79,8 @@ FROM_SH="${REPO_ROOT}/build-env/from.sh"
 RESOLVE_SH="${REPO_ROOT}/rootfs/packages/resolve.sh"
 VERSION_SH="${REPO_ROOT}/build-env/deb/version.sh"
 PODMAN_VERSIONS="${REPO_ROOT}/pkgs/podman/versions.env"
-RAUC_VERSIONS="${REPO_ROOT}/pkgs/rauc/versions.env"
 DIST="${REPO_ROOT}/_out/debs"
-for p in "${FROM_SH}" "${VERSION_SH}" "${PODMAN_VERSIONS}" "${RAUC_VERSIONS}"; do
+for p in "${FROM_SH}" "${VERSION_SH}" "${PODMAN_VERSIONS}"; do
     [ -e "${p}" ] || {
         echo "error: ${p} does not exist. This gate derives the repository as two levels above itself; if this file moved, that arithmetic moved with it" >&2
         exit 1
@@ -198,7 +187,9 @@ COMPONENTS="${WORK}/components.tsv"
     printf 'apid\t/usr/bin/apid\t%s\tbuild-env/deb/version.sh\t-\t-\n' "${CRATE_VERSION}"
     printf 'mos-mqttd\t/usr/bin/mos-mqttd\t%s\tbuild-env/deb/version.sh\t-\t-\n' "${CRATE_VERSION}"
     printf 'mos-mqtt-broker\t/usr/bin/mos-mqtt-broker\t%s\tbuild-env/deb/version.sh\t-\t-\n' "${CRATE_VERSION}"
-    printf 'rauc\t/usr/bin/rauc\t%s\tRAUC_VERSION\t-\t-\n' "$(pin "${RAUC_VERSIONS}" RAUC_VERSION)"
+    deploy_version=$(sed -n 's/^version = "\([^" ]*\)"/\1/p' "${REPO_ROOT}/pkgs/mos-deploy/Cargo.toml" | head -1)
+    test -n "$deploy_version"
+    printf 'mos-deploy\t/usr/bin/mos-deploy\t%s\tpkgs/mos-deploy/Cargo.toml\t-\t-\n' "$deploy_version"
     printf 'podman\t/usr/bin/podman\t%s\tPODMAN_VERSION\t-\t-\n' "$(pin "${PODMAN_VERSIONS}" PODMAN_VERSION)"
     printf 'quadlet\t/usr/libexec/podman/quadlet\t%s\tPODMAN_VERSION\t-\t-\n' "$(pin "${PODMAN_VERSIONS}" PODMAN_VERSION)"
     # crun 1.29.1 re-executes libcrun out of a memory file descriptor -- its
@@ -224,7 +215,7 @@ COMPONENTS="${WORK}/components.tsv"
 # own register.
 UNCLAIMED=""
 PINS_N=0
-for f in "${PODMAN_VERSIONS}" "${RAUC_VERSIONS}"; do
+for f in "${PODMAN_VERSIONS}"; do
     while read -r key; do
         [ -n "${key}" ] || continue
         PINS_N=$((PINS_N + 1))
@@ -233,7 +224,7 @@ for f in "${PODMAN_VERSIONS}" "${RAUC_VERSIONS}"; do
     done < <(sed -n 's/^\([A-Z0-9_]*_VERSION\)=.*/\1/p' "${f}")
 done
 [ "${PINS_N}" -gt 0 ] || {
-    echo "error: ${PODMAN_VERSIONS} and ${RAUC_VERSIONS} declare no *_VERSION pin at all, so the coverage check compared the component rows against an empty set and would have accepted any of them" >&2
+    echo "error: ${PODMAN_VERSIONS} declare no *_VERSION pin at all, so the coverage check compared the component rows against an empty set and would have accepted any of them" >&2
     exit 1
 }
 [ -z "${UNCLAIMED}" ] || {
@@ -254,7 +245,7 @@ cp "${COMPONENTS}" "${IN}/components.tsv"
 cat >"${IN}/lib.sh" <<'LIB'
 # Shared by every in-root script: the counters, the ELF classification, and the
 # ldd sweep. The sweep is a FUNCTION and not two copies because two roots run it
-# -- the full resolution and the one with `rauc` declined -- and the whole value
+# -- the full resolution and the one with `mqtt` declined -- and the whole value
 # of the second is that it is the same sweep over a different root.
 PASS_N=0
 FAIL_N=0
@@ -543,7 +534,7 @@ else
     fail "unit account declaration(s) with no matching entry in the installed root:${ACCOUNTS_BAD}"
 fi
 
-# --- ldd over the payload. The same sweep the rauc-declined root runs, which is
+# --- ldd over the payload. The same sweep the mqtt-declined root runs, which is
 # the whole point of it being a function in /in/lib.sh rather than written twice.
 ldd_sweep "${ALL_PATHS}" "full resolution"
 
@@ -592,7 +583,7 @@ echo "install-closure: ${COMPONENTS_N} self-built component(s) asked for a versi
     fail "no component named in components.tsv is present in this root, so no version was checked at all"
 
 # Every package this root ended up holding, for the host to diff against the
-# rauc-declined root's. What a declined feature TOOK WITH IT is the fact that
+# mqtt-declined root's. What a declined feature TOOK WITH IT is the fact that
 # decides whether that root's ldd sweep could have failed at all.
 dump_pkgdb
 
@@ -612,56 +603,44 @@ FULL
 
 cat >"${IN}/assert-declined.sh" <<'DECLINED'
 #!/bin/bash
-# The SAME manifest with `rauc` declined, and the same ldd sweep over it.
+# The SAME manifest with `mqtt` declined, and the same ldd sweep over it.
 #
-# WHY THIS ROOT EXISTS, separately from the full one. The retired stage chain
-# installed libglib2.0-0t64, libjson-glib-1.0-0 and libfdisk1 unconditionally,
-# while on the composed path they arrive only through mos-rauc's
-# `${shlibs:Depends}` -- so a rauc-declined composed image does not have them.
-# That was ruled RECORD, DO NOT GATE, on the ground that the composed world is
-# the more correct one: a library that arrives with its consumer and leaves with
-# it is the dependency system working.
-#
-# The condition riding on that ruling is that any OTHER component silently
-# relying on those libraries must declare its own dependency. The FULL root
-# cannot check it: with mos-rauc installed the libraries are present, so every
-# ELF resolves whether or not the component needing them declared it. A silent
-# reliance is invisible in a full install by construction. This root is where it
-# becomes loud.
+# Check the reduced manifest independently so optional MQTT dependencies cannot
+# conceal unresolved libraries in another package.
 set -uo pipefail
 . /in/lib.sh
 
 PKGS="$(tr '\n' ' ' </in/packages-declined.txt)"
 PKG_N="$(grep -c . /in/packages-declined.txt || true)"
-echo "install-closure: declined-rauc: installing ${PKG_N} package(s): ${PKGS}"
+echo "install-closure: declined-mqtt: installing ${PKG_N} package(s): ${PKGS}"
 
 apt-get update >/tmp/update.log 2>&1 || { fail "apt-get update failed"; tail -n 20 /tmp/update.log; }
 
 install_status=0
 apt-get install -y --no-install-recommends ${PKGS} >/tmp/install.log 2>&1 || install_status=$?
-echo "install-closure: declined-rauc: apt-get install exited ${install_status}"
+echo "install-closure: declined-mqtt: apt-get install exited ${install_status}"
 if [ "${install_status}" -eq 0 ]; then
-    pass "declined-rauc: apt-get install resolved and configured the ${PKG_N}-package set with rauc declined"
+    pass "declined-mqtt: apt-get install resolved and configured the ${PKG_N}-package set with mqtt declined"
 else
-    fail "declined-rauc: apt-get install exited ${install_status}"
+    fail "declined-mqtt: apt-get install exited ${install_status}"
     tail -n 40 /tmp/install.log
 fi
 
-# mos-rauc really absent. Without this the sweep below runs over a root that
+# mos-mqttd really absent. Without this the sweep below runs over a root that
 # still holds the package whose dependencies are the entire question, and it
 # could not have failed.
-st="$(dpkg-query -W -f='${Status}' mos-rauc 2>/dev/null || true)"
+st="$(dpkg-query -W -f='${Status}' mos-mqttd 2>/dev/null || true)"
 case "${st}" in
-'install ok installed'*) fail "declined-rauc: mos-rauc is installed in the root that declined it, so this sweep is over the same closure as the full root and proves nothing about what its dependencies were carrying" ;;
-*) pass "declined-rauc: mos-rauc is absent, so the libraries that arrive only through its \${shlibs:Depends} are genuinely out of this root" ;;
+'install ok installed'*) fail "declined-mqtt: mos-mqttd is installed in the root that declined it, so this sweep is over the same closure as the full root and proves nothing about what its dependencies were carrying" ;;
+*) pass "declined-mqtt: mos-mqttd is absent, as required by the reduced manifest" ;;
 esac
 
 ALL_PATHS=/tmp/all-paths.txt
 collect_payload_paths "${ALL_PATHS}" ${PKGS}
 PATHS_N="$(grep -c . "${ALL_PATHS}" || true)"
 [ "${PATHS_N}" -gt 0 ] ||
-    fail "declined-rauc: dpkg -L over ${PKG_N} package(s) listed no path at all, so the sweep below examined nothing"
-ldd_sweep "${ALL_PATHS}" "rauc declined"
+    fail "declined-mqtt: dpkg -L over ${PKG_N} package(s) listed no path at all, so the sweep below examined nothing"
+ldd_sweep "${ALL_PATHS}" "mqtt declined"
 
 dump_pkgdb
 
@@ -857,7 +836,7 @@ RUN printf 'deb [trusted=yes] file:/dist ./\n' >/etc/apt/sources.list.d/mos-pool
 FROM poolbase AS full
 RUN bash /in/assert-full.sh >/report/full.txt 2>&1; cat /report/full.txt
 
-FROM poolbase AS declined-rauc
+FROM poolbase AS declined-mqtt
 RUN bash /in/assert-declined.sh >/report/declined.txt 2>&1; cat /report/declined.txt
 
 FROM poolbase AS radio-wifi
@@ -877,7 +856,7 @@ RUN bash /in/experiment.sh both >/report/exp.txt 2>&1; cat /report/exp.txt
 
 FROM scratch AS reports
 COPY --from=full /report/full.txt /full.txt
-COPY --from=declined-rauc /report/declined.txt /declined.txt
+COPY --from=declined-mqtt /report/declined.txt /declined.txt
 COPY --from=radio-wifi /report/radio.txt /radio-mos-wifi.txt
 COPY --from=radio-wifi-ap /report/radio.txt /radio-mos-wifi-ap.txt
 COPY --from=radio-bluetooth /report/radio.txt /radio-mos-bluetooth.txt
@@ -932,20 +911,11 @@ for arch in "${ARCHES[@]}"; do
     cp -R "${IN}" "${ctx}/in"
 
     # The board whose MOS_ARCH is this pool's, found the way
-    # pkgs/rauc/deb/rauc/prepare.sh finds it: the board files are the one
+    # pkgs/mqtt/deb/mqtt/prepare.sh finds it: the board files are the one
     # authority on which architecture a board is, and a table here would be a
     # second one.
-    boards=()
-    for env_file in "${REPO_ROOT}/boards"/*/board.env; do
-        [ -f "${env_file}" ] || continue
-        [ "$(sed -n 's/^MOS_ARCH=//p' "${env_file}")" = "${arch}" ] || continue
-        boards+=("$(basename "$(dirname "${env_file}")")")
-    done
-    [ "${#boards[@]}" -eq 1 ] || {
-        echo "error: ${#boards[@]} board(s) under boards/ declare MOS_ARCH=${arch} (${boards[*]-none}). This gate installs one board's resolution per pool: with none there is nothing to install, and with two there is no answer to which" >&2
-        exit 1
-    }
-    board="${boards[0]}"
+    case "$arch" in amd64) board=x64;; arm64) board=cx3576;; esac
+    test "$(sed -n 's/^MOS_ARCH=//p' "$REPO_ROOT/boards/$board/board.env")" = "$arch"
     radios="$(sed -n 's/^BOARD_RADIOS="\(.*\)"$/\1/p' "${REPO_ROOT}/boards/${board}/board.env" | head -n1)"
 
     # `dev`, and it is the profile whose promise a missing profile package
@@ -961,18 +931,18 @@ for arch in "${ARCHES[@]}"; do
     printf '%s\n' "${PKG_SET[@]}" >"${ctx}/in/packages.txt"
     echo "install-closure-gate: ${arch}: board ${board}, radios '${radios}', ${#PKG_SET[@]} package(s): ${PKG_SET[*]}"
 
-    # The same manifest with `rauc` declined. Resolved through resolve.sh rather
+    # The same manifest with `mqtt` declined. Resolved through resolve.sh rather
     # than by subtracting a name from the set above: `--without` is what a build
     # actually says, and the resolver's own refusals -- an empty resolution, one
     # with no board package -- are the ones that must fire if declining this
     # feature is not a configuration the manifests can express.
-    mapfile -t PKG_SET_DECLINED < <(bash "${RESOLVE_SH}" --board "${board}" --profile dev --radios "${radios}" --without "rauc")
+    mapfile -t PKG_SET_DECLINED < <(bash "${RESOLVE_SH}" --board "${board}" --profile dev --radios "${radios}" --without "mqtt")
     [ "${#PKG_SET_DECLINED[@]}" -gt 0 ] || {
-        echo "error: rootfs/packages/resolve.sh yielded no package for --board ${board} --profile dev --without rauc (see its message above). That would mean the manifests cannot express a rauc-declined image at all, which is the configuration this root exists to install" >&2
+        echo "error: rootfs/packages/resolve.sh yielded no package for --board ${board} --profile dev --without mqtt (see its message above). That would mean the manifests cannot express a mqtt-declined image at all, which is the configuration this root exists to install" >&2
         exit 1
     }
     printf '%s\n' "${PKG_SET_DECLINED[@]}" >"${ctx}/in/packages-declined.txt"
-    echo "install-closure-gate: ${arch}: rauc declined, ${#PKG_SET_DECLINED[@]} package(s): ${PKG_SET_DECLINED[*]}"
+    echo "install-closure-gate: ${arch}: mqtt declined, ${#PKG_SET_DECLINED[@]} package(s): ${PKG_SET_DECLINED[*]}"
 
     # The pool, hardlinked where the filesystem allows it: it carries a kernel
     # and its modules, and buildx wants it inside the context.
@@ -1000,7 +970,7 @@ for arch in "${ARCHES[@]}"; do
     log="${WORK}/build-${arch}.log"
     echo "install-closure-gate: building ${#REPORTS[@]} ${arch} roots on builder '${builder}' (emulated=${emulated}); the build log is ${log}"
     build_status=0
-    docker buildx build --builder "${builder}" \
+    docker buildx build --label ai-agent=true --builder "${builder}" \
         "${BASE_ARGS[@]}" \
         --build-arg "EMULATED=${emulated}" \
         --platform "linux/${arch}" \
@@ -1059,13 +1029,13 @@ for arch in "${ARCHES[@]}"; do
         LIMITED_TOTAL=$((LIMITED_TOTAL + $(count_of "${full}" limited)))
     fi
 
-    # --- what declining rauc actually took out of the root.
+    # --- what declining mqtt actually took out of the root.
     #
     # Diffed HERE because no root can see another's package database, and it is
     # this difference that decides whether the declined root's ldd sweep could
     # have failed at all: a sweep over a root that lost nothing is a sweep that
     # was never going to find an undeclared dependency. Reported as the measured
-    # list rather than as a count, because WHICH libraries left with mos-rauc is
+    # list rather than as a count, because WHICH libraries left with mos-mqttd is
     # the fact the ruling turns on.
     declined="${out}/declined.txt"
     if [ -f "${full}" ] && [ -f "${declined}" ]; then
@@ -1077,20 +1047,20 @@ for arch in "${ARCHES[@]}"; do
         lost="$(LC_ALL=C comm -23 "${WORK}/pkgdb-full-${arch}.txt" "${WORK}/pkgdb-declined-${arch}.txt" | tr '\n' ' ')"
         lost_n="$(LC_ALL=C comm -23 "${WORK}/pkgdb-full-${arch}.txt" "${WORK}/pkgdb-declined-${arch}.txt" | grep -c . || true)"
         if [ "${full_n}" -eq 0 ] || [ "${declined_n}" -eq 0 ]; then
-            fail "${arch}: one of the two roots reported an empty package database (${full_n} full, ${declined_n} declined), so the comparison of what rauc took with it was over nothing"
+            fail "${arch}: one of the two roots reported an empty package database (${full_n} full, ${declined_n} declined), so the comparison of what mqtt took with it was over nothing"
         else
-            echo "install-closure-gate: ${arch}: the full root holds ${full_n} package(s), the rauc-declined root ${declined_n}; declining rauc removed ${lost_n}: ${lost:-nothing at all}"
+            echo "install-closure-gate: ${arch}: the full root holds ${full_n} package(s), the mqtt-declined root ${declined_n}; declining mqtt removed ${lost_n}: ${lost:-nothing at all}"
             DECLINED_LOST_TOTAL=$((DECLINED_LOST_TOTAL + lost_n))
             case " ${lost} " in
-            *" mos-rauc "*)
+            *" mos-mqttd "*)
                 if [ "${lost_n}" -gt 1 ]; then
-                    pass "${arch}: declining rauc removed ${lost_n} package(s) beyond nothing, so the ldd sweep over that root had material that could have failed it"
+                    pass "${arch}: declining mqtt removed ${lost_n} package(s) beyond nothing, so the ldd sweep over that root had material that could have failed it"
                 else
-                    echo "install-closure-gate: ${arch}: mos-rauc was the ONLY package that left. Nothing else's libraries went with it, so the sweep over the declined root could not have found an undeclared dependency -- it is a true green over an empty search space, and it is reported as that rather than quoted as a proof"
+                    echo "install-closure-gate: ${arch}: mos-mqttd was the ONLY package that left. Nothing else's libraries went with it, so the sweep over the declined root could not have found an undeclared dependency -- it is a true green over an empty search space, and it is reported as that rather than quoted as a proof"
                 fi
                 ;;
             *)
-                fail "${arch}: mos-rauc is not among the packages the declined root lacks (${lost:-none}), so that root is not the rauc-declined configuration it was meant to be"
+                fail "${arch}: mos-mqttd is not among the packages the declined root lacks (${lost:-none}), so that root is not the mqtt-declined configuration it was meant to be"
                 ;;
             esac
         fi
@@ -1144,5 +1114,5 @@ EXPECTED_ROOTS=$((${#ARCHES[@]} * ${#REPORTS[@]}))
     fail "${ROOTS_N} of ${EXPECTED_ROOTS} roots reported; a gate that read fewer reports than it built has one missing, not a smaller job"
 
 echo
-echo "RESULT: $([ "${FAIL_N}" -eq 0 ] && echo PASS || echo FAIL) (${PASS_N}/$((PASS_N + FAIL_N)) checks passed, ${ROOTS_N} clean roots over ${#ARCHES[@]} architectures, ${PKGS_TOTAL} packages installed, ${PATHS_TOTAL} payload paths present, ${WANTS_TOTAL} payload wants-symlinks resolved of ${ROOT_WANTS_TOTAL} present in those roots, ${UNDECLARED_TOTAL} units enabled outside any payload, ${ACCOUNTS_TOTAL} unit accounts resolved, ${LDD_TOTAL} objects ldd-checked in the full roots, ${DECLINED_LDD_TOTAL} in the rauc-declined roots over ${DECLINED_LOST_TOTAL} packages those roots lost, ${COMPONENTS_TOTAL} component versions asked, ${LIMITED_TOTAL} executor-limited, ${RADIO_PATHS_TOTAL} radio payload paths compared)"
+echo "RESULT: $([ "${FAIL_N}" -eq 0 ] && echo PASS || echo FAIL) (${PASS_N}/$((PASS_N + FAIL_N)) checks passed, ${ROOTS_N} clean roots over ${#ARCHES[@]} architectures, ${PKGS_TOTAL} packages installed, ${PATHS_TOTAL} payload paths present, ${WANTS_TOTAL} payload wants-symlinks resolved of ${ROOT_WANTS_TOTAL} present in those roots, ${UNDECLARED_TOTAL} units enabled outside any payload, ${ACCOUNTS_TOTAL} unit accounts resolved, ${LDD_TOTAL} objects ldd-checked in the full roots, ${DECLINED_LDD_TOTAL} in the mqtt-declined roots over ${DECLINED_LOST_TOTAL} packages those roots lost, ${COMPONENTS_TOTAL} component versions asked, ${LIMITED_TOTAL} executor-limited, ${RADIO_PATHS_TOTAL} radio payload paths compared)"
 [ "${FAIL_N}" -eq 0 ]

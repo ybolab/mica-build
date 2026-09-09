@@ -1,44 +1,51 @@
 # mos
 
-Embedded appliance operating system. An immutable verity-protected OS core,
-per-board BSP artifacts, RAUC A/B updates pinned by TUF metadata, and a local
-web management plane.
+Embedded Linux with an immutable, signed dm-verity root, independently signed
+kernel/support components, file-based A/B deployments, and a local management UI.
+The current image targets are x64, virt-arm64 and cx3576. Development and
+acceptance use fresh complete images; there are no old-layout readers or migrations.
 
-`mosd` is the management daemon; `apid` is the API daemon and the web dashboard
-is what it serves. Connectivity (`connd`) is not a separate process: mosd's
-Wi-Fi reconcilers drive the wpa_supplicant and hostapd userland the image ships.
+`mosd` owns device management and connectivity. `apid` exposes the authenticated
+API and React dashboard. `mos-init` authenticates the selected deployment before
+systemd starts; `mos-deploy` acquires, installs, confirms and retires deployments.
 
-## Layout
+Start with the [documentation portal](docs/README.md) or the
+[Chinese user guides](docs/zh/README.md).
 
+## Repository
+
+| Path | Purpose |
+|---|---|
+| `boards/` | Board policy, kernel and boot-firmware BSPs |
+| `pkgs/mos-boot/` | UKI/FIT, initramfs and explicit development signing inputs |
+| `pkgs/mos-deploy/` | Native early boot and transactional deployment tools |
+| `pkgs/mosd/` | Management services, API, dashboard and MQTT |
+| `rootfs/` | Userspace package composition and immutable root packing |
+| `build/` | Signed components, offline archives and complete image assembly |
+| `verify/`, `tests/` | Image verification, service tests and boot/fault acceptance |
+| `docs/` | Architecture, user instructions, approved plans and evidence |
+
+## Build and verify
+
+Use `make help` for entry points. Root composition is independent of kernel and
+firmware builds. `bash build/run.sh --components --help` describes the explicit
+signing inputs and the `root`, `kernel`, `firmware`, `deployment`, `image` and
+`archive` commands. Output directories must be new.
+
+Each factory disk contains exactly three partitions: ESP/SYSTEM/DATA on UEFI,
+or FIRMWARE/SYSTEM/DATA on cx3576. SYSTEM holds immutable content objects and
+signed deployment records; DATA owns persistent state and bounded writable
+namespaces. Firmware maintenance is a separate operation.
+
+Verify a complete image with:
+
+```sh
+bash verify/run.sh --verify --board x64 \
+  --image /path/to/image/disk.img --public-key /path/to/metadata-public.key
 ```
-mos/
-├── docs/            project docs: PMA plans (docs/plan/), tasks (docs/task/), designs (docs/design/)
-├── boards/          one directory per supported board — cx3576 (Rockchip RK3576,
-│                    arm64: U-Boot, kernel, firmware) and x64 (generic x86_64 UEFI,
-│                    the QEMU/CI baseline, with its own kernel build)
-├── pkgs/            the compiled components: podman, RAUC, the mosd Rust workspace
-│                    (mosd, apid and the MQTT broker; its workspace-level tests live
-│                    under pkgs/mosd/tests/), and TUF release signing
-├── rootfs/          the root filesystem: composition, package manifests, producers
-├── build/           image assembly · build-env/  pinned builder images
-├── verify/          image verification · tests/  shell suites · tools/  QEMU helpers
-└── Makefile         top-level routing; run `make help` for the full target list
-```
 
-The image is an A/B layout with a squashfs + dm-verity read-only root,
-RAUC updates and a U-Boot `BOOT_ORDER` handshake. Build and check it with
-`make os-image-cx3576`, `make os-verify-cx3576` and
-`make os-bundle-cx3576`, paired with the U-Boot that `make -C boards/cx3576/bsp
-uboot-mos` builds. See `docs/design/uboot-ab-handshake.md`.
-
-Each board directory carries a `board.env` file describing the board as plain
-`KEY=value` lines — partition layout, console and boot facts. It is the single
-source of truth the image, rootfs, RAUC and verify steps all read.
-
-## Architecture
-
-`docs/architecture.md` describes the system as it stands. The design lineage:
-Talos (immutable OS, COSI declarative runtime), balenaOS (field engineering:
-provisioning, offline updates, per-board BSP separation), Torizon (Uptane update
-security) and RAUC (A/B slot installer). The records live in `docs/plan/` and
-`docs/design/`.
+Offline verification does not establish firmware enforcement or hardware
+reliability. The acceptance record distinguishes QEMU Secure Boot, signed FIT
+checks and physical cx3576 tests. See [architecture](docs/architecture.md),
+[build](docs/design/build.md), [updates](docs/design/updates.md), and the
+[delivery task](docs/task/20260908-2229-file-ab-delivery-x64-first.md).

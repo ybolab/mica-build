@@ -62,27 +62,16 @@ classes:
   fleet identity (device certificates, `docs/design/security-lifecycle.md`
   §1.3) adds factory-injected material, its issuing CA and batch are
   versioned inputs here.
-- **Keys** — any board boot keys (I3/I4 boards,
-  `docs/design/security-lifecycle.md` §1.5) arrive as versioned public
-  material plus a fusing procedure; private halves never travel to a
-  factory. The production trust anchors are **not** a factory input today:
-  both the RAUC keyring and the package signing keys ride inside the image
-  (`docs/design/release-signing.md` §2.3, §2.5), so the versioned input that
-  carries them is the release image above and the factory injects nothing.
-  A provisioning channel for the keyring is still open; if one ships, the
-  file it delivers becomes a versioned public input here with its sha256
-  checked at injection.
-- **The build host's `meta/` directory** — not a factory input, and named
-  here because it is the input a recall would otherwise fail to reach.
-  `meta/` holds the RAUC CA certificate, the bundle signer, the package
-  signing key and this deployment's `updates/manifest.json` — the update
-  server address, the channel and the trusted keys the image is built to
-  believe. It is **gitignored**, so a deployment's configuration is not
-  reproducible from a checkout: a build is reproducible only together with
-  the `meta/` its build host carried, and that pairing belongs in the release
-  record beside the keys. Two images can report the same `BOARD`, `PROFILE`
-  and `VERSION` and differ in what they trust; where they do, `PROFILE` is
-  the field that has to tell them apart (`release-signing.md` §2.6).
+- **Keys** — record public boot, content and metadata key identities separately.
+  Boot keys are enrolled through the board-specific procedure. Content anchors
+  are built into the kernel and metadata keys into authenticated boot policy.
+  Private signing keys remain in the signing environment; the factory receives
+  public anchors and authenticated artifacts. No irreversible enrollment or
+  fuse operation is implied by image assembly.
+- **Build configuration** — record public baked defaults, package inventory,
+  source revision, builder identities, component IDs and development-domain
+  provenance. Keep private key custody separate from these public release
+  records. A profile name alone cannot identify which anchors an image trusts.
 
 ## 2. Injection, and verification at injection — **[proposed]**
 
@@ -159,7 +148,7 @@ hardware. Concretely:
   already guarantees this, since identity is CSPRNG-drawn on device and a
   reflash replaces STATE outright (`docs/design/provisioning.md` §2,
   `docs/design/access.md` §9.2). What manufacturing adds is the rule's
-  other half: nobody images one device's STATE partition onto another to
+  other half: nobody copies one device's DATA/state identity onto another to
   "preserve" its identity, serial-number continuity is handled in the
   record, not on the flash, and any future factory-injected identity
   material (§2) is issued per physical device and never re-issued.
@@ -216,5 +205,5 @@ absolute:
   revisions and vendor docs have been wrong before; only the sacrificial
   run on the same revision counts.
 - Until a board carries that validation, mos ships **no** fused debug or
-  boot policy for it — which is today's state for every board, consistent
-  with every board standing at I1 (`docs/design/security-model.md` §5).
+  boot policy for it. Current I1-I3 software mechanisms do not establish an
+  I4 hardware trust claim; see [boot assurance](security-model.md#5-the-i1i4-boot-assurance-ladder).

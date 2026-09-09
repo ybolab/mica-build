@@ -1,0 +1,23 @@
+{
+  "name": "libext2fs2t64",
+  "targets": {
+    "amd64": {
+      "version": "1.47.2-3+b11",
+      "architecture": "amd64",
+      "sha256": "0aa71547d523226775d3d6ac38dea6d6d8ea184c615592b05b9275a71d418f01",
+      "url": "https://snapshot.debian.org/archive/debian/20260905T000000Z/pool/main/e/e2fsprogs/libext2fs2t64_1.47.2-3+b11_amd64.deb",
+      "consumers": [
+        "mos-system"
+      ]
+    },
+    "arm64": {
+      "version": "1.47.2-3+b11",
+      "architecture": "arm64",
+      "sha256": "d065ff9b61dc2c15ae0d78465fc5108d6006a8b42ad8d85893d57a8475324279",
+      "url": "https://snapshot.debian.org/archive/debian/20260905T000000Z/pool/main/e/e2fsprogs/libext2fs2t64_1.47.2-3+b11_arm64.deb",
+      "consumers": [
+        "mos-system"
+      ]
+    }
+  }
+}

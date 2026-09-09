@@ -40,7 +40,7 @@ and section 2 derives it.
 
 `docs/design/build.md` already opened with "no toolchain is installed on the
 host, and every compiler comes out of a builder image pinned by digest", and
-`docs/zh/design/build.md` said it too. `verify/run.sh` already states the
+`docs/design/build.md` said it too. `verify/run.sh` already states the
 criterion's intent for its own seam — a host route and a pinned container route,
 "which makes a host with no bun a supported host". What was missing is a
 boundary that says which side a given tool is on, an experiment that says
@@ -503,7 +503,7 @@ anything failing.
 ## 7. Documentation
 
 **`docs/design/build.md` §0**, immediately after the intro, mirrored into
-`docs/zh/design/build.md`; a pointer from `build-harness.md`.
+`docs/design/build.md`; a pointer from `build-harness.md`.
 
 Justified against the alternative rather than assumed: build.md's intro already
 carried the claim, so §0 is that sentence made precise where a reader already
@@ -514,7 +514,7 @@ text there would collide on the same lines. It gets a one-line pointer, which
 merges as a union.
 
 The zh coverage gate governs `user`, `website` and `bsp` — not `design/` — so no
-mirror is required by a gate. `docs/zh/design/build.md` exists and carries the
+mirror is required by a gate. `docs/design/build.md` exists and carries the
 same intro sentence, so it is mirrored anyway; leaving it behind would make the
 Chinese page quietly weaker than the English one about a rule.
 

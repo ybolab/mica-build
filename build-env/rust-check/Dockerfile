@@ -170,7 +170,7 @@ RUN --mount=type=cache,target=/var/cache/apt,id=apt-cache-mos-build-rust-check,s
     set -eu; \
     rm -f /etc/apt/apt.conf.d/docker-clean; \
     apt-get update; \
-    apt-get install -y --no-install-recommends dbus
+    apt-get install -y --no-install-recommends dbus curl
 
 # The tools, asserted from inside the image that promises them.
 #
@@ -201,7 +201,7 @@ RUN set -eu; \
     if [ -n "${TARGETARCH:-}" ] && [ "${arch}" != "${TARGETARCH}" ]; then \
         say "error: this image reports dpkg architecture ${arch} but was built for TARGETARCH=${TARGETARCH}"; \
     fi; \
-    for t in rustc cargo cargo-clippy clippy-driver rustfmt cargo-nextest cargo-deny dbus-daemon; do \
+    for t in rustc cargo cargo-clippy clippy-driver rustfmt cargo-nextest cargo-deny dbus-daemon curl; do \
         command -v "${t}" >/dev/null 2>&1 || say "error: ${t} is not on PATH, but this image promises it"; \
     done; \
     rustc_rel="$(rustc -vV 2>/dev/null | sed -n 's/^release: //p')"; \

@@ -1,5 +1,5 @@
 [Unit]
-Description=mos health gate (confirm the booted A/B slot)
+Description=mos health gate (confirm the authenticated deployment)
 Documentation=file:/usr/share/doc/mos/health
 # multi-user.target is the settle point: every boot service has been started by
 # the time it is reached. The unit is pulled in BY the target and ordered AFTER
@@ -7,10 +7,7 @@ Documentation=file:/usr/share/doc/mos/health
 # can ever block on this unit. Residual `starting`/`initializing` states are
 # handled by the bounded poll inside the script, not by more ordering.
 After=multi-user.target
-# U-Boot environment writer interlock: mos-machine-id owns `machine_id`, RAUC
-# (invoked from here by mark-good) owns BOOT_ORDER/BOOT_x_LEFT. Ordering keeps
-# the two writers strictly sequential.
-After=mos-machine-id.service
+OnFailure=mos-boot-failure.service
 
 [Service]
 Type=oneshot
@@ -18,8 +15,6 @@ ExecStart=/usr/lib/mos/mos-health
 # Hard ceiling: the in-script settle poll defaults to 60s plus a handful of
 # 10s probes. Nothing waits on this unit, so the timeout only bounds the gate.
 TimeoutStartSec=180
-# The gate is advisory. On failure it does nothing: the U-Boot BOOT_x_LEFT
-# counter performs the rollback, so no restart and no remediation here.
 Restart=no
 
 [Install]

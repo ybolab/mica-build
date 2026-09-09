@@ -4,13 +4,13 @@ Architecture: @ARCH@
 Maintainer: mos build <mos@example.invalid>
 Section: admin
 Priority: optional
-Depends: systemd, systemd-sysv, systemd-resolved, systemd-repart, systemd-timesyncd, udev, dbus, kmod, openssh-server, iproute2, nftables, iptables, libubootenv-tool, curl, passwd
+Depends: systemd, systemd-sysv, systemd-resolved, systemd-repart, systemd-timesyncd, udev, dbus, kmod, openssh-server, iproute2, nftables, iptables, curl, passwd, quota, e2fsprogs
 Description: mos common system policy, state mounts and operator account
  The board-independent half of a mos root filesystem: the seed and reconcile
- tools under /usr/lib/mos, their units, the STATE and DATA bind mounts
+ tools under /usr/lib/mos, their units, the selected DATA bind mounts
  (/var/lib/mos, /mos, /srv, /etc/ssh, /etc/hostname, /home, /root,
- /usr/local/lib/systemd/system), the six board-independent repart.d position
- holders, the /var fill-up policy, the image's default DHCP network and
+ /usr/local/lib/systemd/system), DATA namespace initialization and project
+ quotas, the image's default DHCP network and
  journald's volatile storage policy.
  .
  It owns the /var/lib/mos mountpoint. That directory and var-lib-mos.mount are
@@ -36,8 +36,7 @@ Description: mos common system policy, state mounts and operator account
  for the packer to resolve -- asking would be an error rather than an empty
  expansion. Every entry above is a relationship ELF metadata could not show
  anyway: systemd-repart is a separate package on trixie and its absence is
- silent -- DATA simply never grows; libubootenv-tool provides fw_printenv for
- the machine-id oneshot; curl is what the health gate probes apid with, and
+ silent -- DATA simply never grows; curl is what the health gate probes apid with, and
  without it that probe SKIPs and the gate reports green over two of three
  components; passwd provides the useradd, groupadd and chage the postinst
  execs by name.
@@ -103,8 +102,3 @@ Description: mos common system policy, state mounts and operator account
  libnftables1 1054, libjansson4 100 and libnftnl11 244; that profile is the one
  these two dependencies actually change. libmnl is in neither list: iproute2
  already depends on it.
- .
- RAUC's runtime libraries are deliberately not here. glib, json-glib and
- libfdisk are in the image for the self-built rauc alone and belong to
- mos-rauc; they are installed by the base stage today only because the stage
- chain had nowhere else to put them.

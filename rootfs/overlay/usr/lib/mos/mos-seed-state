@@ -1,120 +1,37 @@
 #!/bin/sh
-# Seed the STATE partition. Runs on EVERY boot, converging rather than
-# stamping: missing directories and files are created, existing content is
-# NEVER touched.
-#
-# There is deliberately no run-once stamp. The sibling mos-seed-home already
-# rejects one, and the reasoning is the same A/B forward-compatibility fact:
-# STATE outlives every rootfs that will ever be flashed, so a stamp written by
-# the first image would stop a LATER image from seeding a STATE-backed
-# directory it introduces — updated devices would mount a bind with no source
-# and fail, while fresh devices worked, which is the worst kind of fleet skew.
-# Convergent re-runs cost a few mkdir -p on a converged system and buy every
-# future release its seeding for free.
-#
-# STATE is created empty by the image assembler and holds everything that must
-# survive an A/B update: mosd's settings and the sshd host keys. Both are
-# exposed to the rest of the system as bind mounts (var-lib-mos.mount and
-# etc-ssh.mount), so their source directories have to exist before those mounts
-# are attempted — hence a oneshot ordered before them rather than a tmpfiles
-# rule, which would run far too late.
-#
-# The sshd configuration is copied out of the read-only squashfs while /etc/ssh
-# still shows the image copy (this runs before the binds, on every boot). Host
-# keys are NOT baked into the image: a signed rootfs is shared byte-for-byte by
-# every device, so a baked host key would be a shared secret and would also
-# make the verity root hash depend on a random keygen. They are generated here
-# instead, once per device.
+# Converge only approved DATA state leaves; preserve existing identity and content.
 set -eu
-
-# Earlier images stamped /mnt/state/.mos-state-seeded and gated this unit on
-# it. The stamp is exactly the forward-compat bug described above, so a
-# leftover one is removed: nothing reads it any more, and leaving it would
-# invite a future "optimisation" to start honouring it again.
-rm -f /mnt/state/.mos-state-seeded
-
-mkdir -p /mnt/state/mos /mnt/state/ssh
-
-# Bluetooth link keys are credentials and must outlive a /var wipe.
-# bluez expects 0700 on this directory and refuses to use a laxer one.
-mkdir -p /mnt/state/bluetooth
-chmod 0700 /mnt/state/bluetooth
-# -n (no-clobber): files the image ships that STATE does not yet have are
-# carried across — including ones a NEWER image adds — while a per-device or
-# operator-edited copy on STATE always wins over the image's. On bookworm's
-# coreutils (9.1) a skipped file is silent and exit 0; the 9.2/9.3 releases
-# changed and re-changed `cp -n` exit semantics, so a base-image bump must
-# re-verify this line or every boot after the first fails the unit.
-cp -an /etc/ssh/. /mnt/state/ssh/
-
-# The two connd config directories, on the same reasoning as /etc/ssh: mosd's
-# WiFi reconcilers render into them at runtime, and on mos /etc is a read-only
-# squashfs. The image copy is carried across first (both packages ship helper
-# scripts there) so the bind does not hide anything the image provided.
-# 0700 because both hold a pre-shared key in the clear once a device is
-# configured -- the supplicant config carries every network's PSK and the
-# hostapd config carries the AP key.
-for d in wpa_supplicant hostapd; do
-    mkdir -p "/mnt/state/$d"
-    if [ -d "/etc/$d" ]; then cp -an "/etc/$d/." "/mnt/state/$d/"; fi
-    chmod 0700 "/mnt/state/$d"
+state=/mnt/data/state
+[ -d "$state" ] && [ ! -L "$state" ] || exit 1
+ensure_dir() {
+    [ ! -L "$state/$1" ] || { echo "mos-seed-state: symbolic state leaf $1" >&2; exit 1; }
+    mkdir -p "$state/$1"
+    chmod "$2" "$state/$1"
+}
+# networkd must traverse the bound state root to its group-readable key store.
+# Private credential subdirectories and documents retain their own 0700/0600 modes.
+ensure_dir mos 0711
+for name in ssh bluetooth wpa_supplicant hostapd; do ensure_dir "$name" 0700; done
+for name in systemd-units quadlet timesync network timers linger; do ensure_dir "$name" 0755; done
+for name in ssh wpa_supplicant hostapd; do
+    if [ -d "/etc/$name" ]; then cp -an "/etc/$name/." "$state/$name/"; fi
 done
-
-# The writable system unit directory, bound onto
-# /usr/local/lib/systemd/system by usr-local-lib-systemd-system.mount. 0755
-# root:root: unlike the two directories above this one holds no secret, and
-# systemd -- which reads it as PID 1, i.e. as root -- must be able to traverse
-# it. Root-writable-only is the bound the whole decision rests on; it grants no
-# privilege that SSH-as-root did not already grant.
-#
-# There is deliberately NO `cp -an` here, and this comment is why. The bind
-# target is EMPTY in the image, so there is nothing to carry across -- and
-# copying image content into a STATE-shadowed unit directory is exactly the
-# seed-freeze hazard that made /etc/systemd/system the wrong target: the
-# first-boot copy would permanently shadow the version a later A/B update
-# ships, turning a routine update into a silent no-op. Do not "fix" the
-# asymmetry with the two loops above by adding one.
-mkdir -p /mnt/state/systemd-units
-chmod 0755 /mnt/state/systemd-units
-
-# The Quadlet unit directory, bound onto /etc/containers/systemd.
-# Quadlet's own search path is /run, /etc and /usr/share under
-# containers/systemd -- measured, not assumed -- and the only one of the three
-# an operator can be given is /etc. Without this the container feature ships
-# with nowhere to install a container into.
-mkdir -p /mnt/state/quadlet
-chmod 0755 /mnt/state/quadlet
-
-# timesyncd's saved-clock directory, bound onto /var/lib/systemd/timesync by
-# var-lib-systemd-timesync.mount so the last-known-good clock floor survives
-# both reboots and updates (/var is EPHEMERAL). Owned by the systemd-timesync
-# account because the daemon runs unprivileged and writes its clock file here
-# every 60 seconds; the user is static in the image's /etc/passwd, so the
-# chown cannot race an allocation.
-mkdir -p /mnt/state/timesync
-chown systemd-timesync:systemd-timesync /mnt/state/timesync
-chmod 0755 /mnt/state/timesync
-
-# The hostname has to be writable: mosd's reconciler sets it through
-# systemd-hostnamed, which writes /etc/hostname. Seed it from the value baked
-# into the image while /etc/hostname still shows the squashfs copy;
-# etc-hostname.mount binds this file over it immediately afterwards.
-[ -f /mnt/state/hostname ] || cp -a /etc/hostname /mnt/state/hostname
-
-# NO SHADOW FILE IS SEEDED HERE, deliberately. /etc/shadow is a symlink to
-# /run/mos/shadow and mos-shadow-reconcile.service builds it in RAM on every
-# boot. The only credential mos supports on the console is a TRANSIENT root
-# password, and a credential file on a partition that survives reboots cannot
-# be transient by construction -- only by a protocol something has to remember
-# to run. Seeding one here would put a shadow file on persistent storage where
-# nothing reads it and nothing clears it.
-
-for t in rsa ecdsa ed25519; do
-    key="/mnt/state/ssh/ssh_host_${t}_key"
-    [ -f "$key" ] || ssh-keygen -q -t "$t" -f "$key" -N '' -C ''
+chown systemd-timesync:systemd-timesync "$state/timesync"
+chown systemd-network:systemd-network "$state/network"
+for name in hostname random-seed; do
+    [ ! -L "$state/$name" ] || { echo "mos-seed-state: symbolic state file $name" >&2; exit 1; }
+    if [ ! -e "$state/$name" ]; then
+        if [ "$name" = hostname ]; then cp -a /etc/hostname "$state/$name";
+        else (umask 077; : >"$state/$name"); fi
+    fi
+    [ -f "$state/$name" ] || exit 1
 done
-chmod 0755 /mnt/state/ssh
-chmod 0600 /mnt/state/ssh/ssh_host_*_key
-chmod 0644 /mnt/state/ssh/ssh_host_*_key.pub
-
-sync
+for type in rsa ecdsa ed25519; do
+    key="$state/ssh/ssh_host_${type}_key"
+    [ ! -L "$key" ] && [ ! -L "$key.pub" ] || exit 1
+    [ -f "$key" ] || ssh-keygen -q -t "$type" -f "$key" -N '' -C ''
+done
+chmod 0755 "$state/ssh"
+chmod 0600 "$state/ssh"/ssh_host_*_key "$state/random-seed"
+chmod 0644 "$state/ssh"/ssh_host_*_key.pub
+sync -f "$state"

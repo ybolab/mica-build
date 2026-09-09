@@ -253,7 +253,7 @@ export function secondPolicyFiles(root: string, bus: string): SecondFile[] {
 
 const MOSD_CHECKS: readonly CheckCase[] = [
   {
-    // The system bus itself. Two files, one conclusion: rauc, mosd and bluez
+    // The system bus itself. Two files, one conclusion: apid, mosd and bluez
     // all address each other over it, so either one missing is the same fault.
     id: 'dbus-system-bus-present',
     shell: {
@@ -269,7 +269,7 @@ const MOSD_CHECKS: readonly CheckCase[] = [
         ok,
         ok
           ? 'the D-Bus system bus (dbus.service + dbus.socket) is present, so bus-activated services can run'
-          : 'dbus.service and/or dbus.socket missing; rauc, mosd and bluez all address each other '
+          : 'dbus.service and/or dbus.socket missing; apid, mosd and bluez all address each other '
             + 'over the system bus',
       )]
     },

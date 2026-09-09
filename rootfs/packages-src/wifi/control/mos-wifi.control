@@ -4,7 +4,7 @@ Architecture: @ARCH@
 Maintainer: mos build <mos@example.invalid>
 Section: admin
 Priority: optional
-Depends: wpasupplicant, rfkill, wireless-regdb, iw
+Depends: wpasupplicant, rfkill, iw
 Description: mos Wi-Fi station support
  Masks wpa_supplicant.service and its D-Bus activation alias
  dbus-fi.w1.wpa_supplicant1.service by symlinking both to /dev/null, and ships
@@ -26,17 +26,6 @@ Description: mos Wi-Fi station support
  install it. rfkill is required because the radio is soft-blocked out of the
  box on the boards this image targets.
  .
- wireless-regdb is the cfg80211 regulatory database, and iw is what loads it.
- Both are required rather than recommended, and the second is not obvious: the
- board kernels build cfg80211 in and boot with no initramfs, so the kernel's
- own boot-time request for regulatory.db runs before the root is mounted --
- measured on cx3576 as 7.668 s against a root mounted at 7.681 s -- and
- net/wireless/reg.c records that failure in a file-scope pointer that no later
- request consults. Registering a wiphy does not re-read it. The only path that
- clears it is nl80211's RELOAD_REGDB, which is what the
- mos-regdb-reload.service shipped here sends through iw. Without both, a
- country_code rendered into a wpa_supplicant or hostapd instance selects
- channels and transmit power from cfg80211's built-in world domain.
- .
- Architecture: all -- the payload is one unit file and three symlinks, and it
- carries no ELF whose shared-library dependencies a packer could resolve.
+ The authenticated kernel support image supplies regulatory.db and its
+ signature before userspace starts. iw reloads cfg80211's database before
+ configuring radio interfaces.

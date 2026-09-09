@@ -62,7 +62,7 @@ retired by §5's triggers.
 | A second CAN node (250 kbit/s, classic, FD off) | 7 | `can.conf` ships those values |
 | A host PC for the USB gadget console | 7 | `mos-gadget` binds a CDC ACM getty |
 | A USB keyboard, and a display on HDMI | measurement M3/M4 | |
-| An update bundle that installs, and one that boots and fails | 3, 4 | §6 |
+| Signed component archives, including a deliberate failed-health candidate | 3, 4 | §6 |
 
 **The power-cut rig does not exist.** No rig is on file in this tree, and §5
 specifies the cut in terms of what an operator observes on the console rather
@@ -74,7 +74,7 @@ than of an instrument, so that row 4 is runnable with a switched outlet.
 
 Some rows are one-way. `Recovery` and the factory reset destroy the state the
 earlier rows established; `A/B switch and update` has to leave the device on a
-known slot before `Power-cut during update` means anything; and first-boot
+known deployment before `Power-cut during update` means anything; and first-boot
 evidence — repart growth, the minted credential, the provisioning document, the
 `machine_id` write — exists exactly once and cannot be recovered by looking
 harder later.
@@ -93,8 +93,8 @@ not run**, and the collector refuses it rather than producing a row.
 | 5 | `fieldbus` | 7 | stage 4 completed; CAN peer and gadget host now attached |
 | 6 | `thermal` | 9 | stage 5 completed; nothing else running on the unit |
 | 7 | `watchdog` | 10 | stage 6 left the unit cool and idle |
-| 8 | `update` | 3 | stage 7's reset was absorbed: **both boot counters back at full credit** |
-| 9 | `powercut` | 4 | stage 8 left the device on a **named** slot, healthy, counters full |
+| 8 | `update` | 3 | stage 7's reset was absorbed: native state and the preceding reset are recorded |
+| 9 | `powercut` | 4 | stage 8 left the device on a named confirmed deployment with a usable retained fallback |
 | 10 | `storagefill` | 5 (fill) | stage 9 completed, and the run directory has been copied off |
 | 11 | `recovery` | 12 | everything above is copied off the device; this stage destroys |
 
@@ -120,14 +120,11 @@ not run**, and the collector refuses it rather than producing a row.
   distinct assertions.
 - **6 and 7 before the update rows.** Thermal load and a deliberate watchdog
   reset must not land on a device with an install in flight.
-- **7 before 8, with an explicit gate.** A watchdog reset re-enters `boot.scr`,
-  which decrements `BOOT_<slot>_LEFT` before booting; the health gate refills it
-  at `mark-good`. Stage 8 refuses to start until `fw_printenv` shows both
-  counters at the configured `boot-attempts`, because an A/B test begun on a
-  partly-spent counter measures a different thing than the one row 3 claims.
-- **9 after 8, on a named slot.** Row 4's claim is that an interrupted install
-  leaves *the previous slot* bootable and the order unflipped. "The previous
-  slot" is only a fact if the current one was recorded first.
+- **7 before 8.** Record the watchdog reset and native state before installing
+  another candidate. A spent attempt remains spent. Start a new full-image
+  series when a new baseline is needed.
+- **9 after 8.** Record a named confirmed deployment and retained fallback before
+  testing interruption, so post-reset identity has a concrete baseline.
 - **10 late, because the fill test fills the filesystem the run directory lives
   on.** The collector reserves headroom and stops short, but the copy-off is
   the real protection.
@@ -147,50 +144,29 @@ the collector does not skip them silently**: it prints the instruction, waits,
 and records the operator's verdict and free-text observation. With no terminal
 on stdin it records `not tested — no operator present`, never a pass.
 
-### Stage 0 — `install` (row 13, Installation and first boot)
+### Stage 0 — `install` (row 13, installation and first boot)
 
-- **Human.** Erase the eMMC and flash over rockusb per
-  [../user/install.md](../user/install.md) §5, from the host, at a named
-  profile (`dev` or `prod`). Record which profile: the row binds one, and a
-  board claiming both runs the row twice or says which is unproven.
-- **Scriptable.** Nothing on the device — there is no device yet. The collector
-  is run **after** first boot, in stage 1, and back-fills row 13 from what
-  stage 1 observed plus the operator's answers about the flash itself.
-- **Pass.** `rkdeveloptool` completed without error against a blank unit; the
-  unit powered on unattended and reached the state the procedure claims — not
-  merely that it powered on. Stage 1's own evidence is what proves the second
-  half.
+Flash the complete current image using [the installation procedure](../user/install.md).
+Bind the evidence to the exact board, eMMC CID, image hash, boot keys, kernel/root
+IDs and image profile. Full readback must match before reset. Begin each new
+acceptance series from a fresh complete image; do not restore old partitions
+or replenish attempts. Record all signing domains as development or externally
+managed public trust inputs. Do not infer fuse enrollment from a signed FIT.
 
 ### Stage 1 — `firstboot` (rows 1, 5-growth, 11)
 
-- **Human.** Power on cold, from fully unpowered, with **no Ethernet cable
-  attached**. Watch the console. Answer the collector's questions about the
-  boot: did the console reach a login prompt, did the status LED go blue.
-- **Scriptable.** `systemctl is-system-running`; `systemctl
-  list-units --failed`; `journalctl -b -p warning`; `rauc status
-  --output-format=shell`; `fw_printenv` (`BOOT_ORDER`, both counters,
-  `machine_id`); `findmnt /` and `/mnt/data`; `df` on every tier; the DATA
-  partition's size against the disk's; `/sys/block/mmcblk0/device/{cid,name,
-  manfid,life_time,pre_eol_info}`; the provisioning record and the claim state.
-- **Pass — row 1 (Cold boot).** The health gate green — `mos-health` ran and
-  reached `rauc status mark-good` — **repeatably**. Record failed units beside
-  it rather than as part of it: since PLAN-089 a failed unit is reported and
-  not fatal, so a green gate with a failed unit is a real state and the row has
-  to say which it saw.
-  §4 of [qualification.md](qualification.md) requires the cycle count, and the
-  collector runs the cold cycle **five** times, asking for a power cycle
-  between each and re-reading the same probe set. Five identical greens is the
-  row; four greens and one degraded boot is a `fail` with the failing boot's
-  journal as the evidence.
-- **Pass — row 5, growth half.** DATA grew to fill the medium on the first
-  boot and the loader partition is intact (`sgdisk`-visible entry at sector 64,
-  and the unit still boots). The rest of row 5 completes at stage 10.
-- **Pass — row 11 (Offline service).** With no cable: the device has a
-  hostname derived from its identity, a minted credential, a provisioning
-  document on the medium, apid listening, and a configuration change made and
-  read back through the API — all without a network. Per
-  [../design/provisioning.md](../design/provisioning.md) §2 this is Layer 1's
-  whole claim, and this is the only stage that can test it honestly.
+Power on cold with external serial capture and no network time available.
+Collect `mos-deploy status`, `mos-deploy firmware-readback`, `/run/mos/boot.json`,
+`/proc/cmdline`, required health-service results, mount identities, DATA geometry
+and eMMC health attributes. No private credential or key contents belong in the
+capture. The firmware partition, SYSTEM and DATA must match current board policy.
+
+Five cold starts must reach signed root/support, native health confirmation and
+usable management services. Record failed optional units separately. DATA alone
+grows; firmware and SYSTEM bytes and partition boundaries stay unchanged.
+Machine identity is persisted on DATA before systemd and remains stable across
+reboots. Provisioning uses current DATA namespaces and the declared medium.
+No boot variable is the machine-identity source.
 
 ### Stage 2 — `inventory` (the Gate D measurements; rows 8 and 10 readouts)
 
@@ -317,7 +293,7 @@ previous shutdown. This is the *baseline*: stage 7 compares against it.
 ### Stage 3 — `warmboot` (rows 2, 8)
 
 - **Scriptable, before.** Record `date -u`, `timedatectl`, the RTC readout
-  again, and `/mnt/state`'s saved clock floor.
+  again, and DATA/state's saved clock floor.
 - **Human.** Reboot warm (`systemctl reboot`) — three cycles for row 2 — then,
   for row 8, remove power entirely for **ten minutes** and power on again.
 - **Scriptable, after.** The same probe set, plus `journalctl --list-boots` and
@@ -400,72 +376,46 @@ previous shutdown. This is the *baseline*: stage 7 compares against it.
 
 ### Stage 7 — `watchdog` (row 10)
 
-- **Scriptable.** Open `/dev/watchdog0`, set the timeout, pet it a few times to
-  prove the ioctl path works, then **stop petting and close without the magic
-  `V`** so the device stays armed. Record the moment.
-- **Human.** Watch the console; record the wall-clock interval between the last
-  pet and the reset, and what the console printed on the way down (if
-  anything).
-- **Scriptable, after the reset.** Re-read M2's attribute set — `bootstatus`
-  above all — plus `journalctl --list-boots` and `dmesg | grep -iE
-  'watchdog|reboot|reset'`, and compare against stage 2's baseline. Then
-  confirm both boot counters are back at full credit, which is what stage 8
-  requires.
-- **Pass — row 10.** A hung system is reset by the watchdog within the
-  configured timeout, **and** the reset cause is readable afterwards. If M2
-  found no `bootstatus` attribute and no other source names the cause, the row
-  is a `fail` on its second half with the first half stated — not a `pass`,
-  because the row claims both.
+Capture the active watchdog, configured timeout and current deployment first.
+PID 1 already owns the watchdog; opening it a second time is not a valid test.
+The collector disables panic's software restart and triggers a kernel crash,
+so the hardware timer must reset the board without further pets. Preserve the
+external serial/power trace and read back the reset cause on the next boot.
+This proves the interval after watchdog activation; separately inject an early
+boot hang to qualify firmware-to-kernel coverage. If the reset cause cannot be
+established, record that limitation rather than counting an elapsed timeout as
+proof of watchdog action.
 
-### Stage 8 — `update` (row 3, and U10's bench half)
+### Stage 8 — `update` (row 3)
 
-See §6 for what the software half already proves and what is left.
+Begin with a complete current image and record both native deployment records.
+Import a signed `MOSUPD01` archive, then install its verified descriptor and
+objects with `mos-deploy`. Reboot and confirm the resulting authenticated ID.
+Repeat for root-only, kernel-only and combined updates, measuring object bytes
+and proving that unchanged components and firmware ranges are identical.
 
-- **Human.** Put two bundles on the device: one that installs and boots, one
-  that installs and **fails its health gate**. Since PLAN-089 the second one
-  has to break a REQUIRED member — the boot transaction, mosd or apid — because
-  a bundle that merely breaks some unit now boots and confirms; see
-  `health-rejects-broken-slot` in §4's additions for which mutation to make.
-  Both must be signed against the keyring in the running root, or RAUC refuses
-  them and the row measures nothing.
-- **Scriptable.** Record the starting slot, `BOOT_ORDER` and both counters;
-  install the good bundle; re-read all three; reboot; confirm the new slot
-  booted (`rauc.slot=` on `/proc/cmdline`, `rauc status`), that the health gate
-  ran, and that `mark-good` refilled the counter. Then install the bad bundle,
-  reboot, and let it fall back **without intervening** — counting the reboots
-  and reading the counters at each one.
-- **Pass — row 3.** The bundle installs to the inactive slot; the order flips;
-  the health gate confirms; and the bad slot rolls back after its attempt
-  credits, arriving back on the good slot with the device healthy. The console
-  line `mos: booting slot <X> (A=<n> B=<m> left)` at each boot is the primary
-  evidence and the collector captures it from the journal where it can and from
-  the operator's console log where it cannot.
-- **Leaves behind, for stage 9:** a named slot, both counters full, and a
-  recorded `BOOT_ORDER`. The collector writes these into the run directory and
-  stage 9 refuses to start if it cannot read them.
+Install a deliberately failed-health candidate and observe exactly three
+persisted failed attempts, followed by the retained confirmed deployment.
+Native service/API state must agree with the boot trace. No test step refills
+counters or installs an earlier layout. Leave a named confirmed deployment and
+usable fallback for the interruption series.
 
 ### Stage 9 — `powercut` (row 4)
 
-§5 is this stage. The collector's part is: record the pre-cut state, drive the
-install, print the cut marker, and — after each power-up — read back what
-actually happened rather than what was intended.
+Run section 5's boundary matrix using external power control and serial capture.
+The collector records before/after native state; it cannot identify a physical
+cut instant from a post-boot status response. An unobserved boundary remains
+inconclusive.
 
 ### Stage 10 — `storagefill` (row 5, fill half)
 
-- **Scriptable.** Fill DATA to the `warning` band (≥ 80% used) and confirm the
-  status surface reports it; continue to the `critical` band (≥ 90%) and
-  confirm again; check the system is still up, apid still answers, and the
-  256 MiB update workspace reserve is still honoured — then delete the filler
-  and confirm the bands clear at their hysteresis points (75% / 85%). Separately
-  fill `/var` past `var-threshold-pct` and confirm `mos-health` reports
-  `health.var` as `degraded` **and does not fail the boot**.
-- **Pass — row 5.** Growth (stage 1) plus: fill-up of DATA and of `/var` does
-  not take the system down, the bands enter and clear where
-  [../design/storage.md](../design/storage.md) §5 says they do, and the media
-  health readout works — meaning the eMMC `life_time` / `pre_eol_info` bucket
-  pair is reported, or `undefined` is reported honestly where the part declines
-  to answer.
-- **Copy the run directory off the device before starting this stage.**
+Copy evidence off the device first. Fill bulk and disposable DATA namespaces
+through their production writer privileges until byte and inode quotas refuse
+further writes. Confirm essential state/metadata remain writable within their
+configured reserve, immutable var parents remain read-only, and service health
+and capacity reporting remain accurate. Remove only the fixture's filler files
+and verify counters recover. Record eMMC health as unavailable where the part
+does not provide it; never invent a numeric health grade.
 
 ### Stage 11 — `recovery` (row 12)
 
@@ -473,7 +423,7 @@ Destroys. Last. In [../user/recovery.md](../user/recovery.md)'s order, one rung
 at a time, re-reading the system state after each:
 
 1. **Read-only diagnosis** — the diagnostics snapshot, taken and read back.
-2. **Guarded rollback** — to the other slot, then back.
+2. **Guarded rollback** — to the retained deployment, then back.
 3. **Configuration reset** — settings return to defaults; identity survives.
 4. **Application-data reset** — application state gone; identity survives.
 5. **Credential recovery and full factory reset** — both must be **refused**,
@@ -577,22 +527,17 @@ test can observe.
 **`health-required-set` (stage 1).** Read `journalctl -u mos-health` and
 `systemctl show -p Result --value mos-health.service`. **Pass:** the log carries
 `required set: boot-settled mosd apid`, one `required member <m>: OK` line for
-each, and `booted slot <X> marked good`. **Fail, and this is the run that can
+each, and the authenticated deployment confirmation. **Fail, and this is the run that can
 only happen here:** a member that is required but not PROVABLE on this board —
 `required member apid: apid.service is not installed`, or `neither curl nor
 wget` — which is a refusal by design and would loop the device. The offline
 suite fakes both daemons; nothing before this stage has ever asked the shipped
 image to satisfy its own conf.
 
-**`health-tolerates-failed-unit` (stage 4).** The incident replayed with the
-fix in, using the unit that caused it. With `mos-regdb-reload.service` in the
-failed state (`regdb-loaded` above says whether it is), read the boot counters
-before and after a reboot with `fw_printenv BOOT_ORDER BOOT_A_LEFT BOOT_B_LEFT`.
-**Pass:** `mos-health` names the unit (`note: failed unit:
-mos-regdb-reload.service`), reports it (`GET /api/v1/state/health` shows
-`units` at `degraded` naming it), reaches `mark-good`, and the booted slot's
-counter comes back **full**. **Fail:** the counter decrements — the gate is
-still refusing on a failed unit, which is the whole defect.
+**`health-tolerates-failed-unit` (stage 4).** Preserve an optional failed unit
+and record its name in diagnostics. Required services still pass and the native
+backend confirms the authenticated running deployment. Confirmation retires the
+trial entry; it does not refill counters.
 
 **`health-rejects-broken-slot` (stage 8).** Stage 8 already needs *"one that
 installs and boots, one that installs and fails its health gate"*, and under
@@ -616,31 +561,11 @@ image with a test that drives it (`make os-gadget-test`). If it still fails
 *with the function symlink present*, the cause is elsewhere and the
 `rockchip-usb2phy … IRQ index 0 not found` line becomes worth pursuing.
 
-**`no-efi-automount` (stage 2).** `systemctl list-units --all '*.automount'`,
-`systemctl cat efi.automount`, `ls /run/systemd/generator/`, and
-`findmnt /efi`. **Pass:** the only automount subject is
-`proc-sys-fs-binfmt_misc.automount`; `systemctl cat efi.automount` reports no
-files; `/run/systemd/generator/` carries nothing
-`systemd-gpt-auto-generator` would have written; and nothing is mounted at
-`/efi`. **Fail:** `efi.automount` exists at all — which means the mask
-(`/etc/systemd/system-generators/systemd-gpt-auto-generator -> /dev/null`,
-RFCT-358) did not take effect and the only thing still holding the automount
-off is `CONFIG_AUTOFS_FS` being unset.
-
-**What this probe is for, since the image contract already asserts the mask.**
-The contract reads a symlink; this reads the outcome. Before RFCT-358 the unit
-was generated on every boot and inert for a reason nobody chose, so the
-question the bench answers is whether masking a generator actually stops one on
-this board — not whether the file is in the image. The failing direction is a
-writable mount of a RAUC-owned partition chosen by disk order rather than by
-which slot is running.
-
-The MECHANISM is not what is open here: a virt-arm64 QEMU boot on 2026-09-08
-showed `systemd-gpt-auto-generator` in the manager's executed-generator list
-without the mask and dropped from it with the mask, on the same systemd 257.13 arm64
-binary this board runs. What only this board can answer is whether the unit
-that is actually generated here — virt-arm64 boots through GRUB, which sets no
-`LoaderDevicePartUUID`, so its generator writes nothing — is gone.
+**`no-efi-automount` (stage 2).** Inspect all automount units, the generator
+output and `/efi`. The current policy must use only the declared firmware mount
+and exact partition identity; an automatically selected writable firmware mount
+is a failure. The whole-image verifier checks the generator mask, while this
+board test checks its runtime result.
 
 ### Additions from RFCT-359 (the stable-MAC assignment)
 
@@ -708,107 +633,44 @@ Row 6's `eth1` lease defect is measured in this same stage; if `eth1` still gets
 no lease, note its MAC anyway, because "no lease" and "a lease from the wrong
 address" are different findings with the same symptom at the switch.
 
-## 5. The power-cut window
+## 5. The power-cut matrix
 
-Pulling power at an arbitrary moment tests nothing. Row 4's claim is specific:
-*an interrupted install leaves the previous slot bootable and the order
-unflipped*. That is a claim about one interval.
+Capture exact image/component IDs, storage identity and the external serial and
+power trace for every iteration. Test these boundaries independently:
 
-**The interval.** `rauc install` writes the bundle into the inactive slot, and
-only when the write has completed does it call `set_primary`, which is
-`fw_setenv` moving that slot to the front of `BOOT_ORDER` and setting its
-counter. Everything before that `fw_setenv` is reversible by doing nothing;
-everything after it has committed the next boot. So there are three cuts worth
-taking, not one, and each has a different expected outcome:
+| Boundary | Required observation after power restoration |
+|---|---|
+| Download or offline import | No boot-visible incomplete candidate |
+| Destination object write and file sync | Current/fallback references remain complete |
+| Object directory publication | Published objects match authenticated lengths and hashes |
+| Candidate activation | Previous committed state or the fully staged candidate is selected |
+| Attempt decrement | An unpersisted trial is never launched; spent credit stays spent |
+| Health confirmation and GC | Running and retained fallback objects survive |
+| Redundant record write | Torn or unreadable records are refused; a valid retained record remains usable |
 
-**Cut A — mid-write.** During the copy, while the console shows install
-progress between roughly 30% and 90% and before the line that reports the
-install finished. This window is seconds to minutes wide and is easy to hit by
-hand.
+Run at least ten cuts per installation/activation boundary and fifty randomized
+redundant-record writes. Record which side of publication each cut actually hit.
+A cut whose boundary is unknown is inconclusive. Exhausting all usable records
+must stop for explicit recovery; shared SYSTEM/DATA corruption must not refill
+attempts or select unsigned content. Physical power loss must interrupt the
+storage device's supply, not only its CPU or software process.
 
-- **Pass looks like:** on power-up the console prints `mos: booting slot A
-  (...)` — the *old* slot; `fw_printenv BOOT_ORDER` reads exactly what it read
-  before the install; the torn image in the inactive slot is never selected
-  because the order was never flipped; and a repeated install afterwards
-  succeeds.
-- **Fail looks like:** the device boots the half-written slot, or does not boot
-  at all, or `BOOT_ORDER` moved.
+No cut result is inferred from the software fault matrix. Its syscall kills,
+short writes and ENOSPC tests cover native transaction behavior; they do not
+establish eMMC flush or power-loss behavior.
 
-**Cut B — the commit itself.** Between the last byte written and the
-`fw_setenv`. The collector polls `fw_printenv BOOT_ORDER` while the install
-runs and prints `>>> CUT NOW <<<` on the console the moment the write reports
-complete; the operator cuts on that marker. The window is short, so the cut
-lands on one side of the flip or the other and **the session reads back which
-side it hit rather than assuming**:
+## 6. Software and hardware evidence boundaries
 
-- landed **before** the flip → Cut A's pass criteria apply;
-- landed **after** the flip → the device boots the new slot with a full
-  attempt counter and the health gate confirms it, which is a normal successful
-  update and not a defect.
+The native updater and firmware policy have automated authentication,
+persist-before-load, failure-injection and update/fallback tests. Current x64
+and virt-arm64 images execute complete runtime sequences in QEMU. cx3576's
+produced loader and FIT have sandbox/host policy tests, required signature
+negatives, whole-image verification and DATA-only growth evidence.
 
-Both outcomes are recorded. Repeat until at least one of each has landed; the
-row's evidence note states how many attempts produced which. **A cut whose side
-cannot be determined afterwards is discarded, not guessed.**
-
-**Cut C — first boot of the new slot, before `mark-good`.** After the order has
-flipped, between the console's `mos: booting slot B (A=3 B=2 left)` and
-`mos-health` reaching `rauc status mark-good`.
-
-- **Pass looks like:** the credit was spent and stays spent — `fw_printenv
-  BOOT_B_LEFT` reads one lower after each such cut — and after the credits are
-  exhausted the bootloader falls back to slot A on its own, with `rauc status`
-  and mosd's update state naming the failed slot. This is the counter behaving
-  as a watchdog rather than as a hint, which is the whole reason `boot.cmd`
-  saves the decrement *before* booting.
-
-**And the environment write itself.** [../design/uboot-ab-handshake.md](../design/uboot-ab-handshake.md)
-§8.1 step 3 already specifies the mid-`saveenv` cut — at least 50 iterations,
-no `*** Warning - bad CRC, using default environment` on any power-up. That
-procedure is not restated here; run it as written, and record its result as
-part of row 4's evidence note. It is the row's hardest half: cuts A, B and C
-are about slots, and that one is about the redundant environment pair the slot
-decision is stored in.
-
-**Repeat count.** Row 4 says "repeated cuts do not brick". Ten cuts of type A,
-ten of type B, five of type C, plus the handshake document's fifty `saveenv`
-iterations. A single successful cut is an anecdote.
-
-## 6. U10 is narrower than it was, and this is what is left
-
-`docs/plan/PLAN-071.md` U10 — bad bundle, automatic install, fallback,
-suppression — was entirely a bench item until RFCT-341 landed the clock seam on
-`AutoDriver`. **The automatic path now carries fifteen tests**, including the
-full bad-bundle cycle through the real suppression store, and re-running that
-half by hand on the bench would be waste. What the software already proves,
-recorded so nobody repeats it:
-
-- the automatic path meets **the same gate set** as the manual one, refused by
-  the same rule in the same words, driven against a real daemon;
-- **the loop closes**: a bad bundle installs once, rolls back, the version is
-  suppressed, and the second automatic pass selects nothing — through the real
-  store, with both consultation sites exercised;
-- the **suppression store** itself: record, clear, idempotence, and an
-  unparseable store refusing rather than reading as empty;
-- automation **never arms the reboot override**, measured against a real gate
-  rather than against an empty tree;
-- every deferral reason the driver can mint is reachable and is checked against
-  the closed vocabulary itself, so a code nothing produces fails the test.
-
-> status: shipped — evidence: `docs/design/updates.md`, `pkgs/mosd/mosd/src/update_auto.rs`
-
-**What no seam retires**, and what stage 8 and stage 9 exist for: *a real
-bootloader spending real boot credits and a real slot falling back.* Everything
-above runs on a host where `BOOT_A_LEFT` is a value in a test fixture. The bench
-half of U10 is exactly:
-
-- the counters in the redundant U-Boot environment decrementing once per
-  attempt, persisted before the kernel is loaded;
-- exhaustion selecting the other slot without operator action;
-- `rauc status` and mosd's derived state agreeing with the bootloader
-  afterwards.
-
-Scope the row to that. It is stage 8's bad-bundle half plus stage 9's Cut C,
-and nothing else about `auto` needs a person on a bench.
+Physical cx3576 boot, reset cause, watchdog handoff and power-cut acceptance
+remain open until measured on the named board. The collector records those
+observations; passing its own syntax or refusal tests cannot close a hardware
+row. Keep the exact evidence in the active delivery task and board dossier.
 
 ## 7. Running the collector
 
@@ -824,15 +686,13 @@ bash /root/cx3576-bench-collect.sh report > /root/qualification-rows.md
 ```
 
 - **Output.** `--out DIR`, defaulting to `/srv/bench` — the user-owned
-  namespace on DATA, which survives a reboot and a power cut. The collector
-  falls back to `/mnt/data/bench`, then to `/var/lib/mos-bench` and finally
-  `/tmp`, saying so loudly each time, because `/var` is EPHEMERAL and `/tmp` is
-  a tmpfs: a run recorded there does not survive the power cuts the run is
-  about. It `sync`s after every append for the same reason.
+  namespace on DATA, which survives a reboot and a power cut. The collector may fall back to `/tmp/mos-bench`, which is volatile and
+  cannot retain evidence across a reboot. Copy such evidence to the external
+  bench recorder before continuing. It `sync`s after every append for the same reason.
 - **The API.** `GET /api/v1/update` and the other reads are authenticated.
   Pass a bearer token with `--token` or `MOS_BENCH_TOKEN`; without one the
   collector records `not collected: no API token` and falls back to the
-  unauthenticated sources (`rauc`, `fw_printenv`, `systemctl`, the bus) for
+  unauthenticated sources (`mos-deploy`, `systemctl`, the bus) for
   everything they cover. It does not log in for you: minting a session on the
   device writes to apid's audit ring and its login-backoff counters, and a test
   harness must not be the thing that locks the operator out.
@@ -855,8 +715,8 @@ filesystem listed rather than executed), so the collector's guards are written
 against what is there rather than against what ought to be:
 
 - **Present:** `bash`, `sh`, `curl`, `networkctl`, `journalctl`, `systemctl`,
-  `rauc`, `podman`, `udevadm`, `dmesg`, `lsblk`, `date`, `stat`, `awk`, `sed`,
-  `grep`, and also `fw_printenv`/`fw_setenv`, `busctl`, `ip`, `rfkill`,
+  `mos-deploy`, `podman`, `udevadm`, `dmesg`, `lsblk`, `date`, `stat`, `awk`, `sed`,
+  `grep`, `busctl`, `ip`, `rfkill`,
   `timedatectl`, `hostnamectl`, `nproc`, `sleep`, `timeout`, `find`, `tar`,
   `tee`, `tr`, `sync`.
 - **Absent:** `jq`, `python3`, `wget`, `perl` — none of the four appears
@@ -891,41 +751,16 @@ units that shipped under it.
 
 > status: board-dependent — evidence: `docs/bsp/cx3576-example.md`, `docs/bsp/qualification.md`
 
-## 9. What has already been exercised, and what has not
+## 9. Current verification status
 
-A bench script whose first execution is on the bench is a bench session spent
-debugging the script, so this one has been run — not on cx3576, which does not
-exist here yet, but on what does. Stated exactly, because the difference
-matters when a stage misbehaves on the day:
+The current collector is syntax-checked and its dry-run/refusal paths must be
+checked before bench use. The active file-deployment task records current
+software test results; earlier collector runs apply only to their dated source.
+No current physical cx3576 acceptance result has been captured in this work.
 
-**Exercised, end to end.** Every stage ran, in order, inside a composed mos
-root: the ordering gate (a stage whose assumption is unmet is refused by name
-— `powercut` refused because `update` left no recorded slot, and
-`storagefill` and `recovery` refused in turn), the read-only probe set of
-stages `install`, `firstboot`, `inventory`, `warmboot`, `network` and
-`fieldbus`, the capture files and their command/status headers, the run
-directory fallbacks, the `--dry-run` downgrade, the `report` renderer, and all
-three branches of the operator prompt driven over a real pty. The rendered
-table was then spliced into a copy of [cx3576-example.md](cx3576-example.md)
-and put through the real `verify-board.sh`, which accepted it — and, with one
-row deliberately broken, rejected it. **The collector's output is pasteable
-into the dossier, and that is a measurement rather than an intention.**
-
-**Not exercised, and why.** No mos image is booted here, so nothing that needs
-a running A/B system was reached: the good/bad bundle cycle, the boot-credit
-arithmetic, the watchdog reset, the thermal load and the power cuts all ran
-only as far as their refusals. The environment had no `rauc` slot, no
-`/dev/watchdog` and no `/mnt/data`, and every affected row recorded that as its
-reason — which is the behaviour under test, but it is not the same as having
-seen the pass path on hardware. **Stages `thermal` through `recovery` are
-syntax-checked and refusal-checked, not outcome-checked.**
-
-**One image fact the collector leans on.** journald is `Storage=volatile` on
-this image, so **a boot's journal is gone after the next reboot**. Every stage
-captures `journalctl -b` eagerly for that reason, and a stage re-run after a
-reboot cannot recover the evidence of the boot before it. That is also why the
-reboot-spanning stages accumulate one cycle per run rather than trying to
-observe several reboots from inside one invocation.
+journald is volatile. Capture each boot's journal and serial trace before
+rebooting; a later collector invocation cannot recover the previous journal.
+Only observed hardware outcomes belong in physical qualification rows.
 
 ## 10. The display rows (PLAN-088), and the sink they all depend on
 

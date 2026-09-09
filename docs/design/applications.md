@@ -23,7 +23,7 @@ The application inventory contains four source classes:
 
 | Source | Meaning | Manager authority |
 |---|---|---|
-| System | Native code in the immutable OS image | Observe only; RAUC owns update and rollback |
+| System | Native code in the immutable OS image | Observe only; Native signed deployments own update and rollback |
 | Catalog | A release from the vendor-curated signed catalog | Full managed lifecycle |
 | Local trusted | A release signed by a device-enrolled integrator key | Full managed lifecycle when this opt-in capability exists |
 | External/unmanaged | A discovered service, handwritten Quadlet or unit | Observe only; never adopt, update or remove |
@@ -157,12 +157,12 @@ The manager owns:
 
 | Data | Planned location/owner | Durability |
 |---|---|---|
-| Registry, active revision, small activation metadata | `/mnt/state/mos/apps/` | STATE; survives reboot and A/B |
+| Registry, active revision, small activation metadata | `/mnt/data/state/mos/apps/` | STATE; survives reboot and A/B |
 | Download staging and artifact cache | `/mos/apps/.staging/` and manager-owned cache | DATA; bounded and garbage-collected |
 | Per-app persistent data | `/mos/apps/<app-id>/data/` | DATA; retained by default on remove |
 | Generated runtime definitions | manager-owned STATE-backed directories | STATE; atomically published |
 | Secrets | new protected per-app secret store | write-only through API; delivered as credential files |
-| Runtime logs | bounded journal query/export | EPHEMERAL; not a permanent audit trail |
+| Runtime logs | bounded journal query/export | Bounded volatile journal; not a permanent audit trail |
 
 Large images and bundles never go to STATE, and persistent app data never goes
 to `/var`. Preflight accounts separately for download staging, retained

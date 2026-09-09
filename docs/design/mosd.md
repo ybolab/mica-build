@@ -1,6 +1,6 @@
 # Design: mosd (management plane) — M2 design brief
 
-> English | [中文](../zh/design/mosd.md)
+> English | [中文](mosd.md)
 >
 > Status: the D-Bus/zbus IPC choice and the settings model below are the
 > standing contract, approved 2026-08-18.
@@ -18,7 +18,7 @@
 
 The single Rust service that owns appliance state: a central settings/state
 tree, persistence on STATE, reconcilers that apply settings to the execution
-layer (systemd units, networkd, RAUC, balena-engine), and the bridge that
+layer (systemd units, networkd, native deployments, Podman), and the bridge that
 UIs (apid/kiosk) and future remote channels consume. Venus OS's D-Bus tree +
 Bottlerocket's apiserver, in one scoped service.
 
@@ -28,7 +28,7 @@ Options: D-Bus (zbus) / varlink / gRPC.
 
 **Recommendation: D-Bus via the pure-Rust `zbus` crate.** The deciding fact:
 mosd must CONSUME D-Bus regardless — systemd (units/hostname), networkd,
-RAUC, wpa_supplicant, bluez all expose D-Bus APIs. Speaking one bus in both
+wpa_supplicant and bluez all expose D-Bus APIs. Speaking one bus in both
 directions (consume system services, expose `com.mos.*` like Venus's
 `com.victronenergy.*`) avoids running a second IPC ecosystem. apid bridges
 HTTP/WebSocket ↔ D-Bus for browsers; gRPC/MQTT-style remote bridges attach
@@ -56,7 +56,7 @@ integration burden D-Bus removes for free.
   > **Correction (2026-08-19).** This line read `/state/mos/settings.toml`,
   > which is not a path that exists on any image. The real default is
   > `/var/lib/mos/settings.toml` (`pkgs/mosd/mosd-settings/src/store.rs`,
-  > `DEFAULT_PATH`), a bind from `/mnt/state/mos` (`docs/design/ro-root.md` §4),
+  > `DEFAULT_PATH`), a bind from `/mnt/data/state/mos` (`docs/design/ro-root.md` §4),
   > and `pkgs/mosd/mosd/src/main.rs`
   > documents the same. The doc contradicted both the code and §5.1 below.
 
@@ -79,7 +79,7 @@ integration burden D-Bus removes for free.
   > direction is carried at runtime by the tolerant load (§5.2 below), which
   > is what actually runs on a device.
 - Reconciler contract: each subsystem reconciler watches a subtree and owns
-  rendering to its executor (networkd units, sshd drop-ins, RAUC calls);
+  rendering to its executor (networkd units, sshd drop-ins and native deployment actions);
   status is published back onto the bus tree (settings vs live-state split,
   like Venus settings vs service paths).
 
@@ -639,103 +639,37 @@ confirmation token, answering 202 with a rendered page and handing the D-Bus cal
 to a detached task — so the operator gets a page rather than a dropped connection
 when the machine goes down mid-call.
 
-**Update orchestration.** The three update members speak to RAUC
-(`de.pengutronix.rauc.Installer`) through a `RaucClient` trait
-(`pkgs/mosd/mosd/src/rauc.rs`) with the same shape as the power control: lazy
-per-call bus connection in production, a dry-run client that never touches the
-host (constructed under `MOSD_DRY_RUN=1`, so no test can install a bundle on
-the build host), and a recording mock for the bus-layer unit tests. Like the
-power actions, updates are **actions, not settings** — nothing lands in the
-settings tree, nothing is reconciled on boot, and everything observable is
-recorded in the **live-state** tree under `update`: `operation`, `last_error`,
-`progress`, a curated per-slot `slots` map, `booted_slot`, `primary`, a
-`pending_not_confirmed` flag, plus `install` (`running`/`done`/`failed`, the
-bundle path, the requesting bus name, and on failure the error text together
-with a `time` object carrying the device's own clock, its
-`GET /api/v1/time/status` state and whether that clock could be the cause) and
-`last_mark`. The entry is available through management `GetState`; it is not
-projected into an item tree or MQTT.
+**Update orchestration.** `NativeDeploy` in `pkgs/mosd/mosd/src/deployment.rs`
+invokes `mos-deploy` using a bounded subprocess transport. Status is parsed
+strictly into authenticated boot/component identities, current, fallback,
+candidate, failed IDs and remaining trials. Process cancellation or timeout
+kills the transport group and stdout/stderr are bounded.
 
-- `InstallUpdate(bundle_path)` validates the path (absolute, existing regular
-  file), refuses a second install while one runs, records
-  `update.install = running`, and hands the install to a **background task** —
-  the service lock and the bus dispatcher are never held across an install,
-  which RAUC completes in minutes, not milliseconds. Completion (RAUC's
-  `Completed` signal, subscribed before `InstallBundle` is called so a fast
-  failure cannot be missed) is recorded together with a fresh status query.
-  A **failure** additionally records the clock, because RAUC verifies a
-  signer's validity against the clock of the process doing the verifying and
-  `certificate has expired` is the same sentence whether the signer really
-  expired or this device's RTC read garbage. The facts are gathered while the
-  failure is fresh — a clock read later by a separate query is a different
-  clock — and `clock_implicated` is false when the kernel vouches for the
-  clock, so the diagnostic does not train readers to discount it
-  (`docs/design/release-signing.md` §2.2, `docs/design/time.md` §3).
-- `GetUpdateState()` runs the status queries **without the service lock**,
-  merges the result into `update` field-by-field (so `install`/`last_mark`
-  survive a refresh), and answers the recorded entry as JSON.
-- `MarkUpdate(state, slot)` is the operator's **manual** escape hatch,
-  validated down to `good`/`bad` on `booted`/`other` before RAUC is asked —
-  `active` and concrete slot names are deliberately not offered.
+`InstallUpdate` accepts a verified descriptor in the acquisition workspace,
+records an asynchronous lifecycle action and refreshes native status after
+completion. `CheckUpdate`, `FetchUpdate` and offline import authenticate the
+current catalog or archive, reuse matching immutable objects and stage on
+physical DATA. The service never holds its global state lock across a long
+installation. Partial or failed acquisition does not publish a boot candidate.
 
-**What mosd deliberately does NOT do: confirm the booted slot.** The boot
-health gate (`rootfs/overlay/usr/lib/mos/mos-health`) owns the automatic
-`rauc status mark-good` — it probes systemd, mosd and apid first, and an
-automatic mark in mosd would duplicate that gate and could confirm a slot the
-gate would have failed. `MarkUpdate` exists for the case the gate cannot
-decide — a slot an operator has judged good or bad on evidence the gate does
-not have, such as an application that is up and behaving wrongly. Since
-PLAN-089 the gate requires a named set (the boot transaction finished, mosd
-answering, apid answering) rather than forbidding every failed unit, so a
-failed unit is no longer something an operator has to overrule here.
+`GetUpdateState` combines native deployment state with acquisition, installation
+and last-action records. Guarded manual rollback delegates its check and
+selection to the native transaction. The operator requests reboot separately.
+The health service exclusively owns automatic confirmation after required
+services pass; daemon startup cannot bless a deployment.
 
-**The update lifecycle on top (RFCT-283).** `CheckUpdate` / `FetchUpdate`
-drive the device-side client `rauc-update` as bounded subprocesses and record
-an explicit state machine under live-state `update.lifecycle` (idle,
-checking, downloading, ready, installing, reboot-required, validating,
-succeeded, rolled-back, update-unavailable, failed, each with a reason;
-`update-unavailable` is the `/mos/updates` workspace's readiness verdict,
-probed before every check and fetch, and `InstallUpdate` admits only a
-verified bundle inside `/mos/updates/verified`). Policy — the source address,
-the channel, what the device does on its own, maintenance windows,
-metered/offline mode, the check cadence — is resolved per key from the baked
-`/usr/share/mos/meta/updates/manifest.json` and the fail-closed
-`/mos/config/updates.json` beside the other documents of §5.1a
-(`/var/lib/mos/update-policy.toml` is retired and nothing reads it), and
-`Reboot` is now interlocked by an application-aware safe-to-reboot gate with
-a bounded, audited `SetRebootOverride`. The whole design, the derivation rules and their honest
-limits, the operator procedures and the fault-evidence table are
-`docs/design/updates.md`; this section stays the record of the underlying
-install/mark surface.
-
-**Resolved follow-up (recorded at M5, closed deliberately):** rebooting a slot
-RAUC has installed but that has not completed a confirmed boot **burns a boot
-attempt**, and nothing warned about it. `Reboot` now reads
-the slot status first and, when the bootloader's first pick is not the booted
-slot, logs the warning and records it as `power.update_warning` beside
-`last_action` — before the power call, like the rest of the power record. A
-warning, not a refusal: booting the new slot is what an updating operator
-wants. The slot query is bounded (2 s) and non-fatal, so a reboot still goes
-through when RAUC is absent (v1 image, container) or wedged. Honest limit: the
-*other* unconfirmed window — already booted into the new slot, health gate not
-yet run — is not visible in RAUC's `boot-status` (the U-Boot backend reads the
-attempt counter only as exhausted-or-not), so it is not warned about; closing
-it needs the gate to report its confirmation into mosd, which is an image-pipeline
-change and is deferred. The apid power pane does not yet display
-`power.update_warning`; that is apid's half and is deferred with it.
+The safe-to-reboot gate and its bounded audited override remain application
+aware. A candidate pending confirmation is visible directly from native state.
+No wall-clock installation ordering or old slot status is used to infer it.
+[The lifecycle contract](updates.md) specifies fields, commands and limits.
 
 ### 5.5 Verification status
 
-Everything above is verified locally: `bash pkgs/mosd/hack/check.sh` is green
-(203 tests, measured 2026-08-19; the update-orchestration additions were measured
-crate-scoped on 2026-08-23 — `cargo nextest run -p mosd` green, including a
-private-bus test that drives the production RAUC call path against a fake
-`de.pengutronix.rauc` — because a concurrent workstream held the rest of the
-workspace), and both image verifiers assert that the paths,
-prefixes and unit names mosd renders are the ones the image actually ships —
-reading them **out of the mosd source that owns them** rather than restating
-them, because a constant restated in two places drifts and the drift is invisible
-from the code side, where every test passes against a mock.
+Current acceptance includes Rust workspace checks and x64/virt-arm64 complete
+image tests for the native service, component updates, quota enforcement,
+health confirmation and fallback. API acceptance runs against the actual QEMU
+guest. The active delivery task records exact image IDs, outcomes and remaining
+fault cases. Older milestone counts below describe their dated snapshots.
 
 **No behaviour in this document has been observed on hardware.** See the milestone record
 for the separation between what is proven locally and what remains the user's

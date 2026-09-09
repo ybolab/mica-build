@@ -1,6 +1,6 @@
 # Design: Remote Management & API Surface
 
-> English | [中文](../zh/design/remote-management.md)
+> English | [中文](remote-management.md)
 >
 > Who reaches the device, over what, with which trust — as the tree stands
 > today, plus the one requirement stated here and designed nowhere.
@@ -84,72 +84,33 @@ decisions any future design settles first, each constraining the others:
 
 ## 3. Update control flow
 
-**What holds today — [implemented].** Installation is local and mosd owns it:
-`InstallUpdate(bundle_path)` (`docs/design/mosd.md`) hands a bundle already
-on the device to RAUC, against *"the A/B update design this implements"*
-(`docs/design/ro-root.md`). The boot health gate confirms the new slot and
-*"probes systemd, mosd and apid first"* (`docs/design/mosd.md`); an
-unconfirmed slot spends boot credits until *"a slot that cannot complete a boot
-is guaranteed to exhaust its credits"*
-(`docs/design/uboot-ab-handshake.md`) and the bootloader falls back.
+The implemented local path is signed catalog check, missing-object acquisition,
+verified deployment staging, native installation, reboot and health confirmation.
+`mos-deploy` authenticates current contracts and serializes installation with
+collection/reset. mosd exposes the lifecycle over D-Bus; apid and the built-in
+System page show candidate/current/fallback identities and distinct acquisition,
+installation, reboot and confirmation states. There is no old backend or bundle
+path accepted by the native installer.
 
-**The on-device pull now exists — [implemented], and the sentence that stood
-here is retired.** `rauc-update` and `rauc-verify` ship in the image as
-`mos-rauc-update`, verifying against anchors baked in the same image
-(`docs/design/release-signing.md` §3.1), and apid declares
-`/api/v1/update` with `check`, `fetch`, `install`, `mark`, `rollback`,
-`reboot-override` and `clear-suppression` beside it — all session-gated,
-POST-only and audited. The earlier text here said apid declares no update
-route; it does, and the local check/apply surface is those routes.
+The source is an operator setting, seeded from public factory defaults and
+changed through the authenticated API. It names `/v1/manifest.json`; changing a
+source or channel cannot change the metadata anchors embedded in authenticated
+boot policy. Offline `.mosupd` import converges on the same verified workspace.
+The catalog's freshness/replay checks apply to acquisition, not installed offline
+boot. Firmware artifacts have a separate publication and offline maintenance
+flow, outside ordinary OS updates.
 
-**And the device now initiates on its own — [implemented], untested.**
-`policy = "auto"` in `/mos/config/updates.json` makes mosd check, fetch,
-install inside a maintenance window and reboot per `rebootPolicy`
-(`docs/design/updates.md` §3.2). That is the first capability that reboots a
-device with nobody watching, and it carries **no tests**; `updates.md` §6
-says so and what it owes. Nothing about it is a remote trigger: the schedule
-is the device's own and the policy that sets it is local.
+Automatic policy uses the device's configured schedule, maintenance window and
+reboot policy. Reboot gating prevents an unrelated reboot from discarding an
+unsettled update; override is explicit and audited. Native contract, policy and
+API tests exist, with full x64/ARM64 guest evidence recorded in the current
+delivery task. Physical cx3576 watchdog/power-cut evidence remains separate.
+See [updates](updates.md) for exact routes and failure semantics.
 
-**Where the update address comes from — [implemented].** The update server's
-URL is a **default** baked from the build host's `meta/`, overridden per key
-by an authenticated write to `/mos/config/updates.json`
-(`docs/design/updates.md` §2.2). Two consequences for this document. Devices
-can be re-pointed at another server without an image, which is the recovery
-path for a server that moved. And a **reset returns the address to the baked
-default** — tiers 1 and 3 both — so a support case that begins "the device
-stopped updating after a factory reset" has a known cause
-(`docs/design/recovery.md` §2.1).
-
-**And an operator can now set all of it from the console — [implemented].**
-`POST /api/v1/update/config` takes a patch of the operator document under the
-same administrator authority as every other management write, and the
-built-in UI's `AutomaticUpdates` panel drives it (`updates.md` §3.4). Every
-action, automatic or human, lands in one audit ring with an `actor` field
-naming which it was (`updates.md` §3.5).
-
-**What does not exist — [not implemented].** No remote trigger and no fleet
-plane: nothing outside the device can start an update or change its policy,
-because nothing outside the device can reach it (§2). Every route above is
-LAN-inbound to apid, behind §1's credential boundary.
-
-**The constraint on any future trigger.** Whatever triggers an update — a
-policy pull, a remote trigger over section 2's channel, a local one — converges
-on the one update path with its verification, health gate and rollback. A
-trigger is a way *into* that path, never a bypass of it: an endpoint that could
-hand a device an installable payload directly would make compromise of the
-endpoint equal to compromise of every device it reaches. **The automatic path
-is the first test of that rule and it holds**: every step it takes calls the
-function the manual route calls, and the one capability it is denied —
-arming the reboot-gate override — is denied structurally, by not being on the
-driver's interface at all, rather than by a rule somebody has to remember.
-
-**And the same rule constrains what a fleet plane could set.** An address is
-an operating decision and may travel over a management channel; a **trust
-anchor** is not and may not. The operator document has no key for one and
-refuses six anchor-shaped key names outright (`updates.md` §2.3), so a fleet
-plane that could write that document still could not tell a device what to
-trust. That is the credential-domain invariant of §4 applied to the one
-document a fleet plane would most want to reach.
+There is still no outbound fleet-management connection or remote fleet trigger.
+The API is an authenticated inbound management surface. A future fleet channel
+must invoke the same verified deployment policy and cannot bypass signature,
+board, capacity, retained-fallback or reboot checks.
 
 ## 4. Security posture
 
@@ -171,4 +132,4 @@ an independent credential domain; compromise of one grants nothing in another.
 An apid session is not an enrollment credential, an enrollment credential is
 not a root shell, and an endpoint holding a fleet's channel credentials must
 not thereby hold the keys that authorise an image — the update trust anchor is
-already *"a separate key hierarchy"* (`pkgs/rauc-sign/README.md`) and stays one.
+already *"a separate key hierarchy"* (`pkgs/mos-deploy/README.md`) and stays one.

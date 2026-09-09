@@ -67,49 +67,29 @@ Input trees and their relationships:
 
 ## Boot chain
 
-Power-on to mounted root, in order:
+BootROM → vendor DDR/SPL/TF-A stages → pinned MOS U-Boot → required signed FIT
+configuration → kernel and authenticated native init → SYSTEM ext4 → signed
+root/support verity mappings → systemd. The MOS firmware embeds the public boot
+anchor set and fixed C policy; persistent records contain only bounded deployment
+IDs, kernel IDs, generations and attempts. No persistent command import runs.
 
-1. **RK3576 BootROM** (silicon) reads eMMC sector 64. On the recovery key,
-   or when no bootable loader is found, it falls to rockusb/maskrom.
-2. **idbloader** — Rockchip TPL/SPL with the `rkbin` DDR-init blob (input
-   class: source + blobs), written raw at sector 64 inside the GPT `loader`
-   partition.
-3. **TF-A** — `rk3576_bl31_v1.24.elf` (blob), packaged into the U-Boot
-   image.
-4. **U-Boot** — the `uboot-mos` A/B variant: redundant environment pair at
-   the layout's `uenv-a`/`uenv-b` offsets, bootmeth order pinned to script.
-   The assemblers refuse the debug variant.
-5. **boot.scr** — compiled from
-   [boards/cx3576/boot.cmd](../../boards/cx3576/boot.cmd), identical in
-   both boot slots: runs the RAUC `BOOT_ORDER`/`BOOT_x_LEFT` handshake,
-   loads the slot's `mos-verity-<slot>.env`, and boots `Image` +
-   `rk3576-src.dtb` with the `dm-mod.create=` verity table on the command
-   line.
-6. **Kernel dm-init** assembles the verity device from the table (no
-   initramfs; every boot-path option is `=y`) and mounts the squashfs root.
+The watchdog is started before eMMC access. U-Boot validates current GPT geometry,
+chooses a record, writes, flushes and reads back a decremented trial, then loads its
+FIT. Failure to persist refuses launch. Both records exhausted or invalid enters
+local rockusb recovery. Confirmed FIT load failure retires that record before
+restart. Physical reset coverage still requires the bench matrix.
 
-A/B mechanism: RAUC `uboot` backend over the redundant environment;
-contract in
-[docs/design/uboot-ab-handshake.md](../design/uboot-ab-handshake.md).
-
-Verification between stages: BootROM→idbloader and idbloader→U-Boot follow
-Rockchip's unsigned load path (no verification configured); U-Boot does
-**not** verify the kernel/DTB/verity parameters (`CONFIG_FIT_SIGNATURE` is
-configured nowhere in the tree); the kernel verifies the root via dm-verity
-(I1). See Assurance level.
-
-> status: board-dependent — evidence: `boards/cx3576/boot.cmd`
+> status: board-dependent — evidence: `boards/cx3576/bsp/uboot/mos-file-boot.c`, `tests/file-ab-fit/firmware-io.sh`, `tests/file-ab-fit/signatures.sh`
 
 ## Storage media and layout
 
-- **Device:** eMMC, `/dev/mmcblk0` — the whole layout lands on one device
-  node; there is no second medium to select between. The concrete eMMC part
-  (vendor/model) is not recorded in the repository; qualification binds to
-  it once a rig run names it.
-- **Layout:** `LAYOUT_VERSION=2`, GPT, 11 partitions (loader, uenv-a/b,
-  boot-a/b, rootfs-a/b, meta, state, ephemeral, data). The authoritative
-  layout is [boards/cx3576/board.env](../../boards/cx3576/board.env) —
-  offsets are deliberately not restated here.
+eMMC `/dev/mmcblk0`; the concrete part remains a required bench measurement.
+Current `LAYOUT_VERSION=3` has FIRMWARE, SYSTEM and DATA. The authoritative
+geometry is [board.env](../../boards/cx3576/board.env). FIRMWARE covers the loader
+and two bounded record copies. Firmware maintenance preserves both copies.
+SYSTEM holds immutable component files and signed deployments. DATA is last,
+grows alone, and backs selected persistent leaves while `/var` stays read-only.
+The current image growth test compares every FIRMWARE and SYSTEM byte.
 
 ## Console
 
@@ -152,59 +132,24 @@ configured nowhere in the tree); the kernel verifies the root via dm-verity
 
 ## Recovery method
 
-- **Recovery key → rockusb:** the adc-keys recovery button (saradc ch1,
-  appended to the U-Boot device tree in the BSP build) drops the board into
-  rockusb loader mode. Needs a working loader; survives a corrupt
-  environment and a dead rootfs.
-- **Boot failure → rockusb fallback:** when no boot target succeeds, U-Boot
-  falls back to rockusb rather than hanging.
-- **Maskrom:** with the loader area unbootable, the BootROM presents
-  maskrom over USB; `rkdeveloptool` (driven by the BSP Makefile's flash
-  targets) reflashes from a blank device. This is the path of last resort
-  and the factory flash path.
-- **Rescue SD:** boot device order is eMMC first, SD second (deviation D-1)
-  — a rescue SD boots when the eMMC is unbootable but cannot override an
-  eMMC that boots.
-- **Power-cut during update:** by the A/B design, an interrupted install
-  leaves the previous slot bootable and the order unflipped — claimed by
-  the handshake contract, and proven only by qualification row 4, which is
-  `not tested` below.
+The local recovery button enters rockusb before loading SYSTEM. Invalid or
+exhausted deployment records also enter rockusb. Maskrom is the BootROM recovery
+transport when the loader cannot run. Use the BSP's complete-image flash target;
+it checks current GPT/loader geometry before USB writes and verifies all written
+image bytes before device reset. Physical execution remains pending.
 
-> status: board-dependent — evidence: `boards/cx3576/bsp/Makefile`
+`BOARD_RECOVERY_ACTIONS` is empty: the loader button does not create an OS
+physical-presence assertion. Credential recovery and full-factory reset remain
+refused through that gate. Authenticated diagnostics, guarded deployment rollback,
+configuration reset and application reset exist above the loader. They preserve
+the current directory-scoped retention contract, not separate state partitions.
 
-**Install entry.** The same rockusb transport is the installation path:
-[../user/install.md](../user/install.md) section 5 is the operator
-procedure, and section 3 of that page states what the write destroys. No
-row below records an installation performed on a unit.
+A complete reflash replaces device identity and user data. Secure erase has no
+qualified eMMC primitive. An SD rescue boot override is not claimed by the fixed
+MOS eMMC policy. See [installation](../user/install.md) and
+[recovery](../user/recovery.md).
 
-**Software recovery, above the loader.** The operator ordering — read-only
-diagnosis, guarded rollback, configuration reset, application-data reset,
-credential recovery, full factory reset, reflash — is
-[../user/recovery.md](../user/recovery.md). Two of those steps do not reach
-this board:
-
-- **Physical-presence entry: none on this board.** The board declares
-  `BOARD_RECOVERY_ACTIONS` empty in [../../boards/cx3576/board.env](../../boards/cx3576/board.env):
-  it has no implemented physical recovery action, so credential recovery and
-  the full factory reset are refused on a fielded unit, saying so. Declaring
-  one is BSP work — a U-Boot menu entry appending `mos.recovery=` is the shape
-  it would most likely take. The DEBUG console on `ttyFIQ0` is not a product
-  surface and may not be declared as a recovery channel.
-- **The recovery button is not a presence assertion.** It is a *loader*
-  entry (`PREBOOT` → rockusb) and no software recovery flow reads it.
-
-**Secure wipe: not available.** No device-level erase primitive has been
-evidenced on this board's eMMC, so a unit leaving the operator's control
-needs the medium destroyed rather than reflashed.
-
-> status: unsupported
-
-The rungs that do reach this board — read-only diagnosis, the guarded
-rollback, and the configuration and application-data resets — are implemented
-and reachable with an authenticated session; none of them has been run on a
-unit, which is what the Recovery row below records.
-
-> status: shipped — evidence: `docs/design/recovery.md`, `pkgs/mosd/mosd/src/reset.rs`
+> status: board-dependent — evidence: `boards/cx3576/bsp/Makefile`, `boards/cx3576/bsp/scripts/verify-flash.py`, `pkgs/mosd/mosd/src/reset.rs`
 
 ## Artifact digests
 
@@ -222,64 +167,34 @@ Provenance carry the versions).
 **Not on file:** standalone sha256 digests of the accepted `rkbin` blobs
 and of the vendor MiniLoader, as [intake.md](intake.md) section 5 requires
 for binary inputs — recorded as a Known limitation. Per-release image and
-bundle digests live in the release's own signed metadata, not in this
+component digests live in the release's own signed metadata, not in this
 dossier.
 
 ## Known limitations
 
-- **No verified boot above the root** — `CONFIG_FIT_SIGNATURE` is
-  configured nowhere in the tree; kernel, DTB and verity parameters are
-  unauthenticated at boot (caps the ladder at I1/I2; see Assurance level).
-- **Reduced auditability, pre-U-Boot** — DDR init and TF-A are vendor
-  blobs; the boot chain's first mutable stages are not source-auditable,
-  and any future I3/I4 claim must name them.
-- **Blob digests not pinned in this dossier** — see Artifact digests.
-- **Dual Wi-Fi SKU not distinguished at build** — an AP6275S board flashed
-  with this image has no working Wi-Fi firmware; claims apply to the
-  AIC8800D80 SKU only.
-- **Boot-attempt values must stay in 1..9** — RAUC writes the counters in
-  hex and U-Boot parses decimal; the radices agree only there.
-- **`boot_targets` can override the pinned boot order** on the A/B variant
-  (persistent environment); mitigated per boot by the `BOOTCOMMAND` clear,
-  which the U-Boot build asserts in both stages — recorded in the sync
-  record's D-1 mechanism note.
-- **Concrete eMMC part and RTC presence unrecorded** — both must be named
-  by the first qualification run.
+- Physical boot, eMMC power cuts, watchdog handoff/reset cause, full USB flash,
+  RTC and peripheral qualification require a named local bench device.
+- DDR init and TF-A are vendor blobs. Software FIT enforcement does not prove
+  hardware authentication of the first mutable boot stages or a closed debug path.
+- The accepted radio package targets AIC8800D80; the AP6275S SKU is not qualified.
+- The exact eMMC part and board revision must be recorded with physical evidence.
+- Development boot/content/metadata keys are separate test inputs. No OTP/fuse
+  change or production key ceremony is claimed.
 
 ## Assurance level
 
-Per [assurance.md](assurance.md), for CX3576-Z as shipped from this tree:
+The current implementation authenticates FIT configuration and enforces
+kernel-verified root/support hash signatures. Native installation authenticates
+release metadata and content before publication. Firmware maintenance is a
+separate signed/read-back workflow. These mechanisms have software and sandbox
+proof, including missing/wrong/tampered key refusal, dirty SYSTEM reads and
+write/flush/readback failures before FIT load.
 
-- **I1 — verity-protected root: met.** Squashfs + dm-verity root, verity
-  table composed by the boot script, boot-path kernel options asserted
-  `=y` at build.
+This is development-grade software evidence. Physical cx3576 enforcement,
+power-loss recovery and watchdog coverage are pending. Hardware-rooted boot,
+closed debug interfaces and production enrollment are not claimed.
 
-> status: shipped — evidence: `rootfs/build.sh`
-
-- **I2 — authenticated normal system update: mechanism in place, not a
-  production claim.** RAUC verifies bundle signatures against the keyring
-  in the signed root, TUF metadata pins releases, and the device-side client
-  that walks that metadata ships in the image.
-
-> status: shipped — evidence: `build/src/bundle.ts`, `docs/design/updates.md`
-
-  What is missing on this board is operational, not mechanical: production
-  key custody is a runbook nobody has performed, so with development keys
-  this is a tested mechanism only.
-
-> status: unsupported
-
-- **I3 — authenticated kernel/FIT, DTB and verity parameters: not met.**
-  No FIT signature configuration exists in the tree, and no board boot key
-  lifecycle exists to sign one with.
-
-> status: unsupported
-
-- **I4 — hardware-rooted boot plus production debug policy: not met.** No
-  fusing performed or configured; rockusb/maskrom debug paths are open (a
-  bring-up feature, a production decision not yet made).
-
-> status: unsupported
+> status: board-dependent — evidence: `boards/cx3576/evidence.json`, `tests/file-ab-fit`, `docs/task/20260908-2229-file-ab-delivery-x64-first.md`
 
 ## Qualification results
 
@@ -288,7 +203,7 @@ at `/dev/mmcblk0`, concrete part not yet named; radio module: AIC8800D80;
 BSP version: upstream sync `5e2b1c3` plus this repository's tree.
 
 No hardware run is on file: this dossier was filled from the repository by
-a documentation change that cannot flash hardware, so every
+the current software acceptance run without an attached bench interface, so every
 hardware-dependent row is `not tested`. Off-hardware gates that do exist
 are noted as evidence about their own surface, never as a hardware `pass`.
 
@@ -296,7 +211,7 @@ are noted as evidence about their own surface, never as a hardware `pass`.
 |---|---|---|---|
 | Cold boot | not tested | — | needs bench hardware |
 | Warm boot | not tested | — | needs bench hardware |
-| A/B switch and update | not tested | — | needs bench hardware; the handshake script logic has an off-hardware suite (`make os-uboot-handshake-test`), which is evidence about the script, not about this row |
+| A/B switch and update | not tested | — | needs bench hardware; native record parsing and firmware IO have an off-hardware suite (`make os-fit-records-test`), not a physical result |
 | Power-cut during update | not tested | — | needs the power-cut rig |
 | Storage growth/health | not tested | — | needs bench hardware; repart growth logic has a host-side test (`make os-repart-test`), same caveat |
 | Network/radio | not tested | — | needs bench hardware with the AIC8800D80 SKU |

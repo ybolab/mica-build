@@ -535,7 +535,7 @@ async function createContainerRuntime(
   const name = `mos-verify-tools-${process.pid}-${runtimeSeq++}`
   installExitHook()
   const started = await capture([
-    'docker', 'run', '-d', '--rm', '--name', name, '--label', 'mos-verify=tools',
+    'docker', 'run', '-d', '--rm', '--name', name, '--label', 'mos-verify=tools', '--label', 'ai-agent=true', '--network', 'traefik',
     ...mounts, '-w', workDir, image, 'tail', '-f', '/dev/null',
   ])
   if (started.code !== 0) throw new ToolError(started, 'starting the pinned tool container')

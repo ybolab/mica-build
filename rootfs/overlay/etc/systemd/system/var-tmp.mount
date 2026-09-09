@@ -1,0 +1,16 @@
+[Unit]
+Description=Writable /var/tmp on DATA
+DefaultDependencies=no
+Requires=mos-data-layout.service
+After=mos-data-layout.service
+Before=systemd-tmpfiles-setup.service local-fs.target shutdown.target
+Conflicts=shutdown.target
+
+[Mount]
+What=/mnt/data/tmp
+Where=/var/tmp
+Type=none
+Options=bind,nosuid,nodev
+
+[Install]
+WantedBy=local-fs.target

@@ -1,66 +1,35 @@
-# 发布版标识与发布说明政策
+# 发布标识与发布说明
 
-本页定义 mos 发布版如何命名、哪些产物携带其身份、以及发布说明中的事实
-允许来自哪里。它不包含发布历史：**还没有发布过任何公开的 mos 发布版**，
-本文档集不会捏造一个。
+用已认证部署 ID、代次、板卡、kernel 组件 ID 和 root 组件 ID 识别运行系统。
+`mos-deploy status` 和更新 API 提供这些关联；文件名或时间戳不能单独标识内容。
 
-## 1. 今天如何标识一个发布版
+## 1. 产物身份
 
-构建把身份盖进产物，而不是写进手工维护的 changelog：
+签名部署信封绑定确切 kernel/root 组合以及产物大小和摘要。root/support 根哈希具有
+内核可验证的独立签名，kernel 包携带匹配模块和启动策略。固件有独立签名身份和维护
+回执。镜像还带 `/usr/share/mos/manifest.tsv` 和不可变构建标识。
+开发构建的 dirty 标记保持可见，它不能证明干净源码提交可重现这些字节。
 
-- **磁盘镜像**命名为 `<board>-mos-<epoch>.img`；epoch 是构建的时间戳
-  身份，`<board>-mos-latest.img` 指向最新的那个。
-- **更新 bundle** 携带发布负责人在构建时传入的版本字符串
-  （`bash build/run.sh --bundle 1.2.3`）。
-- **rootfs 身份**是它的 dm-verity 根哈希：打包是确定性的，所以哈希是
-  发布内容的纯函数，同一棵树的两次构建产生相同的哈希。它记录在产物旁的
-  `rootfs-verity.env` 里，并在 bundle 发布时被 TUF 元数据再次固定。
-- **软件包清单**随镜像发布于 `/usr/share/mos/manifest.tsv`：每个已安装
-  软件包、其版本，以及包池构建自的源码树 git 标记。来自未提交源码树的
-  构建被标记为 `.dirty` 并被后续步骤拒绝，因此发布出去的身份总是指向
-  一个真实的 commit。
+> status: shipped — evidence: `build/src/components.ts`, `pkgs/mos-deploy/src/deployments.rs`, `rootfs/compose/90-pack.Dockerfile`
 
-一个支持工单引用 bundle 版本、verity 根哈希和清单的 git 标记；三者合起来
-无歧义地标识一个发布版。
+## 2. 发布说明需要记录的事实
 
-> status: shipped — evidence: `docs/design/build.md`, `rootfs/compose/90-pack.Dockerfile`, `docs/design/ro-root.md`
+从产物记录目标、profile、部署 ID、组件变化、源码身份及软件包差异，明确写出信任
+锚、启动策略、访问默认值和持久化策略变化。验证结果与限制绑定到确切测试镜像。
+只改 root 的发布必须标识未变的 kernel/support，只改 kernel 的发布必须标识未变的
+root。回退部署共享 DATA，不撤销应用数据。当前契约为 `dataPolicy: unchanged`，
+没有破坏性迁移路径。
 
-## 2. 发布说明中的事实来自哪里
+> status: shipped — evidence: `docs/user/doc-contract.md`, `build/src/components.ts`, `docs/design/updates.md`
 
-对任何发布发布版的人都有约束力的政策：
+## 3. 发布状态
 
-- **事实来自产物。**版本、板卡与 profile 兼容性、摘要和软件包增量来自
-  构建输出和清单——绝不手工重打，因为手抄的摘要就是无人复核过的摘要。
-- **能力声明遵循文档契约。**发布说明只以与本文档集相同的证据纪律声明
-  已发布行为（[doc-contract.md](doc-contract.md)）；路线图条目要么如实
-  标注，要么省略。
-- **安全相关的变更要点名。**改变了信任链、访问模型或默认值的发布版，
-  不得被概括为"杂项修复"。
-- **不捏造发布历史。**没有已发布版本这一事实，就照实陈述为没有。
+服务器向指定渠道发布已认证组件并支持撤回。目录有效期约束获取过程，已安装的
+认证部署仍可离线启动。渠道发布不能替代板卡验收或产品支持承诺。
 
-> status: shipped — evidence: `docs/user/doc-contract.md`
+> status: shipped — evidence: `update-server/src`, `pkgs/mos-deploy/src/acquisition.rs`
 
-## 3. 渠道、清单与门禁发布
-
-发布目录里的 `manifest.json` 如今就是本页散文所服从的机器可读来源。它把发布
-版本、渠道（`development`、`candidate` 或 `stable`）、板卡与其 profile、完整
-的源码 commit 及构建时工作树是否有未提交改动、构建器镜像的固定版本、从板卡
-证据文件读出的启动保障等级，以及每个产物的文件名、角色、大小与 sha256 绑在
-一起。其中没有一个数字是手打的：每个数值要么是对着暂存文件量出来的，要么是
-从盖这个戳的机制里读出来的，工具链也没有任何开关能覆盖一次测量。
-
-发布门禁会从零重新检查一个已组装的发布目录，并逐项点名拒绝——缺少某个角色的
-产物、大小或摘要变了的文件、与清单不一致的 `SHA256SUMS`、**空的发布说明**、
-没有任何组件的 SBOM、缺失或不一致的板卡证据。它没有豁免开关，而且每一条拒绝
-都由工具自己的变异测试证明会真的变红。因此，没有发布说明就不成其为一次发布。
-
-官方站点的下载简报是
-[../../website/downloads.md](../../website/downloads.md)。
-
-> status: shipped — evidence: `docs/design/release-artifacts.md`, `make os-release-gate`
-
-**晋级仍然不是一件已存在的事。**渠道是记录在清单里的一个声明，不是一个地方：
-没有任何东西托管发布版，没有任何东西把一个发布版从 `candidate` 挪到
-`stable`，也没有任何机制把支持窗口或生命周期终止日期绑定到某个发布版上。
+本页不承诺公开发布历史、支持期限或停服政策。当前源码构建路径见[获取镜像](download.md)，
+交付记录见[发布产物](../../design/release-artifacts.md)。
 
 > status: unsupported

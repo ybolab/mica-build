@@ -8,7 +8,6 @@
       "url": "https://snapshot.debian.org/archive/debian/20260905T000000Z/pool/main/a/adduser/adduser_3.152_all.deb",
       "consumers": [
         "mos-bluetooth",
-        "mos-rauc",
         "mos-system",
         "mos-wifi",
         "mosd"
@@ -21,7 +20,6 @@
       "url": "https://snapshot.debian.org/archive/debian/20260905T000000Z/pool/main/a/adduser/adduser_3.152_all.deb",
       "consumers": [
         "mos-bluetooth",
-        "mos-rauc",
         "mos-system",
         "mos-wifi",
         "mosd"

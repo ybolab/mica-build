@@ -100,7 +100,7 @@ function artifact(value: unknown, maximum = Number.MAX_SAFE_INTEGER): void {
   text(a.sha256, HEX)
 }
 
-function verityImage(value: unknown): void {
+export function validateVerityImage(value: unknown): void {
   const v = object(value, ['image', 'rootHash', 'signature', 'verity'])
   artifact(v.image)
   artifact(v.signature, 65536)
@@ -144,8 +144,8 @@ export function parseDeployment(payload: string): Deployment {
   const boot = object(k.boot, ['format', 'artifact'])
   requireValue(boot.format === (d.board === 'x64' || d.board === 'virt-arm64' ? 'uki' : 'fit'), 'wrong boot format')
   artifact(boot.artifact)
-  verityImage(k.support)
-  verityImage(r.content)
+  validateVerityImage(k.support)
+  validateVerityImage(r.content)
   requireValue(componentId(k) === k.id && componentId(r) === r.id, 'component identity mismatch')
   return raw as Deployment
 }
@@ -157,9 +157,9 @@ function base64(value: unknown, length?: number): Buffer {
   return bytes
 }
 
-/** Verify the existing server envelope, then bind it to authenticated UKI/FIT inputs. */
-export function verifyDeployment(bytes: string, publicKeys: readonly string[], running: BootIdentity): Deployment {
-  requireValue(Buffer.byteLength(bytes) <= MAX_ENVELOPE_BYTES, 'envelope too large')
+/** Authenticate the bounded envelope before parsing its component schema. */
+export function authenticatePayload(bytes: string, publicKeys: readonly string[], limit = MAX_DEPLOYMENT_BYTES): string {
+  requireValue(Buffer.byteLength(bytes) <= Math.max(MAX_ENVELOPE_BYTES, Math.floor(limit * 4 / 3) + 1024), 'envelope too large')
   const raw: unknown = JSON.parse(bytes)
   const e = object(raw, ['schema', 'keyId', 'payload', 'signature'])
   requireValue(JSON.stringify({ schema: e.schema, keyId: e.keyId, payload: e.payload, signature: e.signature }) === bytes, 'noncanonical or duplicate envelope fields')
@@ -170,12 +170,21 @@ export function verifyDeployment(bytes: string, publicKeys: readonly string[], r
   const key = keys.find(key => sha256(key) === e.keyId)
   requireValue(key, 'untrusted metadata key')
   const payload = base64(e.payload)
-  requireValue(payload.length <= MAX_DEPLOYMENT_BYTES, 'deployment too large')
+  requireValue(payload.length <= limit, 'payload too large')
   const signature = base64(e.signature, 64)
   const publicKey = createPublicKey({ key: { kty: 'OKP', crv: 'Ed25519', x: key.toString('base64url') }, format: 'jwk' })
   requireValue(verify(null, payload, publicKey, signature), 'metadata signature rejected')
-  const decoded = new TextDecoder('utf-8', { fatal: true }).decode(payload)
-  const d = parseDeployment(decoded)
+  return new TextDecoder('utf-8', { fatal: true }).decode(payload)
+}
+
+/** Authenticate a descriptor before publication or component acquisition. */
+export function authenticateDeployment(bytes: string, publicKeys: readonly string[]): Deployment {
+  return parseDeployment(authenticatePayload(bytes, publicKeys))
+}
+
+/** Bind authenticated metadata to the running UKI/FIT inputs. */
+export function verifyDeployment(bytes: string, publicKeys: readonly string[], running: BootIdentity): Deployment {
+  const d = authenticateDeployment(bytes, publicKeys)
   requireValue(d.board === running.board && d.arch === running.arch && d.kernel.buildId === running.kernelBuildId
     && d.kernel.release === running.kernelRelease && componentId(d.kernel.support) === running.supportId, 'running kernel/support mismatch')
   return d

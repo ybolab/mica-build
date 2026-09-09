@@ -14,7 +14,7 @@
 # The two sources, in the preference order docs/design/access.md section 7
 # gives:
 #
-#   boot  -- the FAT boot slot partitions, by GPT partition label. Physical
+#   boot  -- the UEFI ESP, by its current GPT partition label. Physical
 #            possession of the boot medium already implies full control of the
 #            device, so a document written there with any card reader is the
 #            most authoritative one available.
@@ -36,10 +36,8 @@ set -eu
 
 STAGING_ROOT=${MOS_PROVISIONING_ROOT:-/run/mos/provisioning}
 DOCUMENT=mos-provisioning.toml
-# Both boards label their FAT boot slots this way (boards/*/board.env
-# BOOT_A_LABEL / BOOT_B_LABEL), so one list covers the fleet. Tried in order;
-# the first that carries a document wins.
-BOOT_PARTLABELS="boot-a boot-b"
+# UEFI boards expose one ESP. cx3576 has raw firmware and uses removable media.
+BOOT_PARTLABEL=esp
 # noexec/nosuid/nodev because the medium is operator-supplied and mos never
 # runs anything off it; ro because nothing here may write to it.
 MOUNT_OPTIONS="ro,nosuid,nodev,noexec"
@@ -97,12 +95,9 @@ try_source() {
 
 staged=
 
-for label in $BOOT_PARTLABELS; do
-    if try_source boot "/dev/disk/by-partlabel/${label}"; then
-        staged=boot
-        break
-    fi
-done
+if try_source boot "/dev/disk/by-partlabel/${BOOT_PARTLABEL}"; then
+    staged=boot
+fi
 
 # Removable media, only when the boot medium carried nothing. `removable` is
 # the kernel's own answer, so the internal eMMC or NVMe this device boots from

@@ -1,5 +1,5 @@
 [Unit]
-Description=Quadlet unit directory on the STATE partition
+Description=Quadlet unit directory on DATA/state
 # An integrator installs a container application by dropping a
 # .container (or .network, .volume, .pod) file where Quadlet reads it, and
 # systemd's generator turns it into a service.
@@ -26,12 +26,12 @@ Description=Quadlet unit directory on the STATE partition
 # immutable, units the operator installs are theirs.
 Requires=mos-seed-state.service
 After=mos-seed-state.service
-RequiresMountsFor=/mnt/state
+RequiresMountsFor=/mnt/data/state
 
 [Mount]
 # Named for what it holds rather than mirroring the target path, on the same
 # reasoning as usr-local-lib-systemd-system.mount.
-What=/mnt/state/quadlet
+What=/mnt/data/state/quadlet
 Where=/etc/containers/systemd
 Type=none
 Options=bind

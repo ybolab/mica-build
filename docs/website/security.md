@@ -21,65 +21,36 @@
 
 ### What is verified today
 
-**Runtime root integrity.** The root filesystem is a squashfs under a
-dm-verity hash tree; the root hash rides the kernel command line and every
-block is verified at read time. A modified root does not run.
+The kernel requires signed verity hashes for root and matching support data and
+verifies blocks on demand. Native deployment metadata binds the exact board,
+kernel and root association. UEFI Secure Boot or required FIT signatures protect
+boot executables under the selected enforcing firmware and public anchors.
 
-> status: shipped — evidence: `rootfs/build.sh`, `docs/design/ro-root.md`
+> status: shipped — evidence: `pkgs/mos-deploy/src/bin/mos-init.rs`, `docs/design/release-signing.md`
 
-**Update authenticity, two chains.** A release is signed twice by two
-unrelated hierarchies: TUF metadata (four ed25519 roles, root key offline)
-pins the bundle's digest, length and verity root hash, and the RAUC bundle
-carries a CMS signature verified against the device keyring at install time.
-Compromise of either chain alone is contained by the other. The signing and
-verification tooling and the production key ceremony runbook exist today.
+Updates authenticate catalogs and component bytes, persist candidates before
+selection, and retain a known authenticated fallback. Boot, content and metadata
+keys are independent. Root/kernel updates leave loader firmware untouched; its
+signed maintenance flow has separate recovery and readback.
 
-> status: shipped — evidence: `pkgs/rauc-sign/`, `docs/design/release-signing.md`
+> status: shipped — evidence: `pkgs/mos-deploy/src/deployments.rs`, `pkgs/mos-deploy/src/acquisition.rs`, `build/src/firmware-maintenance.ts`
 
-**Management access.** The HTTPS API authenticates with an argon2id password
-hash, keeps persistent login-backoff counters and an audit ring. SSH ships
-off by default; persistent access is by public key. The `prod` profile lives
-inside the verity root and cannot be edited into a `dev` one. **That is not a
-shell-free image:** prod carries OpenSSH and an emergency BusyBox binary, both
-inert until an administrator enables SSH, and a `sealed` build where the absence
-of a shell is part of the signed image identity is not implemented and not
-planned.
+HTTPS management authenticates administrator sessions and bearer tokens, protects
+browser writes with CSRF checks, and keeps login backoff/audit state. SSH is off
+by default. The verified userspace profile does not imply a shell-free image.
 
 > status: shipped — evidence: `docs/design/access.md`, `rootfs/packages-src/profile`
 
-### Recorded gaps
+### Evidence limits
 
-The design record keeps its gaps on the same page as its mechanisms, and this
-site does the same:
+Current acceptance uses explicit development keys and disposable UEFI enrollment.
+QEMU proves the common runtime/update path; sandbox/FIT tests prove their named
+software mechanisms. Physical cx3576 watchdog, eMMC power-loss and USB flash
+qualification still need the local bench. No hardware-rooted or fused boot claim
+is made. DATA is unencrypted; privileged workloads can modify allowed persistent
+state. There is no old-layout compatibility or migration path.
 
-- **No verified boot below the kernel.** Nothing in the build signs SPL or
-  U-Boot; the chain starts at the verity root hash, not at the boot ROM.
-
-> status: shipped — evidence: `docs/design/uboot-ab-handshake.md`
-
-- **No production keyring ships in the image.** The device-side RAUC trust
-  anchor and the TUF root anchor reach production devices through a
-  provisioning channel that is designed but not fielded; a build without
-  production material generates a loudly-marked development root that the
-  image verifier refuses to pass silently.
-
-> status: shipped — evidence: `pkgs/rauc/system.conf.in`, `docs/design/release-signing.md`
-
-- **The device-side update client ships with its trust anchor.** A device
-  discovers, downloads with resume, verifies and installs an update on its
-  own, and refuses anything the signed metadata does not cover. The keys that
-  walk authenticates from are baked into the same image and neither device
-  binary accepts a root-file argument, so the anchor cannot be substituted —
-  and cannot outlive a compromise of the image signing path either. What the
-  online path still needs is a server to point at: an image built with no
-  update source configured checks nothing until an operator sets one.
-
-> status: shipped — evidence: `docs/design/updates.md`, `pkgs/rauc-sign/`
-
-- **Data at rest is not encrypted**, and rootful container integrators can
-  grant themselves broad privilege; neither is currently constrained.
-
-> status: unsupported
+> status: board-dependent — evidence: `docs/design/security-model.md`, `docs/bsp/cx3576-example.md`
 
 ### Advisories and reporting
 

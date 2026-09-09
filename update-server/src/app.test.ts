@@ -6,6 +6,7 @@ import { mkdtemp, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createService } from './app'
+import { artifact, deployment, image, small } from './component-fixture'
 import { parseConfig } from './config'
 import { catalogs, sessions } from './db/schema'
 
@@ -16,7 +17,7 @@ let service: Awaited<ReturnType<typeof createService>>
 
 beforeEach(async () => {
   directory = await mkdtemp(join(tmpdir(), 'mos-updates-test-'))
-  service = await createService(parseConfig({ ADMIN_TOKEN: adminToken, DATA_DIR: directory, PUBLIC_URL: origin, MAX_UPLOAD_BYTES: '1024', LOG_LEVEL: 'silent' }))
+  service = await createService(parseConfig({ ADMIN_TOKEN: adminToken, DATA_DIR: directory, PUBLIC_URL: origin, MAX_UPLOAD_BYTES: '16384', LOG_LEVEL: 'silent' }))
 })
 afterEach(async () => {
   service?.close()
@@ -36,45 +37,30 @@ test('administrative operations require authentication', async () => {
   expect((await request('/api/releases', 'POST', {}, false)).status).toBe(401)
 })
 
-test('a draft becomes discoverable only after upload and publication', async () => {
-  const created = await request('/api/releases', 'POST', { board: 'cx3576', channel: 'stable', version: '0.1.0', epoch: 1, notes: 'First release' })
-  expect(created.status).toBe(201)
-  const release = await created.json()
-  expect((await request(`/api/releases/${release.id}/publish`, 'POST')).status).toBe(409)
-  const upload = await service.app.request(`${origin}/api/releases/${release.id}/artifact`, {
-    method: 'PUT',
-    headers: { 'Authorization': `Bearer ${adminToken}`, 'Content-Type': 'application/octet-stream' },
-    body: 'test-rauc-bundle',
-  })
-  expect(upload.status).toBe(200)
-  expect((await request(`/v1/artifacts/${release.id}`, 'GET', undefined, false)).status).toBe(404)
-  expect((await request(`/api/releases/${release.id}/publish`, 'POST')).status).toBe(200)
-  const envelope = await (await request('/v1/manifest.json', 'GET', undefined, false)).json()
-  const payload = JSON.parse(Buffer.from(envelope.payload, 'base64').toString())
-  expect(payload.releases).toHaveLength(1)
-  expect(payload.releases[0].epoch).toBe(1)
-  const download = await request(`/v1/artifacts/${release.id}`, 'GET', undefined, false)
-  expect(download.status).toBe(200)
-  expect(await download.text()).toBe('test-rauc-bundle')
-  expect((await request(`/api/releases/${release.id}/withdraw`, 'POST')).status).toBe(200)
-  expect((await request(`/v1/artifacts/${release.id}`, 'GET', undefined, false)).status).toBe(404)
-})
-
-async function draft(epoch = 1, board = 'cx3576', channel = 'stable'): Promise<Release> {
-  const response = await request('/api/releases', 'POST', { board, channel, version: `0.${epoch}.0`, epoch })
+function releaseInput(generation = 1, board = 'x64', channel = 'stable') {
+  return { channel, deployment: JSON.stringify(service.service.signer.sign(deployment(generation, board))) }
+}
+async function draft(generation = 1, board = 'x64', channel = 'stable'): Promise<Release> {
+  const response = await request('/api/releases', 'POST', releaseInput(generation, board, channel))
   expect(response.status).toBe(201)
   return response.json()
 }
-function upload(id: string, body: BodyInit | null = '0123456789', headers: Record<string, string> = {}) {
-  return service.app.request(`${origin}/api/releases/${id}/artifact`, {
+function upload(id: string, body: BodyInit | null = new Uint8Array(small), headers: Record<string, string> = {}, digest = artifact(small).sha256) {
+  return service.app.request(`${origin}/api/releases/${id}/objects/${digest}`, {
     method: 'PUT',
     headers: { 'Authorization': `Bearer ${adminToken}`, 'Content-Type': 'application/octet-stream', ...headers },
     body,
   })
 }
-async function published(epoch = 1, board = 'cx3576', channel = 'stable') {
-  const release = await draft(epoch, board, channel)
-  expect((await upload(release.id)).status).toBe(200)
+async function uploadAll(id: string) {
+  for (const bytes of [small, image]) {
+    if (!service.service.view(service.service.get(id)).objects.find(object => object.sha256 === artifact(bytes).sha256)?.available)
+      expect((await upload(id, new Uint8Array(bytes), {}, artifact(bytes).sha256)).status).toBe(200)
+  }
+}
+async function published(generation = 1, board = 'x64', channel = 'stable') {
+  const release = await draft(generation, board, channel)
+  await uploadAll(release.id)
   expect((await request(`/api/releases/${release.id}/publish`, 'POST')).status).toBe(200)
   return release
 }
@@ -87,9 +73,9 @@ test('catalog signatures bind the exact payload, release identity and download d
   const payload = Buffer.from(envelope.payload, 'base64')
   expect(verify(null, payload, key, Buffer.from(envelope.signature, 'base64'))).toBe(true)
   const document = JSON.parse(payload.toString())
-  expect(document.schema).toBe('mos/updates/v1')
-  expect(document.releases[0].artifact.sha256).toBe('84d89877f0d4041efb6bf91a16f0248f2fd573e6af05c19f96bedb9f882f7882')
-  document.releases[0].board = 'x64'
+  expect(document.schema).toBe('mos/catalog/v1')
+  expect(document.releases[0].objects.find((object: { bytes: number }) => object.bytes === 10).sha256).toBe('84d89877f0d4041efb6bf91a16f0248f2fd573e6af05c19f96bedb9f882f7882')
+  document.releases[0].deployment = 'tampered'
   expect(verify(null, Buffer.from(JSON.stringify(document)), key, Buffer.from(envelope.signature, 'base64'))).toBe(false)
   expect(envelope.keyId).toBe(status.signing.keyId)
 })
@@ -107,44 +93,46 @@ test('catalog reads never renew metadata, including after expiry and restart', a
   expect((await (await request('/api/status')).json()).expired).toBe(false)
 })
 
-test('higher epochs become channel heads without crossing board or channel boundaries', async () => {
-  const first = await published(1)
-  const second = await published(2)
+test('higher generations become channel heads without crossing board or channel boundaries', async () => {
+  const first = await published(1, 'cx3576')
+  const second = await published(2, 'cx3576')
   const beta = await published(1, 'cx3576', 'beta')
   const x64 = await published(1, 'x64')
   const decode = async () => JSON.parse(Buffer.from((await (await request('/v1/manifest.json')).json()).payload, 'base64').toString())
   expect((await decode()).channels).toEqual(expect.arrayContaining([
-    { board: 'cx3576', channel: 'stable', releaseId: second.id, epoch: 2 },
-    { board: 'cx3576', channel: 'beta', releaseId: beta.id, epoch: 1 },
-    { board: 'x64', channel: 'stable', releaseId: x64.id, epoch: 1 },
+    { board: 'cx3576', channel: 'stable', releaseId: second.id, generation: 2 },
+    { board: 'cx3576', channel: 'beta', releaseId: beta.id, generation: 1 },
+    { board: 'x64', channel: 'stable', releaseId: x64.id, generation: 1 },
   ]))
   await request(`/api/releases/${second.id}/withdraw`, 'POST')
-  expect((await decode()).channels).toContainEqual({ board: 'cx3576', channel: 'stable', releaseId: first.id, epoch: 1 })
+  expect((await decode()).channels).toContainEqual({ board: 'cx3576', channel: 'stable', releaseId: first.id, generation: 1 })
   expect((await request(`/api/releases/${second.id}/publish`, 'POST')).status).toBe(409)
 })
 
-test('withdrawal does not reset the highest published epoch', async () => {
+test('withdrawal does not reset the highest published generation', async () => {
   const higher = await published(10)
   await request(`/api/releases/${higher.id}/withdraw`, 'POST')
   const lower = await draft(9)
-  await upload(lower.id)
+  await uploadAll(lower.id)
   const response = await request(`/api/releases/${lower.id}/publish`, 'POST')
   expect(response.status).toBe(409)
-  expect((await response.json()).error.code).toBe('epoch_not_increasing')
+  expect((await response.json()).error.code).toBe('generation_not_increasing')
 })
 
-test('duplicate epochs, unknown fields and invalid release identities are rejected', async () => {
+test('duplicate generations, unknown fields and invalid release identities are rejected', async () => {
   await draft()
-  expect((await request('/api/releases', 'POST', { board: 'cx3576', channel: 'stable', version: '1.0', epoch: 1 })).status).toBe(409)
-  for (const extra of [{ epoch: 0 }, { epoch: 1.5 }, { epoch: Number.MAX_SAFE_INTEGER + 1 }, { board: '../x64' }, { channel: 'unknown' }, { version: '<script>' }, { admin: true }, { notes: 'x'.repeat(10001) }]) {
-    const response = await request('/api/releases', 'POST', { board: 'cx3576', channel: 'stable', version: '1.0', epoch: 2, ...extra })
-    expect(response.status).toBe(400)
+  expect((await request('/api/releases', 'POST', releaseInput())).status).toBe(409)
+  for (const extra of [{ channel: 'unknown' }, { admin: true }, { notes: 'x'.repeat(10001) }])
+    expect((await request('/api/releases', 'POST', { ...releaseInput(2), ...extra })).status).toBe(400)
+  for (const change of [{ generation: 0 }, { generation: 1.5 }, { generation: Number.MAX_SAFE_INTEGER + 1 }, { board: '../x64' }, { version: '<script>' }]) {
+    const signed = service.service.signer.sign({ ...deployment(2), ...change })
+    expect((await request('/api/releases', 'POST', { channel: 'stable', deployment: JSON.stringify(signed) })).status).toBe(400)
   }
 })
 
 test('failed signing rolls back publication, audit entry and catalog together', async () => {
   const release = await draft()
-  await upload(release.id)
+  await uploadAll(release.id)
   const before = await (await request('/v1/manifest.json')).text()
   const beforeAudit = await (await request('/api/audit')).text()
   using _failingSigner = spyOn(service.service.signer, 'sign').mockImplementation(() => {
@@ -162,25 +150,24 @@ test('unknown releases and invalid state transitions fail explicitly', async () 
   expect((await request('/missing')).status).toBe(404)
   const release = await draft()
   expect((await request(`/api/releases/${release.id}/withdraw`, 'POST')).status).toBe(409)
-  await upload(release.id)
+  await uploadAll(release.id)
   expect((await upload(release.id)).status).toBe(409)
 })
 
 test('uploads bound streamed bytes without trusting Content-Length and remove failed files', async () => {
   const release = await draft()
-  expect((await upload(release.id, 'x'.repeat(1025))).status).toBe(413)
-  expect((await upload(release.id, 'x', { 'Content-Length': '2048' })).status).toBe(413)
-  expect((await upload(release.id, 'x', { 'Content-Length': 'invalid' })).status).toBe(413)
-  expect((await upload(release.id, '')).status).toBe(400)
-  expect((await upload(release.id, null)).status).toBe(400)
-  expect((await upload(release.id, 'x', { 'Content-Length': '2' })).status).toBe(400)
+  expect((await upload(release.id, 'x'.repeat(11))).status).toBe(413)
+  for (const length of ['2048', 'invalid', '2'])
+    expect((await upload(release.id, 'x', { 'Content-Length': length })).status).toBe(400)
+  for (const body of ['', null, 'wrongbytes'])
+    expect((await upload(release.id, body)).status).toBe(400)
   expect((await upload(release.id, 'x', { 'Content-Type': 'text/plain' })).status).toBe(415)
-  expect(await readdir(join(directory, 'artifacts'))).toHaveLength(0)
-  expect(service.service.get(release.id).sha256).toBeNull()
-  expect((await upload(release.id, 'x'.repeat(1024))).status).toBe(200)
+  expect(await readdir(join(directory, 'objects'))).toHaveLength(0)
+  expect(service.service.view(service.service.get(release.id)).objects.every(object => !object.available)).toBe(true)
+  expect((await upload(release.id)).status).toBe(200)
 })
 
-test('two concurrent uploads commit exactly one immutable artifact', async () => {
+test('two concurrent uploads commit exactly one immutable object', async () => {
   const release = await draft()
   let releaseStream: (() => void) | undefined
   const gate = new Promise<void>((resolve) => {
@@ -188,7 +175,7 @@ test('two concurrent uploads commit exactly one immutable artifact', async () =>
   })
   const stream = () => new ReadableStream<Uint8Array>({ async start(controller) {
     await gate
-    controller.enqueue(new TextEncoder().encode('bundle'))
+    controller.enqueue(new Uint8Array(small))
     controller.close()
   } })
   const first = upload(release.id, stream())
@@ -196,8 +183,8 @@ test('two concurrent uploads commit exactly one immutable artifact', async () =>
   releaseStream?.()
   const responses = await Promise.all([first, second])
   expect(responses.map(item => item.status).sort()).toEqual([200, 409])
-  expect(await readdir(join(directory, 'artifacts'))).toHaveLength(1)
-  expect(service.service.get(release.id).size).toBe(6)
+  expect(await readdir(join(directory, 'objects'))).toHaveLength(1)
+  expect(service.service.view(service.service.get(release.id)).objects.filter(object => object.available)).toHaveLength(1)
 })
 
 test.each([
@@ -214,8 +201,8 @@ test.each([
   ['bytes=9007199254740992-', 416, ''],
   ['bytes=-999999999999999999999', 416, ''],
 ])('download range %s returns %s', async (range, code, expected) => {
-  const release = await published()
-  const response = await service.app.request(`${origin}/v1/artifacts/${release.id}`, { headers: { Range: range } })
+  await published()
+  const response = await service.app.request(`${origin}/v1/objects/${artifact(small).sha256}`, { headers: { Range: range } })
   expect(response.status).toBe(code)
   expect(await response.text()).toBe(expected)
   expect(response.headers.get('accept-ranges')).toBe('bytes')
@@ -224,8 +211,8 @@ test.each([
 })
 
 test('HEAD, conditional requests and If-Range preserve HTTP semantics', async () => {
-  const release = await published()
-  const path = `${origin}/v1/artifacts/${release.id}`
+  await published()
+  const path = `${origin}/v1/objects/${artifact(small).sha256}`
   const full = await service.app.request(path)
   const etag = full.headers.get('etag') ?? ''
   expect(etag).not.toBe('')
@@ -240,12 +227,12 @@ test('HEAD, conditional requests and If-Range preserve HTTP semantics', async ()
 })
 
 test('missing or truncated storage does not return a successful download', async () => {
-  const release = await published()
-  const name = service.service.get(release.id).artifact!
-  await writeFile(join(directory, 'artifacts', name), 'short')
-  expect((await request(`/v1/artifacts/${release.id}`)).status).toBe(503)
-  await rm(join(directory, 'artifacts', name))
-  expect((await request(`/v1/artifacts/${release.id}`)).status).toBe(503)
+  await published()
+  const name = artifact(small).sha256
+  await writeFile(join(directory, 'objects', name), 'short')
+  expect((await request(`/v1/objects/${artifact(small).sha256}`)).status).toBe(503)
+  await rm(join(directory, 'objects', name))
+  expect((await request(`/v1/objects/${artifact(small).sha256}`)).status).toBe(503)
 })
 
 async function login(token = adminToken, requestOrigin = origin) {
@@ -295,7 +282,7 @@ test('failed logins are rate limited and the window resets', async () => {
 test('malformed and oversized JSON requests fail safely', async () => {
   const invalid = await service.app.request(`${origin}/api/releases`, { method: 'POST', headers: { 'Authorization': `Bearer ${adminToken}`, 'Content-Type': 'application/json' }, body: '{' })
   expect(invalid.status).toBe(400)
-  const large = await request('/api/releases', 'POST', { notes: 'x'.repeat(40000) })
+  const large = await request('/api/releases', 'POST', { notes: 'x'.repeat(70000) })
   expect(large.status).toBe(413)
   expect((await request('/healthz', 'GET', undefined, false)).status).toBe(200)
   expect((await request('/v1/manifest.json')).headers.get('cache-control')).toBe('no-store')

@@ -270,8 +270,7 @@ already on.
 
 **Persistent access is by SSH public key.** Keys live in
 `access.ssh.authorizedKeys` and are rendered as §3.1 describes. A key survives
-reboot and an A/B update, because the settings tree is on STATE and RAUC writes
-only the ROOTFS and BOOT slots.
+reboot and an A/B update, because the settings tree is on DATA and normal component installation preserves it.
 
 **Every authorized key is a root key.** One shared key list is rendered per
 managed account, so a key added expecting an unprivileged shell grants root.
@@ -565,7 +564,7 @@ either demand a rotation that already happened or excuse one that never did.
 
 ### 5.2 META lockdown — **[not implemented]**
 
-Design intent: a one-way bit in the META partition; when set, the management
+Design intent: a one-way bit in DATA/meta; when set, the management
 plane ignores config and never registers the services. Cleared only by full wipe
 — but factory reset deliberately does NOT clear it: "forgot the password" is
 self-serviceable, "un-lock the shell" is not.
@@ -664,14 +663,9 @@ mutates nothing and therefore writes nothing — without that check an
 unauthenticated caller hammering a throttled endpoint would convert every
 refusal into an fsync.
 
-*Deviation, deliberate: the state lives on **STATE**, not META as this section
-originally said.* apid already creates and owns one state directory there
-(`APID_STATE_DIR`, default `/var/lib/mos/apid`) holding its TLS material, and
-a second persistence root on a second partition would double the surface —
-two directories to create, two sets of permissions to hold, two failure modes
-on a device whose META partition no daemon currently writes at runtime. What
-§6 actually asks for is that a power cycle not reset the clock, and STATE
-satisfies that: it survives reboot and A/B update alike.
+apid keeps its counters and TLS material in `/var/lib/mos/apid`, backed by
+DATA/state. They survive reboot and ordinary component updates. DATA/meta owns
+separate lifecycle and deployment records on the same physical filesystem.
 
 The directory is 0700 (`StateDirectoryMode=0700` in `pkgs/mosd/dist/apid.service`;
 apid's own `ensure_state_dir` uses the same mode when it creates the path
@@ -864,16 +858,11 @@ together before concluding a fielded unit can be recovered without a reflash.
 
 ### 9.2 What a whole-disk reflash recovers — **[implemented]**
 
-The mos image is a **full-disk image carrying all eleven partitions**, and
-`build/src/mkimage-cx3576.ts` builds fresh ext4 filesystems for META, STATE and DATA into
-it (`mkext4` for each of `meta.img`, `state.img`, `data.img`). Flashing it over
-rockusb therefore replaces all three:
-
-- **STATE** — credentials and identity: settings, the webAdmin hash, the shadow
-  file, sshd host keys, the device secrets;
-- **META** — appliance and update metadata;
-- **DATA** — mounted internally at `/mnt/data`, with appliance-owned `/mos` and
-  operator-owned `/srv`; `/home` and `/root` are backed from `/mos`.
+Current factory images contain ESP/SYSTEM/DATA on UEFI or
+FIRMWARE/SYSTEM/DATA on cx3576. The component image assembler creates SYSTEM
+objects, native boot records and fresh DATA. A complete reflash replaces device
+state, credentials, lifecycle records, applications and operator data within
+that image's extent. It is distinct from the directory-scoped reset tiers.
 
 That is the appliance equivalent of Victron's physical-access guarantee (§11),
 at the cost of everything stored on the device.
@@ -913,12 +902,12 @@ than trusting a fixed profile-wide count.
 |---|---|---|---|
 | `mos.mount` | `/mnt/data/mos` | `/mos` | **DATA** |
 | `srv.mount` | `/mnt/data/srv` | `/srv` | **DATA** |
-| `etc-ssh.mount` | `/mnt/state/ssh` | `/etc/ssh` | STATE |
-| `etc-hostname.mount` | `/mnt/state/hostname` | `/etc/hostname` | STATE |
-| `var-lib-mos.mount` | `/mnt/state/mos` | `/var/lib/mos` | STATE |
+| `etc-ssh.mount` | `/mnt/data/state/ssh` | `/etc/ssh` | STATE |
+| `etc-hostname.mount` | `/mnt/data/state/hostname` | `/etc/hostname` | STATE |
+| `var-lib-mos.mount` | `/mnt/data/state/mos` | `/var/lib/mos` | STATE |
 | `home.mount` | `/mos/home` | `/home` | **DATA** |
 | `root.mount` | `/mos/root` | `/root` | **DATA** |
-| `usr-local-lib-systemd-system.mount` | `/mnt/state/systemd-units` | `/usr/local/lib/systemd/system` | STATE |
+| `usr-local-lib-systemd-system.mount` | `/mnt/data/state/systemd-units` | `/usr/local/lib/systemd/system` | STATE |
 
 The cx3576 WiFi, AP and Bluetooth packages add the STATE-backed
 `etc-wpa_supplicant.mount`, `etc-hostapd.mount` and
@@ -929,20 +918,22 @@ container subsystem is enabled.
 ### 10.3 Files, scripts and data — **[implemented]**
 
 They belong in `/home` or `/root` (DATA, via the two binds above) or directly
-under `/srv`. They survive both a reboot and an A/B update, because RAUC writes
-only the ROOTFS and BOOT slots and never touches DATA.
+under `/srv`. They survive both a reboot and an A/B update, because normal component installation preserves shared DATA.
 
 ### 10.4 The survives-what table
 
-| What | Reboot | A/B update | Factory reset |
-|---|---|---|---|
-| **Settings tree** (`/var/lib/mos/settings.toml`, STATE) — including `access.ssh.authorizedKeys` | **yes** | **yes** — RAUC writes only ROOTFS/BOOT | **no**, by definition. Not implemented today (§5.2); a whole-disk reflash is the closest real operation, and it replaces STATE outright |
-| **`/home`, `/root`, `/srv`** (DATA) | **yes** | **yes** | **no**. On a reflash, replaced by the image's fresh DATA filesystem — but see §9.2: blocks beyond the flashed extent are *unreachable*, not erased |
-| **Arbitrary `/etc` edits** | **no** — `/etc` is inside the verity squashfs except at its deliberate bind points; an edit elsewhere fails or is lost | **no** | n/a — there is nothing to lose |
-| **`/var`** (EPHEMERAL) | **yes** for the files, and it is disposable by contract | **yes** — but nothing precious may live here; the build asserts it | **no**, and also wiped by a routine log cleanup, which costs nothing that matters |
-| **Transient root password** (§4.1) | **no, deliberately** — cleared by `mos-shadow-reconcile` on the next boot | **no** | **no** |
+| What | Reboot and component update | Reset scope |
+|---|---|---|
+| Public configuration and settings | Preserved on DATA | Configuration/full-factory reseed; documented identity and credential survivors remain |
+| `/home`, `/root`, `/srv` | Preserved on DATA | Application-data clears `/srv`; full-factory also clears managed homes |
+| Arbitrary `/etc` or `/var` parent writes | Refused by the immutable root | No writable overlay to preserve |
+| Approved persistent service leaves | Preserved on DATA/state | Only the selected tier's allowlist is changed |
+| `/run` and volatile journal | Lost on reboot | Not persistent state |
+| Transient root password | Cleared by the next boot's shadow reconciler | Not a persistent credential |
 
-The tier table this row set derives from is `docs/design/ro-root.md` §4.
+The [recovery contract](recovery.md#2-reset-tiers) defines each tier and its
+presence requirement. The executor is implemented; current boards do not
+provide a qualified physical entry for full-factory reset through the API.
 
 ### 10.5 The rejected alternative
 

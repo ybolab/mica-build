@@ -10,43 +10,37 @@ The page is also blunt about the gap in the middle of that order: two of the
 steps are built, tested, and **cannot be performed on any board that exists
 today**. Section 7 says which, and why, and what an operator does instead.
 
-## 1. Automatic: a bad slot rolls back by itself
+## 1. Automatic trial fallback
 
-A failed update needs no operator. A slot that cannot boot, or cannot pass the
-boot health gate, never gets its boot credits refilled; the next resets
-exhaust them and the bootloader returns to the previous slot. That is the
-normal path and [update-rollback.md](update-rollback.md) describes it.
+A newly activated deployment has three attempts. Firmware persists the attempt
+before launching the candidate. The health gate confirms a healthy deployment;
+failed trial boots exhaust the candidate and select the retained deployment.
+Root, kernel and support references switch together. DATA is shared and is not
+rolled back. A hang also needs a functioning watchdog; physical cx3576 watchdog
+coverage remains a board qualification requirement.
 
-> status: shipped — evidence: `docs/design/uboot-ab-handshake.md`, `rootfs/overlay/usr/lib/mos/mos-health`
+> status: shipped — evidence: `pkgs/mos-deploy/src/boot.rs`, `rootfs/overlay/usr/lib/mos/mos-health`, `tests/file-ab-x64/updates.sh`
 
-## 2. Both slots failing: what you actually see
+## 2. Exhaustion and shared storage failure
 
-When neither slot has credits left, the cx3576 boot script refills all
-counters and resets; x64's GRUB boots in order anyway rather than sitting at a
-menu. Neither loader halts at a prompt, so **repeated boots are the expected
-symptom on cx3576** — but do not treat one shape as diagnostic. **What a
-particular failure looks like depends on the failure:** a missing boot payload,
-a loader error, or a kernel that hangs after the loader handed off can end as
-repeated boots, as a stopped loader, or as a stalled boot with nothing further
-on the console. The device is neither bricked nor idle, and **no rescue
-environment ships**, so there is nothing on the device to boot into instead.
+When no deployment remains usable, firmware stops in a defined recovery outcome.
+It never refills exhausted counters. cx3576 exposes its local rockusb recovery
+transport; the UEFI policy stops with an explicit recovery message. SYSTEM or
+DATA mount damage is reported as a shared-storage failure before services start,
+not blamed repeatedly on different root images.
 
-Nothing in-band runs in this state, so the evidence that survives is only what
-the bootloader keeps and what the console prints: the slot order and both
-attempt counters (in the redundant U-Boot environment on cx3576, in `grubenv`
-on the ESP on x64), the bootloader's own console lines, and the slot's boot
-payload read from another machine. Attach a console before power-cycling
-again; the journal and everything else on a writable tier may not be readable
-at all. Then go to step 7.
+Capture the complete serial trace, native status if available, and the exact
+image/component IDs. Use a full latest-image reflash when shared storage or every
+bootable deployment is unusable. Do not edit counters or import boot commands.
 
-> status: board-dependent — evidence: `boards/cx3576/boot.cmd`, `boards/x64/grub.cfg`
+> status: board-dependent — evidence: `boards/cx3576/bsp/uboot/mos-file-boot.c`, `pkgs/mos-boot/systemd-boot-persistence.patch`, `tests/file-ab-x64/faults.sh`
 
 ## 3. The decision tree
 
 | # | Step | Available today? | Reversible? | What it costs |
 |---|---|---|---|---|
 | 1 | read-only diagnosis | yes | yes | nothing |
-| 2 | guarded manual rollback | yes | yes | one reboot; the condemned slot stops being a rollback target |
+| 2 | guarded manual rollback | yes | yes | one reboot; the condemned deployment stops being a rollback target |
 | 3 | configuration reset | yes | **no** | every modelled setting the tier reaches |
 | 4 | application-data reset | yes | **no** | all operator data in `/srv` and every application's data under `/mos` |
 | 5 | credential recovery | **no** — unsupported in the field | **no** | the previous credential and every API token |
@@ -77,37 +71,26 @@ mos currently offers.
 - **Costs:** nothing.
 - **Does not recover:** a device that does not boot far enough to answer —
   that case is section 2's, not this one.
-- **What to read:** `GET /api/v1/update` for the update lifecycle, both slots,
-  the booted slot and whether a rollback is permitted; `GET
+- **What to read:** `GET /api/v1/update` for the update lifecycle, both deployments,
+  the running deployment and whether a rollback is permitted; `GET
   /api/v1/storage/status` for tier readiness and media health; the diagnostics
   snapshot and the audit trail. [troubleshooting.md](troubleshooting.md) is
   the diagnosis page proper.
 
 ### Step 2 — Guarded manual rollback
 
-- **Fixes:** a bad update that *boots* — a slot that comes up and misbehaves,
-  which the automatic attempt counters never catch precisely because the slot
-  boots.
-- **Costs:** one reboot. The slot you are on is marked bad and stops being a
-  rollback target. **No operator data is touched**; settings and DATA both
-  survive the switch.
-- **Does not recover:** anything caused by STATE or DATA content, since both
-  survive; a slot that cannot boot at all (the bootloader already handled
-  that); a lost credential.
-- **How:** `POST /api/v1/update/rollback`, authenticated. The guard enforces
-  that a rollback goes *backward* — the target must be the strictly older of
-  the two installs — and refuses with a named reason when there is no
-  alternate slot, when the alternate was never written or is marked bad, when
-  it is not the older install, and when the booted slot is itself pending and
-  unconfirmed. It fails closed on any case it cannot order.
-- **The route changes the boot order and stops.** Realising the rollback is a
-  second, explicit reboot; nothing sequences the two for you.
+Use authenticated `POST /api/v1/update/rollback` with the required CSRF token.
+The native backend validates the running receipt and retained authenticated
+fallback. It marks the running deployment failed, changes boot selection, and
+returns the running/target identities and explicit reboot next step. A repeat
+request or unavailable/invalid fallback is refused with a reason.
 
-**Unproven on hardware:** that the bootloader then actually falls back is
-bench evidence no board has produced. The guard and its refusals are tested
-off hardware.
+The action preserves DATA, including configuration, credentials and application
+data. It cannot recover a lost credential or undo persistent writes. Reboot is a
+separate action. QEMU covers the real action and subsequent fallback; physical
+cx3576 execution remains separately qualified.
 
-> status: shipped — evidence: `pkgs/mosd/mosd/src/rauc.rs`, `pkgs/mosd/apid/openapi.json`
+> status: shipped — evidence: `pkgs/mos-deploy/src/deployments.rs`, `pkgs/mosd/apid/openapi.json`, `pkgs/mosd/tests/apid-api/src/phases/07-update-rollback.ts`
 
 ## 5. The destructive steps: resets and credential recovery
 
@@ -126,7 +109,7 @@ that boot. An interrupted reset is replayable: the next boot finishes it.
   reset.
 - **Does not recover:** a lost credential (the administrator credential is
   kept on purpose — a settings action that dropped it would be a lockout
-  wearing a friendlier name), application data, a broken slot.
+  wearing a friendlier name), application data, a broken deployment.
 - **How:** `POST /api/v1/reset` with `{"tier": "configuration"}`,
   authenticated, no physical presence needed.
 
@@ -166,7 +149,7 @@ spends every setting to recover one. See
 - **Costs irreversibly:** **all operator data in `/srv`** and every
   application's data under `/mos`. There is no backup contract to fall back
   on.
-- **Does not recover:** platform settings, credentials, slots.
+- **Does not recover:** platform settings, credentials, deployments.
 - **How:** the same route with `{"tier": "application-data"}`, on the same
   terms.
 
@@ -200,14 +183,14 @@ spends every setting to recover one. See
 - **Costs irreversibly:** settings, the administrator credential, API tokens,
   every application and all operator data, together.
 - **Preserves, by design:** the device identity, calibration data, the update
-  metadata on META and both system slots. A reset resets *state*, not the
+  metadata in DATA/meta and both retained deployments. A reset resets *state*, not the
   installed software version.
 - **Also goes back:** the update channel and the update server address, to
   the values the image was built with — Step 3's warning applies here
   unchanged, including the case where the built-in address is *none* and the
   device is left with no update server at all.
 - **Does not recover:** a device that cannot boot, since nothing in-band runs;
-  a corrupted system slot.
+  a corrupted deployment.
 - **How, on paper:** the reset route with `{"tier": "full-factory"}`, gated on
   the same physical presence as step 5 — and refused for the same reason,
   today, on every board. Plan around its absence: a device that has to be
@@ -231,7 +214,7 @@ It is not a new unit and it is not an anonymous one.
 
 So a factory reset is **not** a disposal operation. **A device leaving the
 operator's control — resale, return, RMA, disposal — needs a whole-disk
-reflash, or the medium destroyed.** Only a reflash replaces STATE outright and
+reflash, or the medium destroyed.** Only a reflash replaces DATA outright and
 so causes a fresh identity to be minted on the next first boot, and only
 physical destruction of the medium removes the data: a reflash writes just the
 image's own extent, so blocks DATA grew into beyond it survive on the medium,
@@ -239,7 +222,7 @@ unreferenced by the new filesystem but present on it. `docs/design/access.md`
 section 9.2 is the precise statement of what a reflash does and does not
 reach, and `docs/design/manufacturing.md` section 5 is the RMA rule this
 follows: a returned device's credentials are treated as exposed from the
-moment it is received, because STATE is not encrypted and whoever shipped it
+moment it is received, because DATA is not encrypted and whoever shipped it
 could read it.
 
 If the device is going to another party and its data must not go with it,
@@ -257,9 +240,9 @@ fallthrough when boot fails, or maskrom when the loader area itself is gone),
 followed by writing the full disk image over USB; on x64, boot another medium
 and rewrite the disk. [install.md](install.md) is the procedure.
 
-- **Fixes:** everything software can be wrong with the device, both slots
+- **Fixes:** everything software can be wrong with the device, both deployments
   included. It needs nothing on the device to work.
-- **Costs irreversibly:** every partition — STATE, DATA and META — **and the
+- **Costs irreversibly:** every partition — ESP/FIRMWARE, SYSTEM and DATA — **and the
   device's identity**: the next first boot mints a new `deviceId` and new
   secrets, and fleet-side records naming the old one must be re-linked by
   hand.
@@ -318,7 +301,7 @@ a recovery that does not exist.
   no rescue boot entry and no recovery environment. What exists on a device that
   still boots is the boot-time layout convergence and filesystem check that run
   by themselves, and ordinary verified updates — which can also reinstall a
-  corrupted *inactive* slot. A device that cannot be restored that way needs a
+  unreferenced damaged component. A device that cannot be restored that way needs a
   service host with its filesystems unmounted, or step 7; **mos does not promise
   that damaged data survives either route.**
 
@@ -326,7 +309,7 @@ a recovery that does not exist.
 
 ## 8. Before you recover: collect the evidence
 
-If the device still boots into either slot, capture what
+If the device still boots into a retained deployment, capture what
 [troubleshooting.md](troubleshooting.md) lists — the journal, the update
 state, the storage status, and the device identity from
 `/usr/share/mos/manifest.tsv` — **before** you reset or reflash. Every step

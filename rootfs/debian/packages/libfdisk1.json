@@ -7,7 +7,6 @@
       "sha256": "e0af64cd4197cb87b6801d28d3edd24474e8db6b20a89f4e6216f56a5c1830f5",
       "url": "https://snapshot.debian.org/archive/debian/20260905T000000Z/pool/main/u/util-linux/libfdisk1_2.41-5_amd64.deb",
       "consumers": [
-        "mos-rauc",
         "mos-system"
       ]
     },
@@ -17,7 +16,6 @@
       "sha256": "7c6ee5055072037933040b78dc38d0b5932faed393a421637f6d528d0940f4a6",
       "url": "https://snapshot.debian.org/archive/debian/20260905T000000Z/pool/main/u/util-linux/libfdisk1_2.41-5_arm64.deb",
       "consumers": [
-        "mos-rauc",
         "mos-system"
       ]
     }

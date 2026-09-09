@@ -18,10 +18,11 @@ The user requests a complete design before implementation, with these requiremen
 7. Keep `/var` itself on the read-only rootfs. Expose only explicitly required writable subdirectories or file paths; do not mount, overlay, or make the whole `/var` tree writable.
 
 This is a full-tier implementation plan, approved on 2026-09-08 at 17:11.
-P1 is complete; the user resumed the remaining work after reviewing its merge
-report. Mechanisms below remain proposed until their phase has passed acceptance.
+P1 and P2 are complete. P3-P9 are implemented with the software evidence below;
+P10 remains open for physical cx3576 acceptance; software measurement and cleanup pass.
+The dated investigation describes the starting point, not the current system.
 
-### Current evidence
+### Investigation snapshot (2026-09-08, before implementation)
 
 | Area | Observed implementation | Consequence |
 |---|---|---|
@@ -489,7 +490,7 @@ Expected implementation areas:
 - `verify/src` bootchain, slots, kernel, root, signature, mount, storage and update checks; boot/QEMU/fault harnesses.
 - Active design/user documentation describing updates, rootfs, storage, release signing/artifacts, recovery and board assurance. Follow the repository's required locale coverage when those docs are updated.
 
-The server schema change uses its migration tool and a new migration where needed; do not edit an already applied shared migration. The user subsequently authorized committing the planning records. Implementation, live database reset, device reflash, key enrollment, production publication, and push remain outside this request.
+The current server schema starts from a fresh database. No upgrade migration or earlier protocol reader is retained. The user authorized implementation, commits and full-image development-device tests; public publication and push are not requested.
 
 Excluded: old-layout migration, old `.raucb` support, compatibility shims, delta updates, a general package manager, arbitrary component combination support, whole-tree writable mounts or overlays for `/var`, disk encryption, physical anti-rollback fuses, and guaranteed online U-Boot replacement without hardware evidence.
 
@@ -521,7 +522,29 @@ Excluded: old-layout migration, old `.raucb` support, compatibility shims, delta
 
 ## Evidence and remaining proof
 
-Read-only investigation is complete. No new signed-root boot, new layout boot, key rotation, or power-cut acceptance has been executed for this proposal. P1 and the fault matrix define how these claims become evidence.
+P3-P9 implementation and current artifacts are recorded in the
+[active delivery task](../task/20260908-2229-file-ab-delivery-x64-first.md).
+x64 and virt-arm64 pass signed full-system boot, root/kernel/combined updates,
+health fallback, actual kernel panic/watchdog resets, pre-SYSTEM hangs after
+watchdog arming, all three interrupted-reset tiers and complete shutdown.
+The TLS durability defect found by panic injection is fixed and those matrices
+pass on rebuilt roots. Latest pure factory API acceptance passes 153 checks on
+x64 and 151 on virt-arm64. HTTP object acquisition and offline boot with 1970
+and 2040 clocks pass. cx3576 passes signed FIT/firmware/image assembly, 123 offline
+checks, DATA-only growth and the 14-artifact release gate.
+
+P10 also removes obsolete operating procedures, engineering translations,
+exported prototypes and unconsumed raw-layout code. Current documentation has a
+task-oriented portal and separate contract/evidence ownership. The complete
+documentation and negative-fixture gates pass. Live installation-space sampling
+also passes on a fresh x64 image: root/kernel/combined installs retain 51/42/73
+samples per partition and complete authenticated reboot/shutdown. Final source
+checks and measurement limits are recorded in the delivery task.
+
+Physical cx3576 boot, watchdog handoff, USB maintenance, recovery and power-cut
+evidence remain pending bench access. The matrix above is still the acceptance
+contract; QEMU reset and deterministic software I/O faults cannot close those
+physical rows. P10 and the overall plan are not declared complete.
 
 Planning validation passed: `make docs-verify` (index, links, status, locale coverage and board dossier checks), `git diff --check`, and a separate check of this plan/task's required sections, local links, unique index entries, code fences, and draft/pending states. The repository's general documentation checks exclude plan/task files, so their separate validation is necessary.
 
@@ -552,7 +575,9 @@ Primary references checked during design:
 - Initial draft proposed five partitions with separate STATE and EPHEMERAL. The user's subsequent request consolidates writable state/meta/var into DATA; section 5 now replaces that layout with three partitions and bind-mounted directories.
 - User requirement: writable state, metadata and var should share DATA rather than require additional partitions. This amendment uses bind mounts for major system directories and updates quota, reset, startup and fault-isolation requirements accordingly.
 - User correction: do not mount all of `/var`; only required paths should be writable. Section 5 now keeps its parent skeleton immutable, lists initial persistent leaves, requires an enabled-writer audit, and scopes volatile storage, quotas, seeding and cleanup to explicit paths. The previous whole-var DATA bind and VAR budget are superseded.
-- Approval: pending for implementation. The three-partition target, RAUC replacement, and UEFI switch to systemd-boot are reviewable proposal decisions; no implementation has been performed.
+- Approval: granted on 2026-09-08 at 17:11 and reaffirmed at 22:29 for P3-P10,
+  including commit, x64-first boot acceptance and subsequent ARM64/cx3576 work.
+  The user subsequently authorized the documentation and dead-code cleanup.
 - 2026-09-08 17:11: **Approved by the user for implementation** ("按这个来执行"). Execution
   follows the plan's own sequence: P1 is the feasibility gate and is dispatched
   first; P2 and later wait on P1's evidence. P1 is run as two parallel L3
@@ -587,3 +612,16 @@ Primary references checked during design:
   tests (1,028), focused contracts/signing (42), Rust (68), server (36),
   compiled server, docs and relevant lints passed. P3 producer separation is
   next; P3-P10 remain incomplete.
+- 2026-09-08 22:29: The user authorized committing P2 and completing P3-P10.
+  P2 is committed as `f22e6cd8`. Complete and boot-test x64 first, then handle
+  virt-arm64 and cx3576. Local sequential execution is tracked in
+  `20260908-2229-file-ab-delivery-x64-first`; no push or physical key enrollment
+  is requested. This supersedes the earlier planning-only scope note.
+
+- 2026-09-09: Full SquashFS runtime testing refines P1's random-seed result.
+  `systemd-random-seed` calls `fsync_full`, which syncs both the file and its
+  visible parent. The file bind exposes a SquashFS parent whose fsync returns
+  EINVAL; P1 used a read-only ext4 parent. Use a fixed file symlink to
+  `/mnt/data/state/random-seed`, with explicit Requires/After ordering on
+  `mos-seed-state.service`. This preserves the narrow writable file while both
+  syncs reach DATA. Startup, shutdown and reboot acceptance remain required.

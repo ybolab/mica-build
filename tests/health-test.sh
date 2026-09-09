@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Offline tests for the health gate and the machine-id oneshot. Every external
+# Offline tests for the health gate. Every external
 # command the scripts call (rauc, systemctl, busctl, curl, df, fw_setenv,
 # fw_printenv) is faked in a $TMPDIR directory prepended to PATH, so no host
 # state is ever read or written: the real rauc/systemctl are never invoked and
@@ -57,7 +57,7 @@ no_http_client() {
     local t p
     rm -f "$BIN/curl" "$BIN/wget"
     mkdir -p "$CASE/sysbin"
-    for t in sh cat sed head awk tr timeout mktemp rm sleep; do
+    for t in sh cat sed head awk tr grep timeout mktemp rm sleep; do
         p=$(command -v "$t") && ln -sf "$p" "$CASE/sysbin/$t"
     done
     CASE_PATH="$BIN:$CASE/sysbin"
@@ -75,49 +75,20 @@ fake() {
     chmod 0755 "$BIN/$name"
 }
 
-# Verbatim shape of `rauc status --output-format=shell` as emitted by rauc 1.8-2
-# (the version the bookworm allowlist installs) driving the rendered
-# pkgs/rauc/system.conf.in, captured in a container with rauc.slot=A on the kernel
-# command line. Trimmed to the rows a parser can care about; every variable NAME
-# and the quoting are exactly as observed. $1 is the booted bootname, empty for
-# the "rauc answered but names no booted slot" case.
-write_rauc_status() {
-    cat >"$CASE/rauc-status.txt" <<FIXTURE
-RAUC_SYSTEM_COMPATIBLE='mos-cx3576'
-RAUC_SYSTEM_VARIANT=''
-RAUC_SYSTEM_BOOTED_BOOTNAME='$1'
-RAUC_BOOT_PRIMARY=''
-RAUC_SYSTEM_SLOTS='rootfs.1 boot.0 rootfs.0 boot.1'
-RAUC_SLOTS='1 2 3 4'
-RAUC_SLOT_STATE_1='inactive'
-RAUC_SLOT_CLASS_1='rootfs'
-RAUC_SLOT_DEVICE_1='/dev/disk/by-partuuid/5ac35760-0002-4000-8000-000000000006'
-RAUC_SLOT_BOOTNAME_1='B'
-RAUC_SLOT_STATE_2='active'
-RAUC_SLOT_CLASS_2='boot'
-RAUC_SLOT_BOOTNAME_2=''
-RAUC_SLOT_PARENT_2='rootfs.0'
-RAUC_SLOT_STATE_3='booted'
-RAUC_SLOT_CLASS_3='rootfs'
-RAUC_SLOT_DEVICE_3='/dev/disk/by-partuuid/5ac35760-0002-4000-8000-000000000005'
-RAUC_SLOT_BOOTNAME_3='A'
-RAUC_SLOT_STATE_4='inactive'
-RAUC_SLOT_CLASS_4='boot'
-RAUC_SLOT_BOOTNAME_4=''
-RAUC_SLOT_PARENT_4='rootfs.1'
-FIXTURE
+# The backend emits one validated deployment ID, without shell metadata.
+write_deployment_status() {
+    printf '%s\n' "$1" >"$CASE/deployment-status.txt"
 }
 
-# Defaults: a healthy A/B system with mosd and apid both answering.
 healthy_fakes() {
-    write_rauc_status A
-    fake rauc '
-case "$1 $2" in
-  "status --output-format=shell")
-      [ -n "${FAKE_RAUC_STDERR:-}" ] && echo "$FAKE_RAUC_STDERR" >&2
-      [ "${FAKE_RAUC_STATUS_RC:-0}" = 0 ] && cat "$CASE_DIR/rauc-status.txt"
-      exit ${FAKE_RAUC_STATUS_RC:-0} ;;
-  "status mark-good") exit ${FAKE_MARKGOOD_RC:-0} ;;
+    write_deployment_status "$(printf a%.0s {1..64})"
+    fake mos-deploy '
+case "$1" in
+  "booted")
+      [ -n "${FAKE_DEPLOY_STDERR:-}" ] && echo "$FAKE_DEPLOY_STDERR" >&2
+      [ "${FAKE_DEPLOY_STATUS_RC:-0}" = 0 ] && cat "$CASE_DIR/deployment-status.txt"
+      exit ${FAKE_DEPLOY_STATUS_RC:-0} ;;
+  "confirm") exit ${FAKE_MARKGOOD_RC:-0} ;;
 esac
 exit 0'
     fake systemctl '
@@ -140,11 +111,6 @@ run_health() {
         "$@" sh "$HEALTH/mos-health"
 }
 
-run_machine_id() {
-    env -i PATH="$BIN:/usr/bin:/bin" CALLS_FILE="$CALLS" \
-        "$@" sh "$HEALTH/mos-machine-id"
-}
-
 check() {
     local name=$1 want=$2 got=$3
     if [ "$want" = "$got" ]; then
@@ -156,48 +122,33 @@ check() {
     fi
 }
 
-marked_good() { grep -qx 'rauc status mark-good' "$CALLS" && echo yes || echo no; }
+marked_good() { grep -qx 'mos-deploy confirm' "$CALLS" && echo yes || echo no; }
 
-# --- health gate: no-op paths
-new_case rauc-absent
+# Missing, failed or malformed deployment status must never confirm a boot.
+new_case backend-absent
 out=$(run_health 2>&1) && rc=0 || rc=$?
-check "rauc absent -> exit 0" "0" "$rc"
-check "rauc absent -> logged" "yes" "$(grep -q 'rauc not installed' <<<"$out" && echo yes || echo no)"
-check "rauc absent -> not confused with a parse failure" "no" \
-    "$(grep -q 'cannot parse' <<<"$out" && echo yes || echo no)"
+check "backend absent -> exit 1" "1" "$rc"
 
-# The three silences must never be confused with one another. A gate that
-# cannot read rauc is broken, not idle, and must say so loudly.
-new_case rauc-answers-no-slot
+new_case backend-no-deployment
 healthy_fakes
-write_rauc_status ''
+write_deployment_status ''
 out=$(run_health 2>&1) && rc=0 || rc=$?
-check "rauc answers, no bootname -> exit 0" "0" "$rc"
-check "rauc answers, no bootname -> no mark-good" "no" "$(marked_good)"
-check "rauc answers, no bootname -> distinct log" "yes" \
-    "$(grep -q 'answered but names no booted slot' <<<"$out" && echo yes || echo no)"
-check "rauc answers, no bootname -> not confused with absence" "no" \
-    "$(grep -q 'rauc not installed' <<<"$out" && echo yes || echo no)"
+check "no deployment -> exit 1" "1" "$rc"
+check "no deployment -> no confirmation" "no" "$(marked_good)"
 
-new_case rauc-errors
+new_case backend-errors
 healthy_fakes
-out=$(run_health FAKE_RAUC_STATUS_RC=1 \
-    FAKE_RAUC_STDERR='Error retrieving slot status via D-Bus: error calling D-Bus method "GetSlotStatus": Failed to determine slot states: Did not find booted slot' 2>&1) && rc=0 || rc=$?
-check "rauc status fails -> exit 1" "1" "$rc"
-check "rauc status fails -> no mark-good" "no" "$(marked_good)"
-check "rauc status fails -> quotes rauc's reason" "yes" \
-    "$(grep -q 'Did not find booted slot' <<<"$out" && echo yes || echo no)"
-check "rauc status fails -> not confused with absence" "no" \
-    "$(grep -q 'rauc not installed' <<<"$out" && echo yes || echo no)"
+out=$(run_health FAKE_DEPLOY_STATUS_RC=1 FAKE_DEPLOY_STDERR='shared DATA unavailable' 2>&1) && rc=0 || rc=$?
+check "backend failure -> exit 1" "1" "$rc"
+check "backend failure -> no confirmation" "no" "$(marked_good)"
+check "backend failure -> preserves reason" "yes" "$(grep -q 'shared DATA unavailable' <<<"$out" && echo yes || echo no)"
 
-new_case rauc-unparseable
+new_case backend-unparseable
 healthy_fakes
-printf 'some unexpected output\n' >"$CASE/rauc-status.txt"
+write_deployment_status 'unexpected output'
 out=$(run_health 2>&1) && rc=0 || rc=$?
-check "unparseable rauc output -> exit 1" "1" "$rc"
-check "unparseable rauc output -> no mark-good" "no" "$(marked_good)"
-check "unparseable rauc output -> says so" "yes" \
-    "$(grep -q 'cannot parse' <<<"$out" && echo yes || echo no)"
+check "malformed status -> exit 1" "1" "$rc"
+check "malformed status -> no confirmation" "no" "$(marked_good)"
 
 # --- health gate: success
 new_case healthy
@@ -207,8 +158,8 @@ check "healthy -> exit 0" "0" "$rc"
 check "healthy -> mark-good" "yes" "$(marked_good)"
 check "healthy -> confirmed log" "yes" \
     "$(grep -q 'PENDING_CONFIRM -> CONFIRMED' <<<"$out" && echo yes || echo no)"
-check "healthy -> bootname parsed from real 1.8 output" "yes" \
-    "$(grep -q 'booted slot bootname: A' <<<"$out" && echo yes || echo no)"
+check "healthy -> deployment identity reported" "yes" \
+    "$(grep -q 'booted deployment: aaaaa' <<<"$out" && echo yes || echo no)"
 check "healthy -> the required set is in the journal" "yes" \
     "$(grep -q 'required set: boot-settled mosd apid' <<<"$out" && echo yes || echo no)"
 check "healthy -> every required member concluded OK" "3" \
@@ -219,7 +170,7 @@ healthy_fakes
 run_health >/dev/null 2>&1
 out=$(run_health 2>&1) && rc=0 || rc=$?
 check "second run -> exit 0" "0" "$rc"
-check "second run -> mark-good again" "2" "$(grep -cx 'rauc status mark-good' "$CALLS")"
+check "second run -> mark-good again" "2" "$(grep -cx 'mos-deploy confirm' "$CALLS")"
 
 # --- health gate: a failed unit is REPORTED, never fatal (PLAN-089)
 #
@@ -485,48 +436,6 @@ out=$(run_health FAKE_VAR_PCT=12 2>&1) && rc=0 || rc=$?
 check "/var under threshold -> reported ok" "yes" \
     "$(grep -q 'ReportHealth sss var ok' "$CALLS" && echo yes || echo no)"
 
-# --- machine id
-new_case mid-no-tool
-out=$(run_machine_id 2>&1) && rc=0 || rc=$?
-check "fw_setenv absent -> exit 0" "0" "$rc"
-check "fw_setenv absent -> logged" "yes" \
-    "$(grep -q 'not installed' <<<"$out" && echo yes || echo no)"
-
-new_case mid-unreadable-env
-fake fw_printenv 'exit 1'
-fake fw_setenv 'exit 0'
-out=$(run_machine_id 2>&1) && rc=0 || rc=$?
-check "env unreadable -> exit 0" "0" "$rc"
-check "env unreadable -> no write" "no" \
-    "$(grep -q '^fw_setenv machine_id' "$CALLS" && echo yes || echo no)"
-
-new_case mid-generate
-fake fw_printenv '
-[ $# -eq 0 ] && exit 0
-[ -f "$CASE_DIR/env" ] && cat "$CASE_DIR/env"
-exit 0'
-fake fw_setenv 'printf "%s=%s\n" "$1" "$2" > "$CASE_DIR/env"; exit 0'
-out=$(run_machine_id CASE_DIR="$CASE" 2>&1) && rc=0 || rc=$?
-check "generate -> exit 0" "0" "$rc"
-generated=$(sed -n 's/^machine_id=//p' "$CASE/env")
-check "generated id is 32 dashless lowercase hex" "yes" \
-    "$(grep -Eq '^[0-9a-f]{32}$' <<<"$generated" && echo yes || echo no)"
-check "generate -> next-boot note" "yes" \
-    "$(grep -q 'NEXT boot' <<<"$out" && echo yes || echo no)"
-echo "     sample machine_id: $generated"
-
-new_case mid-already-set
-mkdir -p "$CASE"
-printf 'machine_id=0123456789abcdef0123456789abcdef\n' >"$CASE/env"
-fake fw_printenv '
-[ $# -eq 0 ] && exit 0
-cat "$CASE_DIR/env"
-exit 0'
-fake fw_setenv 'printf "%s=%s\n" "$1" "$2" > "$CASE_DIR/env"; exit 0'
-out=$(run_machine_id CASE_DIR="$CASE" 2>&1) && rc=0 || rc=$?
-check "already set -> exit 0" "0" "$rc"
-check "already set -> no rewrite" "no" \
-    "$(grep -q '^fw_setenv machine_id' "$CALLS" && echo yes || echo no)"
 
 echo
 echo "RESULT: $([ "$FAIL" -eq 0 ] && echo PASS || echo FAIL) ($PASS/$((PASS + FAIL)) checks)"

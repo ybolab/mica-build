@@ -1,0 +1,16 @@
+[Unit]
+Description=Writable /var/lib/systemd/linger on DATA
+DefaultDependencies=no
+Requires=mos-seed-state.service
+After=mos-seed-state.service
+Before=systemd-logind.service local-fs.target shutdown.target
+Conflicts=shutdown.target
+
+[Mount]
+What=/mnt/data/state/linger
+Where=/var/lib/systemd/linger
+Type=none
+Options=bind,nosuid,nodev
+
+[Install]
+WantedBy=local-fs.target

@@ -1,5 +1,5 @@
 #!/bin/sh
-# Assert the writable unit directory exists and is STATE-backed.
+# Assert the writable unit directory exists and is DATA state-backed.
 #
 # Called from rootfs/compose/90-pack.Dockerfile (pack stage), where the reasoning lives.
 
@@ -17,5 +17,5 @@ if [ ! -L "/rootfs/etc/systemd/system/local-fs.target.wants/${ext_unit}" ]; then
     echo "error: ${ext_unit} exists but is not enabled; the directory would never be bound and installing a unit would appear to work until the next boot" >&2; exit 1
 fi
 grep -q "^Where=${ext_dir}\$" "$f" || { echo "error: ${ext_unit} does not mount ${ext_dir}" >&2; exit 1; }
-grep -qE "^What=/mnt/state/" "$f" || { echo "error: ${ext_unit} is not backed by STATE, so installed units would not survive an A/B update" >&2; exit 1; }
-echo "extensions: ${ext_dir} -> STATE via ${ext_unit}"
+grep -qE "^What=/mnt/data/state/" "$f" || { echo "error: ${ext_unit} is not backed by DATA state, so installed units would not survive an A/B update" >&2; exit 1; }
+echo "extensions: ${ext_dir} -> DATA state via ${ext_unit}"

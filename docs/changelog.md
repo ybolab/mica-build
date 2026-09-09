@@ -4,6 +4,44 @@ Campaign-level record, one entry per plan, newest first. Details live in the
 plan file and the task records it names; this file holds the one-paragraph
 history a reader can scan without opening either.
 
+## Signed file-based deployments (2026-09-09)
+
+Documentation cleanup replaces the accumulated API/dashboard proposals
+(PLAN-039/040/060/061/062/066), recovery narrative (PLAN-048) and build-harness
+history with current contracts at their existing design paths. Superseded
+Chinese engineering translations now link from the language portal to the
+authoritative English pages; the current Chinese user guides remain. The old
+exported `docs/zh/design/mos-ui` prototype, its ZIP and duplicate uploaded brief
+are removed after the shipped React implementation replaced them. The separate
+product design brief remains. Git history retains removed content; no obsolete
+operational instructions or compatibility stubs are kept in the active tree.
+
+Replaced the raw-slot RAUC/GRUB installation model with independently signed
+firmware, kernel/support and rootfs components. Fresh images use three GPT
+partitions, authenticated native boot attempts, serialized file installation,
+health confirmation and retained fallback. DATA owns persistent state and
+quota-limited writable leaves; var parents stay immutable. Server, API, device
+UI, release packaging and current user documentation use the new contracts.
+Earlier layouts, update protocols and migration paths are removed. Independent
+S905X5M BSP sources remain, with its superseded MOS image producers retired.
+
+QEMU, kernel/firmware signature negatives, transaction fault injection and
+current-image integration provide software evidence. Kernel panic testing found
+and fixed first-boot TLS identity durability. cx3576 firmware/FIT/image packaging,
+offline verification and DATA-only growth pass; physical startup, watchdog
+handoff and storage power-cut qualification remain pending bench access. The
+[implementation plan](plan/20260908-1428-file-ab-signed-components.md) and
+[delivery task](task/20260908-2229-file-ab-delivery-x64-first.md) track the exact
+artifacts, completed checks and remaining acceptance work.
+
+Final software acceptance passes on x64 and virt-arm64, including all three
+interrupted-reset tiers, panic/watchdog and pre-SYSTEM hang fallback, offline
+boot at wrong clocks, and latest factory API runs (153/151 combined checks).
+The x64 sampled installation-space run also passes all three update types and
+subsequent boots. Cleanup gates include 644 verifier tests, 150 frontend tests,
+both Rust workspace gates and document/negative-fixture checks. Physical
+cx3576 acceptance remains the outstanding P10 requirement.
+
 ## PLAN-926 — S905X5M integration into updated local main (2026-09-08)
 
 Updated local main to upstream 3c5374f3 and integrated the S905X5M adaptation,

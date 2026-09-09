@@ -366,18 +366,14 @@ const ENGINE_CHECKS: readonly CheckCase[] = [
   }),
 
   engineCheck({
-    // The failure is not an error message: containers work, and then one day
-    // the partition resets and every pulled image is gone.
-    //
-    // FOUR fail branches and one pass, and the fail matcher is a LIST because
-    // they fork: "no storage.conf at all", "sets no graphroot", "on the
-    // EPHEMERAL partition" and "neither DATA nor a path this check knows".
+    // Image storage must use DATA. The default /var parent is immutable and
+    // has no approved writable container-storage leaf.
     id: 'container-engine-graphroot-on-data',
     shell: {
       pass: ', on DATA -- the only growable partition',
       fail: [
         'container image storage is unconfigured:',
-        ', on the EPHEMERAL partition.',
+        ', under the immutable /var parent.',
         ', which is neither system DATA (/mos) nor a path this check knows.',
       ],
     },
@@ -396,14 +392,13 @@ const ENGINE_CHECKS: readonly CheckCase[] = [
       if (!present) {
         return verdict(id, false,
           `container image storage is unconfigured: no ${CONTAINER_STORAGE_CONF} in the image, so `
-          + `podman falls back to its built-in default of /var/lib/containers/storage. /var is the `
-          + `EPHEMERAL partition: 512 MiB and wiped by design, so every pulled image is both `
-          + `size-capped and destined to vanish without any error being reported`)
+          + `podman falls back to /var/lib/containers/storage under the immutable /var parent; `
+          + `no writable container-storage leaf is mounted there`)
       }
       if (graph === '') {
         return verdict(id, false,
           `container image storage is unconfigured: ${CONTAINER_STORAGE_CONF} sets no graphroot, so `
-          + `podman uses its built-in /var/lib/containers/storage on the wipeable EPHEMERAL partition`)
+          + `podman uses /var/lib/containers/storage under the immutable /var parent`)
       }
       if (graph.startsWith('/mos/')) {
         return verdict(id, true,
@@ -412,8 +407,8 @@ const ENGINE_CHECKS: readonly CheckCase[] = [
       }
       if (graph.startsWith('/var/')) {
         return verdict(id, false,
-          `container image storage is at ${graph}, on the EPHEMERAL partition. /var is 512 MiB and `
-          + `wiped by design; images would be capped and then silently destroyed`)
+          `container image storage is at ${graph}, under the immutable /var parent. `
+          + `Use the approved DATA container namespace so image writes can succeed`)
       }
       return verdict(id, false,
         `container image storage is at ${graph}, which is neither system DATA (/mos) nor a path this check `
@@ -430,7 +425,7 @@ const ENGINE_CHECKS: readonly CheckCase[] = [
     // And it must not be statically enabled. That branch is the one with teeth:
     // the bind would come up at every boot whatever container.enabled says,
     // Quadlet would generate units from STATE and they would start, so anything
-    // able to write /mnt/state/quadlet gets a root-capable container at the next
+    // able to write /mnt/data/state/quadlet gets a root-capable container at the next
     // reboot with no operator decision anywhere in the path.
     id: 'container-engine-quadlet-bind',
     shell: {
@@ -460,7 +455,7 @@ const ENGINE_CHECKS: readonly CheckCase[] = [
           `${QUADLET_MOUNT_UNIT} mounts '${where}', not ${QUADLET_DIR} — which is the only one of `
           + `Quadlet's three search directories an operator can be given`)
       }
-      if (!what.startsWith('/mnt/state/')) {
+      if (!what.startsWith('/mnt/data/state/')) {
         return verdict(id, false,
           `${QUADLET_MOUNT_UNIT} is backed by '${what}', not STATE. Installed containers would not `
           + `survive an A/B update`)
@@ -472,7 +467,7 @@ const ENGINE_CHECKS: readonly CheckCase[] = [
         return verdict(id, false,
           `${QUADLET_MOUNT_UNIT} is STATICALLY ENABLED. The bind then comes up at every boot whatever `
           + `container.enabled says, Quadlet generates units from STATE, and they start — so anything `
-          + `able to write /mnt/state/quadlet gets a root-capable container at the next reboot with no `
+          + `able to write /mnt/data/state/quadlet gets a root-capable container at the next reboot with no `
           + `operator decision anywhere in the path, and the container.enabled switch gates `
           + `nothing. mosd's `
           + `ContainerReconciler enables it at runtime when the setting is true`)
@@ -573,7 +568,7 @@ const PURGE_CHECKS: readonly CheckCase[] = [
             + `dpkg/apt state and none of ${PKGMGR_LOGS.slice(0, 3).join(' ')}, in /var or under the `
             + `factory tree`
           : `the packed root still carries package management:${found.join('')}. The root is a `
-            + `read-only dm-verity squashfs and updates arrive as whole RAUC slots, so nothing here `
+            + `read-only dm-verity squashfs and updates install signed component files, so nothing here `
             + `can install a package — but anyone who reaches a shell now has the tool to try, and it `
             + `is ~21 MB of weight that cannot be used`,
       )]

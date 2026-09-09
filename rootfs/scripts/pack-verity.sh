@@ -1,5 +1,5 @@
 #!/bin/sh
-# Append the dm-verity hash tree, pad to a whole MiB, and write the parameters out.
+# Append the exact dm-verity hash tree and write build parameters.
 #
 # Called from rootfs/compose/90-pack.Dockerfile (pack stage), where the reasoning lives.
 # Build arguments read from the environment: VERITY_SALT, VERITY_HASH_ALGO, VERITY_DATA_BLOCK_SIZE,
@@ -35,8 +35,7 @@ set -eu
         | awk '/^Root hash:/ { print $NF }')"
     test -n "${root_hash}"
     raw_bytes="$(stat -c %s /out/rootfs-verity.img)"
-    image_bytes=$(( (raw_bytes + 1048575) / 1048576 * 1048576 ))
-    truncate -s "${image_bytes}" /out/rootfs-verity.img
+    image_bytes=${raw_bytes}
     rm -f /out/rootfs.squashfs
     { echo "VERITY_ROOT_HASH=${root_hash}"
       echo "VERITY_SALT=${VERITY_SALT}"
@@ -49,5 +48,5 @@ set -eu
       echo "SQUASHFS_BYTES=${sq_bytes}"
       echo "IMAGE_BYTES=${image_bytes}"
     } > /out/rootfs-verity.env
-    echo "pack: squashfs ${sq_bytes} B + verity -> ${raw_bytes} B -> padded ${image_bytes} B"
+    echo "pack: squashfs ${sq_bytes} B + verity -> ${raw_bytes} B"
     echo "pack: root hash ${root_hash}"

@@ -8,7 +8,7 @@ stops being unclaimed and becomes yours.
 
 ## 1. What the device does by itself
 
-On the first boot from empty STATE, the management daemon seeds the device's
+On the first boot from empty DATA state directories, the management daemon seeds the device's
 configuration once, atomically, before anything else consumes it:
 
 - a **device id** — 32 hex characters drawn from the system CSPRNG;
@@ -23,7 +23,7 @@ configuration once, atomically, before anything else consumes it:
   match for wired `eth*` interfaces, so a fresh device acquires an address on
   any DHCP network without mosd guessing interface names.
 
-A durable undo journal covers the DATA configuration documents and STATE identity
+A durable undo journal covers the DATA configuration documents and DATA identity
 record. A pending rollback must finish before the next startup can consume them
 ([provisioning.md](../design/provisioning.md#413-idempotence-and-atomicity)).
 A failed seed aborts loudly and the next boot retries from scratch; a
@@ -33,12 +33,12 @@ grows to fill the disk (see [install.md](install.md)).
 
 > status: shipped — evidence: `docs/design/provisioning.md`, `rootfs/overlay/usr/lib/mos/mos-seed-state`
 
-On cx3576, the device also persists a machine id into the redundant U-Boot
-environment on first boot, so `/etc/machine-id` is stable from the second boot
-onward; on boards without a writable bootloader environment the unit is
-inert and the machine id is per-boot transient.
+The authenticated early loader creates `/mnt/data/state/machine-id` before
+systemd on every current target and binds it read-only at `/etc/machine-id`.
+It stays stable across reboot, update and rollback. A complete reflash creates a
+new identity. No identity is stored in the bootloader's attempt records.
 
-> status: board-dependent — evidence: `rootfs/overlay/usr/lib/mos/mos-machine-id`, `boards/cx3576/boot.cmd`
+> status: shipped — evidence: `pkgs/mos-deploy/src/bin/mos-init.rs`, `verify/src/checks-file-root.ts`
 
 ## 2. Finding the device
 
@@ -94,8 +94,8 @@ failure.
 
 | Transport | Where the file goes | When it is read |
 |---|---|---|
-| `boot` | the FAT boot slot partition, by its GPT label (`boot-a`, then `boot-b`) | first; written with any card reader, with the medium out of the device |
-| `media` | an attached removable block device — its partitions first, then the bare disk | only when the boot partitions carried nothing |
+| `boot` | the UEFI ESP, by its GPT label `esp`; absent on cx3576 | first; written with any card reader, with the medium out of the device |
+| `media` | an attached removable block device — its partitions first, then the bare disk | when the ESP is absent or carries no document |
 
 Both are read **once, at boot, before anything is listening**. There is
 deliberately no udev trigger and no HTTP route that applies a document: a
@@ -117,7 +117,7 @@ by the same validator an API write goes through.
 **Two things are refused by name, and asking for them is an error, not an
 omission**: a **certificate** section and a **hostname**. There is no settings
 path for either — the only certificate on the device is apid's own self-signed
-TLS pair, a file on STATE rather than a setting, and the device names itself
+TLS pair, a file in DATA/state rather than a setting, and the device names itself
 from the identity the document injects. A document carrying either is refused
 naming the offending key.
 

@@ -150,10 +150,10 @@ describe('the path PAM opens', () => {
   test('a link retargeted at STATE fails the persistence check specifically', async () => {
     // This is the mutation the other checks cannot see: it IS a symlink, there
     // IS no regular file in the image, and the destination is NOT in the
-    // squashfs. Only "not under /mnt/state or /var" catches it, and what it
+    // squashfs. Only "not under /mnt/data/state or /var" catches it, and what it
     // catches is a password that survives the reboot meant to end it.
     const fx = await mutated('shadow-link-not-persistent', root =>
-      retarget(root, '/mnt/state/mos/shadow'))
+      retarget(root, '/mnt/data/state/mos/shadow'))
     try {
       expect(await verdictOf(fx, 'shadow-link-not-persistent')).toBe('fail')
       expect(await verdictOf(fx, 'shadow-no-regular-in-image')).toBe('pass')
@@ -436,9 +436,9 @@ describe('the reconcile unit and script', () => {
     }
   })
 
-  test('RequiresMountsFor=/mnt/state is caught too, not just After=', async () => {
+  test('RequiresMountsFor=/mnt/data/state is caught too, not just After=', async () => {
     const fx = await mutated('shadow-reconcile-no-state-dep', root =>
-      rewrite(root, REC_UNIT, t => t.replace('[Unit]\n', '[Unit]\nRequiresMountsFor=/mnt/state/mos\n')))
+      rewrite(root, REC_UNIT, t => t.replace('[Unit]\n', '[Unit]\nRequiresMountsFor=/mnt/data/state/mos\n')))
     try {
       expect(await verdictOf(fx, 'shadow-reconcile-no-state-dep')).toBe('fail')
     }
@@ -469,7 +469,7 @@ describe('the reconcile unit and script', () => {
   test('a destination outside /run is caught even though the link still points at /run', async () => {
     const fx = await mutated('shadow-reconcile-builds-in-ram', root =>
       rewrite(root, REC_SCRIPT, t => t.replace('SHADOW="${MOS_SHADOW_PASSWD:-/run/mos/shadow}"',
-        'SHADOW="${MOS_SHADOW_PASSWD:-/mnt/state/mos/shadow}"')))
+        'SHADOW="${MOS_SHADOW_PASSWD:-/mnt/data/state/mos/shadow}"')))
     try {
       expect(await verdictOf(fx, 'shadow-reconcile-builds-in-ram')).toBe('fail')
       expect(await messageOf(fx, 'shadow-reconcile-builds-in-ram')).toContain('would not be on a tmpfs')
@@ -496,10 +496,10 @@ describe('the reconcile unit and script', () => {
 
   test('mos-seed-state putting a shadow file on STATE is caught, comments excepted', async () => {
     const fx = await mutated('seed-state-no-shadow-on-state', root =>
-      rewrite(root, '/usr/lib/mos/mos-seed-state', t => `${t}install -m 0600 /dev/null /mnt/state/mos/shadow\n`))
+      rewrite(root, '/usr/lib/mos/mos-seed-state', t => `${t}install -m 0600 /dev/null /mnt/data/state/mos/shadow\n`))
     try {
       expect(await verdictOf(fx, 'seed-state-no-shadow-on-state')).toBe('fail')
-      expect(await messageOf(fx, 'seed-state-no-shadow-on-state')).toContain('/mnt/state/mos/shadow')
+      expect(await messageOf(fx, 'seed-state-no-shadow-on-state')).toContain('/mnt/data/state/mos/shadow')
     }
     finally {
       fx.dispose()
@@ -508,7 +508,7 @@ describe('the reconcile unit and script', () => {
     const documented = packedRootFixture(cx3576)
     try {
       rewrite(documented.root, '/usr/lib/mos/mos-seed-state',
-        t => `${t}# no /mnt/state/mos/shadow here: the file is built in RAM\n`)
+        t => `${t}# no /mnt/data/state/mos/shadow here: the file is built in RAM\n`)
       expect(await verdictOf(documented, 'seed-state-no-shadow-on-state')).toBe('pass')
     }
     finally {

@@ -45,7 +45,7 @@ test('a replacement key cannot silently take over an existing catalog', async ()
     first.close()
     const other = generateKeyPairSync('ed25519').privateKey.export({ type: 'pkcs8', format: 'pem' })
     await writeFile(join(directory, 'other.pem'), other)
-    await expect(createService({ ...config, signingKeyFile: join(directory, 'other.pem') })).rejects.toThrow('Signing key differs')
+    await expect(createService({ ...config, signingKeyFile: join(directory, 'other.pem') })).rejects.toThrow('untrusted metadata key')
   }
   finally {
     await rm(directory, { recursive: true, force: true })

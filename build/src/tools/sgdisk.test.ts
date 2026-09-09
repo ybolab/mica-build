@@ -8,13 +8,13 @@
 // M6b's and M6c's.
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
-import { rmSync } from 'node:fs'
+import { readFileSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
-import { loadGeometry, type Geometry, type PlacedPartition } from '../geometry.ts'
-import { makeWorkDir, REPO_ROOT, requireShippedBoards } from '../paths.ts'
+import { parseFileLayout, type FileLayout } from '../file-layout.ts'
+import { makeWorkDir, REPO_ROOT } from '../paths.ts'
 import { Toolbox, ToolError } from '../toolbox.ts'
 import { OPEN_TIMEOUT_MS, TOOL_TIMEOUT_MS } from '../testing.ts'
-import { CX3576_ASSEMBLY } from '../toolsets.ts'
+import { FILE_IMAGE_TOOLS } from '../file-image.ts'
 import { readPartition, verifyGpt, writeGpt, writeGptArgs, type GptPartitionSpec } from './sgdisk.ts'
 import { truncate } from './dd.ts'
 
@@ -23,28 +23,19 @@ let work = ''
 
 beforeAll(async () => {
   work = makeWorkDir('sgdisk')
-  tb = await Toolbox.open(CX3576_ASSEMBLY, { mounts: [REPO_ROOT], cwd: work })
+  tb = await Toolbox.open(FILE_IMAGE_TOOLS, { mounts: [REPO_ROOT], cwd: work })
 }, OPEN_TIMEOUT_MS)
 afterAll(async () => {
   await tb?.close()
   if (work !== '') rmSync(work, { recursive: true, force: true })
 }, OPEN_TIMEOUT_MS)
 
-/** The partitions a board definition pins outright -- start AND size both given. */
-function pinned(g: Geometry): { spec: GptPartitionSpec, p: PlacedPartition }[] {
-  return g.partitions
-    .filter(p => p.start !== undefined && p.size !== undefined && p.partnum !== undefined)
-    .map(p => ({
-      p,
-      spec: {
-        partnum: p.partnum!,
-        startSector: p.start!.sectors,
-        sizeSectors: p.size!.sectors,
-        label: p.label,
-        typecode: p.typecode,
-        guid: p.guid,
-      },
-    }))
+function layout(board: string): FileLayout {
+  return parseFileLayout(readFileSync(join(REPO_ROOT, 'boards', board, 'board.env'), 'utf8'))
+}
+function specs(g: FileLayout): GptPartitionSpec[] {
+  return g.partitions.map(p => ({ partnum: BigInt(p.number), startSector: BigInt(p.startSector), sizeSectors: BigInt(p.sizeSectors),
+    label: p.name.toLowerCase(), typecode: p.type, guid: p.guid }))
 }
 
 describe('the argv shape, without a disk', () => {
@@ -100,68 +91,41 @@ describe('the argv shape, without a disk', () => {
   })
 })
 
-describe('against the real sgdisk, for both shipped boards', () => {
-  for (const board of requireShippedBoards()) {
-    test(`${board}: every pinned partition lands where the definition says`, async () => {
-      const g = loadGeometry(board)
-      const parts = pinned(g)
-      // Not "no mismatches found": a loop over nothing finds none either.
-      // cx3576 pins five outright (loader, both uenv, both boot); x64 pins
-      // three (esp, both boot). Everything after the rootfs slots is sized in
-      // the definition and PLACED at assembly time, which is M6b's and M6c's
-      // chain and deliberately not modelled here.
-      const expected = board === 'cx3576' ? 5 : board === 's905x5m' ? 6 : 3
-      expect(`${board}: ${parts.length} pinned partitions`).toBe(`${board}: ${expected} pinned partitions`)
-      expect(parts.map(x => x.p.name).join(' ')).toBe(
-        board === 'cx3576' ? 'LOADER UENV_A UENV_B BOOT_A BOOT_B'
-          : board === 's905x5m' ? 'RESERVED ENV UENV_A UENV_B BOOT_A BOOT_B' : 'ESP BOOT_A BOOT_B',
-      )
-
+describe('against the real sgdisk for the current file layouts', () => {
+  for (const board of ['cx3576', 'x64', 'virt-arm64']) {
+    test(`${board}: all three partitions land at the declared boundaries`, async () => {
+      const g = layout(board)
+      const parts = specs(g)
+      expect(parts).toHaveLength(3)
       const img = join(work, `${board}.img`)
-      await truncate(tb, img, '2048M')
-      await writeGpt(tb, img, {
-        diskGuid: g.disk.guid,
-        // 1 on cx3576 and 2048 on x64, out of the definitions, not a default.
-        alignSectors: g.disk.alignSectors === 0n ? undefined : g.disk.alignSectors,
-        clear: true,
-        partitions: parts.map(x => x.spec),
-      })
+      await truncate(tb, img, (BigInt(g.sizeSectors) * 512n).toString())
+      await writeGpt(tb, img, { diskGuid: g.diskGuid, alignSectors: BigInt(g.alignSectors), clear: true, partitions: parts })
       expect(await verifyGpt(tb, img)).toContain('No problems found')
-
-      for (const { p, spec } of parts) {
+      for (const spec of parts) {
         const got = await readPartition(tb, img, spec.partnum)
-        // Read BACK, not asserted about what was asked for: sgdisk is free to
-        // move a start, and asking proves nothing about the table.
-        expect(`${board}/${p.name} start`).toBe(`${board}/${p.name} start`)
-        expect(`${p.name}@${got.firstSector}`).toBe(`${p.name}@${spec.startSector}`)
-        expect(`${p.name}:${got.sizeSectors}`).toBe(`${p.name}:${spec.sizeSectors}`)
-        expect(`${p.name}:${got.name}`).toBe(`${p.name}:${p.label}`)
-        expect(`${p.name}:${got.guid.toUpperCase()}`).toBe(`${p.name}:${p.guid?.toUpperCase()}`)
-        expect(`${p.name}:${got.typecode.toUpperCase()}`).toBe(`${p.name}:${p.typecode?.toUpperCase()}`)
+        expect(got.firstSector).toBe(spec.startSector)
+        expect(got.sizeSectors).toBe(spec.sizeSectors)
+        expect(got.name).toBe(spec.label!)
+        expect(got.guid.toLowerCase()).toBe(spec.guid!)
+        expect(got.typecode.toLowerCase()).toBe(spec.typecode!)
       }
-   }, TOOL_TIMEOUT_MS)
+    }, TOOL_TIMEOUT_MS)
   }
 
   test('cx3576 is the board that needs -a 1, and WITHOUT it sgdisk relocates the loader and exits 0', async () => {
     // The failure this whole knob exists for, driven. boards/cx3576/board.env
     // puts the loader at sector 64, which is not 2048-aligned; sgdisk moves it
     // silently and the bootloader ends up outside its own partition.
-    const g = loadGeometry('cx3576')
-    const loader = g.requirePartition('LOADER')
-    const spec: GptPartitionSpec = {
-      partnum: loader.partnum!,
-      startSector: loader.start!.sectors,
-      sizeSectors: loader.size!.sectors,
-      label: loader.label,
-    }
+    const g = layout('cx3576')
+    const spec = specs(g)[0]!
     expect(spec.startSector).toBe(64n)
 
     const withA = join(work, 'align-1.img')
     const withoutA = join(work, 'align-default.img')
     await truncate(tb, withA, '64M')
     await truncate(tb, withoutA, '64M')
-    await writeGpt(tb, withA, { diskGuid: g.disk.guid, alignSectors: 1n, clear: true, partitions: [spec] })
-    const r = await writeGpt(tb, withoutA, { diskGuid: g.disk.guid, clear: true, partitions: [spec] })
+    await writeGpt(tb, withA, { diskGuid: g.diskGuid, alignSectors: 1n, clear: true, partitions: [spec] })
+    const r = await writeGpt(tb, withoutA, { diskGuid: g.diskGuid, clear: true, partitions: [spec] })
 
     expect(r.exitCode).toBe(0)
     expect((await readPartition(tb, withA, spec.partnum)).firstSector).toBe(64n)

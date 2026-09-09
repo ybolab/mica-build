@@ -1,7 +1,7 @@
 // The toolbox seam, driven from the failing side.
 //
 // THERE IS ONE ROUTE NOW. This file used to open COREUTILS on the host and
-// CX3576_ASSEMBLY in a container and assert that the choice was measured; the
+// FILE_IMAGE_TOOLS in a container and assert that the choice was measured; the
 // policy in docs/design/build.md section 0 removed the choice, and the cases
 // below assert the refusal instead. COREUTILS is what makes that a real
 // assertion rather than a restatement: dd and truncate ARE on this host, so a
@@ -15,7 +15,8 @@ import { $ } from 'bun'
 import { makeWorkDir, REPO_ROOT } from './paths.ts'
 import { Toolbox, ToolError, type Toolset } from './toolbox.ts'
 import { OPEN_TIMEOUT_MS, TOOL_TIMEOUT_MS } from './testing.ts'
-import { COREUTILS, CX3576_ASSEMBLY } from './toolsets.ts'
+import { COREUTILS } from './toolsets.ts'
+import { FILE_IMAGE_TOOLS } from './file-image.ts'
 
 const docker = process.env.MOS_BUILD_DOCKER || 'docker'
 
@@ -30,7 +31,7 @@ const announced: string[] = []
 beforeAll(async () => {
   work = makeWorkDir('toolbox')
   coreutils = await Toolbox.open(COREUTILS, { mounts: [REPO_ROOT], cwd: work, announce: l => announced.push(l) })
-  container = await Toolbox.open(CX3576_ASSEMBLY, { mounts: [REPO_ROOT], cwd: work, announce: l => announced.push(l) })
+  container = await Toolbox.open(FILE_IMAGE_TOOLS, { mounts: [REPO_ROOT], cwd: work, announce: l => announced.push(l) })
 }, OPEN_TIMEOUT_MS)
 
 afterAll(async () => {
@@ -268,8 +269,8 @@ describe('a toolbox that cannot provide its tools does not open', () => {
 
   test('asking for the host route is a refusal that names the policy', async () => {
     let msg = ''
-    try { await Toolbox.open(CX3576_ASSEMBLY, { route: 'host' }) } catch (e) { msg = (e as Error).message }
-    expect(msg).toContain('cx3576-assembly')
+    try { await Toolbox.open(FILE_IMAGE_TOOLS, { route: 'host' }) } catch (e) { msg = (e as Error).message }
+    expect(msg).toContain('file-image')
     expect(msg).toContain('the caller asked for it')
     expect(msg).toContain('docs/design/build.md section 0')
   })

@@ -10,7 +10,6 @@
         "base",
         "mos-bluetooth",
         "mos-podman",
-        "mos-rauc",
         "mos-system"
       ]
     },
@@ -23,7 +22,6 @@
         "base",
         "mos-bluetooth",
         "mos-podman",
-        "mos-rauc",
         "mos-system"
       ]
     }

@@ -4,18 +4,16 @@ import { join } from 'node:path'
 import { AppError } from '../shared/errors'
 
 export async function download(c: Context, service: ReleaseService) {
-  const release = service.get(c.req.param('id') ?? '')
-  if (release.status !== 'published' || !release.artifact || !release.size)
-    throw new AppError(404, 'not_found', 'Artifact not found')
-  const file = Bun.file(join(service.config.dataDir, 'artifacts', release.artifact))
-  if (!await file.exists() || file.size !== release.size)
-    throw new AppError(503, 'artifact_unavailable', 'Artifact is unavailable')
-  const etag = `"${release.sha256}"`
+  const object = service.downloadable(c.req.param('digest') ?? '')
+  const file = Bun.file(join(service.config.dataDir, 'objects', object.sha256))
+  if (!await file.exists() || file.size !== object.bytes)
+    throw new AppError(503, 'object_unavailable', 'Object is unavailable')
+  const etag = `"${object.sha256}"`
   c.header('ETag', etag)
   c.header('Accept-Ranges', 'bytes')
   c.header('Cache-Control', 'public, max-age=0, must-revalidate')
   c.header('Content-Type', 'application/octet-stream')
-  c.header('Content-Disposition', `attachment; filename="mos-${release.board}-${release.epoch}.raucb"`)
+  c.header('Content-Disposition', `attachment; filename="${object.sha256}"`)
   if (c.req.header('If-None-Match') === etag)
     return c.body(null, 304)
   const range = c.req.header('Range')

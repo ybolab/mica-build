@@ -1,0 +1,75 @@
+import { parseBoardEnv } from './verify-package.ts'
+
+export interface FilePartition {
+  name: string, number: number, startSector: number, sizeSectors: number, guid: string, type: string, fsUuid?: string
+}
+export interface FileLayout {
+  board: string, backend: 'systemd-boot' | 'uboot-fit', diskGuid: string,
+  alignSectors: number, partitions: FilePartition[], sizeSectors: number,
+  firmware?: { loaderStartSector: number, loaderSizeSectors: number, envOffsets: [number, number], envSize: number }
+}
+
+export function parseFileLayout(source: string): FileLayout {
+  const env = parseBoardEnv(source, 'board.env')
+  if (env.duplicates.length) throw new Error('Duplicate layout assignment')
+  const get = (name: string) => {
+    const value = env.values.get(name)
+    if (!value) throw new Error(`Missing layout field ${name}`)
+    return value
+  }
+  const number = (name: string) => {
+    const value = Number(get(name))
+    if (!Number.isSafeInteger(value) || value <= 0) throw new Error(`Invalid layout integer ${name}`)
+    return value
+  }
+  const guid = (name: string) => {
+    const value = get(name).toLowerCase()
+    if (!/^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/.test(value)) throw new Error(`Invalid GUID ${name}`)
+    return value
+  }
+  const backend = get('BOOT_BACKEND')
+  if (get('LAYOUT_VERSION') !== '3' || !['systemd-boot', 'uboot-fit'].includes(backend) || number('SECTOR_SIZE') !== 512) throw new Error('Expected a signed file deployment layout')
+  const fit = backend === 'uboot-fit'
+  const names = [fit ? 'FIRMWARE' : 'ESP', 'SYSTEM', 'DATA']
+  if (get('LAYOUT_PARTITIONS') !== names.join(' ')) throw new Error('Invalid file deployment partition set')
+  const partitions = names.map((name, i) => ({
+    name, number: number(`${name}_PARTNUM`),
+    startSector: fit && i === 0 ? number('FIRMWARE_START_SECTOR') : number(`${name}_START_MIB`) * 2048,
+    sizeSectors: fit && i === 0 ? number('FIRMWARE_SIZE_SECTORS') : number(`${name}_SIZE_MIB`) * 2048,
+    guid: guid(`${name}_GUID`), type: guid(`${name}_TYPECODE`), ...(i ? { fsUuid: guid(`${name}_FS_UUID`) } : {}),
+  }))
+  let end = fit ? 64 : 2048
+  for (const [i, partition] of partitions.entries()) {
+    if (partition.number !== i + 1 || partition.startSector !== end || !Number.isSafeInteger(partition.sizeSectors)) throw new Error('Partition order, gap or overlap is invalid')
+    end += partition.sizeSectors
+  }
+  if (!Number.isSafeInteger(end + 2048) || new Set(partitions.map(p => p.guid)).size !== 3) throw new Error('Invalid partition sizes or duplicate GUID')
+  const alignSectors = number('GPT_ALIGN_SECTORS')
+  if (alignSectors !== (fit ? 1 : 2048)) throw new Error('Invalid GPT alignment')
+  let firmware: FileLayout['firmware']
+  if (fit) {
+    const loaderBytes = number('UBOOT_MAX_BYTES')
+    firmware = { loaderStartSector: number('UBOOT_SEEK_SECTOR'), loaderSizeSectors: loaderBytes / 512,
+      envOffsets: [number('UENV_A_OFFSET_BYTES'), number('UENV_B_OFFSET_BYTES')], envSize: number('UENV_SIZE_BYTES') }
+    if (firmware.loaderStartSector !== 64 || !Number.isSafeInteger(firmware.loaderSizeSectors)
+      || 64 * 512 + loaderBytes !== firmware.envOffsets[0]
+      || firmware.envOffsets[0] !== 16 * 1048576 || firmware.envOffsets[1] !== 17 * 1048576
+      || firmware.envSize !== 65536 || partitions[1]!.startSector !== 18 * 2048
+      || partitions[0]!.type !== '8da63339-0007-60c0-c436-083ac8230908') throw new Error('Invalid protected firmware ranges')
+  }
+  return { board: get('LAYOUT_BOARD'), backend: backend as FileLayout['backend'], diskGuid: guid('DISK_GUID'), alignSectors, partitions, sizeSectors: end + 2048, ...(firmware ? { firmware } : {}) }
+
+}
+
+/** Reserve space for three full generations plus measured filesystem headroom. */
+export function checkCapacity(layout: FileLayout, systemBytes: number, bootBytes: number): void {
+  const fit = layout.backend === 'uboot-fit'
+  const requirements = fit ? [['SYSTEM', systemBytes + bootBytes, 128] as const]
+    : [['SYSTEM', systemBytes, 128] as const, ['ESP', bootBytes, 64] as const]
+  for (const [name, bytes, reserve] of requirements) {
+    const partition = layout.partitions.find(p => p.name === name)
+    if (!Number.isSafeInteger(bytes) || bytes <= 0 || !partition || 3 * bytes + reserve * 1048576 > partition.sizeSectors * 512) {
+      throw new Error(`${name} cannot retain current, fallback and candidate with reserve`)
+    }
+  }
+}

@@ -45,7 +45,7 @@ FROM ${MOS_IMAGE_DEBIAN_TRIXIE} AS harvest
 # re-points it on every point release. rootfs/packages-src/ca-trust/Dockerfile
 # states that shape at length for the trust store and it is the same here.
 #
-# A `VERSION_FROM` pin was considered and NOT taken. It is what podman and rauc
+# A `VERSION_FROM` pin was considered and NOT taken. It is what podman and mos-deploy
 # use, and both are right to: this repository chooses their versions and
 # compiles them from source, so the tree can state one. busybox is neither
 # chosen nor compiled here -- it is whatever the pinned base's suite currently

@@ -97,10 +97,10 @@ export function skewedFrom(version: string): string {
 /**
  * The three cases.
  *
- * Two of them break `crun` and one breaks `rauc`, and that is chosen rather than
+ * Two of them break `crun` and one breaks `mos-deploy`, and that is chosen rather than
  * incidental: both are self-built, both are dynamically linked against this
- * root's own libraries, and `libjson-glib-1.0.so.0` -- measured in the x64
- * factory root -- is NEEDed by `/usr/bin/rauc` and by nothing else the register
+ * root's own libraries, and `libgcc_s.so.1` -- measured in the x64
+ * factory root -- is NEEDed by `/usr/bin/mos-deploy` and by nothing else the register
  * covers. So the missing-soname case fails exactly one artifact, and the run
  * that reports it says so.
  */
@@ -140,7 +140,7 @@ export const CASES: readonly NegativeCase[] = [
   {
     name: 'missing-soname',
     clause: 'a deliberately missing-soname binary fails the build',
-    artifact: 'rauc',
+    artifact: 'mos-deploy',
     // The library is REMOVED rather than the binary rewritten, because that is
     // the shape this actually takes in a build: an install stage stops copying a
     // dependency, or a feature stage that provided it is declined, and the
@@ -155,8 +155,8 @@ export const CASES: readonly NegativeCase[] = [
     mutation: a => `RUN set -eu; \\
     p='${a.path}'; \\
     ldd "$p" > /tmp/needed.txt; \\
-    lib="$(sed -n 's|.*=> \\(/[^ ]*libjson-glib[^ ]*\\).*|\\1|p' /tmp/needed.txt | head -1)"; \\
-    [ -n "$lib" ] || { echo "REFUSING: $p does not NEED libjson-glib in this root, so removing it would mutate nothing. Its NEEDs are:" >&2; cat /tmp/needed.txt >&2; exit 1; }; \\
+    lib="$(sed -n 's|.*=> \\(/[^ ]*libgcc_s[^ ]*\\).*|\\1|p' /tmp/needed.txt | head -1)"; \\
+    [ -n "$lib" ] || { echo "REFUSING: $p does not NEED libgcc_s in this root, so removing it would mutate nothing. Its NEEDs are:" >&2; cat /tmp/needed.txt >&2; exit 1; }; \\
     [ -e "$lib" ] || { echo "REFUSING: $lib is not there to remove." >&2; exit 1; }; \\
     rm -f "$lib"; \\
     [ ! -e "$lib" ] || { echo "REFUSING: the removal did not take; $lib is still there." >&2; exit 1; }; \\

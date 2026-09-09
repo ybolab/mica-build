@@ -28,11 +28,9 @@ container is labelled `ai-agent=true` and named `ai-agent-signed-boot-lab-*`.
 | Script | Proves | On |
 |---|---|---|
 | `verity-matrix.sh` | the kernel authenticates a root hash: valid accepted, absent/unrelated-key/modified/truncated and a valid signature over another root's hash all refused with the kernel's own errno; a modified block reads EIO under a mapping the signature still authorises; the same kernel takes a SECOND signed root and switches its root onto each | any board kernel, in QEMU, from an initramfs -- no disk, no bootloader |
-| `second-root.sh` | (a fixture, not a proof) composes a second root for the case above, taking the shipped root and its environment aside first so `verify --board <board>` still reports on the root its image was built from | any board this checkout can compose |
 | `fit-sandbox.sh` | U-Boot with a `required = "conf"` key refuses an unsigned FIT, one signed by an untrusted key, and one whose kernel, DTB or initramfs changed after signing | the U-Boot **sandbox** at the board's own commit -- not the board |
 | `cx3576-control-fdt.sh` | the board's own U-Boot control FDT takes that key, and by how many bytes it grows | the cx3576 U-Boot artefact |
 | `uefi-uki.sh` | two Type #1 entries share one signed UKI; boot counting spends one entry and falls to the other; `LoaderEntrySelected` reaches early init without the counter suffix; the entry's `options` do not reach the command line under Secure Boot; a modified UKI is refused | QEMU with development keys enrolled and Secure Boot on (OVMF or AAVMF) |
-| `image-boot.sh` | the assembled image still boots through firmware, GRUB and its `dm-mod.create=` line to a login prompt, with the anchor in the running kernel's keyring | QEMU, Secure Boot off |
 | `key-lifecycle.sh` | P2: signed verity before certificate validity and after expiry; root's attempt to revoke the built-in content key; missing/untrusted signatures still refused | x64 QEMU, using a P1 kernel/initramfs and its public development certificate |
 
 Each script's own header says the same thing at length, including what it does
@@ -62,3 +60,9 @@ dm-verity, the keyring or PKCS#7.
 `prepare-payload.sh` takes `A_SRC` and `B_SRC` and has no defaults for either.
 A default pointing at one checkout's `_out` is what made the first version of
 this lab unrunnable anywhere else.
+
+Current complete-image acceptance uses `tests/file-ab-x64/runtime-build.sh`,
+`boot.sh`, and `updates.sh` with Secure Boot enabled. The component-update
+sequence proves one kernel accepts distinct signed roots without rewriting BSP
+outputs. Signature refusal coverage remains in this directory, native component
+tests, and `tests/file-ab-fit/signatures.sh`; no raw-slot boot harness remains.

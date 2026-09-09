@@ -79,7 +79,7 @@ and no container unit exists.
 
 ## 3. Where files go
 
-`/etc/containers/systemd` — a bind of `/mnt/state/quadlet`, on the STATE
+`/etc/containers/systemd` — a bind of `/mnt/data/state/quadlet`, on the STATE
 partition, so what you put there survives a reboot **and an A/B update**.
 
 That path is not a choice; it is where Quadlet looks. Its search list, printed
@@ -205,12 +205,11 @@ A named volume lives under the graph root, which on this device is
 
 Two consequences worth stating plainly:
 
-- **DATA is shared.** Customer UI bundles and application data live on the same
-  partition. A container that logs without rotation fills the partition the
-  device's own UI is served from.
-- **`/var` is not an option.** It is the EPHEMERAL partition: 512 MiB, and
-  wiped by design. Bind-mounting a container's data there gives you storage
-  that works for months and then is gone with no error anywhere.
+- **DATA is shared.** UI bundles and application data consume the bulk quota.
+  Filling that quota limits the writer while preserving the measured state/meta
+  reserve; it does not create physical filesystem isolation.
+- **`/var` parents are immutable.** Container storage belongs under the approved
+  DATA namespace, not an arbitrary `/var` path. See [storage](storage.md).
 
 For a bind mount of a host path, use one under `/srv`:
 
@@ -237,9 +236,8 @@ container output goes to the journal:
 journalctl -u web.service -f
 ```
 
-The journal is on `/var` — EPHEMERAL. Logs do not survive a wipe, and that is
-deliberate: a device that keeps every container's stdout forever fills the
-partition its own updates need.
+The journal is volatile under `/run/log/journal`. Export diagnostics needed
+across reboot; container stdout is not a permanent audit store.
 
 Writing `LogDriver=journald` in the unit says the same thing where the reader
 of the unit can see it, and pins it against a later edit to `containers.conf`.

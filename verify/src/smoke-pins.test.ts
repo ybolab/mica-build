@@ -10,7 +10,7 @@
 // The positive controls are the shipped files. Every negative case below is a
 // fabricated fixture, and a suite of nothing but fabricated fixtures proves
 // only that the reader handles files nobody has. So each group also reads the
-// REAL pkgs/podman/versions.env, pkgs/rauc/versions.env and crate manifests,
+// REAL pkgs/podman/versions.env and crate manifests,
 // and asserts the search space is non-empty before concluding anything about
 // what is in it.
 
@@ -22,7 +22,6 @@ import {
   cratePath,
   expectedFromRecorded,
   PODMAN_VERSIONS_ENV,
-  RAUC_VERSIONS_ENV,
   readCratePackageVersion,
   readPin,
   readVersionsEnv,
@@ -116,9 +115,9 @@ describe('readVersionsEnv and pinKeys, over the files this tree ships', () => {
 
 describe('readPin', () => {
   test('reads a real pin out of the real file', () => {
-    const pin = readPin(RAUC_VERSIONS_ENV, 'RAUC_VERSION')
-    expect(pin.file).toBe(RAUC_VERSIONS_ENV)
-    expect(pin.key).toBe('RAUC_VERSION')
+    const pin = readPin(PODMAN_VERSIONS_ENV, 'PODMAN_VERSION')
+    expect(pin.file).toBe(PODMAN_VERSIONS_ENV)
+    expect(pin.key).toBe('PODMAN_VERSION')
     expect(pin.recorded).not.toBe('')
     expect(pin.expected).toBe(expectedFromRecorded(pin.recorded))
   })
@@ -133,7 +132,7 @@ describe('readPin', () => {
 
   // Failing side: the key is there and EMPTY. This is the dangerous one -- an
   // empty expectation is not a weaker check, it is a different one, and
-  // rauc-install.sh already guards the same shape in its own words.
+  // the reader must reject it before comparing any binary output.
   test('refuses a declared-empty pin rather than treating it as no expectation', () => {
     const path = fixture('empty.env', 'THING_VERSION=""\nOTHER_VERSION=v1.2.3\n')
     expect(() => readPin(path, 'THING_VERSION')).toThrow(/declares no non-empty THING_VERSION/)

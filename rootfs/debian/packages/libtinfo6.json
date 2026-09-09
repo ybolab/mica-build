@@ -22,7 +22,6 @@
       "consumers": [
         "base",
         "mos-bluetooth",
-        "mos-board-s905x5m",
         "mos-podman",
         "mos-system",
         "mos-wifi"

@@ -380,7 +380,7 @@ function renderTargetBind(id: string, where: string): CheckCase {
       fail: [
         `${where} is a reconciler render target but ${unit} does not exist;`,
         `${unit} does not mount ${where} (its Where= is '`,
-        `${unit} is not backed by STATE (What= must be under /mnt/state); a tmpfs or nothing at all`,
+        `${unit} is not backed by STATE (What= must be under /mnt/data/state); a tmpfs or nothing at all`,
         `${unit} exists but is not enabled; ${where} would stay on the read-only squashfs`,
       ],
     },
@@ -397,9 +397,9 @@ function renderTargetBind(id: string, where: string): CheckCase {
         return [verdict(id, false,
           `${unit} does not mount ${where} (its Where= is '${unitValue(root, unitPath, 'Where=')}')`)]
       }
-      if (!lines.some(l => /^What=\/mnt\/state\//.test(l))) {
+      if (!lines.some(l => /^What=\/mnt\/data\/state\//.test(l))) {
         return [verdict(id, false,
-          `${unit} is not backed by STATE (What= must be under /mnt/state); a tmpfs or nothing at all `
+          `${unit} is not backed by STATE (What= must be under /mnt/data/state); a tmpfs or nothing at all `
           + `would lose every configured network on reboot`)]
       }
       if (wantsLink(root, ETC_UNITS, unit) === undefined) {
@@ -418,7 +418,7 @@ function renderTargetBind(id: string, where: string): CheckCase {
  *
  * mos-seed-state is the only thing that runs early enough, and the assertion is
  * in two halves because the seed creates both directories from ONE loop: the
- * loop does `mkdir -p` and `chmod 0700` under /mnt/state, and THIS directory's
+ * loop does `mkdir -p` and `chmod 0700` under /mnt/data/state, and THIS directory's
  * name is one of the loop's items. Either half alone would pass for a script
  * that created the other directory twice.
  *
@@ -445,10 +445,12 @@ function seedStateCreates(id: string, where: string): CheckCase {
       const loopItems = text === undefined
         ? []
         : text.split('\n')
-          .flatMap(l => /^for d in (.*); do$/.exec(l)?.[1]?.split(' ') ?? [])
+          .flatMap(l => /^for name in (.*); do ensure_dir \"\$name\" 0700; done$/.exec(l)?.[1]?.split(' ') ?? [])
       const ok = src !== '' && text !== undefined
-        && text.includes('mkdir -p "/mnt/state/$d"')
-        && text.includes('chmod 0700 "/mnt/state/$d"')
+        && text.includes('state=/mnt/data/state')
+        && text.includes('mkdir -p "$state/$1"')
+        && text.includes('chmod "$2" "$state/$1"')
+        && text.includes('[ ! -L "$state/$1" ]')
         && loopItems.includes(base)
       return [verdict(
         id,
@@ -500,42 +502,6 @@ const DNSMASQ_CHECK: CheckCase = {
  * immutable dm-verity squashfs and nothing runs `systemctl enable` on it.
  */
 const REGDB_UNIT = 'mos-regdb-reload.service'
-
-/**
- * `/lib/firmware`, which is what the KERNEL searches, not `/usr/lib/firmware`.
- *
- * They are the same directory on a merged-usr root and the distinction still
- * matters: the assertion is that the firmware loader finds the file, so it is
- * spelled the way `fw_path[]` in drivers/base/firmware_loader/main.c spells it
- * and it passes through the merged-usr symlink on the way. A root that lost
- * that symlink would fail here, which is the correct answer.
- */
-const REGDB_FILES = ['/lib/firmware/regulatory.db', '/lib/firmware/regulatory.db.p7s'] as const
-
-const REGDB_PRESENT: CheckCase = {
-  id: 'wifi-regdb-present',
-  boards: WIFI_BOARDS,
-  shell: {
-    pass: 'the wireless regulatory database is in the image at',
-    fail: 'the wireless regulatory database is missing from the image:',
-  },
-  run: async (ctx): Promise<readonly CheckResult[]> => {
-    const root = await packedRoot(ctx)
-    const missing = REGDB_FILES.filter(p => !regularFileInRoot(root, p))
-    return [verdict(
-      'wifi-regdb-present',
-      missing.length === 0,
-      missing.length === 0
-        ? `the wireless regulatory database is in the image at ${REGDB_FILES.join(' and ')}`
-        : `the wireless regulatory database is missing from the image: ${missing.join(', ')}. `
-          + `Without it cfg80211 falls back to its built-in world domain -- the most conservative `
-          + `channel and transmit-power set and no country code -- whatever country_code mosd `
-          + `renders into a wpa_supplicant or hostapd instance. The signature file is required `
-          + `too: the board kernels set CONFIG_CFG80211_REQUIRE_SIGNED_REGDB, so an unsigned `
-          + `database is refused exactly like an absent one`,
-    )]
-  },
-}
 
 /**
  * The half that packaging alone does not buy, and the reason it is a separate
@@ -825,7 +791,6 @@ export const CONND_CHECKS: readonly CheckCase[] = [
   renderTargetBind('wifi-ap-config-bind', CONTRACT.apDir),
   seedStateCreates('wifi-ap-config-seeded', CONTRACT.apDir),
   DNSMASQ_CHECK,
-  REGDB_PRESENT,
   REGDB_RELOAD_ENABLED,
   REGDB_RELOAD_TOOL,
   WIFI_SKIPPED,

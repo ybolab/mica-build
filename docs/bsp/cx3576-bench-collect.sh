@@ -14,7 +14,7 @@
 # there. Everything it needs is in this file or on the image.
 #
 # WHAT IS ON THE IMAGE, measured on a shipped root: bash, sh, curl, networkctl,
-# journalctl, systemctl, rauc, podman, udevadm, dmesg, lsblk, date, stat, awk,
+# journalctl, systemctl, mos-deploy, podman, udevadm, dmesg, lsblk, date, stat, awk,
 # sed, grep. ABSENT: jq, python3, wget, perl -- and there is no package
 # manager, which is a property under test rather than an obstacle. BusyBox
 # ships with no applet links by design. So: no `jq`, nothing is installed, and
@@ -48,7 +48,7 @@
 set -u
 set -o pipefail
 
-COLLECTOR_VERSION=1
+COLLECTOR_VERSION=2
 
 # --- the dossier's rows, in the dossier's order -----------------------------
 # key|label. The label is what docs/bsp/cx3576-example.md's table says, spelled
@@ -101,9 +101,9 @@ STAGES=(
     "fieldbus|network|CAN, USB host and the OTG gadget console"
     "thermal|fieldbus|sustained load inside the thermal envelope"
     "watchdog|thermal|a deliberate hang, the reset, and the reset cause"
-    "update|watchdog|A/B install, flip, health gate, and a bad slot rolling back"
+    "update|watchdog|signed deployment install, confirmation, and failed-trial fallback"
     "powercut|update|power removed inside the named window"
-    "storagefill|powercut|DATA and /var filled past their thresholds"
+    "storagefill|powercut|bulk and disposable DATA quota containment"
     "recovery|storagefill|every recovery path, in the destructive order"
 )
 
@@ -140,7 +140,7 @@ USAGE
 
 options:
   --out DIR       run directory (default: the first writable of /srv/bench,
-                  /mnt/data/bench, /var/lib/mos-bench, /tmp/mos-bench)
+                  /tmp/mos-bench)
   --token TOK     apid bearer token; or set MOS_BENCH_TOKEN
   --date YYYY-MM-DD  the date written into pass/fail rows, when the device's
                   own clock is not to be trusted (see the RTC row)
@@ -188,13 +188,10 @@ pick_out() {
         echo "Pass --out DIR explicitly; the collector will not guess a directory here." >&2
         return 1
     fi
-    for candidate in /srv/bench /mnt/data/bench /var/lib/mos-bench /tmp/mos-bench; do
+    for candidate in /srv/bench /tmp/mos-bench; do
         if mkdir -p "$candidate" 2>/dev/null && [ -w "$candidate" ]; then
             case "$candidate" in
-                /srv/bench|/mnt/data/bench) ;;
-                /var/lib/mos-bench)
-                    echo "WARNING: falling back to $candidate. /var is EPHEMERAL on this image:" >&2
-                    echo "         a power cut or a reset loses this run. Copy it off after every stage." >&2 ;;
+                /srv/bench) ;;
                 /tmp/mos-bench)
                     echo "WARNING: falling back to $candidate, which is a TMPFS. This run does NOT" >&2
                     echo "         survive a reboot, and the power-cut stage cannot be recorded here." >&2 ;;
@@ -489,25 +486,19 @@ require_assumption() {
 
 # --- shared probes ----------------------------------------------------------
 
-# The booted slot, read the way mos-health reads it, with the same refusal:
-# output this parser was not written against is said loudly, never guessed at.
-rauc_booted_slot() {
+# Read the authenticated identity through the same command as mos-health.
+booted_deployment() {
     local out
-    have rauc || { printf ''; return 127; }
-    out=$(rauc status --output-format=shell 2>/dev/null) || { printf ''; return 1; }
-    case "$out" in *RAUC_SYSTEM_COMPATIBLE=*) ;; *) printf ''; return 2 ;; esac
-    printf '%s\n' "$out" | sed -n 's/^RAUC_SYSTEM_BOOTED_BOOTNAME=//p' | head -n1 | tr -d "\"'"
-}
-
-uboot_env() {
-    have fw_printenv || { printf ''; return 127; }
-    fw_printenv "$1" 2>/dev/null | sed -n "s/^$1=//p" | head -n1
+    have mos-deploy || return 127
+    out=$(mos-deploy booted 2>/dev/null) || return 1
+    printf '%s\n' "$out" | grep -cx '[0-9a-f]\{64\}' >/dev/null || return 2
+    printf '%s' "$out"
 }
 
 # health_verdict : echo a one-line summary, return 0 when green.
 #
 # "Green" is what the dossier's rows mean by a healthy system: systemd has no
-# failed units, rauc names a booted slot, and mos-health.service completed. It
+# failed units, mos-deploy names an authenticated deployment, and mos-health.service completed. It
 # deliberately does NOT wait on `is-system-running` reporting `running` --
 # mos-health.service is a job in the initial transaction, so that state depends
 # on its own completion, and the gate itself resolves it by enumerating failed
@@ -521,11 +512,11 @@ health_verdict() {
     else
         sysstate="systemctl absent"; rc=1
     fi
-    slot=$(rauc_booted_slot) || true
+    slot=$(booted_deployment) || true
     [ "${failed:-0}" -eq 0 ] || rc=1
     [ -n "$slot" ] || rc=1
-    [ "$mh" = success ] || [ "$mh" = unknown ] || rc=1
-    printf 'systemd=%s failed-units=%s booted-slot=%s mos-health=%s' \
+    [ "$mh" = success ] || rc=1
+    printf 'systemd=%s failed-units=%s deployment=%s mos-health=%s' \
         "${sysstate:-unknown}" "${failed:-?}" "${slot:-none}" "$mh"
     return "$rc"
 }
@@ -542,8 +533,8 @@ capture_boot_state() {
     cap "${tag}-journal-warn"   -- journalctl -b -p warning --no-pager
     cap "${tag}-boots"          -- journalctl --list-boots --no-pager
     cap "${tag}-dmesg"          -- dmesg
-    cap "${tag}-rauc"           -- rauc status --output-format=shell
-    cap "${tag}-uboot-env"      -- fw_printenv
+    cap "${tag}-deployment"     -- mos-deploy status
+    capf "${tag}-boot-receipt"   /run/mos/boot.json
     cap "${tag}-mounts"         -- findmnt --raw --evaluate
     cap "${tag}-df"             -- df -h
     cap "${tag}-uptime"         -- uptime
@@ -557,7 +548,7 @@ capture_boot_state() {
 # IN: minting a session on the device writes apid's audit ring and its
 # login-backoff counters, and a test harness must not be the thing that locks
 # the operator out. It records `not collected: no API token` and leans on the
-# unauthenticated sources -- rauc, fw_printenv, systemctl, the bus -- for
+# unauthenticated sources -- mos-deploy, systemctl, the bus -- for
 # everything they cover.
 api_get() {
     local path=$1 name=$2
@@ -655,7 +646,7 @@ stage_firstboot() {
     cap repart      -- journalctl -b -u systemd-repart --no-pager
     cap growfs      -- journalctl -b -u "systemd-growfs@*" --no-pager
     cap data-layout -- systemctl status mos-data-layout.service
-    cap machineid   -- fw_printenv machine_id
+    capf identity-record /mnt/data/state/machine-id
     capf machine-id-file /etc/machine-id
     api_get /api/v1/storage/status storage-status-api || true
     api_get /api/v1/provisioning/status provisioning-api || true
@@ -698,7 +689,7 @@ stage_firstboot() {
     # unplug, not the claim.
     local carriers
     carriers=$(cat /sys/class/net/*/carrier 2>/dev/null | grep -c '^1$' || true)
-    capf provisioning /mnt/state/mos/provisioning /mos/config
+    capf provisioning /mnt/data/state/mos/provisioning /mos/config
     cap hostname     -- hostnamectl
     cap apid-listen  -- systemctl status apid.service
     if [ "${carriers:-0}" -gt 0 ]; then
@@ -824,7 +815,7 @@ stage_warmboot() {
     say "== warmboot : warm reboot cycles, and the RTC across a power-off =="
     capture_boot_state warm
     cap tz -- timedatectl
-    capf saved-floor /mnt/state/mos/clock /var/lib/systemd/timesync/clock
+    capf saved-floor /mnt/data/state/mos/clock /var/lib/systemd/timesync/clock
 
     local summary rc=0
     summary=$(health_verdict) || rc=$?
@@ -992,29 +983,21 @@ stage_watchdog() {
         record watchdog fail "no /dev/watchdog on the running system, while the board DTS sets /watchdog@2ace0000 okay and CONFIG_DW_WATCHDOG=y is built. There is nothing to arm; see evidence/$STAGE/wd-before-dmesg.txt"
         return 0
     fi
-    require_operator watchdog "arming the watchdog, which resets the board" || return 0
+    if [ "$(cat /sys/class/watchdog/watchdog0/state 2>/dev/null)" != active ]; then
+        record watchdog fail "the production watchdog is not active before fault injection"
+        return 0
+    fi
+    require_operator watchdog "crashing the local bench kernel with panic restart disabled" || return 0
+    say "  PID 1 already owns and feeds the non-disarmable hardware watchdog."
+    say "  Disable panic's software restart and trigger a crash, stopping all pets."
+    say "  Capture the external serial trace and measured reset interval."
+    ask "press Enter to trigger, or Ctrl-C to abort" >/dev/null
+    printf '%s kernel-crash-trigger\n' "$(date -u +%FT%TZ)" >>"$OUT/watchdog-marks.tsv"
+    flush
+    echo 0 > /proc/sys/kernel/panic
+    echo c > /proc/sysrq-trigger
+    record watchdog fail "kernel crash injection returned unexpectedly"
 
-    say "  arming /dev/watchdog0 and then STOPPING the pets."
-    say "  CONFIG_WATCHDOG_NOWAYOUT is not set on this kernel, so a close with the"
-    say "  magic 'V' disarms -- this deliberately closes WITHOUT it, and the board"
-    say "  WILL reset. Everything above is already on the medium."
-    ask "press Enter to arm, or Ctrl-C to abort" >/dev/null
-
-    printf '%s armed\n' "$(date -u +%FT%TZ)" >>"$OUT/watchdog-marks.tsv"; flush
-    # Three pets prove the ioctl path works, then the fd is closed without 'V'.
-    ( exec 9>/dev/watchdog0
-      printf '1' >&9; sleep 2
-      printf '1' >&9; sleep 2
-      printf '1' >&9
-      exec 9>&- ) 2>>"$EV/wd-arm.txt"
-    printf '%s last-pet\n' "$(date -u +%FT%TZ)" >>"$OUT/watchdog-marks.tsv"; flush
-
-    say ""
-    say "  The watchdog is armed and no longer being petted. The board will reset."
-    say "  Watch the console; record the interval and anything it printed."
-    say "  After the reset, RE-RUN THIS STAGE to collect the reset cause."
-    say ""
-    # If we are still here on the next run, the marks file already has entries.
 }
 
 stage_watchdog_after() {
@@ -1028,115 +1011,56 @@ stage_watchdog_after() {
     else
         measure WD-BOOTSTATUS "ABSENT (CONFIG_WATCHDOG_SYSFS is not set on this kernel)"
     fi
-    local a b
-    a=$(uboot_env BOOT_A_LEFT); b=$(uboot_env BOOT_B_LEFT)
-    measure WD-CREDITS "after the reset: BOOT_A_LEFT=${a:-?} BOOT_B_LEFT=${b:-?}. Stage 'update' requires both back at the configured boot-attempts -- an A/B test begun on a partly-spent counter measures something else."
+    cap wd-after-deployment -- mos-deploy status
+    measure WD-ATTEMPTS "Record the remaining attempts from native status and the serial trace. A spent trial stays spent; never refill counters to prepare another test. Use a fresh complete image for a new test series."
     operator_step watchdog \
         "say how long after the last pet the board reset, and what the console printed on the way down" \
         "a hung system is reset by the watchdog within the configured timeout, AND the reset cause is readable afterwards. Both halves. If no bootstatus attribute exists and nothing else names the cause, this row is a FAIL on its second half with the first half stated -- it is not a pass, because the row claims both."
 }
 
 stage_update() {
-    say "== update : A/B install, flip, health gate, and a bad slot rolling back =="
-    local slot order a b
-    slot=$(rauc_booted_slot) || true
-    order=$(uboot_env BOOT_ORDER); a=$(uboot_env BOOT_A_LEFT); b=$(uboot_env BOOT_B_LEFT)
-    say "  before: slot=${slot:-unknown} BOOT_ORDER='${order:-?}' A=${a:-?} B=${b:-?}"
-    cap upd-before-rauc  -- rauc status --output-format=shell
-    cap upd-before-env   -- fw_printenv
+    say "== update : signed component install, confirmation, and fallback =="
+    local id
+    id=$(booted_deployment) || true
+    cap upd-before-deployment -- mos-deploy status
     api_get /api/v1/update upd-before-api || true
-    printf 'slot=%s\norder=%s\nA=%s\nB=%s\n' "${slot:-}" "${order:-}" "${a:-}" "${b:-}" >"$OUT/update-before.env"
-    flush
-
-    if [ -z "$slot" ]; then
-        record ab-update "not tested" "rauc names no booted slot, so there is no A/B state to measure; see evidence/$STAGE/upd-before-rauc.txt"
+    if [ -z "$id" ]; then
+        record ab-update "not tested" "no authenticated running deployment; see upd-before-deployment.txt"
         return 0
     fi
-    measure UPD-START "booted slot $slot, BOOT_ORDER='${order:-?}', credits A=${a:-?} B=${b:-?}"
-
-    operator_step ab-update \
-        "install the GOOD bundle (rauc install <bundle>), reboot, confirm the new slot booted and the health gate ran; then install the BAD bundle, reboot, and let it fall back WITHOUT intervening. Re-run this stage after each boot so the counters are captured at each one." \
-        "the bundle installs to the inactive slot; BOOT_ORDER flips; the health gate confirms and mark-good refills the counter; and the bad slot rolls back after its attempt credits, arriving back on the good slot healthy. The console line 'mos: booting slot <X> (A=<n> B=<m> left)' at each boot is the primary evidence. This is also U10's bench half -- a real bootloader spending real boot credits and a real slot falling back -- and nothing else about 'auto' needs a person here: the fifteen tests on the automatic path already cover the gates, the closed loop, the suppression store and the override."
-
-    slot=$(rauc_booted_slot) || true
-    order=$(uboot_env BOOT_ORDER); a=$(uboot_env BOOT_A_LEFT); b=$(uboot_env BOOT_B_LEFT)
-    printf 'slot=%s\norder=%s\nA=%s\nB=%s\n' "${slot:-}" "${order:-}" "${a:-}" "${b:-}" >"$OUT/update-after.env"
+    printf '%s\n' "$id" >"$OUT/update-before.id"
     flush
-    measure UPD-END "booted slot ${slot:-unknown}, BOOT_ORDER='${order:-?}', credits A=${a:-?} B=${b:-?} -- this is stage 'powercut''s starting state"
+    operator_step ab-update \
+        "start from a complete current factory image. Import a signed GOOD MOSUPD01 archive with mos-deploy import <archive>, install its verified descriptor with mos-deploy install /mos/updates/verified/<id>.json --objects /mos/updates/verified/objects, then reboot and observe health confirmation. Repeat for root-only, kernel-only and combined releases. Then import and install a signed BAD-health deployment and observe three failed trials and fallback without intervening. Capture native status and the serial trace on every boot." \
+        "only the named changed components are written; firmware and reused object digests stay unchanged; three bad trials exhaust without refill; the retained confirmed deployment boots healthy. Confirmation happens only through the health gate."
+    cap upd-after-deployment -- mos-deploy status
+    booted_deployment >"$OUT/update-after.id" || true
+    flush
 }
 
 stage_powercut() {
-    say "== powercut : power removed inside the named window =="
-    say "  docs/bsp/cx3576-bench.md section 5 is this stage. Read it first."
-
-    [ -r "$OUT/update-after.env" ] ||
-        die "stage 'update' left no update-after.env in $OUT.
-         Row 4's claim is that an interrupted install leaves THE PREVIOUS SLOT
-         bootable and the order unflipped, and 'the previous slot' is only a
-         fact if the current one was recorded first."
-
-    local slot order a b
-    slot=$(rauc_booted_slot) || true
-    order=$(uboot_env BOOT_ORDER); a=$(uboot_env BOOT_A_LEFT); b=$(uboot_env BOOT_B_LEFT)
-    say "  now: slot=${slot:-unknown} BOOT_ORDER='${order:-?}' A=${a:-?} B=${b:-?}"
-    say "  recorded by stage 'update':"
-    sed 's/^/    /' "$OUT/update-after.env" | tee -a "$LOG"
-    cap pc-env-now -- fw_printenv
-    cap pc-rauc-now -- rauc status --output-format=shell
-
-    # Read back the previous cut before setting up the next one: a cut whose
-    # side cannot be determined afterwards is DISCARDED, not guessed.
-    if [ -r "$OUT/powercut-pending.env" ]; then
-        say ""
-        say "  a cut was pending. Reading back which side of the flip it landed on:"
-        local was_order
-        was_order=$(sed -n 's/^order=//p' "$OUT/powercut-pending.env" | head -n1)
-        if [ "${order:-}" = "$was_order" ]; then
-            say "    BOOT_ORDER is UNCHANGED ('${order:-?}') -- the cut landed BEFORE the flip."
-            printf '%s\tbefore-flip\torder=%s\tslot=%s\n' "$(date -u +%FT%TZ)" "${order:-}" "${slot:-}" >>"$OUT/cuts.tsv"
-        else
-            say "    BOOT_ORDER MOVED ('$was_order' -> '${order:-?}') -- the cut landed AFTER the flip."
-            printf '%s\tafter-flip\torder=%s\tslot=%s\n' "$(date -u +%FT%TZ)" "${order:-}" "${slot:-}" >>"$OUT/cuts.tsv"
-        fi
-        rm -f "$OUT/powercut-pending.env"
-        flush
-    fi
-
-    local total
-    total=$(count_lines "$OUT/cuts.tsv")
-    measure PC-CUTS "$total cut(s) read back so far; see $OUT/cuts.tsv"
-
-    require_operator power-cut "staging a cut and pulling power ($total cut(s) already on file)" || return 0
-
-    say ""
-    say "  Staging the next cut. Choose:"
-    say "    A  mid-write   -- cut while the copy is between roughly 30% and 90%."
-    say "                      Pass: the OLD slot boots, BOOT_ORDER is unchanged,"
-    say "                      the torn slot is never selected, a re-install works."
-    say "    B  the commit  -- cut on the '>>> CUT NOW <<<' marker below, which is"
-    say "                      printed when the write reports complete and before"
-    say "                      the fw_setenv that flips BOOT_ORDER. Either side is"
-    say "                      a valid outcome and this stage reads back which."
-    say "    C  first boot  -- cut between 'mos: booting slot B (...)' and"
-    say "                      mos-health reaching mark-good. Pass: the credit was"
-    say "                      spent and stays spent, and exhaustion falls back."
-    say ""
-    say "  And separately, run ../design/uboot-ab-handshake.md section 8.1 step 3:"
-    say "  at least 50 saveenv iterations cut at random points, with no"
-    say "  '*** Warning - bad CRC, using default environment' on any power-up."
-    say "  That is row 4's hardest half and it is not restated here."
-
-    printf 'order=%s\nslot=%s\nat=%s\n' "${order:-}" "${slot:-}" "$(date -u +%FT%TZ)" \
-        >"$OUT/powercut-pending.env"
-    flush
-
+    say "== powercut : named transaction and boot-counter boundaries =="
+    [ -s "$OUT/update-after.id" ] || die "stage update must first record an authenticated deployment"
+    cap pc-current-deployment -- mos-deploy status
+    capf pc-current-receipt /run/mos/boot.json
+    capf pc-baseline "$OUT/update-after.id"
+    # Status after a reboot cannot establish the exact cut boundary: fallback
+    # may already have changed selection. Require the external serial/power trace.
+    require_operator power-cut "external power control and serial capture" || return 0
+    say "  Cut during download, object write, file fsync, directory publication,"
+    say "  candidate activation, attempt decrement and health confirmation."
+    say "  Record image/component IDs, the requested cut, the observed serial"
+    say "  boundary, storage identity, and post-reset native status for every cut."
+    say "  Repeat at least ten cuts per installation/activation boundary and"
+    say "  fifty randomized redundant-record writes. Keep the external trace."
+    say "  Never edit boot variables, replenish attempts, or source saved records."
     operator_step power-cut \
-        "drive one install and cut power at the chosen moment; power the unit back up and RE-RUN THIS STAGE, which reads back which side of the flip the cut landed on. Ten cuts of type A, ten of type B, five of type C, plus the 50 saveenv iterations." \
-        "every power-up leaves the device bootable; after a type-A cut the previous slot boots with BOOT_ORDER unchanged and a re-install succeeds; repeated cuts do not brick. A single successful cut is an anecdote, not this row."
+        "perform the cut matrix using the local bench power controller. Re-run this stage after each power-up and attach the external trace; mark an unobservable cut as inconclusive." \
+        "each interruption exposes either the previous committed deployment or a fully staged candidate. Referenced objects remain complete; torn records are refused; persisted attempts never refill; exhaustion falls back or reaches the defined recovery stop. VM process kills do not establish this physical result."
 }
 
 stage_storagefill() {
-    say "== storagefill : DATA and /var past their thresholds =="
+    say "== storagefill : DATA bulk/disposable quotas and protected reserve =="
     say "  COPY THE RUN DIRECTORY OFF THE DEVICE BEFORE THIS STAGE."
     cap fill-before-df -- df -h
     api_get /api/v1/storage/status fill-before-api || true
@@ -1152,20 +1076,19 @@ stage_storagefill() {
     fi
 
     operator_step storage \
-        "fill DATA to the warning band (>=80% used), confirm the status surface reports it, continue to critical (>=90%), confirm the system is still up and apid still answers and the 256 MiB update workspace reserve is honoured; delete the filler and confirm the bands clear at 75%/85%. Separately fill /var past var-threshold-pct and confirm mos-health reports health.var degraded WITHOUT failing the boot." \
-        "growth (stage firstboot) plus: fill-up of DATA and of /var does not take the system down, the bands enter and clear where ../design/storage.md section 5 says, and the eMMC life_time/pre_eol_info pair is reported -- or 'undefined' is reported honestly where the part declines to answer."
+        "fill /mos and /srv through the production service account until the bulk byte quota refuses writes; repeat with inode exhaustion. Fill the allowed /var/tmp backing project separately. Confirm state/meta writes and apid remain available, unlisted /var paths reject writes, and status reports DATA capacity once. Remove only the test filler and repeat the health check." \
+        "growth (stage firstboot) plus actual byte/inode quota containment under production writer privileges; measured state/meta reserve remains writable. Report eMMC health or an explicit unsupported reason."
 }
 
 stage_recovery() {
     say "== recovery : every recovery path, in the destructive order =="
     say "  THIS STAGE DESTROYS. Copy the run directory off the device first."
-    cap rec-before-rauc -- rauc status --output-format=shell
-    cap rec-before-env  -- fw_printenv
+    cap rec-before-deployment -- mos-deploy status
     capf rec-board-recovery /usr/share/mos/release-identity.env
     api_get /api/v1/diagnostics/snapshots rec-diagnostics || true
 
     operator_step recovery \
-        "walk ../user/recovery.md's ordering, one rung at a time, re-reading the system after each: (1) read-only diagnosis via a diagnostics snapshot; (2) guarded rollback to the other slot and back; (3) configuration reset; (4) application-data reset; (5) credential recovery and full factory reset, both of which MUST be refused because BOARD_RECOVERY_ACTIONS is empty; (6) rescue SD, which boots only when the eMMC is unbootable (deviation D-1); (7) reflash from maskrom." \
+        "walk ../user/recovery.md's ordering, one rung at a time, re-reading the system after each: (1) read-only diagnosis via a diagnostics snapshot; (2) guarded rollback to the authenticated retained deployment; (3) configuration reset; (4) application-data reset; (5) credential recovery and full factory reset, both of which MUST be refused because BOARD_RECOVERY_ACTIONS is empty; (6) a complete latest rescue image, recording the actual firmware boot-selection behavior; (7) reflash from maskrom." \
         "every path in the dossier's Recovery method section restores a unit from the state it claims to handle, and the two refused rungs REFUSE -- a credential recovery or a factory reset that succeeded on this board would be a fail, not a pass. A path that could not be exercised at all records what was missing."
 }
 

@@ -12,7 +12,6 @@
         "mos-mqtt-broker",
         "mos-mqttd",
         "mos-podman",
-        "mos-rauc",
         "mos-system",
         "mos-wifi",
         "mosd"
@@ -30,7 +29,6 @@
         "mos-mqtt-broker",
         "mos-mqttd",
         "mos-podman",
-        "mos-rauc",
         "mos-system",
         "mos-wifi",
         "mosd"

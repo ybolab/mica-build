@@ -1,3 +1,5 @@
+.PHONY: os-trust-domain-test os-file-transaction-faults build-env docs-verify docs-verify-test help os-apid-api-spec-pins os-apid-api-test os-apid-ui-build-contract-test os-bare-host-gate os-boot-tools os-build-test os-components os-cx3576-flash-test os-dbus-policy-test os-deb-package-gate os-deb-preflight os-deb-preflight-test os-debian-cache os-debian-install os-debian-test os-debian-verify os-debs os-devkeys os-factory-root-gate os-fit-records-test os-gadget-test os-health-test os-host-toolchain-lint os-host-toolchain-lint-test os-image os-install-closure-gate os-layout-lint os-mac-test os-netavark-kernel-test os-quadlet-doc-test os-repart-test os-rootfs-cx3576 os-rootfs-manifest-test os-rootfs-virt-arm64 os-rootfs-x64 os-rust-gate os-shadow-test os-shell-pipefail-lint os-smoke-negative-test os-smoke-test os-verify os-verify-test podman podman-pins podman-pins-test
+
 # mos top-level build entry. Heavy lifting stays in each component; this file
 # only routes. Board targets: make <board>-<component>, e.g. cx3576-kernel.
 
@@ -9,46 +11,29 @@ BOARDS := cx3576 s905x5m virt-arm64 x64
 # open-ended; a stray file named e.g. `cx3576-kernel` in this directory shadows
 # the delegation, which is a visible "Nothing to be done" rather than a wrong
 # build.
-.PHONY: help os os-rootfs-cx3576 \
-	os-quadlet-doc-test \
-	os-image-cx3576 os-verify-cx3576 os-bundle-cx3576 os-devkeys os-health-test podman \
-	os-release-cx3576 os-release-gate \
-	podman-pins podman-pins-test os-netavark-kernel-test \
-	os-smoke-test os-smoke-negative-test os-factory-root-gate \
-	os-shadow-test os-dbus-policy-test os-repart-test os-gadget-test os-mac-test \
-	os-uboot-handshake-test os-cx3576-flash-test \
-	os-layout-lint os-verify-test os-build-test \
-	os-host-toolchain-lint os-host-toolchain-lint-test os-bare-host-gate \
-	os-debs os-deb-preflight os-deb-preflight-test os-deb-package-gate \
-	os-install-closure-gate os-rootfs-manifest-test \
-	os-rootfs-x64-composed \
-	docs-verify docs-verify-test build-env os-rust-gate
 
 help:
-	@echo "  s905x5m-<t>         build the s905x5m BSP (kernel|uboot|userland|emmc-package|emmc-installer)"
-	@echo "  os-rootfs-s905x5m   compose the s905x5m rootfs from the arm64 package pool"
-	@echo "  os-image-s905x5m-sd assemble the SD-only s905x5m image"
-	@echo "  os-verify-s905x5m-sd verify the s905x5m SD image"
-	@echo "  os-emmc-package-s905x5m / os-emmc-installer-s905x5m build eMMC installation artifacts"
+	@echo "  os-image            assemble two signed deployments (MOS_BOARD, MOS_IMAGE_RECORDS, MOS_METADATA_PUBLIC_KEYS, MOS_FIRMWARE_PACKAGE, MOS_IMAGE_OUT)"
+	@echo "  os-rootfs-x64 / os-rootfs-virt-arm64 / os-rootfs-cx3576 compose independent roots"
+	@echo "  os-devkeys          create explicit development inputs (MOS_SIGNING_OUTPUT, default meta; refuses existing output)"
+	@echo "  os-layout-lint      check the current three-partition contracts"
+	@echo "  os-fit-records-test verify bounded native FIT record parsing"
+	@echo "  s905x5m-<t>         build the s905x5m BSP (kernel|uboot|userland|uboot-package)"
 	@echo "mos build targets:"
 	@echo "  os-debian-cache     cache the fixed Debian runtime base (MOS_ARCH=amd64|arm64)"
 	@echo "  os-debian-verify    verify the runtime cache without network access"
 	@echo "  os-debian-install   install the cached base with dpkg (MOS_ROOT=<empty directory>)"
 	@echo "  os-debian-test      test the Debian runtime cache boundary"
-	@echo "  os                  RETIRED; use the os-*-cx3576 targets"
-	@echo "image (A/B layout, squashfs+dm-verity rootfs, RAUC updates):"
-	@echo "  os-rootfs-cx3576 build the squashfs+dm-verity rootfs slot image"
-	@echo "  os-image-cx3576  build the cx3576 A/B disk image (A/B layout)"
-	@echo "  os-verify-cx3576 verify the assembled mos image against the mos image contract (docker)"
+	@echo "image (signed component files on SYSTEM with unified DATA):"
+	@echo "  os-boot-tools      build the pinned signed UKI/systemd-boot packager"
+	@echo "  os-components      build independent components (MOS_COMPONENT_ARGS='root|kernel|firmware|deployment|image|archive ...')"
+	@echo "  os-rootfs-cx3576 compose the independent signed rootfs input"
+	@echo "  os-verify verify the assembled mos image against the mos image contract (docker)"
 	@echo "  os-smoke-test       execute every self-built binary inside the factory root, assert its pin (docker)"
 	@echo "  os-smoke-negative-test  break that root three ways and require each to turn the run red (docker)"
 	@echo "  os-factory-root-gate    prove the root the smoke run executes in is the root the device ships (docker)"
-	@echo "  os-bundle-cx3576    build the RAUC update bundle"
-	@echo "  os-release-cx3576   assemble the release directory (manifest, SHA256SUMS, SBOM, provenance, licenses, notes) and gate it"
-	@echo "  os-release-gate     re-check an assembled release directory from scratch; refuses an incomplete release by name"
-	@echo "  os-devkeys          populate the gitignored repo-root meta/ with development-grade signing material"
-	@echo "  os-health-test      run the offline tests for the health gate and machine-id oneshots"
-	@echo "  os-shadow-test      run the offline tests for the STATE /etc/shadow reconciler"
+	@echo "  os-health-test      run the health and failure-handler tests"
+	@echo "  os-shadow-test      run the offline tests for the DATA /etc/shadow reconciler"
 	@echo "  os-mac-test         prove the stable-MAC derivation follows the port, not the interface name; drives the by-name defect red"
 	@echo "  os-dbus-policy-test prove the shipped mosd D-Bus policy is root-only against a real dbus-daemon"
 	@echo "  os-repart-test      prove first-boot repart growth grows DATA and cannot wipe the loader (privileged docker)"
@@ -56,7 +41,6 @@ help:
 	@echo "  os-host-toolchain-lint  no compiler, filesystem maker or assembler runs on the host (docs/design/build.md section 0)"
 	@echo "  os-host-toolchain-lint-test  plant a host invocation, a stale exemption and a broken declaration; require each red"
 	@echo "  os-bare-host-gate   climb PLAN-080 section 4's ladder for real: clone HEAD into the pinned docker-cli image and build from it (docker)"
-	@echo "  os-layout-lint      check every board layout against the board-definition schema"
 	@echo "  os-verify-test      run the verify bun+TypeScript suite (typecheck + bun test)"
 	@echo "  os-build-test       run the build bun+TypeScript suite: board geometry and the toolset wrappers (docker)"
 	@echo "  docs-verify         assert the docs index, internal links, truth-status lines and board dossiers"
@@ -74,22 +58,10 @@ help:
 	@echo "  os-deb-package-gate check the built pools: ownership, fields, reproducibility, enablement (docker)"
 	@echo "  os-install-closure-gate  apt-install both pools into clean roots: closure, ldd, accounts, versions (docker)"
 	@echo "  os-rootfs-manifest-test  resolve the rootfs package set for every board, profile and feature set; prove each refusal and that no producer package is unreachable"
-	@echo "  os-rootfs-x64-composed   build the x64 rootfs from the package pool (needs os-debs; docker)"
 	@echo "  os-quadlet-doc-test run docs/design/containers.md's examples through Quadlet"
 	@echo "  cx3576-<t>          delegate target <t> to boards/cx3576/bsp (uboot|kernel|rootfs|image|clean)"
 	@echo "  x64-<t>             delegate target <t> to boards/x64/bsp (kernel|kernel-config|clean); no bootloader is built, the firmware is one"
 	@echo "  virt-arm64-<t>      delegate target <t> to boards/virt-arm64/bsp (kernel|kernel-config|clean); the QEMU aarch64 board, same shape as x64"
-
-# `make os` is retired. It keeps a recipe rather than being deleted for the
-# reason x64-% has one: with neither a recipe nor a rule, `make os` prints
-# "Nothing to be done for 'os'" and exits 0, and a retired build path that
-# reports success is the failure mode every check in this repository exists to
-# prevent.
-os:
-	@echo "os: retired." >&2
-	@echo "    build and verify with: make os-image-cx3576 / os-verify-cx3576 / os-bundle-cx3576" >&2
-	@false
-
 # NEEDS THE arm64 POOL. The root is composed from _out/debs/arm64 now, so this
 # target refuses until `make os-debs` has built it -- by name, rather than by
 # compiling a component on demand. That refusal is the composer's, not this
@@ -97,47 +69,22 @@ os:
 os-rootfs-cx3576:
 	bash rootfs/build.sh
 
-.PHONY: os-rootfs-s905x5m os-image-s905x5m-sd os-verify-s905x5m-sd os-emmc-package-s905x5m os-emmc-installer-s905x5m os-bundle-s905x5m
 
 s905x5m-%:
 	$(MAKE) -C boards/s905x5m/bsp $*
-
-os-rootfs-s905x5m:
-	MOS_BOARD=s905x5m bash rootfs/build.sh
-
-os-image-s905x5m-sd: os-rootfs-s905x5m
-	bash build/run.sh --mkimage-s905x5m-sd
-
-os-verify-s905x5m-sd:
-	bash verify/run.sh --verify --board s905x5m
-
-os-bundle-s905x5m:
-	MOS_BOARD=s905x5m bash build/run.sh --bundle --board s905x5m
-
-os-emmc-package-s905x5m: os-image-s905x5m-sd
-	$(MAKE) s905x5m-emmc-package
-
-os-emmc-installer-s905x5m:
-	$(MAKE) s905x5m-emmc-installer EMMC_INSTALLER_PACKAGE="$(EMMC_INSTALLER_PACKAGE)"
-
-# The shipping assembler: build the rootfs slot image, then write the A/B disk
-# image around it.
-os-image-cx3576:
-	bash rootfs/build.sh
-	bash build/run.sh --mkimage-cx3576
-
 # THE IMAGE CONTRACT: read the assembled image back and check it against the
 # contract, check by check.
 #
 # Needs DOCKER on a host without sgdisk/mtools/debugfs/unsquashfs/veritysetup --
 # it reads them out of the pinned IMAGE_ALPINE_3_21. Verify the other board
 # with --board.
-os-verify-cx3576:
-	bash verify/run.sh --verify --board cx3576
+os-verify:
+	@test -n "$(MOS_BOARD)" -a -n "$(MOS_VERIFY_IMAGE)" -a -n "$(MOS_METADATA_PUBLIC_KEY_FILES)"
+	bash verify/run.sh --verify --board "$(MOS_BOARD)" --image "$(MOS_VERIFY_IMAGE)" $(foreach key,$(MOS_METADATA_PUBLIC_KEY_FILES),--public-key "$(key)")
 
 # Every self-built binary EXECUTED inside the root that ships it, with the
 # version it reports required to equal the version this repository pinned.
-# `os-verify-cx3576` reads the image; this one runs what is in it.
+# `os-verify` reads the image; this one runs what is in it.
 #
 # THIS IS NOT THE ONLY THING THAT RUNS IT: `rootfs/build.sh` runs the same
 # command as its last step, under `set -e`, so a root whose binaries do not run
@@ -178,48 +125,12 @@ os-smoke-negative-test:
 # It compares the two trees four ways and then BREAKS each comparison in turn
 # and requires each to go red. Needs docker (neither side is readable on the
 # build host -- no unsquashfs, no getcap) and a built rootfs, like
-# os-verify-cx3576. MOS_BOARD selects the board; x64 is the default.
+# os-verify. MOS_BOARD selects the board; x64 is the default.
 os-factory-root-gate:
 	bash tests/factory-root-gate/gate.sh _out/$(or $(MOS_BOARD),x64)
-
-# The RAUC update bundle. Its rebuild gate is on the squashfs PAYLOAD rather
-# than on the file: rauc salts the bundle's own verity hash tree at random and
-# the CMS signature carries a signingTime, so the file hash moves every run.
-# --board x64 builds the grub branch.
-os-bundle-cx3576:
-	bash build/run.sh --bundle
-
-# The customer-facing release directory, and the publication gate over it.
-# Release notes, the image's /usr/share/mos/manifest.tsv content and the
-# image's extracted /usr/share/mos/meta/ directory have no built default, so
-# they arrive through MOS_RELEASE_NOTES, MOS_PACKAGE_MANIFEST and
-# MOS_BAKED_META (or the --notes/--package-manifest/--baked-meta flags of
-# `bash build/run.sh --release assemble`); the refusal for each names it.
-# MOS_BAKED_META is what the trust grade is MEASURED from -- an image built on
-# development-grade signing material carries /usr/share/mos/meta/GENERATED, and
-# a release carrying such an image is refused on the candidate and stable
-# channels. The gate re-checks a release directory from scratch -- schema,
-# sizes, digests, SHA256SUMS agreement, release notes, SBOM, board evidence,
-# trust grade -- and an incomplete or unpublishable release exits non-zero
-# naming the gap. MOS_BOARD selects the board for both; see
-# docs/design/release-artifacts.md.
-os-release-cx3576:
-	bash build/run.sh --release assemble
-
-os-release-gate:
-	bash build/run.sh --release gate
-
-# The MANUAL entry to the repo-root meta/, which is where every build takes its
-# trust root and its update configuration from. Running it is optional: a build
-# that finds meta/ empty generates the same material itself and says so loudly.
-# This target exists for doing it on purpose, ahead of a build, and for
-# `--force` rotation. It runs the `rauc` domain, the same one the build runs;
-# the package signing key is `--domain updates` and stays opt-in.
-os-devkeys:
-	bash pkgs/rauc/gen-dev-keys.sh
-
 os-health-test:
 	bash tests/health-test.sh
+	bash tests/boot-failure-test.sh
 
 # Drives the real boards/cx3576/hwinit/hwinit-gadget against a fake configfs in
 # a temp dir, from cwd `/` -- the cwd its Type=oneshot service actually has.
@@ -270,22 +181,7 @@ os-dbus-policy-test:
 # Needs privileged docker, so it is a dedicated target rather than part of
 # os-verify; it fails loudly when it cannot run rather than skipping.
 os-repart-test:
-	bash tests/repart-loader-test.sh
-
-# Executes the SHIPPED boards/cx3576/boot.cmd -- compiled by the same mkimage
-# invocation the assembler uses, byte-unmodified -- under a U-Boot sandbox binary
-# (same source pin as the board build) that carries the board's persistent-env
-# contract, against a A/B-layout GPT disk backed by a host file. Proves the A/B
-# handshake state machine across real process invocations: the boot-attempt
-# decrement persists 3->2->1->0, the other slot is chosen at zero, exhaustion
-# refills to 3, a slot missing its mos-verity-<slot>.env is burned, and a
-# returning booti burns the slot it tried. Needs docker; network only on the
-# first (uncached) build, offline afterwards. See tests/handshake-test/harness.sh
-# for the execution model, including the one emulated transition (kernel handoff)
-# and why.
-os-uboot-handshake-test:
-	bash tests/handshake-test/run.sh
-
+	bash tests/repart-loader-test.sh "$(MOS_BOARD)" "$(MOS_VERIFY_IMAGE)" "$(MOS_VERIFY_ROOT_IMAGE)"
 # The cx3576 flash read-back, driven against a stub rkdeveloptool: the argv the
 # BSP's flash targets build, the sector arithmetic they derive from
 # boards/cx3576/board.env, and the failure this suite exists for -- a write that
@@ -299,19 +195,6 @@ os-uboot-handshake-test:
 # docker, no network and no root.
 os-cx3576-flash-test:
 	bash tests/cx3576-flash-verify-test.sh
-
-# A board is defined by its layout file and the shared scripts read that
-# definition rather than knowing any board's shape. This checks the definition
-# is complete AND that no board declares a key its role cannot honour -- the
-# second direction is what catches e.g. BOOT_ATTEMPTS_DEFAULT sitting in the
-# grub board's layout, which RAUC refuses on the device.
-#
-# Both go through verify/run.sh so that there is exactly ONE place deciding
-# how bun is invoked; on a host without bun they run in the container pinned as
-# IMAGE_BUN_1.
-os-layout-lint:
-	bash verify/run.sh --lint
-
 # The verify bun+TypeScript suite, entered through one script.
 #
 # verify/run.sh finds bun, installs the dev dependencies if they are absent,
@@ -333,23 +216,10 @@ os-apid-ui-build-contract-test:
 # the Bun.$ wrappers for the toolset they drive.
 #
 # It needs DOCKER, which os-verify-test does not: the suite runs sgdisk, mtools,
-# mkimage, veritysetup, e2fsprogs and rauc for real. Each runs on the host where
-# the host has it and in the image pinned for its toolset otherwise, which is
-# src/toolbox.ts's rule. Nothing is skipped: a tool reachable neither way is a
+# sgdisk, veritysetup, e2fsprogs and mtools in their pinned containers. Nothing is skipped: a tool reachable neither way is a
 # failure, not a gap.
 os-build-test:
 	bash build/run.sh
-
-# RAUC, built from upstream source instead of installed from Debian. The reason
-# is recorded in pkgs/rauc/versions.env: the distribution builds it with
-# streaming on, that links libcurl-gnutls, and rauc is the ONLY consumer of that
-# library in the whole packed root -- it would bring GnuTLS, p11-kit, GMP,
-# Nettle and Kerberos into a signed image for an install path this project
-# defers. Built here it links libc, libcrypto, libfdisk, glib and json-glib, all
-# of which the image already carries.
-os-rauc:
-	MOS_BOARD=$(or $(MOS_BOARD),cx3576) bash pkgs/rauc/build.sh
-
 # ONE PRODUCER, every architecture it declares, resolved against discovery.
 # This is a PATTERN rule and not a list: `make os-deb-mosd`, `make os-deb-mqtt`
 # and `make os-deb-<anything build-env/deb/producers.sh finds>` all route
@@ -459,7 +329,7 @@ os-deb-package-gate:
 
 # The INSTALL-time half of PLAN-036 section 6, over the same pools: APT installs
 # the set rootfs/packages/resolve.sh yields into a clean pinned Debian base,
-# once per architecture, and again with `rauc` declined; the three radio packages
+# once per architecture, and again with optional services declined; the three radio packages
 # go into three separate roots; and the mos-profile provider experiment is run
 # and recorded verbatim.
 #
@@ -533,19 +403,6 @@ os-bare-host-gate:
 # WAS. No docker and no pool: this reads manifests and runs producers.sh.
 os-rootfs-manifest-test:
 	bash tests/rootfs-manifest-test.sh
-	bash tests/s905x5m-package-test.sh
-
-# THE x64 ROOT. rootfs/build.sh installs the resolved package set out of
-# _out/debs/<arch> and refuses a missing or stale pool by naming `make os-debs`
-# rather than building one -- a composer that compiled a component on demand
-# would make a stale pool invisible.
-#
-# Kept as its own target rather than folded into os-rootfs-cx3576's shape:
-# x64 is the board whose pool this host can build, so this is the composition
-# that runs here, and naming it says which one was run.
-os-rootfs-x64-composed:
-	MOS_BOARD=x64 bash rootfs/build.sh
-
 # Negative and positive tests for the pre-flight above. Its value is a count and
 # a list, and both fail silently: a run that looked at nothing prints the same
 # shape of green line as one that looked at everything. So each case perturbs
@@ -662,7 +519,7 @@ os-netavark-kernel-test:
 build-env:
 	bash build-env/build.sh
 
-# The Rust gate: `pkgs/mosd/hack/check.sh` and `pkgs/rauc-sign/hack/check.sh`,
+# The Rust gate: `pkgs/mosd/hack/check.sh` and `pkgs/mos-deploy/hack/check.sh`,
 # UNMODIFIED, inside localhost/mos-build-rust-check. Five commands per
 # workspace -- `cargo fmt --all --check`, clippy at `-D warnings`, nextest,
 # doctests, and `cargo deny check licenses bans advisories`.
@@ -697,8 +554,8 @@ x64-%:
 # virt-arm64, the QEMU aarch64 board, has the same one BSP target for the same
 # reason x64 does: its firmware is AAVMF and provides the boot chain, so nothing
 # here compiles a bootloader. The kernel IS built, and not by preference -- the
-# boot contract is `dm-mod.create=` with no initrd, which needs CONFIG_DM_INIT,
-# and Debian's linux-image-arm64 does not set it. See boards/virt-arm64/board.env.
+# authenticated initramfs needs built-in storage, signed verity and watchdog
+# support. See boards/virt-arm64/board.env.
 #
 # The stem cannot collide with x64-%: a target has to begin `x64-` to match
 # that rule, and `virt-arm64-kernel` does not.
@@ -708,7 +565,7 @@ virt-arm64-%:
 # The apid API suite: boot the x64 image in QEMU with apid's port forwarded,
 # wait for the daemon to answer, and drive it over a real socket. It is the
 # only thing in this repository that TALKS TO apid rather than reading it --
-# os-verify-cx3576 inspects the binary and the image, mosd's own tests
+# os-verify inspects the binary and the image, mosd's own tests
 # exercise handlers in-process, and neither can tell a route that exists in
 # routes.rs from a route the running daemon actually serves. A session cookie
 # that is missing Secure, a redirect that names a port nothing can reach, an
@@ -731,7 +588,6 @@ virt-arm64-%:
 # network discovery and boots nothing; it is how to check the harness in
 # seconds. Needs docker, and it fails loudly when it cannot run rather than
 # skipping.
-.PHONY: os-apid-api-test
 os-apid-api-test:
 	bash pkgs/mosd/tests/apid-api/run.sh
 
@@ -749,11 +605,16 @@ os-apid-api-test:
 # Needs bun OR docker: it runs on a host bun when there is one and in the bun
 # pinned as IMAGE_BUN_1 otherwise, and says which. MOS_APID_CONTAINER=1 forces
 # the pinned container.
-.PHONY: os-apid-api-spec-pins
 os-apid-api-spec-pins:
 	bash pkgs/mosd/tests/apid-api/spec-pins.sh
 
-.PHONY: os-debian-cache os-debian-verify os-debian-install os-debian-test
+os-boot-tools:
+	bash pkgs/mos-boot/build-tools.sh
+
+# Explicit component inputs and signing material are supplied as CLI arguments.
+os-components:
+	bash build/run.sh --components $(MOS_COMPONENT_ARGS)
+
 os-debian-cache:
 	bash rootfs/debian/docker.sh cache --arch '$(MOS_ARCH)' $(if $(MOS_DEBIAN_PACKAGES),--packages '$(MOS_DEBIAN_PACKAGES)')
 
@@ -766,3 +627,44 @@ os-debian-install:
 os-debian-test:
 	bash tests/debian-base-test.sh
 	bash tests/debian-lock-test.sh
+
+# Factory assembly consumes already-built and signed components.
+MOS_SIGNING_OUTPUT ?= meta
+os-devkeys:
+	bash pkgs/mos-boot/dev-keys.sh --out "$(MOS_SIGNING_OUTPUT)"
+
+os-rootfs-x64:
+	MOS_BOARD=x64 bash rootfs/build.sh
+
+os-rootfs-virt-arm64:
+	MOS_BOARD=virt-arm64 bash rootfs/build.sh
+
+os-image:
+	@test -n "$(MOS_BOARD)" -a -n "$(MOS_IMAGE_RECORDS)" -a -n "$(MOS_METADATA_PUBLIC_KEYS)" -a -n "$(MOS_FIRMWARE_PACKAGE)" -a -n "$(MOS_IMAGE_OUT)"
+	bash build/run.sh --components image --board "$(MOS_BOARD)" --records "$(MOS_IMAGE_RECORDS)" \
+	  --firmware "$(MOS_FIRMWARE_PACKAGE)" --out "$(MOS_IMAGE_OUT)" $(foreach key,$(MOS_METADATA_PUBLIC_KEYS),--public-key "$(key)")
+
+os-layout-lint:
+	bash build/run.sh src/file-layout.test.ts
+
+os-fit-records-test:
+	bash tests/file-ab-fit/records.sh
+	bash tests/file-ab-fit/firmware-io.sh
+
+# Exact native transaction code, interrupted before and after each observed IO.
+os-file-transaction-faults:
+	bash tests/file-ab-faults/run.sh
+
+os-trust-domain-test:
+	bash tests/trust-domain-hygiene-test.sh
+
+# Current independent-artifact release directory, SBOM and publication gate.
+.PHONY: os-release os-release-gate os-release-verify-test
+os-release:
+	bash build/run.sh --release assemble $(MOS_RELEASE_ARGS)
+
+os-release-gate:
+	bash build/run.sh --release gate $(MOS_RELEASE_ARGS)
+
+os-release-verify-test:
+	bash tests/release-verify-test.sh

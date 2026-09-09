@@ -1,0 +1,23 @@
+{
+  "name": "logsave",
+  "targets": {
+    "amd64": {
+      "version": "1.47.2-3+b11",
+      "architecture": "amd64",
+      "sha256": "0dd470e53e65eb4307a8911f632d180000ec4380cb4109bddc0ee66ae385fc24",
+      "url": "https://snapshot.debian.org/archive/debian/20260905T000000Z/pool/main/e/e2fsprogs/logsave_1.47.2-3+b11_amd64.deb",
+      "consumers": [
+        "mos-system"
+      ]
+    },
+    "arm64": {
+      "version": "1.47.2-3+b11",
+      "architecture": "arm64",
+      "sha256": "26bc538fb6b9279c99a5f83fb81e770c3df841ea8de1db64c7da0320536c6f94",
+      "url": "https://snapshot.debian.org/archive/debian/20260905T000000Z/pool/main/e/e2fsprogs/logsave_1.47.2-3+b11_arm64.deb",
+      "consumers": [
+        "mos-system"
+      ]
+    }
+  }
+}

@@ -7,7 +7,7 @@ DNS，甚至可能没有网线。这个性质是设计出来的，不是碰巧�
 
 ## 1. 设备自己做的事
 
-从空 STATE 的首次启动，管理守护进程会在任何东西消费它之前，一次性、原子地
+从空 DATA/state 的首次启动，管理守护进程会在任何东西消费它之前，一次性、原子地
 播下设备配置：
 
 - **设备 id**——从系统 CSPRNG 抽取的 32 个十六进制字符；
@@ -20,19 +20,19 @@ DNS，甚至可能没有网线。这个性质是设计出来的，不是碰巧�
   DHCP 匹配，因此新设备能在任何 DHCP 网络上拿到地址，而 mosd 不必去猜接口
   名字。
 
-持久化回滚记录覆盖 DATA 上的配置文档与 STATE 上的身份记录；未完成的恢复必须在
-下一次启动读取设置前完成（[provisioning.md](../design/provisioning.md)）。
+持久化回滚记录覆盖 DATA 上的配置文档与 DATA/state 上的身份记录；未完成的恢复必须在
+下一次启动读取设置前完成（[provisioning.md](../../design/provisioning.md)）。
 播种失败会大声中止，下一次启动从头重试；一台看起来配置好了、其实只配了
 一半的设备正是这个设计要拒绝的失败。SSH 主机密钥在设备上于首次启动时生成，
 DATA 也在此时扩展到占满磁盘（见 [install.md](install.md)）。
 
 > status: shipped — evidence: `docs/design/provisioning.md`, `rootfs/overlay/usr/lib/mos/mos-seed-state`
 
-在 cx3576 上，设备还会在首次启动时把 machine id 持久化进冗余的 U-Boot
-环境，因此从第二次启动开始 `/etc/machine-id` 是稳定的；在没有可写引导环境
-的板卡上该 unit 是空转的，machine id 每次启动都是临时的。
+所有当前目标均由原生 init 在服务启动前将 machine id 建立并保存在 DATA/state，
+再只读绑定到 `/etc/machine-id`。它跨重启和组件更新保持稳定；格式错误或不可用的
+身份会被拒绝，不会静默生成临时替代身份。
 
-> status: board-dependent — evidence: `rootfs/overlay/usr/lib/mos/mos-machine-id`, `boards/cx3576/boot.cmd`
+> status: shipped — evidence: `pkgs/mos-deploy/src/bin/mos-init.rs`, `verify/src/checks-file-root.ts`
 
 ## 2. 找到设备
 
@@ -48,13 +48,8 @@ DATA 也在此时扩展到占满磁盘（见 [install.md](install.md)）。
 与该网口在板上的挂接位置为每个口推导一个地址。这样得到的地址在重启、重新
 烧录和镜像升级之后都保持不变。
 
-**这些地址变过一次。**在 RFCT-359 之前，推导的后半截用的是接口名 `eth0` /
-`eth1`——那只是两个口被探测到的先后顺序，并不是任何一个口自身的属性——所以
-设备可能在一次重启之后把两个地址互换，而其中一个口还可能拿到一个每次启动
-都不同的随机地址。修正它会改变所有已在现场的设备的地址。**任何按旧 MAC
-地址做的 DHCP 保留、交换机端口白名单、防火墙规则，在设备升级到此改动之后
-的镜像时都会立即失配**；请从设备上读出新地址并重新登记。mos 在 1.0 之前
-不作兼容性承诺，而这是一次整个机群同时可见的改动。
+地址依据 eMMC CID 和物理拓扑计算，不依赖接口探测顺序。当前开发验收全部使用
+完整最新版系统；请记录实际读到的板卡接口及地址。
 
 > status: board-dependent — evidence: `boards/cx3576/hwinit/hwinit-mac`, `boards/cx3576/bsp/init/mac.conf`, `make os-mac-test`
 
@@ -76,7 +71,7 @@ DATA 也在此时扩展到占满磁盘（见 [install.md](install.md)）。
 
 | 通道 | 文件放哪 | 何时被读 |
 |---|---|---|
-| `boot` | FAT 引导槽分区，按 GPT 标签（先 `boot-a`，后 `boot-b`） | 优先；可以把介质取出后用任意读卡器写入 |
+| `boot` | 当前 UEFI ESP，GPT 标签为 `esp`；cx3576 没有 ESP，使用可移动介质 | 优先；可以把介质取出后用任意读卡器写入 |
 | `media` | 已连接的可移动块设备——先看它的各个分区，再看裸盘 | 仅当引导分区上什么都没有时 |
 
 两者都**只在启动时读一次，在任何东西开始监听之前**。这里故意没有 udev
@@ -96,7 +91,7 @@ WiFi 客户端网络，以及时间设置。每个键都映射到一个已经存
 
 **有两样东西是被点名拒绝的，要求它们是错误而不是遗漏**：**证书**段和
 **主机名**。两者都没有对应的设置路径——设备上唯一的证书是 apid 自己的
-自签名 TLS 密钥对，那是 STATE 上的文件而不是设置；而设备的名字是从文档
+自签名 TLS 密钥对，那是 DATA/state 上的文件而不是设置；而设备的名字是从文档
 注入的身份派生出来的。携带其中任何一项的文档都会被拒绝，并点出违规的键。
 
 还有两条操作者必须据以规划的性质：

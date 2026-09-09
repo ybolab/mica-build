@@ -215,20 +215,20 @@ export const SHADOW_CHECKS: readonly CheckCase[] = [
     // the persistent copy would pass everything else here.
     id: 'shadow-link-not-persistent',
     shell: {
-      pass: 'points at nothing under /mnt/state or /var',
+      pass: 'points at nothing under /mnt/data/state or /var',
       fail: 'which is persistent storage; the transient password would survive',
     },
     run: async (ctx): Promise<readonly CheckResult[]> => {
       const dest = shadowDest(await packedRoot(ctx))
       const dir = dest === '' ? '<not a symlink>' : dirname(dest)
-      const persistent = dir.startsWith('/mnt/state/') || dir.startsWith('/var/')
+      const persistent = dir.startsWith('/mnt/data/state/') || dir.startsWith('/var/')
       return [verdict(
         'shadow-link-not-persistent',
         !persistent,
         persistent
           ? `the ${SHADOW} symlink points at '${dir}', which is persistent storage; the transient `
             + `password would survive the reboot that is supposed to end it`
-          : `the ${SHADOW} symlink points at nothing under /mnt/state or /var, so no shadow file is `
+          : `the ${SHADOW} symlink points at nothing under /mnt/data/state or /var, so no shadow file is `
             + `kept on persistent storage`,
       )]
     },
@@ -377,7 +377,7 @@ export const SHADOW_CHECKS: readonly CheckCase[] = [
     // to the next reader of this unit, that the file still lives on STATE.
     id: 'shadow-reconcile-no-state-dep',
     shell: {
-      pass: 'declares no After=/Requires= against var-lib-mos.mount or /mnt/state',
+      pass: 'declares no After=/Requires= against var-lib-mos.mount or /mnt/data/state',
       fail: ['still depends on STATE:', 'so its lack of a STATE ordering cannot be checked'],
     },
     run: async (ctx): Promise<readonly CheckResult[]> => {
@@ -388,13 +388,13 @@ export const SHADOW_CHECKS: readonly CheckCase[] = [
       }
       const hits = lines(root, REC_UNIT)
         .map((l, i) => ({ l, n: i + 1 }))
-        .filter(({ l }) => /^(After|Requires|RequiresMountsFor|BindsTo)=.*(var-lib-mos|\/mnt\/state)/.test(l))
+        .filter(({ l }) => /^(After|Requires|RequiresMountsFor|BindsTo)=.*(var-lib-mos|\/mnt\/data\/state)/.test(l))
       return [verdict(
         'shadow-reconcile-no-state-dep',
         hits.length === 0,
         hits.length === 0
           ? 'mos-shadow-reconcile.service declares no After=/Requires= against var-lib-mos.mount or '
-            + '/mnt/state; it needs only the tmpfs systemd has already mounted'
+            + '/mnt/data/state; it needs only the tmpfs systemd has already mounted'
           : `mos-shadow-reconcile.service still depends on STATE: `
             + `${hits.map(h => `${h.n}:${h.l}`).join(' ')} . It builds ${SHADOW_LINK_TARGET} in RAM `
             + `and touches no persistent storage; an ordering against a mount it does not need can `
@@ -405,7 +405,7 @@ export const SHADOW_CHECKS: readonly CheckCase[] = [
 
   {
     // And nothing may seed a shadow file onto STATE behind its back.
-    // mos-seed-state ran the reconciler against /mnt/state/mos/shadow on first
+    // mos-seed-state ran the reconciler against /mnt/data/state/mos/shadow on first
     // boot, back when /etc/shadow resolved there; with the file in RAM that
     // line would put a credential on persistent storage that nothing reads and
     // nothing ever clears.
@@ -424,7 +424,7 @@ export const SHADOW_CHECKS: readonly CheckCase[] = [
         .map((l, i) => ({ l, n: i + 1 }))
         // `grep -v '^[0-9]*:#'`: a COMMENT is not a seeding, and the file is
         // allowed to explain why it does not do this.
-        .filter(({ l }) => /mos-shadow-reconcile|\/mnt\/state\/[a-z]*\/?shadow/.test(l) && !l.startsWith('#'))
+        .filter(({ l }) => /mos-shadow-reconcile|\/mnt\/data\/state\/[a-z]*\/?shadow/.test(l) && !l.startsWith('#'))
       return [verdict(
         'seed-state-no-shadow-on-state',
         hits.length === 0,

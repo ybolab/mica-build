@@ -1,8 +1,8 @@
 # Board dossier: virt-arm64
 
-> The QEMU aarch64 `virt` machine, booted through UEFI. A **test target**, not a
-> product target: `BOARD_RELEASE_TARGET=0`, there is no release path behind it,
-> and it ships no `evidence.json`. See PLAN-085.
+The QEMU aarch64 `virt` machine uses the current UEFI signed-file image and
+release producers (`BOARD_RELEASE_TARGET=1`). Its evidence describes emulated
+boot and services; it does not qualify a physical ARM64 board.
 
 ## Identity
 
@@ -29,9 +29,9 @@
 - Configuration: arm64 `defconfig`, plus `boards/common/mos-required.fragment`
   and `boards/virt-arm64/bsp/kernel/config/virt-arm64.fragment`, resolved by
   `olddefconfig` and recorded as `config/virt-arm64.config`.
-- Bootloader: **none is built.** GRUB is produced at image-assembly time by
-  `grub-mkstandalone --format=arm64-efi` from Debian's `grub-efi-arm64-bin`,
-  inside the digest-pinned `IMAGE_DEBIAN_TRIXIE`.
+- Boot manager and UKI stub: systemd 257.13, built by `pkgs/mos-boot/` with
+  the required attempt-persistence policy. Their versions match the root's
+  systemd; boot firmware is packaged independently.
 - Firmware: AAVMF, Debian's build of EDK2, from the `qemu-efi-aarch64` package.
   It is the emulator's firmware and not this project's deliverable.
 - Vendor blobs in the boot chain: **none.** There is no vendor.
@@ -55,31 +55,22 @@
 
 ## Boot chain
 
-AAVMF (UEFI) → `EFI/BOOT/BOOTAA64.EFI` on the ESP → GRUB reads
-`EFI/mos/grub.cfg` and `EFI/mos/grubenv` → the slot's `vmlinuz` and
-`cmdline.cfg` from that slot's own boot partition → kernel assembles the
-dm-verity root from `dm-mod.create=` and mounts `/dev/dm-0`.
+AAVMF with an explicitly enrolled development boot anchor → signed
+`EFI/BOOT/BOOTAA64.EFI` → counted deployment entry → signed UKI → authenticated
+native init → SYSTEM ext4 → signed root/support verity mappings → systemd.
+The kernel enforces `dm_verity.require_signatures=1`. Module/support mounts are
+ready before udev. Three trial attempts are persisted before launch; only the
+health gate confirms. Exhaustion stops without refilling counters.
 
-- The same chain x64 has, and the non-comment lines of
-  `boards/virt-arm64/grub.cfg` are byte-identical to `boards/x64/grub.cfg`'s, so
-  the A/B contract is the same one rather than a second copy of it.
-- **No initrd**, and that is the contract rather than an omission: the kernel
-  has `CONFIG_DM_INIT` and reads the verity table itself.
-- RAUC's bootloader backend is `grub`; the A/B order and the per-slot OK/TRY
-  flags live in `grubenv`, rewritten in place with `grub-editenv`.
-- **No boot-attempt counters.** RAUC refuses a `system.conf` that sets
-  boot-attempts under the grub backend, so nothing here should be read as
-  covering cx3576's attempt-counting handshake.
+> status: shipped — evidence: `pkgs/mos-boot/systemd-boot-persistence.patch`, `pkgs/mos-deploy/src/bin/mos-init.rs`, `tests/file-ab-x64/updates.sh`
 
 ## Storage media and layout
 
-- Media: virtio-blk over PCIe, presented by the emulator. No SATA, no NVMe, no
-  USB storage — the machine has none and the kernel builds in none.
-- Layout: `boards/virt-arm64/board.env`, nine partitions — one static ESP, a
-  boot partition per slot, two verity rootfs slots, and meta/state/ephemeral/data.
-- The layout is x64's: the same GUID scheme, filesystem labels, sizes, start
-  offsets, repart growth rules and the ESP-is-not-a-slot rule. A diff of the two
-  files is intended to show only real differences.
+Virtio block storage; current layout version 3 has exactly ESP, SYSTEM and DATA.
+`boards/virt-arm64/board.env` is the geometry source. Root/support components are
+immutable files on SYSTEM; UKIs are on ESP. DATA alone grows on first boot and
+backs explicitly allowed writable leaves. `/var` and its parent skeleton remain
+read-only. Identity is created on DATA before services and retained across updates.
 
 ## Console
 
@@ -114,95 +105,45 @@ dm-verity root from `dm-mod.create=` and mounts `/dev/dm-0`.
 
 ## Artifact digests
 
-- The verity root hash of the composed rootfs, which is the digest the boot
-  chain actually anchors to:
-  `a9061bc8dac995aba1cce922f92febc684c72011b1534c2d0afc8b8644e6cab0`
-  (composed 2026-09-06 from the pool at tree stamp `661063a3b305`).
-- The image itself is NOT given a digest here. It carries an epoch in its
-  filename and `_out/` is per-checkout, so a hash recorded in this file would
-  describe one machine's build rather than the board. The verity root hash
-  above is the reproducible one: it is a function of the composed root.
-- What IS pinned and checkable today: the kernel source
-  (`KERNEL_SHA256=ee126cabb1ce...` over `git archive` of `v6.12.107`), the
-  builder image (`IMAGE_UBUNTU_2404`), the assembly image
-  (`IMAGE_DEBIAN_TRIXIE`, by digest), and the resolved kernel configuration
-  (`config/virt-arm64.config`, 9328 lines, compared symbol-for-symbol by the
-  BSP build).
+Kernel source and configuration are pinned under `boards/virt-arm64/bsp/kernel/`.
+Exact signed artifact identities and verification logs belong to the complete
+image under test. Current API evidence is `_out/virt-arm64/apid-api/result.json`;
+full runtime, component update and trust-rotation evidence is recorded in
+`docs/task/20260908-2229-file-ab-delivery-x64-first.md`. No digest from the retired
+partition model identifies a current image.
 
 ## Known limitations
 
-- **The boot is proven; the API phase suite is not.** The board composes,
-  assembles, passes the image contract, boots to userspace and reaches
-  `APID_LISTENING`. What has NOT been run against it is the apid phase suite
-  itself — the session-, management- and update-phase assertions — so no claim
-  about apid's behaviour on this board is supported yet, only that it starts
-  and listens.
-- **It is the largest of the three roots: 430 MB, against cx3576's 379 and
-  x64's 292.** Almost all of the difference is one package —
-  `mos-kernel-virt-arm64` at 119.5 MB against roughly 25 MB for x64's. arm64
-  has a single `defconfig` covering every arm64 platform, so it resolves 1134
-  modules; this machine loads virtio and nothing else. Trimming the module set
-  is a kernel-configuration change with its own review and is deliberately not
-  folded into the change that first composed the board.
-- **No KVM, ever, on this host class** — arm64 guests here run under TCG. The
-  cost was measured rather than predicted, and it is smaller than expected:
-  95 s to `APID_LISTENING` against x64's 75 s on the same host, both under TCG,
-  i.e. **1.27x**. Not an order of magnitude. The harness's 900 s readiness
-  deadline is therefore left alone for this board, with 9.5x headroom.
-- **The firmware is not digest-pinned.** AAVMF is apt-installed at run time
-  inside the digest-pinned base image — the same arrangement, and the same
-  weakness, as x64's OVMF. Tightening it is an x64 problem first.
-- **`ESP_SIZE_MIB=64` is carried from x64 rather than re-derived.** Its
-  justification is a FAT32 cluster floor (which holds here) plus a measured OVMF
-  refusal (which was measured against different firmware). Untested on AAVMF.
-- **`virt` is an unpinned machine alias.** A QEMU minor bump can move the
-  machine model; same exposure x64 has with `q35`.
-- The shared LSM list ends in `bpf` and no kernel in this tree builds
-  `CONFIG_BPF_LSM`, so systemd reports the hook as unavailable at every boot on
-  every board. PLAN-073 owns that.
+- ARM64 guests run under TCG on the current amd64 test host. Timings describe
+  that executor, not a physical ARM64 system.
+- The QEMU `virt` model exercises the common OS and management plane; it does
+  not establish cx3576 peripheral, eMMC power-loss or board watchdog behavior.
+- Development Secure Boot enrollment is confined to disposable AAVMF variables.
+  It does not qualify another platform's firmware or debug policy.
+- The user-mode crun `fexecve` smoke limitation is recorded as executor-limited;
+  full guest runtime and API checks are separate evidence.
 
 ## Assurance level
 
-- **No claim.** This board ships no `boards/virt-arm64/evidence.json`, and the
-  absence is asserted rather than incidental: the ladder starts at I1, I1's
-  floor requires a `verity-root` evidence ref, and only a suite run against an
-  assembled image can produce one.
-- `BOARD_RELEASE_TARGET=0`. `build/src/release-manifest.ts:requireReleaseTarget`
-  refuses a release for this board by name, and the evidence-coverage check
-  requires a board declaring `0` to carry no evidence file — so a claim cannot
-  be added here quietly.
-- It rises to I1 when PLAN-085 slice 4 assembles an image and
-  `bash verify/run.sh --verify --board virt-arm64` runs against it.
+The current software proof includes enforced UKI verification, required signed
+verity root/support mappings, authenticated release acquisition and bounded
+trial fallback. `BOARD_RELEASE_TARGET=1`. This is development-grade evidence
+under disposable AAVMF enrollment, without hardware-rooted or production-key
+claims. See `boards/virt-arm64/evidence.json` and the delivery task.
 
 ## Qualification results
 
-**Binding** (named-revision rule): revision `all`; machine
-`qemu-system-aarch64 -machine virt -cpu max`; firmware AAVMF
-(`qemu-efi-aarch64` 2025.02-8+deb13u1, `AAVMF_CODE.fd` → the no-secboot
-variant); storage virtio-blk-pci; QEMU 10.0.11.
-
-No run against an assembled image is on file, because no image has been
-assembled: PLAN-085 slice 4 waits on the arm64 compose work. Every
-runtime row is therefore `not tested`. The build-side rows that DO have
-evidence are recorded as what they are — evidence about the build, never
-as a runtime `pass`.
+Binding: QEMU aarch64 `virt`, `-cpu max`, virtio-blk, pinned lab AAVMF Secure
+Boot firmware and a freshly assembled current three-partition image.
 
 | Row | Result | Date | Evidence / reason |
 |---|---|---|---|
-| Board definition passes the layout schema | pass | 2026-09-06 | `bash verify/run.sh --lint` — 3 boards, PASS |
-| Kernel builds from the pinned source and recorded config | pass | 2026-09-06 | `make virt-arm64-kernel` — the config diff, the `=y` floor over both fragments, and the compiled-tree verity check |
-| Container-network kernel floor | pass | 2026-09-06 | `make os-netavark-kernel-test` — 121/121, this board included |
-| Package set resolves and leaks no other board's packages | pass | 2026-09-06 | `make os-rootfs-manifest-test` — 44/44 |
-| Root composes | pass | 2026-09-06 | `MOS_BOARD=virt-arm64 bash rootfs/build.sh` — 430 MB installed, 13 packages resolved, verity payload 123 MiB |
-| Image assembles | pass | 2026-09-06 | `bash build/run.sh --mkimage-uefi --board virt-arm64` — 1938 MiB, 9 partitions, ESP 129021 FAT32 clusters |
-| Image contract (`verify --board virt-arm64`) | pass | 2026-09-06 | `bash verify/run.sh --verify --board virt-arm64` — 313/313, 22 skipped (each named; the U-Boot-only assertions) |
-| Cold boot to userspace in QEMU | pass | 2026-09-06 | AAVMF 2025.02-8+deb13u1 -> BOOTAA64.EFI -> GRUB 2.12-9+deb13u2 -> Linux 6.12.107 -> dm-verity (`sha256-ce`) -> root on `/dev/dm-0` -> login on ttyAMA0. No failed units. Graceful ACPI power-off completes. |
-| apid reaches APID_LISTENING | pass | 2026-09-06 | 95 s wall clock, 57.8 s guest, fresh disk, `MOS_BOARD=virt-arm64` through the board-parameterised harness; `mos-health` probes mosd and apid both OK |
-| Full apid API phase suite | not tested | — | the boot and the readiness signal are measured; the phase suite itself has not been run against this board |
-| A/B switch and update | not tested | — | needs the assembled image; no suite in this tree exercises A/B fallback through the GRUB path on any board |
-| Power-cut during update | N/A | — | no power-cut rig applies to an emulated machine; the host can only kill the process, which is a different failure |
-| Storage growth/health | not tested | — | needs the assembled image |
-| Network | not tested | — | needs the assembled image |
-| Radios | N/A | — | `BOARD_RADIOS=""`; the machine has none and the image ships no stack |
-| USB/fieldbus | N/A | — | `BOARD_HWINIT_CONFS=""`; the machine presents none |
-| Physical recovery action | N/A | — | `BOARD_RECOVERY_ACTIONS=""`; recovery is rewriting the image file on the host |
+| Current factory layout and root composition | pass | 2026-09-09 | `.tmp/seed-permission-roots.rc`; current component assembler and API image |
+| Signed boot, runtime and clean shutdown | pass | 2026-09-09 | `.tmp/final-arm.rc`; authenticated root/support, identity, service smokes and exitrd |
+| Full apid API suite | pass | 2026-09-09 | `.tmp/current-api-arm.rc`: 140 suite checks, 151 combined checks |
+| Root-only, kernel-only and combined update | pass | 2026-09-09 | `.tmp/confirmed-policy-arm-updates.rc`; three failed health trials, retained fallback, unchanged firmware/identity |
+| Metadata refusal and exhausted attempts | pass | 2026-09-09 | `.tmp/confirmed-policy-arm-faults.rc`; read-only ESP persistence refusal, shared SYSTEM/DATA damage recovery |
+| Physical power-cut | N/A | — | emulated storage; process interruption is separate evidence |
+| Network API | pass | 2026-09-09 | current API suite, including WireGuard key access and credential isolation |
+| Radios and fieldbus | N/A | — | virtual board declares none |
+| Physical recovery action | N/A | — | no physical presence assertion; recovery uses a fresh host-side image |

@@ -16,7 +16,7 @@ die() {
 
 # The service has RequiresMountsFor=/mnt/data. The probe is still deliberate: a
 # read-only or full DATA filesystem must stop boot consumers, never redirect
-# system data into the immutable root, STATE, /var, or /tmp.
+# system data into the immutable root or another filesystem.
 ensure_dir() {
     path=$1
     mode=$2
@@ -30,8 +30,25 @@ ensure_dir() {
     chmod "$mode" "$path"
 }
 
+ensure_dir "$DATA_ROOT/state" 0700
+ensure_dir "$DATA_ROOT/meta" 0700
+ensure_dir "$DATA_ROOT/cache" 0755
+ensure_dir "$DATA_ROOT/tmp" 1777
 ensure_dir "$SYSTEM_ROOT" 0755
 ensure_dir "$USER_ROOT" 0755
+
+# Project limits apply after DATA growth and before any payload is created.
+# Reserve 128 MiB and 2048 inodes for state/meta plus filesystem overhead.
+# The disposable project has 32 MiB / 2048 inodes; bulk must retain 64 MiB.
+set -- $(stat -f -c '%b %S %c' "$DATA_ROOT")
+bulk_kib=$(( $1 * $2 / 1024 - 131072 - 32768 ))
+bulk_inodes=$(( $3 - 4096 ))
+[ "$bulk_kib" -ge 65536 ] && [ "$bulk_inodes" -ge 4096 ] \
+    || die "DATA is too small for the protected state/meta reserve"
+chattr -p 100 +P "$SYSTEM_ROOT" "$USER_ROOT"
+chattr -p 101 +P "$DATA_ROOT/cache" "$DATA_ROOT/tmp"
+setquota -P 100 0 "$bulk_kib" 0 "$bulk_inodes" "$DATA_ROOT"
+setquota -P 101 0 32768 0 2048 "$DATA_ROOT"
 PROBE=${SYSTEM_ROOT}/.writable-probe.$$
 trap 'rm -f "$PROBE"' EXIT HUP INT TERM
 ( umask 077; set -C; : >"$PROBE" ) || die "$SYSTEM_ROOT is not writable"
@@ -50,6 +67,7 @@ ensure_dir "$SYSTEM_ROOT/diagnostics" 0700
 # Every document inside is 0600, written that way by mosd before the rename.
 ensure_dir "$SYSTEM_ROOT/config" 0700
 ensure_dir "$SYSTEM_ROOT/containers" 0711
+ensure_dir "$SYSTEM_ROOT/containers/networks" 0755
 ensure_dir "$SYSTEM_ROOT/home" 0755
 ensure_dir "$SYSTEM_ROOT/root" 0700
 ensure_dir "$SYSTEM_ROOT/apps" 0755

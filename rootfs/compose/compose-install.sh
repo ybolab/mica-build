@@ -85,10 +85,6 @@ meta_install() {
     META_INSTALLED="${META_INSTALLED} $1"
 }
 
-[ -s /mos-compose/meta-public/etc/rauc/keyring.pem ] ||
-    fail "/mos-compose/meta-public/etc/rauc/keyring.pem is missing or empty. It is staged from meta/rauc/ca.cert.pem and it is what every device flashed with this image trusts RAUC bundles from; an image without it can install no update at all"
-meta_install etc/rauc/keyring.pem
-
 [ -s /mos-compose/meta-public/usr/share/mos/meta/updates/manifest.json ] ||
     fail "/mos-compose/meta-public/usr/share/mos/meta/updates/manifest.json is missing or empty. It is staged from meta/updates/manifest.json and it is where this image says which server its updates come from, on which channel and against which package signing key; an image without it has no configuration to read and no anchor to check a package against"
 meta_install usr/share/mos/meta/updates/manifest.json
@@ -146,7 +142,7 @@ done
 echo "compose: $(echo ${META_INSTALLED} | wc -w) public-set file(s) installed from meta/ --${META_INSTALLED}"
 
 # THE DEVICE IDENTITY, /usr/share/mos/release-identity.env: the file
-# `rauc-update` reads to decide which published release is for this device
+# the management service reads to decide which published release is for this device
 # (board, profile) and whether one is newer than what is running (version).
 # Three facts about THIS BUILD, which is why no package carries them: an
 # archive is built once per architecture and installed into images of several
@@ -176,7 +172,7 @@ echo "compose: $(echo ${META_INSTALLED} | wc -w) public-set file(s) installed fr
 # the tree-versus-pool case; what this covers is the seam between them -- an
 # argument that arrived wrong, or a caller that composed the list another way
 # -- and it is the same boundary-assertion reasoning as the profile count
-# above. The upstream repacks (mos-podman, mos-rauc) carry their own upstream
+# above. The upstream repacks (mos-podman) carry their own upstream
 # version in front of the shared stamp and are expected not to match; the
 # first-party packages are.
 identity_version_owner=""
@@ -191,7 +187,7 @@ done
 
 install -d -m 0755 /usr/share/mos
 {
-    printf '# What this device is, for rauc-update. Written by\n'
+    printf '# Immutable root build identity for diagnostics. Written by\n'
     printf '# rootfs/compose/compose-install.sh from the arguments of the build\n'
     printf '# that composed this image; the root is read-only, so nothing edits it.\n'
     printf 'BOARD=%s\n' "${MOS_BOARD}"
@@ -201,25 +197,6 @@ install -d -m 0755 /usr/share/mos
 } >/usr/share/mos/release-identity.env
 chmod 0644 /usr/share/mos/release-identity.env
 echo "compose: release identity ${MOS_BOARD}/${MOS_PROFILE} at ${MOS_RELEASE_VERSION}, source committed ${MOS_RELEASE_COMMIT_DATE} (the version ${identity_version_owner} carries)"
-
-# The build report's RAUC line. build/src/bundle.ts reads it back out of
-# _out/<board>/rootfs-report.txt and refuses to build a bundle with a rauc
-# whose version differs, so an empty value here would make that comparison pass
-# by finding nothing. The finalizer consumes /rootfs-report.rauc and deletes it;
-# it never reaches the image.
-case " ${WANT} " in
-*" mos-rauc "*)
-    [ -n "${RAUC_VERSION:-}" ] ||
-        fail "mos-rauc is in the resolution and RAUC_VERSION is empty. That value is the pin in pkgs/rauc/versions.env and it is what the bundle builder compares its own rauc against; empty makes that comparison pass by finding nothing"
-    [ -x /usr/bin/rauc ] ||
-        fail "mos-rauc is installed and /usr/bin/rauc is not there"
-    printf '%s\n' "${RAUC_VERSION}" >/rootfs-report.rauc
-    echo "compose: rauc ${RAUC_VERSION} recorded for the build report"
-    ;;
-*)
-    echo "compose: rauc declined; no RAUC_VERSION recorded"
-    ;;
-esac
 
 # NO INITRAMFS, asserted where the kernel and the root it must mount are
 # finally in one tree together.

@@ -10,10 +10,9 @@ Two boards run through this manual as references:
 
 - **cx3576** (CX3576-Z, RK3576) — the full-effort case: the board builds its
   own boot chain under `boards/cx3576/bsp/`, so every stage below applies.
-- **x64** (generic UEFI) — the contrast case: the firmware provides the boot
-  chain, so stages 2 and 7 largely collapse to "declare the absence" and the
-  board directory holds a `board.env`, a `grub.cfg` and an overlay, nothing
-  that compiles.
+- **x64** and **virt-arm64** use the platform's UEFI firmware plus the
+  independently built signed systemd-boot manager and UKI. Each has a BSP kernel
+  and current board definition; no boot script or raw-slot backend is used.
 
 Every stage ends with an exit criterion a reviewer can check. Do not start a
 stage whose predecessor has no passing exit criterion; the stages are ordered
@@ -54,39 +53,23 @@ dossier.
 
 ## Stage 2 — boot ROM, SPL, TF-A and U-Boot
 
-**Goal.** A bootloader the SoC's boot ROM will load, satisfying the A/B
-requirements of the BSP contract: `CONFIG_BOOTCOUNT_LIMIT`, redundant
-environment, FIT support, the RAUC `BOOT_ORDER` handshake script, and a
-rescue path.
+**Goal.** An authenticated boot-executable path with bounded, persistent trials.
+Record every first mutable stage and vendor blob from intake. For cx3576, build
+the fixed MOS firmware with the required public FIT keys and protected record
+ranges. Assert required configuration verification, disabled persistent command
+import, watchdog start before storage, and decrement/flush/readback before FIT
+load. Debug BSP firmware is not a MOS installation substitute.
 
-**Inputs.** The intake decision from stage 1; the SoC's boot ROM load
-address/medium facts; vendor blobs where unavoidable (cx3576: Rockchip DDR
-init and TF-A binaries from `rkbin`).
+UEFI boards build the pinned systemd-boot manager and matching UKI stub and use
+explicit Secure Boot enrollment. Test refusal when attempt persistence fails.
+Each firmware result is a separate signed component maintenance input.
 
-**Procedure.** Build the bootloader reproducibly inside the board directory —
-cx3576 pins a mainline U-Boot commit and its blobs in a Dockerfile and
-produces two variants: a debug variant with no persistent environment, and
-the A/B variant (`uboot-mos`) with the redundant environment pair the layout
-reserves. Only the A/B variant may enter a mos image; the assemblers refuse
-the debug blob. Encode the boot script from the board's `boot.cmd`, following
-the handshake contract in
-[docs/design/uboot-ab-handshake.md](../design/uboot-ab-handshake.md). Assert
-every load-bearing configuration fact inside the build itself (cx3576 asserts
-its `bootdev-order` and both stages' `BOOTCOMMAND` strings in the build scripts
-its Dockerfile drives), so a regression fails at build time, not on a bench.
+**Exit criteria.** Pinned builds and signature/persistence negatives pass;
+physical boot/watchdog/recovery observations are recorded separately. Use
+`make os-fit-records-test` for the cx3576 native C policy and the UEFI QEMU
+harness for actual boot-manager selection.
 
-> status: board-dependent — evidence: `boards/cx3576/bsp/uboot/build.sh`, `boards/cx3576/bsp/uboot/build-mos.sh`
-
-A UEFI board skips all of this: x64 ships a `grub.cfg` for one static ESP and
-compiles nothing, "by design, not by omission".
-
-**Exit criteria.** The bootloader builds from a pinned commit; the A/B
-variant's environment offsets match the layout's `UENV_*_OFFSET_BYTES`; the
-board boots to a bootloader prompt or script on the bench (hardware evidence
-— goes into the qualification matrix, never assumed).
-
-**Contract artifact.** `boards/<name>/bsp/uboot/` and `boards/<name>/boot.cmd`
-(or `grub.cfg` on a UEFI board).
+> status: board-dependent — evidence: `boards/cx3576/bsp/uboot/build-mos.sh`, `pkgs/mos-boot`, `tests/file-ab-fit`
 
 ## Stage 3 — kernel, config and DTS
 
@@ -162,35 +145,28 @@ omission.
 
 > status: shipped — evidence: `make os-layout-lint`
 
-**Exit criteria.** `bash verify/run.sh --lint boards/<name>/board.env`
-passes.
+**Exit criteria.** The current layout tests and explicit image verification pass.
+`make os-layout-lint` is the existing contract gate.
 
 **Contract artifact.** `boards/<name>/board.env` — the definition itself.
 
 ## Stage 6 — image layout
 
-**Goal.** An assembled A/B disk image whose geometry a flashed fleet can live
-with forever: offsets that never move once devices ship.
+**Goal.** A complete current factory image with two authenticated deployments.
+Use the exact three-partition layout from `board.env`; there is no old-layout
+reader, frozen historical geometry or in-place migration requirement.
 
-**Inputs.** `board.env`; the BSP artifacts from stages 2–4; the composed
-rootfs.
+Package independent root, kernel/support and firmware inputs, sign two deployment
+records, then run the component `image` command. Its capacity gate reserves
+current, fallback and candidate space. Verify the explicit image and metadata
+public-key files. DATA is last and is the only partition grown after assembly;
+firmware and SYSTEM ranges/identities must remain unchanged.
 
-**Procedure.** Extend or reuse an image assembler (cx3576 and x64 each have
-one under `build/src/`) driven entirely by `board.env` — nothing shared may
-know a board's shape. Respect the frozen-geometry rules: release builds pin
-`MOS_ROOTFS_SLOT_MIB`, and growing a slot or `MOS_VAR_MIB` moves every later
-partition, yielding a GPT no flashed device can accept. Run the image
-contract verification against the assembled image.
+**Exit criteria.** `make os-image` with its explicit inputs and `make os-verify`
+pass, then the complete image reaches actual firmware boot and clean shutdown.
+The DATA growth test validates the actual packed policy against a disposable disk.
 
-> status: shipped — evidence: `make os-image-cx3576`
-
-> status: shipped — evidence: `make os-verify-cx3576`
-
-**Exit criteria.** The image assembles; `bash verify/run.sh --verify --board
-<name>` is green.
-
-**Contract artifact.** The assembler's board layout module and the verified
-image contract.
+> status: shipped — evidence: `make os-image`, `make os-verify`, `tests/repart-loader-test.sh`
 
 ## Stage 7 — hwinit
 
@@ -225,7 +201,7 @@ the SoC's recovery/flash mechanism.
 
 **Procedure.** Document and script the flash path (cx3576: `rkdeveloptool`
 via maskrom or the rockusb loader mode, driven from the BSP Makefile). Define
-where per-unit identity lands — the state partition, or hardware fuses/OTP
+where per-unit identity lands — DATA/state, or hardware fuses/OTP
 where the platform provides them — and how the factory writes it. The
 three-layer configuration model in
 [docs/design/provisioning.md](../design/provisioning.md) defines how a device
@@ -242,31 +218,22 @@ the board dossier.
 
 ## Stage 9 — update and recovery integration
 
-**Goal.** The board participates in A/B updates and can always be recovered.
+**Goal.** Independent component updates, retained fallback and explicit recovery.
+Exercise signed root-only, kernel-only and combined deployments on complete
+current images. Verify unchanged object reuse, three failed trials, health-owned
+confirmation, manual rollback refusal cases, reset retention and missing/shared
+storage failure. Firmware writes belong only to its separate signed maintenance
+flow.
 
-**Inputs.** The bootloader handshake from stage 2; RAUC's backend choice in
-`board.env` (`RAUC_BOOTLOADER`).
+Inject interrupted publication, confirmation and GC, and insufficient space.
+For cx3576, add physical power cuts at object writes/sync, record activation,
+trial decrement and health confirmation. No counter refill or boot-variable
+editing may conceal a failure. Record the actual watchdog reset and cause.
 
-**Procedure.** The RAUC `system.conf` is rendered from `board.env` — the
-template plus the board definition are the single source of truth, never
-hand-edited. Build and install a bundle end to end; on U-Boot boards, the
-handshake contract (boot order, attempt credits in 1..9, health-gate
-confirmation) is testable off-hardware. Prove the recovery story: what a unit
-with a dead A slot, a dead bootloader, or a corrupt environment does, and how
-the field recovers it (cx3576: recovery key to rockusb, boot-failure fallback
-to rockusb, rescue SD that cannot override a bootable eMMC).
+**Exit criteria.** Applicable automated gates pass, and every claimed physical
+path has dated board/image-bound evidence. Unrun physical cases remain pending.
 
-> status: shipped — evidence: `make os-bundle-cx3576`
-
-> status: shipped — evidence: `make os-uboot-handshake-test`
-
-**Exit criteria.** A bundle installs into the inactive slot and the order
-flips (bench evidence for the qualification matrix); the handshake test suite
-passes; every recovery path is written down in the dossier's Recovery method
-section.
-
-**Contract artifact.** `pkgs/rauc/system.conf.in` rendered per board, and the
-handshake test suite.
+> status: shipped — evidence: `tests/file-ab-x64/updates.sh`, `make os-fit-records-test`, `make os-file-transaction-faults`
 
 ## Stage 10 — release registration
 

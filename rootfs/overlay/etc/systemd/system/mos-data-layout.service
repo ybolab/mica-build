@@ -3,6 +3,8 @@ Description=Prepare writable /mos and /srv DATA namespaces
 Documentation=file:/usr/lib/mos/mos-data-layout
 DefaultDependencies=no
 RequiresMountsFor=/mnt/data
+Requires=systemd-growfs@mnt-data.service
+After=systemd-growfs@mnt-data.service
 Before=mos.mount srv.mount mos-seed-home.service mos-seed-root.service local-fs.target shutdown.target
 Conflicts=shutdown.target
 

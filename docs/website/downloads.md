@@ -1,81 +1,42 @@
 # Page brief: Downloads
 
-- **Purpose**: let a visitor select a release, then the image for their board
-  and profile, and know how to verify what they downloaded — without the site
-  ever hand-maintaining a release table.
-- **Audience**: integrators fetching an image to flash; support engineers
-  re-downloading a specific release named in a case.
-- **Navigation position**: page 3. Links to
-  [supported hardware](hardware.md) for board compatibility,
-  [security](security.md) for the trust chain behind the signatures, and the
-  user guides [../user/download.md](../user/download.md) and
-  [../user/install.md](../user/install.md) for the procedure itself.
+The downloads page selects an exact board, profile and signed deployment, then
+shows the complete factory image and its independent component/update artifacts.
+The current targets are x64, virt-arm64 and cx3576. No public download list is
+published by this repository; source builds remain the documented route.
 
-## Content outline
+## Artifact facts
 
-1. How selection works: release → board → profile.
-2. What a release contains: the artifact kinds and their naming facts.
-3. Verification: what the visitor checks, and against what.
-4. The release list itself — rendered from release facts, never typed.
+Each entry must come from actual artifact metadata: board, profile, release
+version/generation, deployment/kernel/root IDs, byte lengths and digests. A full
+`disk.img` initializes the current three-partition system. A `.mosupd` archive is
+a signed component deployment update. Firmware has its own maintenance artifact,
+recovery and readback workflow.
 
-## Draft copy
+> status: shipped — evidence: `build/src/component-cli.ts`, `build/src/components.ts`, `docs/design/build.md`
 
-### Selecting a download
+## Verification
 
-A download is identified by three choices: the **release** (a version on a
-release channel), the **board** (each release ships one image per supported
-board — see [supported hardware](hardware.md)), and the **profile** —
-`dev` or `prod`, baked into the image at build time; a production device
-cannot be edited into a development one.
+Link the exact trusted public-key source and the current image verification
+command. Explain that boot, content and metadata have separate anchors; a checksum
+served beside an untrusted artifact is insufficient authentication. All current
+development acceptance flashes complete latest images. No old-layout migration
+or historical update compatibility is offered.
 
-> status: shipped — evidence: `docs/design/access.md`, `rootfs/packages-src/profile`
+> status: shipped — evidence: `verify/run.sh`, `docs/design/release-signing.md`, `docs/user/download.md`
 
-### What a release contains
+## Publication
 
-For each board, a release build produces a whole-disk image for initial
-flashing and a signed RAUC bundle for A/B updates of already-fielded devices.
-Both are produced by the repository's build; the bundle carries the release
-version in its name.
+The operator-managed update server publishes authenticated component releases
+and serves channel catalogs. Its UI also handles separate firmware artifacts.
+A running server is not a public product release or physical-board qualification.
+Generate any download list from its actual published metadata and delivered
+artifact records; do not hand-write release identities or claim absent evidence.
 
-> status: shipped — evidence: `make os-image-cx3576`, `make os-bundle-cx3576`, `docs/design/build.md`
+> status: shipped — evidence: `update-server/src`, `docs/design/updates.md`
 
-The downloads page must state these artifact facts per entry: exact artifact
-filename, board, profile, release version and channel, size, digest, and the
-signature material a client verifies against. It must not invent any of them.
-
-### Verification
-
-A mos release is signed twice, by two unrelated key hierarchies: TUF metadata
-pins the bundle's digest, length and verity root hash, and a CMS signature
-over the bundle itself is what the device verifies at install time. The
-host-side tooling to sign and verify a published repository ships in this
-repository today.
-
-> status: shipped — evidence: `pkgs/rauc-sign/`, `docs/design/release-signing.md`
-
-The page links each release's public trust anchor and shows the verification
-command; it never asks the visitor to trust a bare checksum typed into HTML.
-
-### The release list
-
-**This brief deliberately contains no release list.** The machine-readable
-release manifest the list would be rendered from now exists: it binds the
-version, the channel (`development`, `candidate`, `stable`), the board and
-profile, the source commit and every artifact's size and digest, and a
-publication gate refuses a release directory that does not match it. The site
-regenerates from those facts, per the [content contract](contract.md), and
-never from hand-typed prose.
-
-> status: shipped — evidence: `docs/design/release-artifacts.md`, `make os-release-gate`
-
-What is still missing is anywhere to point at. No release is published and no
-channel is hosted, so there is nothing to list; support windows have a written
-policy and no mechanism binding one to a release. A list rendered today would
-be fabricated, which is why this brief has none.
+Public hosting, release support windows and a public downloadable release history
+remain unprovided. Link [build instructions](../design/build.md),
+[user downloads](../user/download.md) and [installation](../user/install.md).
 
 > status: unsupported
-
-Until then, the downloads page states plainly that releases are not yet
-published and points evaluators at the build documentation
-([../design/build.md](../design/build.md)) to produce a development image from
-source.

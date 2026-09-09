@@ -1,6 +1,6 @@
-# NAS Appliance Refactor - Plan Index
+# MOS plans
 
-> Updated: 2026-09-08
+> Updated: 2026-09-09
 
 ## Usage
 

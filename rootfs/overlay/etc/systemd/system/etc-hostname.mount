@@ -1,5 +1,5 @@
 [Unit]
-Description=Hostname from the STATE partition
+Description=Hostname from DATA/state
 # mosd's hostname reconciler (pkgs/mosd/mosd/src/reconciler/hostname.rs) calls
 # SetStaticHostname on org.freedesktop.hostname1, and systemd-hostnamed
 # implements that by writing /etc/hostname. /etc is on the read-only squashfs,
@@ -8,10 +8,10 @@ Description=Hostname from the STATE partition
 # not write to the underlying read-only filesystem.
 Requires=mos-seed-state.service
 After=mos-seed-state.service
-RequiresMountsFor=/mnt/state
+RequiresMountsFor=/mnt/data/state
 
 [Mount]
-What=/mnt/state/hostname
+What=/mnt/data/state/hostname
 Where=/etc/hostname
 Type=none
 Options=bind

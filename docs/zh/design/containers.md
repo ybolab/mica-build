@@ -58,7 +58,7 @@ Item1 投影，`mos-mqttd` 也只接纳应用包按准确 `com.mos.<class>[.<suf
 
 ## 3. 文件放哪
 
-`/etc/containers/systemd` —— 它是 STATE 分区上 `/mnt/state/quadlet` 的一个 bind，
+`/etc/containers/systemd` —— 它是 DATA 的 `/mnt/data/state/quadlet` 目录的一个 bind，
 所以你放进去的东西**能挺过重启，也能挺过一次 A/B 更新**。
 
 这个路径不是选择，而是 Quadlet 查找的地方。改动文件后：

@@ -1,78 +1,43 @@
 # Security
 
-This page states the security posture of a mos device as it ships: what is
-protected, by which mechanism, against which attacker — and the gaps, named
-with the same precision. The threat-model boundary to hold in mind throughout:
-**physical possession of the boot medium implies full control.** Whoever holds
-the hardware can reflash it; the protections below are about everyone else.
+The current system authenticates boot executables, immutable content and release
+metadata through three separate trust domains. Development images use explicit
+test keys. Hardware-rooted boot and encrypted DATA are not claimed.
 
-## 1. Runtime integrity: the read-only verity root
+## 1. Runtime integrity
 
-The root filesystem is a squashfs with a dm-verity hash tree, verified
-per block at runtime; the root hash rides on the kernel command line. The
-device cannot be modified into running altered system code short of replacing
-the whole slot, and every service, including the management plane, runs from
-that sealed root. Writes go only to the declared data tiers
-([storage.md](storage.md)).
+Native init authenticates the selected deployment and the kernel requires signed
+verity hashes for both root and support. It verifies blocks as they are read;
+latent unread corruption is detected on access. Matching modules are mounted
+read-only before services. The root and `/var` parent skeleton stay read-only;
+only explicitly allowed leaves use DATA or bounded volatile storage.
 
-What this does **not** claim: end-to-end secure boot. On cx3576 nothing in
-the build signs SPL or U-Boot, so the chain below the kernel is not
-authenticated; many customer-selected boards use opaque boot stages, and
-rootfs integrity must not be misrepresented as boot-chain integrity. Recorded
-as a gap, not assumed away.
+UEFI Secure Boot or required FIT signatures protect the kernel and early policy
+when the corresponding enforcing firmware and anchor are trusted. This is
+separate from authenticating every first mutable hardware boot stage.
 
-> status: shipped — evidence: `docs/design/ro-root.md`, `docs/design/uboot-ab-handshake.md`
+> status: shipped — evidence: `pkgs/mos-deploy/src/bin/mos-init.rs`, `docs/design/ro-root.md`, `docs/design/release-signing.md`
 
-## 2. Update authenticity
+## 2. Update authenticity and key lifecycle
 
-An update is signed twice, by two unrelated hierarchies: the RAUC bundle's
-CMS signature, verified on the device against its keyring, and host-side TUF
-metadata (four ed25519 roles, offline root) pinning the bundle's digest,
-length and verity root hash. The key ceremonies, custody and rotation
-procedures are written as an executable runbook,
-[../design/release-signing.md](../design/release-signing.md).
+The updater checks signed deployment/catalog metadata, board identity and exact
+component bytes before staging. It preserves current and retained fallback
+objects, publishes a candidate only after durable writes, and confirms through
+the health gate. Loader firmware is a separate signed maintenance artifact.
+Catalog expiry gates acquisition; it does not expire installed offline boot.
 
-What an image says about itself, and what a device can be asked:
+Metadata anchors are embedded in authenticated kernel policy. Editable update
+source/channel settings cannot replace them. Content-anchor overlap/removal is a
+kernel-package change; boot-key rotation changes the boot trust/firmware domain.
+Each rotation must leave a usable retained association. There is no historical
+format reader or old-layout migration.
 
-- **The image carries its own trust grade, and the device reports it.** A
-  build without provided material generates development-grade signing material
-  and marks it, and that marker is baked into the image. Ask a device with
-  `GET /api/v1/system/info`: `trust.grade` is `development` or `production`,
-  and a development image names which half of its material is development
-  — the RAUC keyring, the package signing key, or both.
-- **A development-grade image cannot be published to a customer.** The
-  publication gate refuses a `candidate` or `stable` release whose image
-  carries that marker, and names the file it found. The `development` channel,
-  which carries no promise, still accepts one. This was a convention until
-  now; it is a refusal.
-- **The device reads its package-trust anchor from the image.** `rauc-update`
-  and `rauc-verify` authenticate repository root metadata with
-  `trust.signingKeys` in `/usr/share/mos/meta/updates/manifest.json` before the
-  TUF walk. Neither device binary accepts a root-file argument, and the mosd
-  policy has no anchor-path setting. The build derives `trust.signingKeyIds`
-  from the raw public-key bytes and refuses a supplied value that disagrees.
-  An empty key list permits no package verification.
+`GET /api/v1/system/info` reports the baked development marker and named domains.
+It is provenance information, not proof of active firmware enforcement. The
+update status reports the boot/content verification receipt separately. Key
+creation never happens implicitly during a build; supply inputs explicitly.
 
-The named gaps:
-
-- **No production keys are provisioned anywhere yet.** The ceremony that
-  produces them is written down ([../design/release-signing.md](../design/release-signing.md))
-  and has not been performed. Every image this repository has built so far is
-  development-grade, and says so.
-- **No keyring rotation channel on deployed devices** — replacing the trust
-  anchor on a fielded device means an image signed by the very key being
-  replaced. The two cases that leaves behind have different answers, and both
-  are decided rather than open. A device that **missed a rollover window** is
-  recovered by an update, not a reflash: the previous release is republished
-  into a rescue repository, still signed by the outgoing key, and the device
-  is pointed at it by the same authenticated call that sets any other update
-  setting — or handed it on removable media if it has no network route at all.
-  What moves is where the device looks, never what it trusts.
-  Rotation away from a CA that is **already compromised** has no remote answer
-  at all and means a physical reflash, because the attacker holds the same
-  signing authority every remote path runs on.
-
-> status: shipped — evidence: `docs/design/release-signing.md`, `pkgs/rauc-sign/`
+> status: shipped — evidence: `pkgs/mos-deploy/src/acquisition.rs`, `pkgs/mos-deploy/src/deployments.rs`, `docs/design/release-signing.md`
 
 ## 3. Access and credentials
 

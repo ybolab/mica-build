@@ -1,16 +1,12 @@
 [Unit]
-Description=mosd persistent state from the STATE partition
-# mosd and apid read and write /var/lib/mos/settings.toml and /var/lib/mos/apid
-# unchanged from v1. /var lives on EPHEMERAL, which an update may reset, so the
-# directory is redirected onto STATE with a bind mount instead of touching the
-# daemons' paths.
-Requires=mos-seed-var.service mos-seed-state.service
-After=mos-seed-var.service mos-seed-state.service
-RequiresMountsFor=/mnt/state
+Description=mosd persistent state from DATA/state
+# The immutable /var/lib parent exposes only this persistent DATA leaf.
+After=mos-seed-state.service
+RequiresMountsFor=/mnt/data/state
 Before=mosd.service apid.service
 
 [Mount]
-What=/mnt/state/mos
+What=/mnt/data/state/mos
 Where=/var/lib/mos
 Type=none
 Options=bind

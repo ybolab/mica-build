@@ -26,7 +26,7 @@ fact about the device rather than a preference:
 |---|---|---|
 | Who decides when it ships | the OS release does | you do, independently |
 | Is it in the signed image | yes | no — the image is pulled at run time |
-| What signs it | the RAUC bundle signature, then dm-verity | nothing today |
+| What signs it | the signed deployment and kernel-verified dm-verity root signature | nothing today |
 | Does an OS rollback take it back | yes, atomically, with the OS | no — it keeps running across the rollback |
 | Does its failure roll the OS back | no — a failed unit is reported, not fatal; only a unit the health gate REQUIRES rolls the OS back, and no application is in that set | no — nothing watches it |
 | Where the code sits | the read-only verity root | `/mos/containers/storage` on DATA |

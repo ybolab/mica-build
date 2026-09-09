@@ -1,26 +1,7 @@
 [Unit]
 Description=Persistent root home directory from the DATA partition
-# /root is where an operator working as root leaves things: shell history, a
-# scratch script, a bundle downloaded for `rauc install`, an edited .bashrc.
-# That is USER DATA of unbounded size, not configuration, and the two tiers are
-# sized for exactly that difference. STATE is 64 MiB of small, precious
-# identity -- the settings tree, the sshd host keys, the shadow file -- and a
-# root home that filled it would take all of them down together. DATA is the
-# only partition that carries x-systemd.growfs and the only one systemd-repart
-# extends to the end of the disk, so it is the only tier a root home can live
-# on without a ceiling.
-#
-# KEY LOGIN DOES NOT DEPEND ON THIS BIND. sshd reads
-# /etc/ssh/authorized_keys.d/%u, never /root/.ssh/authorized_keys -- that path
-# was chosen precisely because /root was ephemeral -- so a /root that
-# fails to mount does not lock anyone out. The reverse is also worth knowing: a
-# key written to /root/.ssh/authorized_keys now SURVIVES a reboot and still
-# grants nothing, because AuthorizedKeysFile REPLACES the default locations
-# rather than adding to them.
-#
-# The bind source is created by mos-seed-root under /mos, which must run BEFORE this unit:
-# mount(8) does not create the source of a bind, and /root cannot be populated
-# after the fact because the root filesystem is a read-only verity squashfs.
+# The /mos/root source is seeded before binding this persistent user-data leaf.
+# Identity and credentials live in separate protected DATA/state directories.
 Requires=mos-seed-root.service
 After=mos-seed-root.service
 RequiresMountsFor=/mos

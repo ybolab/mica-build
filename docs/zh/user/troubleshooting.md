@@ -16,7 +16,7 @@ mos 上的诊断遵循一个顺序：获得访问，精确识别正在运行的�
    root 密码（通过 UI 设置，到下次启动前有效）是设计中的单次会话路径。
 3. **串口控制台**——cx3576 上存在（`ttyFIQ0`，1500000 波特），显示登录
    提示，但在设置临时 root 密码之前没有任何账户接受凭据。它主要用于
-   *读取*启动过程：U-Boot 的槽决策和内核输出会出现在那里。
+   *读取*启动过程：固件的部署决策和内核输出会出现在那里。
 
 完整的访问模型，含每个通道能做什么、不能做什么，见
 [../design/access.md](../design/access.md)。
@@ -29,7 +29,7 @@ mos 上的诊断遵循一个顺序：获得访问，精确识别正在运行的�
 
 `GET /api/v1/system/info` 用一次认证读取回答设备身份：machine id、板卡型号
 及其读自哪一处固件来源、内核版本、`os-release` 各字段、携带包池 git 标记的
-系统版本与构建日期、守护进程自身版本、已安装软件包集合、已启动的 RAUC 槽
+系统版本与构建日期、守护进程自身版本、已安装软件包集合、运行的签名部署及组件身份
 （含 bundle 版本与启动状态），以及运行时长。每个成员都会说明它是否可用、不
 可用时的原因——一份 mos 行彼此不一致的软件包清单会把这个不一致连同它找到的
 所有标记一起报出来，而不是从中挑一个。在每个支持工单中引用这次读取。
@@ -53,13 +53,14 @@ wpa_supplicant 与 resolved 此刻实际观察到的状态，也就是"设备认
   `journalctl -u <unit>`。journal 是易失的——它不跨重启保留，所以在给
   故障设备断电之前先捕获它。
 - **启动健康：**健康门记录它所需的集合、每个成员的裁决，以及它看到的每一个
-  失败 unit（`journalctl -u mos-health`）。更新后持续回滚的槽，失败在所需成员
+  失败 unit（`journalctl -u mos-health`）。更新后持续回退的部署，失败在所需成员
   之一：启动事务稳定、mosd 应答、apid 监听——日志会点名是哪一项。单个失败的
-  unit **不会**让槽回滚；它被上报到 live-state 的 `health.units`，用
+  unit **不会**让部署回滚；它被上报到 live-state 的 `health.units`，用
   `GET /api/v1/state/health` 或从一份诊断快照里读。健康门要求什么写在只读根里的
   `/etc/mos/health.conf`。
-- **更新状态：**RAUC 的槽状态（已启动槽、每槽状态、最近一次安装错误）
-  可通过管理守护进程的状态读到，也可在 shell 里用 `rauc status`。
+- **更新状态：**`mos-deploy status` 报告 current/candidate/fallback 部署、尝试次数、
+  组件验证及失败部署。另保存 `GET /api/v1/update` 的管理视图。
+
 - **容器：**[../design/containers.md](../design/containers.md) 中的故障表
   覆盖常见情形——添加文件后单元不存在（`systemctl daemon-reload`；
   Quadlet 生成器的 `--dryrun` 打印解析错误）、单元从不启动（缺
@@ -114,9 +115,9 @@ BusyBox 的 applet 选项更少、行为也与 GNU 版本不同。
 mos 工具链选择大声、点名地拒绝而不是降级运行，所以拒绝文本就是诊断：
 
 - 缺失或过期的包池、缺失的 BSP 产物、或从不同 commit 构建的池，都会点名
-  要运行的确切 `make` 目标；[../design/build.md](../design/build.md) 中的
+  要运行的确切 `make` 目标；[../design/build.md](../../design/build.md) 中的
   构建失败表把常见信息映射到动作。
-- `make os-verify-cx3576`（及 x64 等价物）逐项对照镜像契约检查组装好的
+- `make os-verify`（及 x64 等价物）逐项对照镜像契约检查组装好的
   镜像；红色的检查会写明它读到了什么、期望什么。用生成的信任根构建的镜像
   和其他镜像一样通过校验；keyring 检查会写明它读到的材料是哪一种等级，
   当等级不是预期的那一种时,要引用的就是这句话。
@@ -125,7 +126,7 @@ mos 工具链选择大声、点名地拒绝而不是降级运行，所以拒绝�
 绕过它，因为这些检查的存在正是为了拦下那些通过了一切、却在硬件上失败的
 产物。
 
-> status: shipped — evidence: `docs/design/build.md`, `make os-verify-cx3576`
+> status: shipped — evidence: `docs/design/build.md`, `make os-verify`
 
 ## 6. 支持快照
 
@@ -157,5 +158,5 @@ mos 工具链选择大声、点名地拒绝而不是降级运行，所以拒绝�
 
 ## 7. 何时停止诊断
 
-两个槽都耗尽、陷入重启循环的设备，或凭据已丢失的设备，已经超出故障排查
+所有部署都耗尽、陷入重启循环的设备，或凭据已丢失的设备，已经超出故障排查
 的范围：去 [recovery.md](recovery.md)，并先捕获你还能拿到的证据。

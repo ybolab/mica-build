@@ -48,7 +48,7 @@ seams, declaring the container-side sites, and landing
 
 1. `docs/design/build.md` §0 leads with the criterion, states what the host is
    allowed to have and why, carries the boundary test and the exemptions with
-   their reasons; `docs/zh/design/build.md` mirrors it;
+   their reasons; `docs/design/build.md` mirrors it;
    `docs/design/build-harness.md` points at it.
 2. The experiment is run, not simulated, and its transcript is in PLAN-080 §4
    with every rung's command and result.

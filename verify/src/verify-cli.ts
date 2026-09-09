@@ -1,230 +1,52 @@
-// Verify one assembled image against the image contract. THE image verifier.
-//
-//   bash verify/run.sh --verify --board cx3576
-//   bash verify/run.sh --verify --board x64 --image PATH
-//   bash verify/run.sh --verify --board x64 --probe
-//
-// What `make os-verify-cx3576` runs, and orchestration only: the checks are
-// in checks.ts and the sixteen modules it composes, the tools are in tools.ts,
-// and nothing here decides anything about an image.
-//
-// The output format is a contract, not a presentation choice: one
-// `PASS:`/`FAIL:`/`SKIP:` line per conclusion and a final `RESULT:` line.
-// pkgs/mosd/tests/apid-api's own harness describes its output as "the shape verify
-// prints", and the register quotes `RESULT: PASS (n/n)` lines
-// as evidence, so changing how a verdict reads makes those records unreadable.
-//
-// A SKIP is not a PASS and must not be able to look like one: an assertion about
-// a bootloader only one board has is neither a failure nor a success, and both
-// wrong outcomes -- running it silently, or not at all -- produce the same green
-// as a real pass. Zero conclusions is a failure for the same reason:
-// `RESULT: PASS (0/0 checks)` is what the shell lint this package replaced
-// printed when its counters died in a subshell, and it is invariant under a run
-// in which nothing executed, so an empty run is turned red here by count.
+import { mkdirSync, mkdtempSync, readFileSync } from 'node:fs'
+import { join, resolve } from 'node:path'
+import { loadBoard } from './board.ts'
+import { runChecks } from './checks.ts'
+import { verifyFactoryImage } from './file-image.ts'
+import { REPO_ROOT, boardEnvPath } from './paths.ts'
+import { chooseRoute, createToolRuntime, missingHostTools } from './tools.ts'
 
-import { existsSync, readdirSync } from 'node:fs'
-import { isAbsolute, join, resolve } from 'node:path'
-import { loadBoard, type Board } from './board.ts'
-import { CHECKS, createImageContext, runChecks } from './checks.ts'
-import { BOARDS_DIR, boardEnvPath, REPO_ROOT } from './paths.ts'
-import { probeImage } from './probe.ts'
-import { chooseRoute, createToolRuntime, missingHostTools, type ToolRuntime } from './tools.ts'
-import { prepareWorkDir } from './workspace.ts'
-
-interface Options {
-  board: string
-  image: string | undefined
-  probe: boolean
-  workRoot: string
-}
-
-function usage(): string {
-  return [
-    'usage: bash verify/run.sh --verify [--board NAME] [--image PATH] [--work PATH] [--probe]',
-    '',
-    'Runs the verify check register against one assembled image and reports one',
-    'PASS/FAIL/SKIP line per conclusion, then a RESULT line.',
-    '',
-    '  --board NAME   which board this image is. Defaults to $MOS_BOARD.',
-    '  --image PATH   the image to verify. Defaults to',
-    '                 _out/<board>/<IMAGE_LATEST_NAME> -- the path make os-image-* writes',
-    '  --work PATH    where the image is extracted. Emptied at the start of every run;',
-    '                 default _out/verify/<board>',
-    '  --probe        also drive every image helper and print what it read',
-    '',
-    'exit: 0 every check passed  1 a check failed, threw, or nothing ran',
-  ].join('\n')
-}
-
-/**
- * The board, or a message naming what this tree actually ships.
- *
- * No default board. `MOS_BOARD` is honoured because the oracle's callers set it
- * and because `make os-verify-<board>` is per board, but a bare run refuses
- * rather than falling back to cx3576. That fallback is the exact defect this
- * campaign has been removing: the retired shell verifier this module replaced
- * defaulted BOARD_DIR to the cx3576 BSP in an otherwise board-derived script,
- * and the container re-exec's missing `-e MOS_BOARD` once checked an x64 image
- * against cx3576's eleven-partition GPT and reported 191 failures that were all
- * the harness's.
- */
-function boardOrRefuse(name: string): Board {
-  const shipped = readdirSync(BOARDS_DIR).sort().join(', ')
-  if (name === '') {
-    throw new Error(
-      `--verify needs to know which board this image is; pass --board, or set MOS_BOARD. `
-      + `boards/ holds ${shipped}. Guessing one would verify an image against another `
-      + `board's layout and report failures that are all the harness's.`,
-    )
-  }
-  const path = boardEnvPath(name)
-  if (!existsSync(path)) {
-    throw new Error(
-      `'${name}' is not a board this tree ships. ${path} does not exist; `
-      + `boards/ holds ${shipped}.`,
-    )
-  }
-  return loadBoard(path)
-}
-
-/**
- * `_out/<board>/<IMAGE_LATEST_NAME>` -- read off the board, never written here.
- *
- * The same derivation the parity harness used, and the same one `make
- * os-image-<board>` writes to, so the default path of a verify run and the
- * output path of an assembly run cannot drift apart without the board file
- * saying so.
- */
-function defaultImage(board: Board): string {
-  const name = board.get('IMAGE_LATEST_NAME')
-  if (name === undefined || name === '') {
-    throw new Error(
-      `${board.path} declares no IMAGE_LATEST_NAME, so this verifier cannot work out which file `
-      + `is ${board.name}'s image. Pass --image.`,
-    )
-  }
-  return join(REPO_ROOT, '_out', board.name, name)
-}
-
-function parseArgs(argv: readonly string[]): Options {
-  const options: Options = {
-    board: process.env['MOS_BOARD'] ?? '',
-    image: undefined,
-    probe: false,
-    workRoot: join(REPO_ROOT, '_out', 'verify'),
-  }
-  for (let i = 0; i < argv.length; i += 1) {
-    const arg = argv[i] as string
-    // A value read from the next element, refusing to swallow the next FLAG.
-    // `--board --probe` would otherwise verify a board called "--probe" and the
-    // message would be about a missing board file rather than a missing value.
-    const next = (): string => {
-      const value = argv[i + 1]
-      if (value === undefined || value.startsWith('--')) {
-        throw new Error(`${arg} needs a value; it was given ${value === undefined ? 'nothing' : `'${value}'`}.`)
-      }
-      i += 1
-      return value
+async function main() {
+  let name = process.env.MOS_BOARD ?? '', image = '', work = join(REPO_ROOT, '_out/verify')
+  const keys: string[] = []
+  const args = Bun.argv.slice(2)
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i]
+    if (arg === '--help') {
+      console.log('Usage: verify/run.sh --verify --board BOARD --image FULL_FACTORY_IMAGE --public-key BASE64_KEY_FILE [--public-key FILE] [--work DIRECTORY]')
+      return
     }
+    const value = args[++i]
+    if (!value || value.startsWith('--')) throw new Error(`Missing value for ${arg}`)
     switch (arg) {
-      case '--help':
-      case '-h':
-        console.log(usage())
-        process.exit(0)
-        break
-      case '--board': options.board = next(); break
-      case '--image': options.image = next(); break
-      case '--work': options.workRoot = next(); break
-      case '--probe': options.probe = true; break
-      default:
-        throw new Error(`unknown option '${arg}'.\n\n${usage()}`)
+      case '--board': name = value; break
+      case '--image': image = resolve(value); break
+      case '--work': work = resolve(value); break
+      case '--public-key': keys.push(readFileSync(value, 'utf8').trim()); break
+      default: throw new Error(`Unknown option ${arg}`)
     }
   }
-  return options
-}
-
-async function main(): Promise<number> {
-  const options = parseArgs(Bun.argv.slice(2))
-  const board = boardOrRefuse(options.board)
-  const image = options.image === undefined
-    ? defaultImage(board)
-    : (isAbsolute(options.image) ? options.image : resolve(process.cwd(), options.image))
-
-  if (!existsSync(image)) {
-    throw new Error(
-      `${image} is not there. Build it with 'make os-image-${board.name}', or name one with `
-      + `--image. A verifier that carried on would report on nothing.`,
-    )
-  }
-
-  // Decided ONCE, up front, before any work: a typo in MOS_VERIFY_TOOLS should
-  // cost nothing, and a run must not be able to take one route for one part of
-  // an image and another route for the rest.
-  const route = chooseRoute(process.env['MOS_VERIFY_TOOLS'], await missingHostTools())
-
-  // EMPTIED, not reused: a workspace left by an earlier run holds files named
-  // after the slot rather than after the image, and a reader that finds one
-  // there skips the extraction. See workspace.ts for what that reported.
-  const workDir = prepareWorkDir(options.workRoot, board.name)
-  // Identity mounts, and _out/ rather than /tmp -- see tools.ts. The image and
-  // the repository are handed to the tools from OUTSIDE, and a bind mount of
-  // /tmp on this host succeeds and delivers an empty directory.
-  const tools: ToolRuntime = await createToolRuntime({
-    readOnly: [image, REPO_ROOT],
-    workDir,
-    route,
-    log: line => console.log(line),
-  })
-
+  if (!/^(x64|virt-arm64|cx3576)$/.test(name) || !image || !keys.length) throw new Error('Explicit current board, full factory image and metadata public keys are required')
+  const board = loadBoard(boardEnvPath(name))
+  mkdirSync(work, { recursive: true })
+  const workDir = mkdtempSync(join(work, `${name}-`))
+  const tools = await createToolRuntime({ workDir, readOnly: [image, REPO_ROOT],
+    route: chooseRoute(process.env.MOS_VERIFY_TOOLS, await missingHostTools()), log: console.log })
+  let passed = 0, failed = 0, skipped = 0
   try {
-    const ctx = createImageContext({ board, image, tools, workDir })
-    if (options.probe) await probeImage(ctx, line => console.log(line))
-
-    console.log(`verify: ${board.name} — ${image}`)
-    const run = await runChecks(ctx, CHECKS)
-
-    let passed = 0
-    let failed = 0
-    let skipped = 0
-    for (const r of run.results) {
-      if (r.verdict === 'pass') { passed += 1; console.log(`PASS: ${r.message}`) }
-      else if (r.verdict === 'fail') { failed += 1; console.log(`FAIL: ${r.message}`) }
-      else { skipped += 1; console.log(`SKIP: ${r.message}`) }
+    const roots = await verifyFactoryImage(board.layout, image, keys, workDir, tools, fact => { console.log(`PASS: ${fact}`); passed++ })
+    for (const root of roots) {
+      const run = await runChecks({ board, image, tools, workDir, outDir: join(REPO_ROOT, '_out', name), unpackRoot: async () => root })
+      for (const result of run.results) {
+        if (result.verdict === 'pass') passed++
+        else if (result.verdict === 'fail') failed++
+        else skipped++
+        console.log(`${result.verdict.toUpperCase()}: ${result.message}`)
+      }
+      for (const failure of run.failures) { failed++; console.error(`ERROR: ${failure.id}: ${failure.error.message}`) }
     }
-
-    // A check that THREW is not a failed check and is never folded into one.
-    // It concluded nothing about the image, and reporting it as a FAIL would
-    // put a harness fault into the image's record. It is fatal all the same.
-    for (const f of run.failures) {
-      console.error(`error: check '${f.id}' threw rather than concluding: ${f.error.message}`)
-    }
-
-    const total = passed + failed
-    const skips = skipped > 0
-      ? `, ${skipped} skipped (${board.name}/${board.bootloader}; each named above)`
-      : ''
-
-    if (total === 0) {
-      console.log(`RESULT: FAIL (0/0 checks${skips})`)
-      console.error(
-        `error: the register concluded nothing about ${image}. 'RESULT: PASS (0/0 checks)' is `
-        + `invariant under a run in which nothing executed, so it is refused rather than printed.`,
-      )
-      return 1
-    }
-
-    console.log(`RESULT: ${failed === 0 && run.failures.length === 0 ? 'PASS' : 'FAIL'} (${passed}/${total} checks${skips})`)
-    return failed === 0 && run.failures.length === 0 ? 0 : 1
-  }
-  finally {
-    await tools.dispose()
-  }
+    if (!passed || failed) throw new Error(`${failed} failed checks; ${passed} passed; ${skipped} skipped`)
+    console.log(`RESULT: PASS (${passed} checks, ${skipped} skipped); evidence ${workDir}`)
+  } finally { await tools.dispose() }
 }
-
-try {
-  process.exit(await main())
-}
-catch (error) {
-  console.error(`error: ${error instanceof Error ? error.message : String(error)}`)
-  process.exit(1)
-}
+try { await main() } catch (error) { console.error(`RESULT: FAIL: ${error instanceof Error ? error.message : String(error)}`); process.exitCode = 1 }

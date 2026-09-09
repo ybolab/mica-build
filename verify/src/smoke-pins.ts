@@ -30,11 +30,9 @@ import { REPO_ROOT } from './paths.ts'
  */
 export const PODMAN_VERSIONS_ENV: string = join(REPO_ROOT, 'pkgs', 'podman', 'versions.env')
 
-/** RAUC's pin, in its own file because RAUC is built by its own directory. */
-export const RAUC_VERSIONS_ENV: string = join(REPO_ROOT, 'pkgs', 'rauc', 'versions.env')
 
 /** Every `versions.env` a pin is read out of, so coverage can be asserted over all of them. */
-export const VERSIONS_ENV_FILES: readonly string[] = [PODMAN_VERSIONS_ENV, RAUC_VERSIONS_ENV]
+export const VERSIONS_ENV_FILES: readonly string[] = [PODMAN_VERSIONS_ENV]
 
 /**
  * The suffix that makes a key a version pin.
@@ -109,10 +107,7 @@ export function pinKeys(file: string): string[] {
  * @throws Error naming the file, the key and the keys that ARE there. A missing
  *   pin must not read as an empty expectation: `expected === ''` would compare
  *   unequal to every real version and go red for a reason nobody could act on,
- *   and the neighbouring failure -- an empty value that matches everything --
- *   is the one `rootfs/scripts/rauc-install.sh` already guards against in
- *   its own words ("an empty value would make the comparison pass by finding
- *   nothing").
+ *   so missing and empty pins are both rejected before comparison.
  */
 export function readPin(file: string, key: string): Pin {
   const values = readVersionsEnv(file)

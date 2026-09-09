@@ -3,6 +3,7 @@
 # mos-system has no state mounts, no seed and reconcile tools and no operator
 # account, and a root with no mos-ca-trust cannot verify a TLS peer.
 mos-system
+mos-deploy
 mos-ca-trust
 
 # The emergency binary, and it is in `common` rather than a feature set on

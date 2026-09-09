@@ -1,5 +1,5 @@
 [Unit]
-Description=Third-party systemd units from the STATE partition
+Description=Third-party systemd units from DATA/state
 # An integrator installs their own service by dropping a unit into
 # the system unit directory and letting systemd own its lifecycle. On mos every
 # unit directory the image ships is inside the read-only dm-verity squashfs, so
@@ -27,14 +27,14 @@ Description=Third-party systemd units from the STATE partition
 # assumed to carry, because the whole extension model rests on this ordering.
 #
 # The source is named for what it holds rather than mirroring the target path,
-# because /mnt/state/usr/local/lib/systemd/system would put four empty
+# because /mnt/data/state/usr/local/lib/systemd/system would put four empty
 # directories on STATE to say one thing.
 Requires=mos-seed-state.service
 After=mos-seed-state.service
-RequiresMountsFor=/mnt/state
+RequiresMountsFor=/mnt/data/state
 
 [Mount]
-What=/mnt/state/systemd-units
+What=/mnt/data/state/systemd-units
 Where=/usr/local/lib/systemd/system
 Type=none
 Options=bind

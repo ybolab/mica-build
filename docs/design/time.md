@@ -22,7 +22,7 @@
   served as `GetTimeStatus` on the bus and `GET /api/v1/time/status` over
   HTTPS.
 - **A STATE-backed saved clock**: `var-lib-systemd-timesync.mount` binds
-  `/mnt/state/timesync` onto `/var/lib/systemd/timesync`, seeded by
+  `/mnt/data/state/timesync` onto `/var/lib/systemd/timesync`, seeded by
   `mos-seed-state`.
 
 ## 2. UTC everywhere; the timezone is presentation
@@ -53,7 +53,7 @@ Instead, mosd owns persistence (the settings tree) and application:
   and published as `time.timezone.available` in live state, a warning and
   never a failure.
 
-## 3. Boot ordering: RTC → saved floor → network time → TLS/TUF
+## 3. Boot ordering: RTC → saved floor → network time → TLS/catalog
 
 The trusted-clock floor is `max(RTC, saved clock)`, in place before anything
 that validates certificate or metadata expiry runs:
@@ -62,17 +62,17 @@ that validates certificate or metadata expiry runs:
    clock from the RTC where the board has one. cx3576 declares an
    AT8563/HYM8563 RTC; driver and backup-power validation are
    hardware-dependent (see RFCT-280's completion note).
-2. **Saved floor.** `mos-seed-state` creates `/mnt/state/timesync` (owned by
+2. **Saved floor.** `mos-seed-state` creates `/mnt/data/state/timesync` (owned by
    `systemd-timesync`); `var-lib-systemd-timesync.mount` binds it onto
    `/var/lib/systemd/timesync` — ordered `After=mos-seed-state.service`,
    `Before=systemd-timesyncd.service`. timesyncd touches `…/clock` every 60 s
    (`SaveIntervalSec`, pinned) and at startup **advances a clock that is
-   behind that file's mtime**. STATE survives both reboots and A/B updates
-   (`/var` is EPHEMERAL), so a device with no RTC or a dead RTC battery still
+   behind that file's mtime**. DATA/state survives reboots and component updates,
+   independently of the immutable var parent, so a device with no RTC or a dead RTC battery still
    boots no earlier than the last minute it was known to be running.
 3. **Network time.** timesyncd (in `sysinit.target`) polls the managed or
    fallback servers on the pinned adaptive policy and disciplines the clock.
-4. **TLS/TUF consumers.** Everything that validates expiries starts after
+4. **TLS/catalog consumers.** Everything that validates expiries starts after
    `sysinit.target`, i.e. after the floor is in place; network time then only
    moves the clock forward-or-slightly-sideways from a floor that was already
    sane. What those consumers validate is boundary (b) of

@@ -62,9 +62,9 @@ without the hardware; nothing else may be dropped.
 |---|---|---|
 | 1 | Cold boot | power-on from cold reaches a healthy system (health gate green), repeatably |
 | 2 | Warm boot | reboot from a running system reaches healthy, repeatably |
-| 3 | A/B switch and update | a bundle installs to the inactive slot, the order flips, the health gate confirms; a bad slot rolls back after its attempt credits |
-| 4 | Power-cut during update | power removed mid-install leaves the device bootable into the previous slot; repeated cuts do not brick |
-| 5 | Storage growth/health | data partition grows on first boot; fill-up of data//var does not take the system down; storage health readout works |
+| 3 | A/B switch and update | signed component files are durably published, the candidate boots and health confirms; three failed trials select the retained deployment without refill |
+| 4 | Power-cut during update | power removed mid-install leaves the device bootable into the previous committed deployment; repeated cuts do not brick |
+| 5 | Storage growth/health | data partition grows on first boot; bulk/disposable byte and inode quotas preserve essential state/meta capacity; storage health readout works |
 | 6 | Network/radio | Ethernet and each named radio module associate/transfer under the shipped stack |
 | 7 | USB/fieldbus (as applicable) | USB host/gadget roles and fieldbus (e.g. CAN) traffic under the shipped hwinit units |
 | 8 | RTC | time survives power-off (battery-backed) or the absence is handled (documented resync behavior) |
@@ -96,7 +96,7 @@ mos-qualified regardless of the rest.
   about the script's logic, not about row 3 on a bench. The evidence note
   must name which it is.
 
-> status: shipped — evidence: `make os-uboot-handshake-test`
+> status: shipped — evidence: `make os-fit-records-test`
 
 - Evidence notes name a location: a log path, a rig run ID, a linked record.
   "Worked on my bench" without an artifact is `not tested` with extra words.

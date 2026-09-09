@@ -55,6 +55,10 @@ CONFIG_SQUASHFS_ZSTD=y
 CONFIG_SQUASHFS_XATTR=y
 CONFIG_OVERLAY_FS=y
 
+# DATA project quotas protect the state and metadata reserve from bulk writers.
+CONFIG_QUOTA=y
+CONFIG_QFMT_V2=y
+
 # Inherited from the baseline as "machined-era options
 # (harmless) + WireGuard", and retained deliberately: nothing in the shipping
 # image requires them. A missing hugetlbfs put the board in a reboot loop on

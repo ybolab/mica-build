@@ -152,7 +152,7 @@ describe('the shipped cases, as they will actually be built', () => {
     const { body } = shipped('missing-soname')
     expect(body).toContain('ldd')
     expect(body).not.toContain('x86_64-linux-gnu')
-    expect(body).toMatch(/does not NEED libjson-glib in this root/)
+    expect(body).toMatch(/does not NEED libgcc_s in this root/)
   })
 
   test('version-skew reads the pin from the file, so a legitimate bump refuses here', () => {

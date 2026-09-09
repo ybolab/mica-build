@@ -9,7 +9,6 @@
       "consumers": [
         "base",
         "mos-bluetooth",
-        "mos-rauc",
         "mos-system",
         "mosd"
       ]
@@ -22,7 +21,6 @@
       "consumers": [
         "base",
         "mos-bluetooth",
-        "mos-rauc",
         "mos-system",
         "mosd"
       ]

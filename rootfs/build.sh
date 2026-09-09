@@ -2,7 +2,7 @@
 # Build the squashfs + dm-verity arm64 rootfs slot image for cx3576 (A/B layout).
 # Usage: [BOARD_DIR=...] [WITH_MOSD=0|1]
 #        [WITH_CONTAINERS=0|1] [MOS_PROFILE=dev|prod]
-#        [MOS_ROOTFS_WITHOUT="wifi bluetooth rauc mqtt ..."] bash rootfs/build.sh
+#        [MOS_ROOTFS_WITHOUT="wifi bluetooth mqtt ..."] bash rootfs/build.sh
 
 # There is deliberately no ROOT_PASSWORD here. A mos rootfs is a signed,
 # byte-identical squashfs and the pack stage fails any build whose factory
@@ -129,7 +129,7 @@ esac
 # to "is this feature in the image" and every consumer below asks the same
 # question. MOS_ROOTFS_WITHOUT is the general form -- a space-separated list of
 # feature names -- and it is what makes the three features with no WITH_*
-# history (wifi, bluetooth, rauc, mqtt) reachable from the shipping path at all.
+# history (wifi, bluetooth, mqtt) reachable from the shipping path at all.
 
 # A name nothing matches is not validated here, deliberately: the resolver
 # holds the list of feature names (it reads rootfs/packages/) and refuses an
@@ -230,167 +230,23 @@ mkdir -p "$OUT_DIR"
 # it has no record and cannot say anything at all about a wrong one.
 rm -f "$OUT_DIR/mosd-build.txt"
 
-# Read-only root wiring. The overlay tree is copied into the build context with
-# its *.in templates rendered from the layout env, so the shipped image carries
-# no placeholder and the Dockerfile carries no layout constant.
-#
-# THE COMPOSITION DOES NOT INSTALL FROM THIS TREE -- mos-system and
-# mos-board-<board> carry these bytes as package payload, rendered inside their
-# own producers from the same board.env. It is staged anyway for two things
-# that are not package content: the repart-definition count checked against the
-# layout below, and the RAUC keyring, which is per-build trust material that no
-# package may ever carry.
-# PARTUUID values are lowercased: udev derives /dev/disk/by-partuuid/ symlinks
-# from libblkid, which formats GUIDs in lowercase, and systemd's fstab-generator
-# resolves PARTUUID= through those symlinks without normalising case.
-OVERLAY_SRC="$SCRIPT_DIR/overlay"
-OVERLAY_STAGE="$OUT_DIR/overlay"
-
-# The RAUC system.conf is rendered from pkgs/rauc/system.conf.in and the
-# layout env by pkgs/rauc/render-config.sh, which owns that template and
-# its assertions (the statusfile must not land on /var, the boot-attempts radix
-# range, and the fw_env.config structure). It is generated rather than
-# committed: a rendered artifact in git can drift from its template, and a
-# --check can only report that drift after the fact, not prevent it. Rendering
-# it here, on the build path that consumes it, makes the template the single
-# source of truth. The renderer writes into OVERLAY_SRC, so it must run before staging.
-MOS_BOARD="$MOS_BOARD" bash "$REPO_ROOT/pkgs/rauc/render-config.sh"
-
-rm -rf "$OVERLAY_STAGE"
-mkdir -p "$OVERLAY_STAGE"
-cp -a "$OVERLAY_SRC/." "$OVERLAY_STAGE/"
-
-# Per-board overlay, layered on top of the shared one. Only files that are
-# wrong on another board belong here -- x64's ESP mount unit is one, because
-# RAUC's grub backend edits a file and the U-Boot backend edits a raw
-# partition, so /boot is a mountpoint on exactly one of the two boards.
-# Layered rather than selected: everything both boards share stays in one
-# place, so a change to it cannot reach one board and miss the other.
-
-# The status indicator is a board file. It is not in overlay and is deleted
-# here for boards that declare no LED: the shared overlay would otherwise claim
-# every board has an indicator and the truth would live in a conditional
-# somewhere else. boards/cx3576/overlay/ carries mos-status-led, its unit
-# and its wants symlink, so the file's location is the fact.
-# BOARD_HAS_STATUS_LED stays, because the verifier still needs to know which
-# outcome to assert -- present and enabled, or absent entirely.
-
-BOARD_OVERLAY_SRC="$REPO_ROOT/boards/$MOS_BOARD/overlay"
-if [ -d "$BOARD_OVERLAY_SRC" ]; then
-    cp -a "$BOARD_OVERLAY_SRC/." "$OVERLAY_STAGE/"
-    echo "overlay: layered $(find "$BOARD_OVERLAY_SRC" -type f | wc -l) board-specific file(s) from boards/$MOS_BOARD/overlay"
-fi
-if [ ! -s "$OVERLAY_STAGE/etc/rauc/system.conf" ]; then
-    echo "error: pkgs/rauc/render-config.sh produced no system.conf to stage" >&2
-    exit 1
-fi
-# The RAUC keyring inside the signed read-only root is a trusted signer on every
-# device flashed with this image, so it enters the build from ONE place:
-# meta/rauc/, the same trust root build signs bundles with. That is what lets a
-# released image install the releases it is shipped alongside.
-#
-# The overlay is not that place, and no flag makes it one. rootfs/overlay/
-# is copied wholesale into the root, so a keyring left there once reaches every
-# later image by being FORGOTTEN -- exactly the way a trust root must never
-# arrive. The refusal was waivable once, when dropping a file here was the only
-# way to get a development CA into a bench image; meta/rauc/ is that way now, so
-# a waiver would only reintroduce a second source.
-if [ -e "$OVERLAY_STAGE/etc/rauc/keyring.pem" ]; then
-    echo "error: $OVERLAY_SRC/etc/rauc/keyring.pem exists; refusing to stage it into the image." >&2
-    echo "A keyring baked into the signed root makes every flashed device trust that CA's bundles, and the overlay is copied wholesale into every image, so a file left here is a trust root nobody chose. The image's keyring is staged from the repository-root meta/rauc/ instead -- delete this file and put the CA you want in meta/rauc/ (pkgs/rauc/gen-dev-keys.sh writes a development-grade one when meta/ is empty)." >&2
-    exit 1
-fi
-
-# --- meta/: the signing material and the update configuration (PLAN-070) ---
-#
-# meta/ is the build host's, gitignored, and holds everything a release needs to
-# be configured and signed. Only the files META_PUBLIC names reach the image --
-# two required and one conditional -- and every private key stays here; the
-# allowlist below is what makes that mechanical.
-META_DIR="$REPO_ROOT/meta"
-META_STAGE="$OUT_DIR/meta-public"
-KEY_ALG_ENV="$REPO_ROOT/pkgs/rauc/key-algorithms.env"
-
-# THE PER-ROLE ALLOWED SETS, and they are HERE rather than in
-# key-algorithms.env. That asymmetry is what makes the parameter safe: a set is
-# a claim about what a VERIFIER accepts, true only because of code outside this
-# repository, so making it editable beside the value would let one commit widen
-# a set and adopt the new member in the same breath -- which is precisely the
-# change that produces a fleet that cannot install its own updates. Changing an
-# algorithm is editing a value; widening a set is editing this file and the
-# claim it makes about the verifier it names.
-#
-# RAUC checks a bundle's CMS signature through OpenSSL, which verifies RSA and
-# EC alike, and the keyring is an OpenSSL CA file either way -- so the set is
-# bounded by what a fielded rauc accepts rather than by taste. ed25519 is
-# excluded deliberately: CMS over ed25519 is a signature algorithm this
-# repository has not put through rauc, and an untested member of an allowed set
-# is the hardcoded choice with extra steps. One set for both RAUC roles, two
-# values, because a CA and its signer may legitimately differ.
-RAUC_ALG_SET="ecdsa-p256 ecdsa-p384 rsa-3072 rsa-4096"
-RAUC_ALG_VERIFIER="RAUC's own verifier -- OpenSSL's CMS implementation, which is what a fielded rauc checks a bundle signature with, and which is why the set is EC-or-RSA and excludes ed25519"
-# lode's verifier is ed25519-dalek, over [trust] trusted_keys entries of the
-# form <key_id>:<base64 ed25519 public key>. It has no second algorithm, so the
-# set has no second member; it grows when that verifier does and not before.
-PACKAGE_ALG_SET="ed25519"
-PACKAGE_ALG_VERIFIER="lode's verifier -- ed25519-dalek, over [trust] trusted_keys entries of the form <key_id>:<base64 ed25519 public key>, which has no second algorithm"
-
-in_alg_set() { case " $2 " in *" $1 "*) return 0 ;; *) return 1 ;; esac; }
-
-# Both refusals below take this shape, which is the shape the overlay-keyring
-# refusal above already uses: the offending value named, a paragraph saying what
-# would otherwise have gone wrong, the verifier that bounds the set, and exit 1.
-# NO WAIVER, for build.sh's own stated reason -- a waiver reintroduces the thing
-# the rule exists to forbid.
-alg_refusal() {
-    echo "error: $1 is '$2', which is not in the set of algorithms allowed for the $3." >&2
-    echo "       allowed: $4" >&2
-    echo "       That set is bounded by $5." >&2
-    echo "       A value outside it mints material that verifier cannot check, and the failure lands late and far away: on a device, at install time, after a download, on a fleet that already took the image. Changing an algorithm is a one-line edit to pkgs/rauc/key-algorithms.env; WIDENING the set is an edit to rootfs/build.sh and a claim about the verifier named above. There is no environment variable that softens either." >&2
-    exit 1
+# Only public update configuration belongs in the user-space root. Boot and
+# content trust anchors belong to the independent authenticated kernel package.
+META_DIR="${MOS_META_DIR:-$REPO_ROOT/meta}"
+META_STAGE="$(mktemp -d "$OUT_DIR/meta-public.XXXXXX")"
+mkdir -p "$META_STAGE/usr/share/mos/meta/updates"
+manifest="$META_DIR/updates/manifest.json"
+[ -f "$manifest" ] && [ ! -L "$manifest" ] || {
+    echo "error: public update configuration is missing: $manifest" >&2; exit 1;
 }
-
-# A1 -- THE DECLARED VALUE IS IN ITS ROLE'S SET, checked BEFORE the generator
-# runs so that a refused value never mints a key. This is the cheap one: it
-# catches a typo (ecdsa-p512), a row copy-pasted onto another role, and the edit
-# that makes all three roles uniform because uniformity looks tidy.
-[ -f "$KEY_ALG_ENV" ] ||
-    { echo "error: $KEY_ALG_ENV does not exist. It is where the signature algorithm of every key this tree mints is declared, and without it pkgs/rauc/gen-dev-keys.sh would fall back to a choice compiled into itself -- the hardcoded choice that file exists to remove" >&2; exit 1; }
-key_alg() {
-    local declared
-    declared=$(sed -n "s/^$1=//p" "$KEY_ALG_ENV" | tail -n1)
-    [ -n "$declared" ] ||
-        { echo "error: $KEY_ALG_ENV declares no $1. Every key role needs one, and an empty value is not a default -- it is a row somebody deleted" >&2; exit 1; }
-    printf '%s\n' "$declared"
-}
-ALG_RAUC_CA=$(key_alg MOS_KEY_ALG_RAUC_CA)
-ALG_RAUC_SIGNER=$(key_alg MOS_KEY_ALG_RAUC_SIGNER)
-ALG_PACKAGE=$(key_alg MOS_KEY_ALG_PACKAGE)
-in_alg_set "$ALG_RAUC_CA" "$RAUC_ALG_SET" ||
-    alg_refusal "$KEY_ALG_ENV's MOS_KEY_ALG_RAUC_CA" "$ALG_RAUC_CA" "RAUC CA (meta/rauc/ca.key.pem)" "$RAUC_ALG_SET" "$RAUC_ALG_VERIFIER"
-in_alg_set "$ALG_RAUC_SIGNER" "$RAUC_ALG_SET" ||
-    alg_refusal "$KEY_ALG_ENV's MOS_KEY_ALG_RAUC_SIGNER" "$ALG_RAUC_SIGNER" "RAUC bundle signer (meta/rauc/signer.key.pem)" "$RAUC_ALG_SET" "$RAUC_ALG_VERIFIER"
-in_alg_set "$ALG_PACKAGE" "$PACKAGE_ALG_SET" ||
-    alg_refusal "$KEY_ALG_ENV's MOS_KEY_ALG_PACKAGE" "$ALG_PACKAGE" "package signing key (meta/updates/root.key)" "$PACKAGE_ALG_SET" "$PACKAGE_ALG_VERIFIER"
-echo "meta: declared key algorithms -- CA $ALG_RAUC_CA, signer $ALG_RAUC_SIGNER, package $ALG_PACKAGE (pkgs/rauc/key-algorithms.env)"
-
-# meta/ absent is not fatal: the generator makes development-grade material and
-# says so loudly, and the build carries on. --if-absent so a meta/ that is
-# already there -- production material or a root generated by an earlier run --
-# is left exactly as it is and prints nothing. The package signing key is NOT
-# generated here: --domain updates is opt-in, because a development key no
-# published repository has signed anything with anchors nothing.
-bash "$REPO_ROOT/pkgs/rauc/gen-dev-keys.sh" --if-absent
-if [ ! -s "$META_DIR/rauc/ca.cert.pem" ]; then
-    echo "error: $META_DIR/rauc/ca.cert.pem is missing or empty after pkgs/rauc/gen-dev-keys.sh --if-absent." >&2
-    echo "The image cannot be built without the CA it must trust; meta/rauc/ is the one place it comes from." >&2
-    exit 1
+if grep -E 'BEGIN .*PRIVATE KEY|"privateKey"|"private_key"' "$manifest" >/dev/null; then
+    echo 'error: update configuration contains private key material' >&2; exit 1
 fi
-meta_manifest_flat=$(tr -d ' \t\n' < "$META_DIR/updates/manifest.json" 2>/dev/null || true)
-if ! grep -q '"signingKeys"' "$META_DIR/updates/manifest.json" 2>/dev/null; then
-    echo "error: $META_DIR/updates/manifest.json is missing, empty or carries no trust.signingKeys." >&2
-    echo "It is the update configuration baked into every image, instantiated from meta.example/ by pkgs/rauc/gen-dev-keys.sh when meta/ has none; a build cannot state where its updates come from without it." >&2
-    exit 1
+install -m 0644 "$manifest" "$META_STAGE/usr/share/mos/meta/updates/manifest.json"
+if [ -s "$META_DIR/GENERATED" ]; then
+    install -m 0644 "$META_DIR/GENERATED" "$META_STAGE/usr/share/mos/meta/GENERATED"
+else
+    rm -f "$META_STAGE/usr/share/mos/meta/GENERATED"
 fi
 
 # Validate the package pool before resolving the OpenSSL inspection container.
@@ -451,477 +307,6 @@ tree_stamp=${tree_version##*+}
     pool_refusal "the $MOS_ARCH pool was built at stamp '$pool_stamp' and this tree is '$tree_stamp'. Composing would install another commit's packages into an image every check downstream would attribute to this one; a '.dirty' suffix on either side means uncommitted changes when that side was made."
 echo "pool: $POOL_DIR, $pool_debs archive(s) at stamp $pool_stamp"
 
-# THE OPENSSL BELOW IS THE PINNED ONE, not the host's.
-#
-# A2 is a JUDGE by docs/design/build.md section 0 -- it writes nothing that
-# survives the run -- and it is still the judge most worth moving, because what
-# it reads is openssl's own TEXT rendering of a key: `NIST CURVE: P-256`, the
-# word ED25519, the `-Key: (2048 bit)` shape. Those are strings one openssl
-# version chose to print, and a machine whose openssl prints them differently
-# does not report a different algorithm, it reports NONE -- which reaches
-# check_material as "openssl could not read this file" and refuses a build over
-# material that is fine. Measured 2026-09-05: this host has OpenSSL 3.0.2 and
-# localhost/mos-build-openssl has trixie's 3.5.7.
-#
-# Resolved here, in the main shell, rather than on first use inside
-# alg_of_material's command substitution: a refusal there would be swallowed by
-# the `|| true` that reader carries and would surface as an unreadable file.
-# ca.cert.pem is required above, so this is always reached with work to do.
-command -v docker >/dev/null || {
-    echo "error: docker is required: the algorithm of the material in $META_DIR is read with the openssl in localhost/mos-build-openssl rather than with the host's, because the text it parses is version-sensitive (docs/design/build.md section 0)" >&2
-    exit 1
-}
-case "$(uname -m)" in
-x86_64) OPENSSL_IMAGE_ARCH=amd64 ;;
-aarch64 | arm64) OPENSSL_IMAGE_ARCH=arm64 ;;
-*)
-    echo "error: $(uname -m) is not an architecture build-env/images.env pins mos-build-openssl for" >&2
-    exit 1
-    ;;
-esac
-OPENSSL_IMAGE="$(bash "$REPO_ROOT/build-env/from.sh" --arch="$OPENSSL_IMAGE_ARCH" --ref LOCAL_MOS_BUILD_OPENSSL)" || {
-    echo "error: localhost/mos-build-openssl:$OPENSSL_IMAGE_ARCH could not be resolved (see the message above). Build it: make build-env" >&2
-    exit 1
-}
-
-# meta/ mounted READ-ONLY at its own path, which is both the simplest thing and
-# an assertion: a reader that cannot write cannot repair what it was asked to
-# judge. Every file A2 reads is under it. --user so the 0600 private keys are
-# readable as the uid that owns them rather than because the container is root.
-openssl() {
-    docker run --rm \
-        --label ai-agent=true \
-        --user "$(id -u):$(id -g)" \
-        -v "$META_DIR:$META_DIR:ro" \
-        -w "$META_DIR" \
-        --entrypoint openssl \
-        "$OPENSSL_IMAGE" "$@"
-}
-
-# THE BAKED MANIFEST NAMES THE COMMITTED KEY SET, AND ONLY IT.
-# An unknown key is a BUILD error and not a runtime one (PLAN-070 §2): the
-# document is baked inside the read-only dm-verity root, so a mistyped key is
-# both unreachable and unfixable on a device, and mosd's reader -- which parses
-# it with deny_unknown_fields and gives no field a serde default -- would
-# refuse the whole configuration on a machine nobody can edit. Refused in both
-# directions, because the schema carries no implicit defaults: an unknown key
-# configures nothing, a missing one leaves a value unstated.
-#
-# The allowed set is READ OUT of meta.example/updates/manifest.json rather than
-# listed here. That file is the committed statement of the shape
-# (meta.example/README.md) and pkgs/rauc/gen-dev-keys.sh instantiates meta/
-# from it, so reading it is one fact with one home; a list written into this
-# script would be a second copy that agrees with nothing on the day the schema
-# grows a key.
-META_MANIFEST_EXAMPLE="$REPO_ROOT/meta.example/updates/manifest.json"
-[ -f "$META_MANIFEST_EXAMPLE" ] ||
-    { echo "error: $META_MANIFEST_EXAMPLE does not exist. It is the committed statement of what meta/updates/manifest.json may contain, and this check reads the allowed key set out of it rather than carrying a copy" >&2; exit 1; }
-# Key positions only: `"name":`. A quote inside a value would have to be
-# backslash-escaped to appear this way, and no value this document carries --
-# labels, a URL, a channel, an enum, integers, base64 keys, hostnames -- can
-# hold one.
-manifest_keys() {
-    grep -o '"[A-Za-z][A-Za-z0-9_]*"[[:space:]]*:' "$1" | sed 's/[^A-Za-z0-9_]//g' | sort -u
-}
-manifest_unknown=$(comm -23 <(manifest_keys "$META_DIR/updates/manifest.json") <(manifest_keys "$META_MANIFEST_EXAMPLE") | tr '\n' ' ')
-manifest_missing=$(comm -13 <(manifest_keys "$META_DIR/updates/manifest.json") <(manifest_keys "$META_MANIFEST_EXAMPLE") | tr '\n' ' ')
-if [ -n "${manifest_unknown// /}" ]; then
-    echo "error: $META_DIR/updates/manifest.json names key(s) the schema does not have: ${manifest_unknown% }" >&2
-    echo "meta.example/updates/manifest.json is the committed shape and pkgs/mosd/mosd-settings/src/configuration.rs is the reader; a key in neither would be baked into a read-only root and refused there, where nobody can edit it. Add it to both, or fix the spelling." >&2
-    exit 1
-fi
-if [ -n "${manifest_missing// /}" ]; then
-    echo "error: $META_DIR/updates/manifest.json does not name: ${manifest_missing% }" >&2
-    echo "The schema has no implicit defaults -- every value it configures is stated -- so a missing key is a value this build would leave unsaid. meta.example/updates/manifest.json shows the full shape." >&2
-    exit 1
-fi
-
-# The tool-neutral name for the algorithm of a piece of material that is
-# actually on disk, read out of openssl's own description of it. Three readers
-# because the three roles are encoded three ways: a PEM certificate, a PEM
-# private key, and the raw PKCS#8 DER lode's key is written as.
-alg_of_material() {
-    local text curve bits
-    case "$2" in
-    # mos-build-side: container-block -- openssl() above is a wrapper around
-    #   localhost/mos-build-openssl; all three readers run in it
-    x509) text=$(openssl x509 -in "$1" -noout -text 2>/dev/null || true) ;;
-    pem) text=$(openssl pkey -in "$1" -noout -text 2>/dev/null || true) ;;
-    der) text=$(openssl pkey -inform DER -in "$1" -noout -text 2>/dev/null || true) ;;
-    # mos-build-side: host
-    esac
-    [ -n "$text" ] || return 1
-    case "$text" in
-    *ED25519*) printf 'ed25519\n'; return 0 ;;
-    esac
-    curve=$(printf '%s\n' "$text" | sed -n 's/.*NIST CURVE: *//p' | head -n1)
-    if [ -n "$curve" ]; then
-        printf 'ecdsa-%s\n' "$(printf '%s' "$curve" | tr 'A-Z' 'a-z' | tr -d '-')"
-        return 0
-    fi
-    case "$text" in
-    *RSA*)
-        bits=$(printf '%s\n' "$text" | sed -n 's/.*-Key: (\([0-9][0-9]*\) bit.*/\1/p' | head -n1)
-        [ -n "$bits" ] && { printf 'rsa-%s\n' "$bits"; return 0; }
-        ;;
-    esac
-    return 1
-}
-
-# A2 -- THE MATERIAL ACTUALLY IN meta/ IS IN ITS ROLE'S SET.
-#
-# A1 alone passes exactly the production case, which is the case that matters:
-# production material is PLACED in meta/ by an operator rather than minted by
-# the generator, so a placed RSA-2048 CA, or an ECDSA package key from a
-# well-meaning ceremony, would ship with every declared value still in range.
-# The --domain updates key is the one A1 could never have seen at all -- it is
-# not minted on the build path, so nothing A1 reads describes it.
-#
-# Each file is checked only if it is THERE: release-signing.md section 2.5
-# provisions a release host without ca.key.pem on purpose, and demanding a file
-# that rule says must be absent would refuse every production build. What stops
-# that from becoming a vacuous pass is the count below -- ca.cert.pem is
-# required above, so the search space is never empty, and the number says so.
-meta_checked=0
-check_material() {
-    local file=$1 reader=$2 role=$3 allowed=$4 verifier=$5 alg
-    [ -s "$file" ] || return 0
-    alg=$(alg_of_material "$file" "$reader") ||
-        { echo "error: openssl could not read $file, so the algorithm of a key this build is about to trust is unknown. A file that is present and unreadable is not the same as an absent one and must not be treated as one" >&2; exit 1; }
-    in_alg_set "$alg" "$allowed" || alg_refusal "$file" "$alg" "$role" "$allowed" "$verifier"
-    meta_checked=$((meta_checked + 1))
-}
-check_material "$META_DIR/rauc/ca.cert.pem" x509 "RAUC CA (meta/rauc/ca.cert.pem)" "$RAUC_ALG_SET" "$RAUC_ALG_VERIFIER"
-check_material "$META_DIR/rauc/ca.key.pem" pem "RAUC CA (meta/rauc/ca.key.pem)" "$RAUC_ALG_SET" "$RAUC_ALG_VERIFIER"
-check_material "$META_DIR/rauc/signer.cert.pem" x509 "RAUC bundle signer (meta/rauc/signer.cert.pem)" "$RAUC_ALG_SET" "$RAUC_ALG_VERIFIER"
-check_material "$META_DIR/rauc/signer.key.pem" pem "RAUC bundle signer (meta/rauc/signer.key.pem)" "$RAUC_ALG_SET" "$RAUC_ALG_VERIFIER"
-check_material "$META_DIR/updates/root.key" der "package signing key (meta/updates/root.key)" "$PACKAGE_ALG_SET" "$PACKAGE_ALG_VERIFIER"
-[ "$meta_checked" -gt 0 ] ||
-    { echo "error: A2 read no material at all in $META_DIR, so it proved nothing. meta/rauc/ca.cert.pem is required above and is always one of them; a zero here means this check is looking at the wrong tree" >&2; exit 1; }
-echo "meta: A2 read $meta_checked file(s) of key material in meta/; every one is in its role's allowed set"
-
-# THE PUBLIC SET: the only files that leave meta/ for the image.
-#
-# ALLOWLIST, NOT DENYLIST, and that is the whole mechanism. A denylist would
-# pattern-match the secrets and copy the rest, so a file nobody anticipated
-# ships BY DEFAULT -- and the default is what decides the outcome on the day
-# somebody adds meta/updates/notes-for-the-release-host.txt. Under an allowlist
-# a new file is invisible to the image until a line appears here, in a diff,
-# with a reviewer.
-#
-# What it prevents, stated once so nobody relaxes it by accident: if meta/ were
-# staged verbatim, every shipped device would carry meta/rauc/ca.key.pem and
-# meta/updates/root.key -- the private keys behind BOTH gates its updates pass
-# -- so anyone who bought one unit could extract them and sign an update that
-# every other device in the fleet verifies, installs and trusts.
-#
-# signer.cert.pem is public and still does not ship: RAUC takes the signer
-# certificate out of the bundle's own CMS structure and chains it to the
-# keyring, so the device never needs the file, and a file that ships for no
-# reason is a file whose removal nobody can later justify.
-#
-# THE MARKER IS ON THE SET, AND IT IS THE FIRST ENTRY WHOSE ABSENCE IS
-# MEANINGFUL (PLAN-077 section 2, answering PLAN-070's open question 4). Every
-# other member is required: an image without a keyring or without a manifest
-# can verify nothing. meta/GENERATED is present exactly when the material is
-# development-grade, so a production image is one that ships no marker -- and
-# "absent" is the answer a release wants rather than a defect.
-#
-# Why it ships at all: without it the grade is a fact about the BUILD HOST, and
-# two things Gate A needs are then unbuildable. A device cannot say whether it
-# trusts a development CA by reading a file on a machine it has never seen, and
-# a publication refusal that reads the host answers "was this host
-# development-grade" -- which is green on every host that has no meta/ at all,
-# including the archive-restore case the release gate's own contract names.
-# Baked, the fact travels inside the dm-verity root with the material it
-# describes.
-#
-# Verbatim, not summarised: byte-equality against the source in meta/ is the
-# assertion this seam makes everywhere else, and a derived {"grade": ...}
-# document would be one fact stated twice with no rule for a disagreement.
-#
-# "<path under meta/>|<path in the image>|required|conditional"
-META_PUBLIC=(
-    "rauc/ca.cert.pem|etc/rauc/keyring.pem|required"
-    "updates/manifest.json|usr/share/mos/meta/updates/manifest.json|required"
-    "GENERATED|usr/share/mos/meta/GENERATED|conditional"
-)
-
-# WHAT "CARRIES PRIVATE KEY MATERIAL" MEANS, and the obvious spelling is wrong
-# here. A grep for PEM armour is BLIND to meta/updates/root.key, which is raw
-# PKCS#8 DER -- the one file this rule is named after. Three tests, any of which
-# is a refusal, because a detector with one test is a detector that names one
-# file format.
-private_key_material() {
-    local head16
-    # 1. PEM private-key armour, in every spelling openssl and ssh-keygen write.
-    grep -qE -- '-----BEGIN (RSA |DSA |EC |ENCRYPTED |OPENSSH )?PRIVATE KEY-----' "$1" 2>/dev/null && return 0
-    # 2. A DER PKCS#8 PrivateKeyInfo header: a SEQUENCE whose first element is
-    #    INTEGER 0, the version -- 30 <len...> 02 01 00. This is the encoding
-    #    `rauc-sign gen-dev-keys` and gen-dev-keys.sh --domain updates write.
-    head16=$(head -c 16 "$1" | od -An -v -tx1 | tr -d ' \n')
-    case "$head16" in
-    30??020100* | 3081??020100* | 3082????020100*) return 0 ;;
-    esac
-    # 3. A filename in a key-container extension.
-    case "$1" in
-    *.key | *.pk8 | *.p12 | *.pfx | *.jks) return 0 ;;
-    esac
-    return 1
-}
-
-rm -rf "$META_STAGE"
-# What the allowlist RESOLVED to for this tree: the required entries, plus each
-# conditional one whose source is actually there. The count assertion below is
-# against this rather than against the array's length, because a conditional
-# entry that is legitimately absent is not a file that went missing.
-meta_expected=0
-meta_required=0
-meta_staged_names=""
-for entry in "${META_PUBLIC[@]}"; do
-    IFS='|' read -r meta_rel_src meta_rel_dst meta_disposition <<<"$entry"
-    meta_src="$META_DIR/$meta_rel_src"
-    meta_dst="$META_STAGE/$meta_rel_dst"
-    [ "$meta_disposition" = required ] && meta_required=$((meta_required + 1))
-    if [ ! -s "$meta_src" ]; then
-        # A conditional entry that is not there is the tree saying something --
-        # for meta/GENERATED, that the material is production-grade -- and the
-        # image says the same thing by not shipping it. verify's
-        # packed-meta-is-the-public-set holds both directions of that, so the
-        # silence here is checked rather than trusted.
-        [ "$meta_disposition" = conditional ] && continue
-        echo "error: $meta_src is on the public set and is missing or empty, so this image would ship without it. Every required file in that set is one the device reads to decide what it trusts or where its updates come from" >&2
-        exit 1
-    fi
-    # B1's second trigger, over the file ABOUT TO BE staged rather than the copy:
-    # the sentence then names the file somebody has to fix, in meta/, rather
-    # than the throwaway under _out/ that this build made from it.
-    if private_key_material "$meta_src"; then
-        echo "error: $meta_src is on the public set and carries private key material; refusing to bake it into the image at /$meta_rel_dst." >&2
-        echo "Every device flashed from this image would carry that key, so anyone who obtained one unit could extract it and sign an update the rest of the fleet verifies, installs and trusts -- fleet-wide remote code execution reachable by buying one device. meta/ exists to hold private keys and none of them ship; if this file is genuinely public, it is not the file its name and contents say it is." >&2
-        exit 1
-    fi
-    mkdir -p "$(dirname "$meta_dst")"
-    if [ "$meta_rel_src" = updates/manifest.json ]; then
-        bash "$REPO_ROOT/rootfs/scripts/derive-signing-key-ids.sh" "$meta_src" > "$meta_dst"
-    else
-        cp "$meta_src" "$meta_dst"
-    fi
-    chmod 0644 "$meta_dst"
-    meta_expected=$((meta_expected + 1))
-    meta_staged_names="$meta_staged_names $meta_rel_dst"
-done
-# The floor under the count below, and it is TWO assertions because one of them
-# is the vacuity hole the conditional entry opened. B1's count is an equality
-# against meta_expected, and both sides are derived from this loop -- so an
-# allowlist whose every entry were conditional, over an empty meta/, would
-# stage nothing and pass 0 -eq 0. The set having at least one REQUIRED member
-# is what makes the equality a measurement; the second line is the ordinary
-# consistency check beside it.
-[ "$meta_required" -gt 0 ] ||
-    { echo "error: no entry in META_PUBLIC is marked required, so an empty meta/ would stage nothing and every check over the staged set would pass by finding nothing. The keyring and the update configuration are required by construction: an image without either can verify nothing" >&2; exit 1; }
-[ "$meta_expected" -ge "$meta_required" ] ||
-    { echo "error: the public set has $meta_required required entries and $meta_expected file(s) were resolved for staging. A required entry cannot be skipped, so a count below the floor means the loop above did not read the allowlist it was given" >&2; exit 1; }
-
-# B1 -- THE BUILD REFUSES TO STAGE A SECRET, and refuses to stage anything it
-# was not asked to. It proves the INTENT; verify's packed-meta-is-the-public-set
-# and no-private-key-in-baked-meta prove the OUTCOME over the assembled image,
-# and the two are not belt-and-braces: B1 cannot see material that arrives by a
-# route other than this staging step -- an overlay file, a package postinst, a
-# stray cp in a later slice -- and B2 does not care how it got there.
-#
-# Both refusals are unwaivable, in the shape the overlay-keyring refusal above
-# uses, and for the same reason: a waiver reintroduces the thing being forbidden.
-meta_staged=0
-while IFS= read -r staged; do
-    meta_rel=${staged#"$META_STAGE/"}
-    if [ -L "$staged" ] || [ ! -f "$staged" ]; then
-        echo "error: $staged is staged into the image at /$meta_rel and is not a regular file." >&2
-        echo "The public set is copied file by file out of meta/; a link or a device node here points at something the allowlist never looked at, and what it resolves to is decided when the image is assembled rather than when it was reviewed." >&2
-        exit 1
-    fi
-    meta_allowed=0
-    for entry in "${META_PUBLIC[@]}"; do
-        IFS='|' read -r _ meta_entry_dst _ <<<"$entry"
-        [ "$meta_rel" = "$meta_entry_dst" ] && meta_allowed=1
-    done
-    if [ "$meta_allowed" = 0 ]; then
-        echo "error: $staged is about to be baked into the image at /$meta_rel and is not on the public set in rootfs/build.sh." >&2
-        echo "meta/ holds every private key a release needs and only the files META_PUBLIC names may reach a device. A path that arrived here without an allowlist entry arrived without a reviewer, which is the way a signing key ships: not by anyone deciding to ship it, but by a copy nobody read. Add the path to META_PUBLIC if it genuinely belongs in the image, or take the copy that put it here back out." >&2
-        exit 1
-    fi
-    if private_key_material "$staged"; then
-        echo "error: $staged carries private key material and is about to be baked into the image at /$meta_rel." >&2
-        echo "Every device flashed from this image would carry that key, so anyone who obtained one unit could extract it and sign an update the rest of the fleet verifies, installs and trusts -- fleet-wide remote code execution reachable by buying one device. Private keys stay on the build host; the public set is a certificate, a JSON document and a prose marker, and none of them is a key." >&2
-        exit 1
-    fi
-    meta_staged=$((meta_staged + 1))
-done < <(find "$META_STAGE" -mindepth 1 ! -type d | sort)
-# Against the RESOLVED count and not the array's length, because a conditional
-# entry whose source is absent was never going to be staged. What the equality
-# still catches is both directions that matter: a file staged by something
-# other than the loop above, and one that vanished between being copied and
-# being read here.
-[ "$meta_staged" -eq "$meta_expected" ] ||
-    { echo "error: the public set resolved to $meta_expected entries for this tree and $meta_staged file(s) were staged and checked. B1 has to see every file that reaches the image, so a count that does not match means it read a tree this build is not going to ship" >&2; exit 1; }
-echo "meta: staged and checked $meta_staged of ${#META_PUBLIC[@]} public-set entries from meta/ --$meta_staged_names"
-
-# NO PACKAGE SIGNING KEY IS AN ANNOUNCEMENT, NOT AN ERROR (section 1.2). An
-# empty trust.signingKeys is a supported steady state -- the same steady state
-# as an absent update.source, and consistent with it, because a device
-# configured to reach no server has no package to verify. It is the state every
-# fresh checkout is in, since --domain updates is opt-in: a development
-# package-signing key that no published repository has signed anything with is a
-# key that anchors nothing, and minting one by default would make every fresh
-# build claim a trust relationship it does not have.
-#
-# Said in one line because a silence here reads the same as a key being there.
-# The whitespace is stripped first so this reads the VALUE and not the file's
-# formatting; an absent signingKeys is a different fact and the refusal above
-# already covers it.
-if [ "${meta_manifest_flat#*\"signingKeys\":[]}" != "$meta_manifest_flat" ]; then
-    echo "meta: no package signing key baked -- meta/updates/manifest.json's trust.signingKeys is empty, so this image can verify no update package until it is populated (pkgs/rauc/gen-dev-keys.sh --domain updates writes a development one). Not an error: with no key there is nothing claiming a trust relationship this build does not have."
-fi
-
-# Whether that material is development-grade is not guessed from the bytes. The
-# generator leaves meta/GENERATED beside what it wrote and production material
-# arrives without it, so the marker answers the question on every later build
-# and not only on the one that generated. The marker is the whole condition:
-# there is no build-time variable that declares a bench image, because dev and
-# production take the same path through meta/ and CI decides which material is
-# there. verify reads the same marker and reports the same fact.
-#
-# It NAMES ITS DOMAINS, because the mixed tree is real: a production RAUC
-# ceremony's output copied in while the package signing key is still
-# development-grade is one directory holding both, and "meta/ is generated" does
-# not say which half.
-if [ -e "$META_DIR/GENERATED" ]; then
-    meta_domains=$(sed -n 's/^DOMAINS=//p' "$META_DIR/GENERATED" | tail -n1)
-    echo "############################################################"
-    echo "# WARNING: this image trusts a DEVELOPMENT RAUC keyring    #"
-    echo "# at etc/rauc/keyring.pem, staged from                     #"
-    echo "# meta/rauc/ca.cert.pem. Every device flashed with it      #"
-    echo "# trusts every bundle that CA signs. Never flash this      #"
-    echo "# image onto anything that leaves your desk. For a         #"
-    echo "# release, put real production material in meta/ --        #"
-    echo "# without meta/GENERATED beside it.                        #"
-    echo "############################################################"
-    echo "meta: GENERATED marks these domains development-grade: ${meta_domains:-(the marker names none)}"
-    echo "meta: the marker is baked at /usr/share/mos/meta/GENERATED, so the device reports this grade on GET /api/v1/system/info and the release gate refuses to publish this image to candidate or stable"
-fi
-lower() { echo "$1" | tr 'A-Z' 'a-z'; }
-render() {
-    local src="$1" dst="$2"
-    shift 2
-    local expr=()
-    while [ "$#" -gt 0 ]; do
-        expr+=(-e "s|@$1@|$2|g")
-        shift 2
-    done
-    sed "${expr[@]}" "$src" > "$dst"
-    rm -f "$src"
-    if grep -q '@[A-Z_]\+@' "$dst"; then
-        echo "error: unrendered placeholder left in $dst" >&2
-        exit 1
-    fi
-}
-
-# Storage tiers. /mnt/data (DATA) is the only filesystem that grows;
-# /var (EPHEMERAL) is fixed-size disposable residue and must NOT carry
-# x-systemd.growfs.
-
-# The DATA constants are required, not optional. A fallback for a missing one
-# would not fail: it would quietly emit a nine-partition rootfs with /var
-# growing and no DATA mount, and every downstream check would pass. All four are
-# demanded even though only DATA_GUID is read here, because the assembler needs
-# the other three, and a rootfs built against half a layout is the kind of
-# artifact that reaches hardware before anyone notices.
-missing=""
-for key in DATA_GUID DATA_PARTNUM DATA_FS_UUID MOS_VAR_MIB; do
-    eval "value=\${$key:-}"
-    [ -n "$value" ] || missing="$missing $key"
-done
-if [ -n "$missing" ]; then
-    echo "error: $LAYOUT_ENV is missing:$missing" >&2
-    echo "The DATA partition (/mnt/data) and the fixed /var size are part of the A/B layout;" >&2
-    echo "a rootfs built without them would silently ship the superseded" >&2
-    echo "nine-partition arrangement. Restore the constants in $LAYOUT_ENV." >&2
-    exit 1
-fi
-
-DATA_LINE="PARTUUID=$(lower "$DATA_GUID")	/mnt/data	ext4	noatime,x-systemd.growfs	0	2"
-VAR_OPTS="noatime"
-
-# The repart definition count must equal the number of linux-generic partitions
-# on the disk, or repart silently attaches the grow flag to the wrong one — and
-# an unmatched definition does not fail, it makes repart CREATE a partition.
-# The count is DERIVED from the layout, not written down. systemd-repart pairs
-# definitions with existing partitions in order by Type, so the invariant is
-# "one definition per linux-generic partition this board actually has" -- and
-# a literal 8 was the cx3576 number, which the x64 build satisfied with two
-# definitions for U-Boot partitions it does not have. Every partition then got
-# the definition meant for the one before it, DATA did not grow, and repart
-# reported success.
-want_defs=$(grep -c "^[A-Z0-9_]*_TYPECODE=$TYPECODE_LINUX\$" "$LAYOUT_ENV")
-have_defs=$(find "$OVERLAY_STAGE/etc/repart.d" -name '*.conf' | wc -l)
-if [ "$have_defs" -ne "$want_defs" ]; then
-    echo "error: $have_defs repart definitions staged, but $LAYOUT_ENV declares $want_defs partitions of type $TYPECODE_LINUX. systemd-repart matches definitions to partitions IN ORDER, so a mismatch does not fail — it shifts every definition onto the wrong partition and creates new ones for the remainder" >&2
-    exit 1
-fi
-# `|| true` because zero matches must reach the diagnostic below: grep -l
-# exits 1 when nothing matches, and under set -e/pipefail that killed the run
-# before the "expected exactly 1" message could say what was missing.
-grow_defs=$({ grep -l '^Weight=1000$' "$OVERLAY_STAGE"/etc/repart.d/*.conf || true; } | wc -l)
-if [ "$grow_defs" -ne 1 ]; then
-    echo "error: $grow_defs repart definitions carry Weight=1000, expected exactly 1" >&2
-    exit 1
-fi
-echo "layout: DATA present -> /mnt/data grows, /var fixed"
-echo "layout: $have_defs repart definitions, 1 of them growing"
-
-if [ -f "$OVERLAY_STAGE/etc/systemd/system/boot.mount.in" ]; then
-    render "$OVERLAY_STAGE/etc/systemd/system/boot.mount.in" \
-           "$OVERLAY_STAGE/etc/systemd/system/boot.mount" \
-        ESP_GUID "$(lower "$ESP_GUID")"
-fi
-
-render "$OVERLAY_STAGE/etc/fstab.in" "$OVERLAY_STAGE/etc/fstab" \
-    EPHEMERAL_GUID "$(lower "$EPHEMERAL_GUID")" \
-    STATE_GUID "$(lower "$STATE_GUID")" \
-    META_GUID "$(lower "$META_GUID")" \
-    VAR_OPTS "$VAR_OPTS" \
-    DATA_LINE "$DATA_LINE"
-
-# fw_env.config is U-Boot's environment configuration, and it is rendered only
-# on a board whose bootloader IS U-Boot. The file names the two uenv partitions
-# and a UEFI layout creates neither; shipping it anyway would put a
-# configuration file in the image describing storage that does not exist --
-# readable, plausible, and wrong, which is the shape of defect this repo keeps
-# finding.
-#
-# THE QUESTION IS THE BOOTLOADER, NOT THE ARCHITECTURE. This asked
-# `[ "$MOS_ARCH" = amd64 ]` while x64 was the only UEFI board, where the two
-# questions happened to have the same answer. They come apart on virt-arm64,
-# which is arm64 AND has no U-Boot: the architecture test sends it down the
-# render branch, where UENV_A_GUID is a variable its layout does not define --
-# so the failure is `UENV_A_GUID: unbound variable` under `set -u`, a message
-# about a shell variable rather than about a board that has no U-Boot
-# environment to configure. RAUC_BOOTLOADER is the board's own statement of
-# which backend drives its A/B handshake, and it is the fact this branch is
-# actually about.
-if [ -z "${RAUC_BOOTLOADER:-}" ]; then
-    echo "error: $LAYOUT_ENV sets no RAUC_BOOTLOADER, so which bootloader owns this board's A/B handshake is undeclared. fw_env.config would then be rendered or skipped by a guess, and both guesses are wrong on some board" >&2
-    exit 1
-fi
-if [ "$RAUC_BOOTLOADER" != "uboot" ]; then
-    rm -f "$OVERLAY_STAGE/etc/fw_env.config.in"
-else
-    render "$OVERLAY_STAGE/etc/fw_env.config.in" "$OVERLAY_STAGE/etc/fw_env.config" \
-        UENV_A_GUID "$(lower "$UENV_A_GUID")" \
-        UENV_B_GUID "$(lower "$UENV_B_GUID")" \
-        UENV_SIZE_HEX "$(printf '0x%x' "$UENV_SIZE_BYTES")"
-fi
-
 # --- the composition's inputs: the package pool, the resolution, the context ---
 #
 # The composer INSTALLS; it never compiles. Everything below either reads the
@@ -937,7 +322,6 @@ rm -rf "$COMPOSE_STAGE"
 # would describe the package set of an image this run did not produce, and a
 # run that dies before the record is written would leave it looking current.
 rm -f "$PACKAGES_RECORD"
-COMPOSE_RAUC_VERSION=""
 
 # THE SOURCE COMMIT'S DATE, for /usr/share/mos/release-identity.env and from
 # there for mosd's system-information surface.
@@ -1030,20 +414,6 @@ PRODUCER_DIRS=$(bash "$REPO_ROOT/build-env/deb/producers.sh" |
 [ -n "$PRODUCER_DIRS" ] ||
     { echo "error: build-env/deb/producers.sh named no package, so every row of the composition record would carry '(no producer declares it)' for its source" >&2; exit 1; }
 
-# The RAUC upstream version, for the finalizer's build report. The pin in
-# pkgs/rauc/versions.env is the same value verify's smoke register
-# requires the rauc binary in the image to REPORT, so this is not a second
-# source of truth for it -- it is the one the smoke run checks the binary
-# against. On the chain path the same number travels with the binary in
-# out-<arch>/RAUC_VERSION.env, which the composer must not read: that
-# directory is the SOURCE build's output and the composer installs from the
-# pool.
-if ! declined rauc; then
-    COMPOSE_RAUC_VERSION=$(sed -n 's/^RAUC_VERSION=//p' "$REPO_ROOT/pkgs/rauc/versions.env" | tail -n1)
-    [ -n "$COMPOSE_RAUC_VERSION" ] ||
-        { echo "error: pkgs/rauc/versions.env declares no RAUC_VERSION. The finalizer records it in rootfs-report.txt and build/src/bundle.ts refuses to build a bundle whose rauc differs from it; an empty value makes that comparison pass by finding nothing" >&2; exit 1; }
-fi
-
 mkdir -p "$COMPOSE_STAGE"
 printf '%s\n' "$RESOLVED" > "$COMPOSE_STAGE/packages.txt"
 # The public set, audited above, handed to the composition context as the
@@ -1055,7 +425,7 @@ echo "compose: $resolved_n package(s) resolved for $MOS_BOARD/$MOS_PROFILE, decl
 sed 's/^/  /' "$COMPOSE_STAGE/packages.txt"
 
 # The builder is NAMED rather than inherited -- the same BUILDX_BUILDER
-# register as pkgs/rauc/build.sh and pkgs/podman/build.sh, and the same
+# register as pkgs/mos-deploy/build.sh and pkgs/podman/build.sh, and the same
 # selection. BUILDX_BUILDER wins, because a caller who names a builder has made
 # a decision. With nothing named, `default` is the docker driver on every
 # docker installation, and it reaches linux/${MOS_ARCH} exactly when the host
@@ -1160,7 +530,6 @@ DRIVER_ARGS=(
     --source-date-epoch "$SQUASHFS_TIME"
     --stages-dir "$REPO_ROOT/rootfs/compose"
     --arg COMPOSE_DIR="_out/$MOS_BOARD/compose"
-    --arg RAUC_VERSION="$COMPOSE_RAUC_VERSION"
 )
 
 # TWO DOCKERFILES, not one build. build/run.sh --build-rootfs sequences the
@@ -1300,49 +669,10 @@ if [ "$(env_get "$VERITY_ENV" VERITY_SALT)" != "$VERITY_SALT" ]; then
     exit 1
 fi
 img_bytes=$(stat -c %s "$IMG")
-if [ "$img_bytes" != "$IMAGE_BYTES" ] || [ $((img_bytes % MIB_BYTES)) -ne 0 ] || [ "$img_bytes" -eq 0 ]; then
-    echo "error: $IMG is $img_bytes bytes, not a non-zero whole-MiB multiple matching IMAGE_BYTES=$IMAGE_BYTES" >&2
+if [ "$img_bytes" != "$IMAGE_BYTES" ] || [ $((img_bytes % 4096)) -ne 0 ] || [ "$img_bytes" -eq 0 ]; then
+    echo "error: $IMG is $img_bytes bytes, not a non-zero 4096-byte multiple matching IMAGE_BYTES=$IMAGE_BYTES" >&2
     exit 1
 fi
-
-# Kernel cmdline, one per slot. dm-init (CONFIG_DM_INIT=y, kernel 6.1.115)
-# builds the verity device before the root mount with no initramfs. Both the
-# data and the hash device are the same partition -- the hash tree is appended
-# to the squashfs -- so the same PARTUUID appears twice, and <hash_start_block>
-# tells the target where the tree begins. dm-init resolves PARTUUID= through
-# dm_get_dev_t -> name_to_dev_t -> devt_from_partuuid (case-insensitive),
-# verified against the vendor tree; see docs/design/ro-root.md.
-
-# dm-mod.waitfor= is MANDATORY, not an optimisation. dm_init_init runs at
-# late_initcall and its wait_for_device_probe() does not cover eMMC card
-# discovery, which happens on a delayed workqueue; without the wait the verity
-# table is built before the partitions exist, so the boot breaks intermittently
-# rather than cleanly. The assembler rejects a cmdline file that lacks it.
-
-# The GUID is lowercased, the same form used in /etc/fstab and the same form
-# udev gives /dev/disk/by-partuuid/ (libblkid formats GUIDs lowercase). The
-# kernel compares with strncasecmp and accepts either, so one canonical
-# lowercase spelling everywhere is the least surprising choice. The assembler
-# cross-checks this table against ${ROOTFS_x_GUID}, which the layout env holds
-# uppercase, comparing case-insensitively. Do not "fix" anything by
-# uppercasing this: lowercase is what udev and fstab use.
-write_cmdline() {
-    local out="$1" guid="$2"
-    local partuuid
-    partuuid="PARTUUID=$(lower "$guid")"
-    printf '%s\n' "dm-mod.create=\"rootfs,,,ro,0 ${DATA_SECTORS} verity 1 ${partuuid} ${partuuid} ${DATA_BLOCK_SIZE} ${HASH_BLOCK_SIZE} ${DATA_BLOCKS} ${HASH_START_BLOCK} ${HASH_ALGO} ${ROOT_HASH} ${VERITY_SALT}\" dm-mod.waitfor=${partuuid} root=/dev/dm-0 rootfstype=squashfs ro rootwait ${BOARD_CMDLINE_ARGS}" > "$out"
-}
-write_cmdline "$OUT_DIR/boot-cmdline-a.txt" "$ROOTFS_A_GUID"
-write_cmdline "$OUT_DIR/boot-cmdline-b.txt" "$ROOTFS_B_GUID"
-
-echo
-echo "=== rootfs-report.txt ==="
-cat "$REPORT"
-echo "=== rootfs-verity.env ==="
-cat "$VERITY_ENV"
-echo "=== boot-cmdline-a.txt ==="
-cat "$OUT_DIR/boot-cmdline-a.txt"
-echo "=== image: $IMG ($img_bytes bytes, $((img_bytes / MIB_BYTES)) MiB) ==="
 
 total_mb=$(awk '/^TOTAL_MB/ {print $2}' "$REPORT")
 if [ -z "$total_mb" ]; then

@@ -21,7 +21,7 @@
 ### What mos is
 
 mos is an embedded appliance operating system: a read-only Debian root under
-systemd, updated whole in A/B slots, managed by a small Rust plane that owns
+systemd, updated through signed file deployments, managed by a small Rust plane that owns
 the device's settings and drives systemd to match them.
 
 Four properties define it:
@@ -33,13 +33,14 @@ drift, because there is nothing on the root to drift.
 
 > status: shipped — evidence: `rootfs/build.sh`, `docs/design/ro-root.md`
 
-**Updates replace the whole system, atomically.** The disk carries two system
-slots; an update installs a signed RAUC bundle into the inactive slot and the
-bootloader falls back automatically if the new slot fails to boot its health
-gate. There is no on-device package manager to half-apply an update — the
-image build removes the package-management state deliberately.
+**Updates publish authenticated deployments.** Kernel/support and root components
+are installed independently. Objects are verified and synced before the native
+boot record is activated. The health gate confirms a successful boot; a failed
+candidate has three attempts before the retained deployment is selected. Normal
+updates preserve shared DATA and never replace boot firmware. Physical-board
+power-loss and watchdog qualification remain separate from VM evidence.
 
-> status: shipped — evidence: `pkgs/rauc/`, `docs/design/uboot-ab-handshake.md`, `rootfs/compose/90-pack.Dockerfile`
+> status: shipped — evidence: `pkgs/mos-deploy/`, `docs/design/uboot-ab-handshake.md`, `rootfs/compose/90-pack.Dockerfile`
 
 **One management plane owns the device.** `mosd` holds the settings tree and
 reconciles it into systemd units — networking, Wi-Fi, SSH, containers, MQTT —

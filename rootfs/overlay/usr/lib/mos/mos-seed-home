@@ -1,10 +1,8 @@
 #!/bin/sh
 # Seed the persistent home directory on the DATA partition.
 #
-# home.mount binds /mos/home onto /home. DATA rather than STATE because a home
-# directory accumulates USER DATA of unbounded size -- a staged update bundle
-# alone is ~72 MiB, against a 64 MiB STATE partition -- and DATA is the only
-# tier systemd-repart grows. See home.mount for the full reasoning.
+# home.mount binds /mos/home from the growing DATA filesystem.
+# The physical source is created before its mount and retains existing files.
 #
 # ORDERING. This writes ONLY under /mos, never under /home, and it runs BEFORE
 # home.mount. Both halves matter:

@@ -1,6 +1,6 @@
 // The smoke runner: execute every self-built artifact inside the root that ships
 // it and require the version it reports to be the one pkgs/podman/versions.env,
-// pkgs/rauc/versions.env or the crate manifest pins. Execution and version
+// pkgs/podman/versions.env or the crate manifest pins. Execution and version
 // identity, not behaviour; the QEMU boot tests and the ldd/NEEDED checks keep
 // functional coverage. Everything below takes an `Exec`, so the suite reaches
 // every verdict from the failing side with fabricated output and no image,
@@ -122,7 +122,7 @@ export function pinSource(file: string): string {
  * One tokeniser, not twelve parsers: the ten artifacts that answer print ten
  * different sentences, measured in the real x64 factory root --
  *
- *   rauc 1.13            podman version 5.8.6   5.8.6
+ *   tool 1.13            podman version 5.8.6   5.8.6
  *   crun version 1.29.1  conmon version 2.2.1   netavark 2.1.0
  *   aardvark-dns 2.1.0   tini version 0.2.1_catatonit
  *   mos-mqttd 0.1.0      mos-mqtt-broker 0.1.0
@@ -727,18 +727,9 @@ export function readMosdBuildFact(board: string, dir: string = outDir(board)): B
 }
 
 /**
- * The feature stages the build was told to leave OUT, read off its own manifest.
- *
- * The register covers a full-featured root: twelve artifacts, of which seven
- * arrive with stages/31-feature-containers, one with 32-feature-rauc and four
- * with 33-feature-mosd. Those stages are optional -- `WITH_CONTAINERS=0` in a
- * board's containers.env, or `MOS_ROOTFS_WITHOUT`, leaves them out -- and every
- * artifact of a declined feature then answers rc=127, so the run would print
- * seven failures about binaries when what happened is one decision about one
- * stage. It refuses rather than modelling that: a fourth verdict for a declined
- * artifact would put a skip into a runner whose whole purpose is that nothing is
- * skipped. Both shipped boards decline nothing today (x64 has no containers.env;
- * cx3576's says `WITH_CONTAINERS=1`), so the guard reads the manifest.
+ * Read explicit feature declines from the resolved package manifest. A declined
+ * feature is an input choice, not a missing-binary failure; the caller applies
+ * its declared composition policy before running the binary register.
  */
 export function declinedFeatures(text: string): string[] {
   for (const line of text.split('\n')) {
@@ -1463,7 +1454,7 @@ export async function smokeRun(opts: SmokeRunOptions): Promise<{ results: SmokeR
     log(`verify smoke: ${opts.board} ${record.ref} (${record.platform}, ${record.bytes} bytes, sha256 ${record.sha256})`)
 
     // A full shared smoke register requires each owning feature package.
-    const required = ['mosd', 'mos-mqttd', 'mos-mqtt-broker', 'mos-rauc', 'mos-podman']
+    const required = ['mosd', 'mos-mqttd', 'mos-mqtt-broker', 'mos-deploy', 'mos-podman']
     const missing = required.filter(p => !packages?.has(p))
     if (missing.length > 0) throw new Error(`smoke requires the full feature package set; absent from ${packageRecord}: ${missing.join(', ')}`)
 

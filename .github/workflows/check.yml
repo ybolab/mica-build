@@ -89,11 +89,11 @@ jobs:
             echo "$v"
           }
           mosd_msrv=$(read_msrv pkgs/mosd/Cargo.toml)
-          sign_msrv=$(read_msrv pkgs/rauc-sign/Cargo.toml)
+          sign_msrv=$(read_msrv pkgs/mos-deploy/Cargo.toml)
           [ "$mosd_msrv" = "$sign_msrv" ] || {
             echo "error: the two workspaces disagree about the MSRV." >&2
             echo "       pkgs/mosd/Cargo.toml:         $mosd_msrv" >&2
-            echo "       pkgs/rauc-sign/Cargo.toml:    $sign_msrv" >&2
+            echo "       pkgs/mos-deploy/Cargo.toml:    $sign_msrv" >&2
             echo "       tests/rust-gate.sh runs both gates in ONE image, which carries one" >&2
             echo "       rustc, so it cannot honour two MSRVs. Reconcile them, or split the gate." >&2
             exit 1
@@ -107,6 +107,12 @@ jobs:
       - name: The builder images, from the pins in build-env/images.env
         run: make build-env
 
+      - name: Prepare the check container network
+        run: docker network inspect traefik >/dev/null 2>&1 || docker network create --label ai-agent=true traefik
+
+      - name: Current component producers and release delivery in pinned Bun
+        run: MOS_BUILD_CONTAINER=1 make os-build-test
+
       # The gate itself. `tee` and then grep the announce line rather than
       # trusting the exit status alone -- the os-verify job below makes the same
       # move for the same reason: a pass proves the gate ran, and this proves
@@ -117,13 +123,13 @@ jobs:
       # BOTH workspaces are named. `tests/rust-gate.sh` with no argument takes
       # both; a future default that quietly took one would leave the second
       # crate shipping unchecked with this job still green, which is the exact
-      # failure the separate rauc-sign step here used to guard against.
+      # failure the separate mos-deploy step here used to guard against.
       - name: The Rust gate, both workspaces, in localhost/mos-build-rust-check
         run: |
           set -euo pipefail
           image="$(bash build-env/from.sh --arch=amd64 --ref LOCAL_MOS_BUILD_RUST_CHECK)"
           make os-rust-gate 2>&1 | tee /tmp/rust-gate.log
-          for w in mosd rauc-sign; do
+          for w in mosd mos-deploy; do
             grep -qF "=== rust gate: pkgs/${w} in ${image} ===" /tmp/rust-gate.log || {
               echo "error: the gate passed, but nothing said pkgs/${w} ran in ${image}." >&2
               echo "       tests/rust-gate.sh prints one such line per workspace, and it is the" >&2
@@ -131,6 +137,12 @@ jobs:
               exit 1
             }
           done
+
+      - name: Firmware record parsing and persistent attempt IO
+        run: make os-fit-records-test os-trust-domain-test
+
+      - name: Native file transactions survive interrupted IO and ENOSPC
+        run: make os-file-transaction-faults
 
   # Offline suites without Docker; DATA initialization also runs as root.
   # Each one fails loudly when it
@@ -154,7 +166,7 @@ jobs:
       - name: docs/README.md and the design tree agree, in both directions
         run: make docs-verify docs-verify-test
 
-      - name: Health gate, machine-id oneshot, and their overlay copies
+      - name: Native deployment health and boot failure handling
         run: make os-health-test
 
       - name: Debian runtime cache integrity and offline reuse
@@ -168,7 +180,7 @@ jobs:
           [ "$(id -u)" -eq 0 ] || SUDO="sudo"
           $SUDO bash tests/mos-data-layout-test.sh
 
-      - name: The STATE /etc/shadow reconciler
+      - name: The transient /etc/shadow reconciler
         run: make os-shadow-test
 
       # Here for this job's own reason: it is sh and a temp directory, and it
@@ -208,9 +220,9 @@ jobs:
           echo "Not run here (needs root or privileged docker):" >&2
           echo "  make os-dbus-policy-test   real dbus-daemon, drops to uid 65534" >&2
           echo "  make os-repart-test        privileged docker, loop devices" >&2
-          echo "  make os-image-cx3576 / os-verify-cx3576   image assembly and verification" >&2
+          echo "  make os-image / os-verify (explicit board, records and keys)   image assembly and verification" >&2
           echo "Not run here (board artifact builds; cross toolchains and BSP trees):" >&2
-          echo "  make cx3576-uboot / cx3576-kernel / cx3576-image" >&2
+          echo "  make cx3576-uboot-mos / cx3576-kernel" >&2
           echo "Not run here (bash only, needs neither bun nor docker; simply not wired yet):" >&2
           echo "  make os-shell-pipefail-lint" >&2
 
@@ -354,10 +366,15 @@ jobs:
           set -euo pipefail
           image="$(bash build-env/from.sh --ref IMAGE_BUN_1)"
           docker run --rm --label ai-agent=true \
-            -v "$PWD/update-server:/source:ro" --tmpfs /check:exec \
+            -v "$PWD:/source:ro" --tmpfs /check:exec \
             --workdir /check --entrypoint /bin/bash "$image" -c '
               set -euo pipefail
-              tar -C /source --exclude=./node_modules --exclude=./.env --exclude=./.data --exclude=./dist -cf - . | tar -xf -
+              mkdir -p update-server build shared tests
+              tar -C /source/update-server --exclude=./node_modules --exclude=./.env --exclude=./.data --exclude=./dist -cf - . | tar -C update-server -xf -
+              cp -a /source/build/src build/src
+              cp -a /source/shared/. shared/
+              cp -a /source/tests/component-contracts tests/component-contracts
+              cd update-server
               # mos-build-side: container-block -- this script runs in the digest-pinned Bun image above
               bun install --frozen-lockfile
               bun run check

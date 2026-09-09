@@ -3,7 +3,7 @@
 #
 #   bash tests/rust-gate.sh              both workspaces
 #   bash tests/rust-gate.sh mosd         pkgs/mosd only
-#   bash tests/rust-gate.sh rauc-sign    pkgs/rauc-sign only
+#   bash tests/rust-gate.sh mos-deploy    pkgs/mos-deploy only
 #
 # It runs `pkgs/<ws>/hack/check.sh` UNMODIFIED. That is the whole contract of
 # this file: the gate is those two scripts, this is the container they need, and
@@ -11,7 +11,7 @@
 # name would recreate the failure it exists to fix -- a documented gate and a
 # runnable gate that are not the same gate.
 #
-# Two workspaces, because pkgs/rauc-sign is its own `[workspace]` and
+# Two workspaces, because pkgs/mos-deploy is its own `[workspace]` and
 # `cargo clippy --workspace` from pkgs/mosd has not reached it since the split.
 # One image serves both: same compiler, same four tools, different Cargo.lock.
 #
@@ -35,7 +35,7 @@ done
 
 # The workspaces, and what each needs. Both run the same script name; only mosd
 # needs the built-in UI tree, because only its `ui-bundle` crate embeds one.
-ALL_WORKSPACES=(mosd rauc-sign)
+ALL_WORKSPACES=(mosd mos-deploy)
 WORKSPACES=()
 if [ "$#" -eq 0 ]; then
     WORKSPACES=("${ALL_WORKSPACES[@]}")

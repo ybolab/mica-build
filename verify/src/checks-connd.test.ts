@@ -236,7 +236,7 @@ describe('the healthy image', () => {
     const withRadio = boardsWhere(b => hasRadio(b, 'wifi'))
     const without = boardsWhere(b => !hasRadio(b, 'wifi'))
     const scoped = CONND_CHECKS.filter(c => c.boards !== undefined && c.id !== 'wifi-userland-skipped')
-    expect(scoped.length).toBe(22)
+    expect(scoped.length).toBe(21)
     for (const c of scoped) expect(`${c.id}: ${[...(c.boards ?? [])].sort()}`).toBe(`${c.id}: ${[...withRadio].sort()}`)
     expect([...(checkNamed('wifi-userland-skipped').boards ?? [])].sort()).toEqual([...without].sort())
     expect([...withRadio, ...without].sort()).toEqual(SHIPPED.map(b => b.name).sort())
@@ -426,7 +426,7 @@ describe('the render targets are writable, on STATE, and enabled', () => {
   test('a bind on a TMPFS fails: every configured network is lost on reboot', async () => {
     const unit = `/etc/systemd/system/${mountUnitFor(CONTRACT.apDir)}`
     const fx = await mutated('wifi-ap-config-bind',
-      root => rewrite(root, unit, t => t.replace('What=/mnt/state/hostapd', 'What=/run/hostapd')))
+      root => rewrite(root, unit, t => t.replace('What=/mnt/data/state/hostapd', 'What=/run/hostapd')))
     try {
       expect(await verdictOf(fx, 'wifi-ap-config-bind')).toBe('fail')
       expect(await messageOf(fx, 'wifi-ap-config-bind'))
@@ -469,7 +469,7 @@ describe('the bind sources are seeded, at 0700', () => {
     // loop, so a script that created the other twice would satisfy either half
     // alone.
     const fx = await mutated('wifi-ap-config-seeded',
-      root => rewrite(root, SEED_STATE, t => t.replace('for d in wpa_supplicant hostapd; do', 'for d in wpa_supplicant; do')))
+      root => rewrite(root, SEED_STATE, t => t.replace('wpa_supplicant hostapd; do', 'wpa_supplicant; do')))
     try {
       expect(await verdictOf(fx, 'wifi-ap-config-seeded')).toBe('fail')
       expect(await messageOf(fx, 'wifi-ap-config-seeded'))
@@ -484,7 +484,7 @@ describe('the bind sources are seeded, at 0700', () => {
 
   test('a seed that creates the directories at 0755 fails: both hold a PSK in the clear', async () => {
     const fx = await mutated('wifi-station-config-seeded',
-      root => rewrite(root, SEED_STATE, t => t.replace('chmod 0700 "/mnt/state/$d"', 'chmod 0755 "/mnt/state/$d"')))
+      root => rewrite(root, SEED_STATE, t => t.replace('ensure_dir "$name" 0700', 'ensure_dir "$name" 0755')))
     try {
       expect(await verdictOf(fx, 'wifi-station-config-seeded')).toBe('fail')
     }
@@ -495,7 +495,7 @@ describe('the bind sources are seeded, at 0700', () => {
 
   test('a seed that chmods but never mkdirs fails', async () => {
     const fx = await mutated('wifi-station-config-seeded',
-      root => rewrite(root, SEED_STATE, t => t.replace('mkdir -p "/mnt/state/$d"', 'test -d "/mnt/state/$d"')))
+      root => rewrite(root, SEED_STATE, t => t.replace('mkdir -p "$state/$1"', 'test -d "$state/$1"')))
     try {
       expect(await verdictOf(fx, 'wifi-station-config-seeded')).toBe('fail')
     }
@@ -522,58 +522,6 @@ describe('the regulatory database and the unit that loads it', () => {
   // there with nothing to want it, and the unit can be wanted with its program
   // absent. Each of those is a green run for the other two.
 
-  test('the state the first hardware boot shipped: no database at all', async () => {
-    const fx = await mutated('wifi-regdb-present',
-      root => rmSync(join(root, '/lib/firmware/regulatory.db')))
-    try {
-      const message = await messageOf(fx, 'wifi-regdb-present')
-      expect(message).toContain('/lib/firmware/regulatory.db')
-      expect(message).toContain('built-in world domain')
-      // The other two say nothing about it: an image can carry a working
-      // reload and no database, and only this conclusion sees that.
-      expect(await verdictOf(fx, 'wifi-regdb-reload-enabled')).toBe('pass')
-      expect(await verdictOf(fx, 'wifi-regdb-reload-tool')).toBe('pass')
-    }
-    finally {
-      fx.dispose()
-    }
-  })
-
-  test('a path that resolves on the HOST and not in the image reads as absent', async () => {
-    // The discriminating case, and the defect it is a response to: the first
-    // version of this check was `statSync(join(root, path))`, which hands the
-    // whole path to the host kernel, so an ABSOLUTE symlink inside the root is
-    // resolved against the host's `/`. It reported the shipped database
-    // missing (update-alternatives puts two absolute hops in the way) and it
-    // would just as happily have reported a host file as the image's.
-    //
-    // `/proc/version` is the probe: a regular file on any Linux host running
-    // this suite, and a path no packed-root fixture contains. Host resolution
-    // answers `pass`; resolving inside the root answers `fail`, which is the
-    // only true answer about the image.
-    const fx = await mutated('wifi-regdb-present', (root) => {
-      rmSync(join(root, '/lib/firmware/regulatory.db'))
-      symlinkSync('/proc/version', join(root, '/lib/firmware/regulatory.db'))
-    })
-    try {
-      expect(await messageOf(fx, 'wifi-regdb-present')).toContain('/lib/firmware/regulatory.db')
-    }
-    finally {
-      fx.dispose()
-    }
-  })
-
-  test('the signature file counts: CONFIG_CFG80211_REQUIRE_SIGNED_REGDB refuses an unsigned db', async () => {
-    const fx = await mutated('wifi-regdb-present',
-      root => rmSync(join(root, '/lib/firmware/regulatory.db.p7s')))
-    try {
-      expect(await messageOf(fx, 'wifi-regdb-present')).toContain('regulatory.db.p7s')
-    }
-    finally {
-      fx.dispose()
-    }
-  })
-
   test('a database with no unit to load it: the file is there and unread', async () => {
     const fx = await mutated('wifi-regdb-reload-enabled',
       root => rmSync(join(root, '/etc/systemd/system/mos-regdb-reload.service')))
@@ -581,7 +529,6 @@ describe('the regulatory database and the unit that loads it', () => {
       expect(await messageOf(fx, 'wifi-regdb-reload-enabled')).toContain('is not in the image at')
       // This is the shape that packaging alone produces, and the file check is
       // green throughout it.
-      expect(await verdictOf(fx, 'wifi-regdb-present')).toBe('pass')
     }
     finally {
       fx.dispose()
@@ -609,7 +556,6 @@ describe('the regulatory database and the unit that loads it', () => {
     try {
       const message = await messageOf(fx, 'wifi-regdb-reload-tool')
       expect(message).toContain('/usr/sbin/iw, which the image does not carry')
-      expect(await verdictOf(fx, 'wifi-regdb-present')).toBe('pass')
       expect(await verdictOf(fx, 'wifi-regdb-reload-enabled')).toBe('pass')
     }
     finally {

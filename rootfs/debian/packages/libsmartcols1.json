@@ -9,7 +9,6 @@
       "consumers": [
         "base",
         "mos-bluetooth",
-        "mos-rauc",
         "mos-system",
         "mos-wifi",
         "mos-wifi-ap"
@@ -23,7 +22,6 @@
       "consumers": [
         "base",
         "mos-bluetooth",
-        "mos-rauc",
         "mos-system",
         "mos-wifi",
         "mos-wifi-ap"

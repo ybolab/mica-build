@@ -2,7 +2,7 @@
 // FILE_MTIME, in place, in a finished filesystem.
 //
 // Only a filesystem seeded with `mke2fs -d` needs it, and it is the difference
-// between "EPHEMERAL is seeded" and "EPHEMERAL rebuilds byte-identically":
+// between "the seeded filesystem is seeded" and "the seeded filesystem rebuilds byte-identically":
 // without it two builds differ in 106 bytes of the inode table, spanning every
 // inode the seed created.
 // mtime is deliberately left alone -- it is the producer's data, carried in
@@ -21,14 +21,14 @@ import { debugfsApply, dumpe2fsFull, dumpe2fsHeader } from './tools/e2fsprogs.ts
 // and two of the three are the assembler's noise rather than the exported
 // tree's content:
 //
-//   ctime  The assembler copies the factory /var out of _out before seeding, so
+//   ctime  The assembler copies a source tree into staging before seeding, so
 //          the stamp can be added without writing into _out, and the kernel
 //          stamps every copied inode's ctime with the moment of that copy. NO
 //          syscall sets ctime -- not touch, not utimensat -- so the only way to
 //          pin it is to write the inode table, which is what this does.
 //   atime  cp -a preserves the source's atime, and reading the source to make
 //          the first copy is itself what bumps it under relatime, so assembly 2
-//          seeds EPHEMERAL with a timestamp assembly 1 created and the two
+//          seeds the seeded filesystem with a timestamp assembly 1 created and the two
 //          images differ in a field neither build was asked about.
 
 export interface PinnedTimes {

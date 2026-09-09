@@ -16,8 +16,7 @@
       "sha256": "fe973f6467a6fc553ead004bd5aebfea4eb45c5da827cd3fb32650d9672ac947",
       "url": "https://snapshot.debian.org/archive/debian/20260905T000000Z/pool/main/a/alsa-lib/libasound2-data_1.2.14-1_all.deb",
       "consumers": [
-        "mos-bluetooth",
-        "mos-board-s905x5m"
+        "mos-bluetooth"
       ]
     }
   }

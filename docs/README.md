@@ -1,6 +1,41 @@
 # mos documentation
 
-> English | [中文](zh/README.md)
+> English | [中文用户指南](zh/README.md)
+
+Current development images use signed file deployments managed by `mos-deploy`.
+There is no RAUC or lode update runtime. Each acceptance sequence starts from a
+complete current image. The [architecture](architecture.md) maps the components;
+the [delivery record](task/20260908-2229-file-ab-delivery-x64-first.md) records
+tested artifacts and the remaining cx3576 physical acceptance.
+
+## Start with a task
+
+| I need to… | Read |
+|---|---|
+| Build and boot a device | [Quickstart](user/quickstart.md), [build guide](design/build.md), [installation](user/install.md) |
+| Understand upgrade and rollback | [Operator guide](user/update-rollback.md), [deployment lifecycle](design/updates.md), [trust](design/release-signing.md) |
+| Understand disk layout and recovery | [Storage](design/storage.md), [immutable root](design/ro-root.md), [reset/recovery](design/recovery.md) |
+| Develop the API or UI | [API contract](design/api.md), [dashboard](design/dashboard.md), [OpenAPI](../pkgs/mosd/apid/openapi.json) |
+| Integrate an application | [Native applications](design/native-applications.md), [containers](design/containers.md), [bus](design/bus.md) |
+| Build, verify or publish artifacts | [Check harness](design/build-harness.md), [release directory](design/release-artifacts.md), [key delivery](design/key-delivery.md) |
+| Port or qualify a board | [Porting](bsp/porting.md), [qualification](bsp/qualification.md), [cx3576 bench](bsp/cx3576-bench.md) |
+| Find work status or a decision | [Tasks](task/index.md), [plans](plan/index.md), `decisions/`, [changelog](changelog.md) |
+
+## Document ownership
+
+`architecture.md` is the system map. `design/` owns engineering contracts;
+unimplemented requirements are labeled and their execution belongs in `plan/`
+and `task/`. `user/` owns operator instructions, `bsp/` owns board evidence and
+qualification, and `website/` owns publication copy and its claim limits.
+The generated OpenAPI file owns route/schema detail.
+
+Chinese user guides are maintained under `zh/user/`; retained translations link
+to their English source. Superseded engineering translations and prototypes are
+removed instead of remaining beside current instructions. Historical decisions
+are available in the changelog and Git history. A closed task may be removed
+with its index row after its outcome and replacement are recorded.
+
+## Complete catalog
 
 - `architecture.md` — top-level system architecture and component map (start here)
 - `design/` — subsystem design records
@@ -16,15 +51,15 @@
   - `native-applications.md` — integrator's guide to the native path: the `.deb` producer, the unit and what starts it, dedicated accounts, writable state, the health gate, named devices, ceilings, and what the A/B lifecycle does and does not roll back
   - `ro-root.md` — read-only root: squashfs + dm-verity rootfs pack and boot wiring
   - `storage.md` — fixed storage tiers and media: status surface, wear reporting, low-space policy, the reserved update workspace and the explicit data-lifecycle decisions
-  - `uboot-ab-handshake.md` — A/B boot-order contract between U-Boot, RAUC and the health gate
-  - `dashboard.md` — dashboard proposal: landing screen, IA, technology posture, process architecture
-  - `api.md` — API-first apid: current HTTP/bus surface, proposed API, static hosting, replaceable UI
+  - `uboot-ab-handshake.md` — cx3576 signed FIT selection, redundant native records and health confirmation
+  - `dashboard.md` — current React dashboard: navigation, state, actions and development gate
+  - `api.md` — current management API: ownership, authentication, tasks and isolated UI hosting
   - `bsp-cx3576-sync.md` — cx3576 upstream BSP: source repo, synced commit, deviation register
   - `bus.md` — management/application boundary, package-enrolled `com.mos.Item1` applications, D-Bus policy and MQTT grammar
-  - `release-signing.md` — production key ceremonies: TUF root, RAUC CA, bundle signing runbook
+  - `release-signing.md` — independent boot/content/metadata trust, rotation and firmware maintenance
   - `key-delivery.md` — key handover: what the ceremonies produce, what may travel and what never does, the delivery form this tree does not define, and the checks a recipient runs before building
   - `updates.md` — device update lifecycle: state model, update policy file, maintenance/metered/offline rules, safe-to-reboot gate, operator procedures, fault-test evidence
-  - `recovery.md` — recovery design: the four reset tiers and what each clears, the data-preserving-first decision tree, the physical-presence contract, credential rotation rather than disclosure, both-slots-failed and the non-destructive repair tier
+  - `recovery.md` — three reset tiers, interrupted retry, credential/presence gates and shared-store recovery limits
   - `release-artifacts.md` — the release directory: manifest schema, SHA256SUMS/SBOM/provenance/licenses, publication gate, customer verification procedure
   - `security-model.md` — threat and physical-access boundaries per concern, the I1–I4 boot-assurance ladder, honest limits
   - `security-lifecycle.md` — key/credential lifecycles with owner roles, release channels and custody, support windows, security response
@@ -68,33 +103,18 @@
   - `s905x5m.md` — board dossier: BM201 / S905X5M mainline adaptation and qualification boundary
   - `cx3576-example.md` — the filled dossier instance for the cx3576 board
   - `cx3576-bench.md` — the cx3576 bench session: stage order and assumptions, the scriptable/human split per row, the power-cut window, and the collector that writes the dossier's rows
-  - `virt-arm64.md` — board dossier: the QEMU aarch64 virt machine, a test target with no release path
+  - `virt-arm64.md` — board dossier: ARM64 UEFI/QEMU signed-file image and its evidence boundary
   - `qualification.md` — field-reliability qualification: the matrix and its binding rules
   - `assurance.md` — boot assurance ladder (I1–I4) and what each level requires
   - `support-tiers.md` — board support tiers: claims about evidence and ownership
 - `research/` — research notes: external products read as benchmarks, not part of the design record
   - `venus-gui-v2.md` — Venus OS gui-v2 functional reference, source-read, mapped to apid/dashboard owners
-- `plan/` — PMA plans (numbered, with status index)
+- `plan/` — approved proposals and remaining acceptance, with a status index
 - `task/` — PMA task tracking
-- `zh/` — Chinese documentation, written against the current version
+- `zh/` — current Chinese user guides and retained engineering translations
 
-Rules. `architecture.md` and `design/` are the English design record and are
-authoritative; `user/`, `website/` and `bsp/` are the shipped documentation,
-website and board sets; `zh/` carries the Chinese documentation and yields to
-the English on conflict. Those are the documents that ship, and
-`docs/README.md` is asserted against `design/`, `user/`, `website/` and `bsp/`
-in both directions by `make docs-verify`, so a new page in any gated
-directory needs its row here in the same commit.
-
-`plan/` and `task/` are PMA process tracking, not product: English only,
-following the PMA lifecycle (investigate -> proposal -> implement), and a
-record is deleted when it closes. They carry no index gate, because the set one
-would assert is empty or nearly so.
-
-These documents describe design and behaviour. They do not cite code by line
-and do not narrate implementations statement by statement, because a document
-coupled to line numbers is falsified by edits that leave its design intact.
-Where a precise contract is needed, the artifact that carries it is named
-instead: the HTTP surface is specified by `pkgs/mosd/apid/openapi.json`,
-which CI holds equal to what the shipped binary prints, and the rest lives in
-the code the document points at by module.
+`make docs-verify` checks catalog membership in both directions, internal links,
+truth-status evidence and translation coverage. Add or remove a catalog row in
+the same change as its document. Keep test transcripts and implementation
+chronology in delivery records; permanent guides describe behavior and runnable
+entry points.

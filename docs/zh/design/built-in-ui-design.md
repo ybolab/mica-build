@@ -802,7 +802,7 @@ key、serial 或客户数据。
 - Venus 研究只贡献本地/远程共用信息模型、freshness、configured/observed、quick control、一致 settings row、
   screen class 等抽象模式；
 - Applications 的信任、manifest、存储和生命周期边界由 `docs/design/applications.md` 定义；
-- 当前实现与开发裁剪规则由 `docs/zh/design/built-in-ui-development-guide.md` 维护；
+- 当前实现与开发裁剪规则由 `docs/design/dashboard.md` 维护；
 - 安装、release、time、update、recovery、storage、diagnostics、安全、fleet 等路线图分别由 PLAN-042～057
   记录。
 

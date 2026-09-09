@@ -1,28 +1,23 @@
+import type { z } from '@hono/zod-openapi'
+import type { Artifact } from '../../../build/src/components'
 import type { Config } from '../config'
 import type { Store } from '../db'
 import type { Release } from '../db/schema'
+import type { releaseInput } from './contract'
 import type { Signer } from './signing'
-import { createHash, randomUUID } from 'node:crypto'
-import { open, rename, unlink } from 'node:fs/promises'
-import { join } from 'node:path'
+import { Buffer } from 'node:buffer'
+import { randomUUID } from 'node:crypto'
 import { and, desc, eq, isNotNull } from 'drizzle-orm'
-import { z } from 'zod'
-import { audit, catalogs, releases } from '../db/schema'
+import { authenticateDeployment, canonicalJson, componentId } from '../../../build/src/components'
+import { audit, catalogs, firmware, objects, releaseObjects, releases } from '../db/schema'
 import { AppError } from '../shared/errors'
-
-export const releaseInput = z.strictObject({
-  board: z.enum(['cx3576', 'x64']),
-  channel: z.enum(['stable', 'beta', 'dev']),
-  version: z.string().min(1).max(80).regex(/^[\w.+-]+$/),
-  epoch: z.number().int().min(1).max(Number.MAX_SAFE_INTEGER),
-  notes: z.string().max(10000).default(''),
-})
+import { acceptObject, verifyStoredObject } from './objects'
 
 export class ReleaseService {
-  constructor(readonly store: Store, readonly config: Config, readonly signer: Signer) {}
+  constructor(readonly store: Store, readonly config: Config, readonly signer: Signer, readonly publicKeys: readonly string[]) {}
 
   list() {
-    return this.store.db.select().from(releases).orderBy(desc(releases.epoch), desc(releases.createdAt)).all()
+    return this.store.db.select().from(releases).orderBy(desc(releases.generation), desc(releases.createdAt)).all()
   }
 
   get(id: string): Release {
@@ -32,81 +27,71 @@ export class ReleaseService {
     return release
   }
 
+  required(id: string) {
+    return this.store.db.select().from(releaseObjects).where(eq(releaseObjects.releaseId, id)).all()
+  }
+
+  view(release: Release) {
+    return { ...release, objects: this.required(release.id).map(({ sha256, bytes }) => ({
+      sha256,
+      bytes,
+      available: !!this.store.db.select().from(objects).where(eq(objects.sha256, sha256)).get(),
+    })) }
+  }
+
   log(action: string, releaseId: string | null, detail: string) {
     this.store.db.insert(audit).values({ action, releaseId, detail, createdAt: new Date().toISOString() }).run()
   }
 
   create(input: z.infer<typeof releaseInput>) {
+    let d
+    try {
+      d = authenticateDeployment(input.deployment, this.publicKeys)
+    }
+    catch { throw new AppError(400, 'invalid_deployment', 'Invalid deployment component metadata') }
+    const required = new Map<string, Artifact>()
+    for (const artifact of [d.kernel.boot.artifact, d.kernel.support.image, d.kernel.support.signature, d.rootfs.content.image, d.rootfs.content.signature]) {
+      if (required.has(artifact.sha256) && required.get(artifact.sha256)!.bytes !== artifact.bytes)
+        throw new AppError(400, 'conflicting_object', 'A digest has conflicting object lengths')
+      if (artifact.bytes > this.config.maxUploadBytes)
+        throw new AppError(413, 'upload_too_large', 'A component exceeds the upload limit')
+      required.set(artifact.sha256, artifact)
+    }
     return this.store.db.transaction(() => {
-      const existing = this.store.db.select().from(releases).where(and(eq(releases.board, input.board), eq(releases.channel, input.channel), eq(releases.epoch, input.epoch))).get()
+      const existing = this.store.db.select().from(releases).where(and(eq(releases.board, d.board), eq(releases.channel, input.channel), eq(releases.generation, d.generation))).get()
       if (existing)
-        throw new AppError(409, 'duplicate_epoch', 'This board/channel epoch already exists')
+        throw new AppError(409, 'duplicate_generation', 'This board/channel generation already exists')
       const id = randomUUID()
-      this.store.db.insert(releases).values({ ...input, id, status: 'draft', createdAt: new Date().toISOString() }).run()
-      this.log('create', id, `${input.board} / ${input.channel} / ${input.version}`)
-      return this.get(id)
+      this.store.db.insert(releases).values({ id, board: d.board, arch: d.arch, channel: input.channel, version: d.version, generation: d.generation, deploymentId: componentId(d), deployment: input.deployment, notes: input.notes, status: 'draft', createdAt: new Date().toISOString() }).run()
+      this.store.db.insert(releaseObjects).values([...required.values()].map(artifact => ({ releaseId: id, ...artifact }))).run()
+      this.log('create', id, `${d.board} / ${input.channel} / ${d.version}`)
+      return this.view(this.get(id))
     }, { behavior: 'immediate' })
   }
 
-  async upload(id: string, request: Request) {
+  async upload(id: string, digest: string, request: Request) {
     const release = this.get(id)
-    if (release.status !== 'draft' || release.artifact)
-      throw new AppError(409, 'immutable_artifact', 'Only an empty draft accepts an artifact')
-    if (request.headers.get('content-type')?.split(';')[0] !== 'application/octet-stream')
-      throw new AppError(415, 'content_type', 'Upload application/octet-stream bytes')
-    const declared = request.headers.get('content-length')
-    if (declared && (!/^\d+$/.test(declared) || Number(declared) > this.config.maxUploadBytes))
-      throw new AppError(413, 'upload_too_large', 'Artifact exceeds the upload limit')
-    if (!request.body)
-      throw new AppError(400, 'empty_artifact', 'Artifact must not be empty')
-    const name = `${randomUUID()}.raucb`
-    const destination = join(this.config.dataDir, 'artifacts', name)
-    const temporary = `${destination}.part`
-    const file = await open(temporary, 'wx', 0o600)
-    const hasher = createHash('sha256')
-    let size = 0
-    let renamed = false
-    let committed = false
-    try {
-      for await (const chunk of request.body) {
-        size += chunk.byteLength
-        if (size > this.config.maxUploadBytes)
-          throw new AppError(413, 'upload_too_large', 'Artifact exceeds the upload limit')
-        hasher.update(chunk)
-        await file.writeFile(chunk)
-      }
-      if (!size)
-        throw new AppError(400, 'empty_artifact', 'Artifact must not be empty')
-      if (declared && size !== Number(declared))
-        throw new AppError(400, 'length_mismatch', 'Artifact size differs from Content-Length')
-      await file.sync()
-      await file.close()
-      await rename(temporary, destination)
-      renamed = true
-      const directory = await open(join(this.config.dataDir, 'artifacts'), 'r')
-      try {
-        await directory.sync()
-      }
-      finally {
-        await directory.close()
-      }
-      const sha256 = hasher.digest('hex')
-      const result = this.store.db.transaction(() => {
-        const current = this.get(id)
-        if (current.status !== 'draft' || current.artifact)
-          throw new AppError(409, 'immutable_artifact', 'The draft already has an artifact')
-        this.store.db.update(releases).set({ artifact: name, sha256, size }).where(eq(releases.id, id)).run()
-        this.log('upload', id, `${size} bytes / ${sha256}`)
-        return this.get(id)
-      }, { behavior: 'immediate' })
-      committed = true
-      return result
-    }
-    finally {
-      await file.close()
-      if (!committed)
-        await unlink(renamed ? destination : temporary)
-    }
+    const expected = this.required(id).find(object => object.sha256 === digest)
+    if (!expected)
+      throw new AppError(400, 'unlisted_object', 'Object is not bound by this deployment')
+    if (release.status !== 'draft' || this.store.db.select().from(objects).where(eq(objects.sha256, digest)).get())
+      throw new AppError(409, 'immutable_object', 'Only a missing draft object can be uploaded')
+    await acceptObject(this.config, expected, request)
+    return this.store.db.transaction(() => {
+      if (this.get(id).status !== 'draft' || this.store.db.select().from(objects).where(eq(objects.sha256, digest)).get())
+        throw new AppError(409, 'immutable_object', 'Object has already been uploaded')
+      this.store.db.insert(objects).values({ sha256: digest, bytes: expected.bytes, createdAt: new Date().toISOString() }).run()
+      this.log('upload', id, `${expected.bytes} bytes / ${digest}`)
+      return this.view(this.get(id))
+    }, { behavior: 'immediate' })
+  }
+
+  downloadable(digest: string) {
+    const object = this.store.db.select({ sha256: objects.sha256, bytes: objects.bytes }).from(objects).innerJoin(releaseObjects, eq(releaseObjects.sha256, objects.sha256)).innerJoin(releases, eq(releases.id, releaseObjects.releaseId)).where(and(eq(objects.sha256, digest), eq(releases.status, 'published'))).get()
+    const maintenance = object ? undefined : this.store.db.select({ sha256: objects.sha256, bytes: objects.bytes }).from(objects).innerJoin(firmware, eq(firmware.artifactSha256, objects.sha256)).where(and(eq(objects.sha256, digest), eq(firmware.status, 'published'))).get()
+    if (!object && !maintenance)
+      throw new AppError(404, 'not_found', 'Object not found')
+    return (object ?? maintenance)!
   }
 
   catalog() {
@@ -122,28 +107,17 @@ export class ReleaseService {
     const issuedAt = new Date().toISOString()
     const expiresAt = new Date(Date.now() + this.config.metadataTtlHours * 3600000).toISOString()
     const published = this.list().filter(release => release.status === 'published')
-    const channels: { board: string, channel: string, releaseId: string, epoch: number }[] = []
+    if (published.length > 128)
+      throw new AppError(409, 'catalog_full', 'Withdraw older releases before publishing more metadata')
+    const channels: { board: string, channel: string, releaseId: string, generation: number }[] = []
     for (const release of published) {
       if (!channels.some(item => item.board === release.board && item.channel === release.channel))
-        channels.push({ board: release.board, channel: release.channel, releaseId: release.id, epoch: release.epoch })
+        channels.push({ board: release.board, channel: release.channel, releaseId: release.id, generation: release.generation })
     }
-    const payload = {
-      schema: 'mos/updates/v1',
-      revision,
-      issuedAt,
-      expiresAt,
-      channels,
-      releases: published.map(release => ({
-        id: release.id,
-        board: release.board,
-        channel: release.channel,
-        version: release.version,
-        epoch: release.epoch,
-        notes: release.notes,
-        artifact: { url: `${this.config.publicUrl}/v1/artifacts/${release.id}`, size: release.size, sha256: release.sha256 },
-      })),
-    }
-    const record = { id: 1, revision, issuedAt, expiresAt, envelope: JSON.stringify(this.signer.sign(payload)) }
+    const payload = canonicalJson({ schema: 'mos/catalog/v1', revision, issuedAt, expiresAt, channels, releases: published.map(release => ({ id: release.id, channel: release.channel, notes: release.notes, deployment: release.deployment, objects: this.required(release.id).map(({ sha256, bytes }) => ({ sha256, bytes, url: `${this.config.publicUrl}/v1/objects/${sha256}` })) })) })
+    if (Buffer.byteLength(payload) > 1048576)
+      throw new AppError(409, 'catalog_full', 'Withdraw older releases before publishing more metadata')
+    const record = { id: 1, revision, issuedAt, expiresAt, envelope: JSON.stringify(this.signer.sign(JSON.parse(payload))) }
     this.store.db.insert(catalogs).values(record).onConflictDoUpdate({ target: catalogs.id, set: record }).run()
     return record
   }
@@ -156,15 +130,24 @@ export class ReleaseService {
     }, { behavior: 'immediate' })
   }
 
-  transition(id: string, action: 'publish' | 'withdraw') {
+  async transition(id: string, action: 'publish' | 'withdraw') {
+    if (action === 'publish') {
+      const release = this.get(id)
+      try {
+        authenticateDeployment(release.deployment, this.publicKeys)
+      }
+      catch { throw new AppError(409, 'invalid_deployment', 'Deployment no longer has a trusted signature') }
+      for (const expected of this.required(id))
+        await verifyStoredObject(this.store, this.config, expected)
+    }
     return this.store.db.transaction(() => {
       const release = this.get(id)
       if (action === 'publish') {
-        if (release.status !== 'draft' || !release.artifact)
-          throw new AppError(409, 'not_publishable', 'Only a draft with an artifact can be published')
-        const previous = this.store.db.select().from(releases).where(and(eq(releases.board, release.board), eq(releases.channel, release.channel), isNotNull(releases.publishedAt))).orderBy(desc(releases.epoch)).get()
-        if (previous && release.epoch <= previous.epoch)
-          throw new AppError(409, 'epoch_not_increasing', 'Epoch must exceed every previously published epoch in this board/channel')
+        if (release.status !== 'draft')
+          throw new AppError(409, 'not_publishable', 'Only a complete draft can be published')
+        const previous = this.store.db.select().from(releases).where(and(eq(releases.board, release.board), eq(releases.channel, release.channel), isNotNull(releases.publishedAt))).orderBy(desc(releases.generation)).get()
+        if (previous && release.generation <= previous.generation)
+          throw new AppError(409, 'generation_not_increasing', 'Generation must exceed every previously published generation in this board/channel')
         this.store.db.update(releases).set({ status: 'published', publishedAt: new Date().toISOString() }).where(eq(releases.id, id)).run()
       }
       else {
@@ -174,7 +157,7 @@ export class ReleaseService {
       }
       this.refreshCatalog()
       this.log(action, id, `${release.board} / ${release.channel} / ${release.version}`)
-      return this.get(id)
+      return this.view(this.get(id))
     }, { behavior: 'immediate' })
   }
 }

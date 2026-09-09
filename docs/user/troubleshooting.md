@@ -21,7 +21,7 @@ In order of preference:
 3. **The serial console** — present on cx3576 (`ttyFIQ0`, 1500000 baud) and
    shows a login prompt, but no account accepts a credential until a transient
    root password has been set. It is primarily useful for *reading* the boot:
-   U-Boot's slot decisions and kernel output appear there.
+   firmware deployment decisions and kernel output appear there.
 
 The full access model, including what each channel can and cannot do, is
 [../design/access.md](../design/access.md).
@@ -36,7 +36,7 @@ The full access model, including what each channel can and cannot do, is
 read: machine id, board model and the firmware source it was read from,
 kernel release, the `os-release` fields, the system version carrying the
 package pool's git stamp and the build date, the daemon's own version, the
-installed package set, the booted RAUC slot with its bundle version and boot
+installed package set, the running signed deployment with its component identities and boot
 status, and uptime. Every member says whether it was available and, when it
 was not, why — a package manifest whose mos rows disagree reports the
 disagreement and every stamp it found rather than picking one. Quote that read
@@ -70,9 +70,10 @@ escalation carrying the board identity, never a green result.
   is reported at live-state `health.units` and read with `GET
   /api/v1/state/health` or out of a diagnostic snapshot. What the gate requires
   is `/etc/mos/health.conf`, inside the read-only root.
-- **Update state:** RAUC's slot status (booted slot, per-slot state, last
-  install error) is readable through the management daemon's state and with
-  `rauc status` in a shell.
+- **Update state:** `mos-deploy status` reports current/candidate/fallback
+  deployments, attempt state, component verification and failed deployments.
+  Capture `GET /api/v1/update` for the management view as well.
+
 - **Containers:** the failure table in
   [../design/containers.md](../design/containers.md) covers the common cases —
   unit missing after adding a file (`systemctl daemon-reload`; the Quadlet
@@ -138,7 +139,7 @@ degrading, so the refusal text is the diagnosis:
   from a different commit each name the exact `make` target to run; the
   build-failure table in [../design/build.md](../design/build.md) maps the
   common messages to actions.
-- `make os-verify-cx3576` (and the x64 equivalent) checks an assembled image
+- `make os-verify` (and the x64 equivalent) checks an assembled image
   against the image contract check by check; a red check names what it read
   and what it expected. An image built on a generated trust root verifies like
   any other; the keyring check states which grade of material it read, and that
@@ -148,7 +149,7 @@ The rule of thumb: a mos refusal is designed to be quoted verbatim to support
 or into an issue; do not work around it, because the checks exist to stop
 artifacts that pass everything and fail on hardware.
 
-> status: shipped — evidence: `docs/design/build.md`, `make os-verify-cx3576`
+> status: shipped — evidence: `docs/design/build.md`, `make os-verify`
 
 ## 6. The support snapshot
 
@@ -186,6 +187,6 @@ reboot — each branching on the snapshot member that decides it.
 
 ## 7. When to stop diagnosing
 
-A device in a reboot loop with both slots exhausted, or one whose credentials
+A device in a reboot loop with all deployments exhausted, or one whose credentials
 are lost, is past troubleshooting: go to [recovery.md](recovery.md), and
 capture what evidence you can first.

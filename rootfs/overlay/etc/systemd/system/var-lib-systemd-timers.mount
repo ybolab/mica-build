@@ -1,0 +1,16 @@
+[Unit]
+Description=Writable /var/lib/systemd/timers on DATA
+DefaultDependencies=no
+Requires=mos-seed-state.service
+After=mos-seed-state.service
+Before=timers.target local-fs.target shutdown.target
+Conflicts=shutdown.target
+
+[Mount]
+What=/mnt/data/state/timers
+Where=/var/lib/systemd/timers
+Type=none
+Options=bind,nosuid,nodev
+
+[Install]
+WantedBy=local-fs.target

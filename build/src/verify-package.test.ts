@@ -18,7 +18,7 @@ import { describe, expect, test } from 'bun:test'
 import { readdirSync, readFileSync } from 'node:fs'
 import { join, relative } from 'node:path'
 import { boardEnvPath, PACKAGE_DIR, SRC_DIR, VERIFY_PACKAGE_DIR } from './paths.ts'
-import { boardNameForPath, KNOWN_ROLES, loadBoard, parseBoardEnv } from './verify-package.ts'
+import { parseBoardEnv } from './verify-package.ts'
 
 /**
  * Every .ts file in this package's src/, recursively.
@@ -55,19 +55,9 @@ describe('build imports the model rather than owning a copy', () => {
     expect(files.map(f => relative(SRC_DIR, f.path))).toContain('verify-package.ts')
   })
 
-  test('the imported module IS verify/src/board.ts, by identity', async () => {
-    // Not "a function called loadBoard exists". Bun keys its module cache on
-    // the RESOLVED path, so importing the absolute path of verify's own
-    // source yields the same module object if and only if it is the same file.
-    // A copy under build would give an equal-looking function that is a
-    // different object, and this is what tells the two apart.
-    const direct = await import(join(VERIFY_PACKAGE_DIR, 'src', 'board.ts'))
-    expect(direct.loadBoard).toBe(loadBoard)
-    expect(direct.boardNameForPath).toBe(boardNameForPath)
-    expect(direct.KNOWN_ROLES).toBe(KNOWN_ROLES)
-
-    const directEnv = await import(join(VERIFY_PACKAGE_DIR, 'src', 'board-env.ts'))
-    expect(directEnv.parseBoardEnv).toBe(parseBoardEnv)
+  test('the imported parser is the shared board-env module', async () => {
+    const direct = await import(join(VERIFY_PACKAGE_DIR, 'src', 'board-env.ts'))
+    expect(direct.parseBoardEnv).toBe(parseBoardEnv)
   })
 
   test('exactly one file in this package names the other package', () => {
@@ -108,14 +98,11 @@ describe('build imports the model rather than owning a copy', () => {
     expect(/(?:export\s+)?function\s+parseBoardEnv\b/.test('// parseBoardEnv is imported')).toBe(false)
   })
 
-  test('and the model that arrives through it reads a real board', () => {
-    // The boundary is only worth having if what crosses it works. Both shipped
-    // boards are exercised properly in geometry.test.ts; this is the smoke test
-    // that the re-export is wired to something live.
-    const board = loadBoard(boardEnvPath('x64'))
-    expect(board.name).toBe('x64')
-    expect(board.partitions.length).toBe(9)
-    expect(board.bootloader).toBe('grub')
+  test('the shared parser reads the current board definition', () => {
+    const env = parseBoardEnv(readFileSync(boardEnvPath('x64'), 'utf8'), 'board.env').values
+    expect(env.get('LAYOUT_VERSION')).toBe('3')
+    expect(env.get('LAYOUT_PARTITIONS')).toBe('ESP SYSTEM DATA')
+    expect(env.get('BOOT_BACKEND')).toBe('systemd-boot')
   })
 
   test('this package installs its own dependencies and does not reach into the other one', () => {

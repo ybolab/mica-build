@@ -4,7 +4,7 @@
 // verify has one of these for bun (verify/run.sh's run_bun: two routes,
 // one function, callers that cannot tell which answered). This is the same
 // shape one level down, for the toolset the assemblers drive -- sgdisk, mtools,
-// dd, mkimage, veritysetup, e2fsprogs and rauc.
+// dd, mkimage, veritysetup and e2fsprogs.
 //
 // Nothing here swallows a failure. run() returns the exit status, stdout and
 // stderr, and decides nothing; must() throws a ToolError carrying all of it
@@ -18,7 +18,7 @@ import { resolveImage } from './images.ts'
 
 // THERE IS ONE ROUTE, AND IT IS THE CONTAINER. Every tool this file runs is a
 // producer by docs/design/build.md section 0 -- sgdisk, mtools, mke2fs,
-// mkimage, veritysetup, rauc -- so its own build decides the bytes of the
+// mkimage, veritysetup -- so its own build decides the bytes of the
 // image, and the image is what ships. A host route would make "which tool
 // wrote these bytes" a property of the machine that happened to run the build.
 //
@@ -54,53 +54,19 @@ export type RouteKind = 'host' | 'container'
 /** How a toolset's packages are installed, which differs by base image family. */
 export type PackageManager = 'apk' | 'apt'
 
-/** A host binary carried into the container, the way the bundle contract installs its rauc. */
-export interface CarriedFile {
-  readonly from: string
-  readonly to: string
-  readonly mode: string
-}
-
 export interface Toolset {
   /** Short name, used in the announce line and in container names. */
   readonly key: string
   /** The build-env/images.env key naming the base image. Never a literal reference. */
   readonly imageKey: string
   readonly manager: PackageManager
-  /**
-   * A dpkg foreign architecture to enable before apt runs, when a package this
-   * toolset needs is not in the base image's own index.
-   *
-   * apt only, and there is exactly one caller: the arm64 UEFI assembly needs
-   * grub-efi-arm64-bin, which is `Architecture: arm64` and therefore absent
-   * from an amd64 index. The package is DATA -- a tree of grub modules, no
-   * executable -- so installing it foreign is not emulation and nothing from it
-   * is ever run; the tool that reads it is the base image's own
-   * grub-mkstandalone.
-   *
-   * Undefined on every other toolset, and that is the statement: a toolset that
-   * does not name one installs from its base image's index alone.
-   */
-  readonly foreignArch?: string
   /** Exactly the packages the shell installs today. See each toolset's note in src/toolsets.ts. */
   readonly packages: readonly string[]
   /** Every binary this toolset must provide, asserted inside the container after open(). */
   readonly tools: readonly string[]
-  /** Host binaries copied in, e.g. the self-built rauc. */
-  readonly carry?: readonly CarriedFile[]
   /** Environment every call in this toolset gets, e.g. E2FSPROGS_FAKE_TIME. */
   readonly env?: Readonly<Record<string, string>>
-  /**
-   * Where this toolset's tools came from, when that decides what it may DO.
-   *
-   * One tool uses it: rauc. A bundle is written by one rauc and installed by
-   * another on the device, and they are not compatible by accident -- so
-   * src/tools/rauc.ts refuses a bundle-writing
-   * call unless this says 'shipped'. It lives on the toolset rather than being
-   * inferred from `carry`, because "this binary is the one this tree built" is
-   * a claim the toolset makes, not something a file path can prove.
-   */
-  readonly provenance?: 'shipped' | 'distro'
+
 }
 
 export interface ToolResult {
@@ -180,8 +146,7 @@ export interface RunOptions {
 }
 
 // NO STDIN. Every tool in this toolset takes its input as a FILE and says so on
-// its command line -- dd's if=, mkimage's -d, debugfs's -f, mcopy's source,
-// rauc's bundle directory. Offering a stdin here would add a second way to hand
+// its command line -- dd's if=, mkimage's -d, debugfs's -f and mcopy's source. Offering a stdin here would add a second way to hand
 // a tool its input, and the one place it looks tempting (debugfs, which reads a
 // command script) is exactly where the shell writes a file too: pin_seeded_times
 // builds "${img}.times" and passes `-f`. A path is also the only form that
@@ -246,7 +211,7 @@ export class Toolbox {
     // infinity` would outlive a SIGKILLed session forever, and this campaign's
     // sessions are killed by account limits often enough to have a rule about
     // committing in stages.
-    const start = await $`${docker} run -d --rm --name ${container} ${mountArgs} --entrypoint sleep ${image} 3600`
+    const start = await $`${docker} run -d --rm --label ai-agent=true --network traefik --name ${container} ${mountArgs} --entrypoint sleep ${image} 3600`
       .nothrow().quiet()
     if (start.exitCode !== 0) {
       throw new Error(
@@ -257,19 +222,12 @@ export class Toolbox {
 
     try {
       if (toolset.packages.length > 0) {
-        // BEFORE `apt-get update`, not after: the foreign architecture has to
-        // be enabled while the indexes are fetched or apt fetches only the
-        // native one and the package is reported unavailable rather than
-        // missing an architecture.
-        const addArch = toolset.foreignArch === undefined
-          ? ''
-          : `dpkg --add-architecture ${toolset.foreignArch} && `
         const install = toolset.manager === 'apk'
           ? ['sh', '-c', `apk add --no-cache -q ${toolset.packages.join(' ')}`]
           : [
               'sh',
               '-c',
-              `${addArch}apt-get update -qq >/dev/null && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq `
+              `apt-get update -qq >/dev/null && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq `
               + `--no-install-recommends ${toolset.packages.join(' ')} >/dev/null`,
             ]
 
@@ -309,27 +267,6 @@ export class Toolbox {
             + `  stdout:   ${installed.stdout.trimEnd() || '(empty)'}\n`
             + `  note:     apk reports a failed index FETCH as "no such package", so that sentence is `
             + `not evidence the package is absent -- three attempts are.`,
-          )
-        }
-      }
-
-      for (const file of toolset.carry ?? []) {
-        // docker cp rather than a bind mount: the file is an INPUT that has to
-        // be on PATH inside, which a mount cannot arrange. The bundle toolset
-        // installs its shipped rauc into /usr/local/bin for the same reason.
-        // It also needs no mount, so a binary anywhere on the host works.
-        const cp = await $`${docker} cp ${file.from} ${`${container}:${file.to}`}`.nothrow().quiet()
-        if (cp.exitCode !== 0) {
-          throw new Error(
-            `the ${toolset.key} toolset could not carry ${file.from} into the container as ${file.to} `
-            + `(exit ${cp.exitCode}):\n${cp.stderr.toString().trimEnd()}`,
-          )
-        }
-        const chmod = await $`${docker} exec ${container} chmod ${file.mode} ${file.to}`.nothrow().quiet()
-        if (chmod.exitCode !== 0) {
-          throw new Error(
-            `${file.to} was carried into the ${toolset.key} toolbox but could not be made ${file.mode} `
-            + `(exit ${chmod.exitCode}):\n${chmod.stderr.toString().trimEnd()}`,
           )
         }
       }

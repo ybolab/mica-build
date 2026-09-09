@@ -123,45 +123,39 @@ that declines it should state those explicitly rather than lose them silently.
 
 ## 5. State and data
 
-The four storage tiers and the rule for each are
-[../user/storage.md](../user/storage.md). For a native application:
+The [storage policy](storage.md) defines the physical backing and approved
+writable leaves. An application must use a declared leaf or DATA namespace;
+`StateDirectory=` cannot make the immutable `/var/lib` parent writable.
 
-| Where | What belongs there | Survives an A/B update |
+| Where | Purpose | Lifecycle |
 |---|---|---|
-| `StateDirectory=` under `/var/lib` | configuration, identity, counters, small durable records | yes — `/var/lib/mos` is a bind of STATE |
-| `/mos` | system-owned application data the product manages | yes — DATA |
-| `/srv` | integrator files, application data, container volumes | yes — DATA |
-| `/var` | logs, caches, anything reconstructible | **no** — EPHEMERAL, wiped by design |
+| Approved DATA/state-backed service leaf | Small persistent service state | Survives reboot and OS updates; reset scope is explicit |
+| `/mos/apps` | Managed application data | DATA bulk quota and application reset scope |
+| `/srv` | Integrator data and volumes | DATA bulk quota; application/full-factory reset clears it |
+| `/run` and volatile journal | Runtime files and logs | Recreated each boot |
+| Arbitrary `/var` path | No writable allocation | Writes fail unless the image declares an approved leaf |
 
-`StateDirectory=` is the one to prefer for small durable state: systemd
-creates the directory, sets its mode, and — with `ProtectSystem=strict` — it
-is the only writable path the unit gets without naming another. Set
-`StateDirectoryMode=` explicitly when the contents are secret; the systemd
-default is `0755`.
-
-Do not put an application's durable data on `/var`. It is 512 MiB, it is
-disposable, and it is wiped deliberately. Storage that works for months and
-is then gone with no error anywhere is the failure mode this rule exists to
-prevent.
+Declare the backing directory, ownership, mount dependency and verifier check
+with the package. `StateDirectory=` may initialize a subdirectory only after its
+writable backing exists. Set private state modes explicitly and avoid granting
+an application access to another service's state.
 
 ## 6. Health and logs
 
-Logs go to the journal, which is on `/var` and therefore volatile. That is a
-decision: a device that keeps every daemon's stdout forever fills the
-partition its own updates need.
+Logs go to the bounded volatile journal under `/run/log/journal`. Export the
+required diagnostic evidence before reboot.
 
 Health is where the native path differs most from the container one, and it
 is worth being exact about what it does and does not promise — **it promises
 less than it used to, deliberately** (PLAN-089).
 [`rootfs/overlay/usr/lib/mos/mos-health`](../../rootfs/overlay/usr/lib/mos/mos-health)
-runs once per boot, waits for systemd to settle, and confirms the booted slot
+runs once per boot, waits for systemd to settle, and confirms the authenticated booted deployment
 when a **required set** passes: the boot transaction finished, mosd answers on
 `com.mos.mosd1`, apid answers on `/healthz`. The set is named by `require=`
 lines in
 [`/etc/mos/health.conf`](../../rootfs/overlay/etc/mos/health.conf). Everything
 else the gate observes, **including a unit in the failed state**, is reported
-and never fatal. A slot that is never confirmed is rolled back by the U-Boot
-attempt counter.
+and never fatal. An unconfirmed deployment consumes the native UEFI/FIT trial budget before fallback.
 
 Until PLAN-089 the rule was the inverse — any failed unit not named in a
 `tolerate-failed` allowlist refused the slot, and that allowlist shipped empty.
@@ -278,7 +272,7 @@ Stated plainly, because everything above is documentation and tested
 convention rather than a mechanism that refuses:
 
 - **Nothing signs a separately installed unit.** Image content is covered by
-  the RAUC bundle signature and dm-verity; a file written into
+  authenticated deployment metadata and required signed dm-verity; a file written into
   `/usr/local/lib/systemd/system` or the Quadlet directory on a running
   device is covered by neither.
 - **No ceiling is mandatory.** Sections 8 and containers.md section 8 describe

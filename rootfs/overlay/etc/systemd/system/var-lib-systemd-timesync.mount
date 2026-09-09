@@ -1,27 +1,12 @@
 [Unit]
-Description=timesyncd saved clock from the STATE partition
-# systemd-timesyncd touches /var/lib/systemd/timesync/clock every
-# SaveIntervalSec (60 s, pinned in /etc/systemd/timesyncd.conf.d/50-mos.conf)
-# and, at startup, advances a clock that is BEHIND that file's timestamp. That
-# advance is the last-known-good clock floor PLAN-044 requires: together with
-# the RTC it gives max(RTC, saved clock) before network time arrives, so TLS
-# and TUF validity checks never run against a clock older than the device has
-# already seen. /var lives on EPHEMERAL, which an update may reset, so the
-# directory is redirected onto STATE with a bind mount — the var-lib-mos.mount
-# pattern, for the same reason.
-#
-# Ordered Before=systemd-timesyncd.service, and that ordering is the whole
-# mechanism: timesyncd reads the clock file once, at startup. Started after
-# the bind it would read the empty EPHEMERAL directory, save into a shadowed
-# path, and the floor would silently never hold — while every test that does
-# not reboot a device kept passing.
-Requires=mos-seed-state.service
+Description=timesyncd saved clock from DATA/state
+# Seed the physical DATA leaf before binding it for timesyncd.
 After=mos-seed-state.service
 Before=systemd-timesyncd.service
-RequiresMountsFor=/mnt/state /var
+RequiresMountsFor=/mnt/data
 
 [Mount]
-What=/mnt/state/timesync
+What=/mnt/data/state/timesync
 Where=/var/lib/systemd/timesync
 Type=none
 Options=bind

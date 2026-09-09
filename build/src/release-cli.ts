@@ -1,275 +1,68 @@
-// The host half of the release contract: which built artifacts a release is
-// assembled from, where the release directory is written, and the publication
-// gate as a command. src/release-manifest.ts is everything below -- the seam
-// mirrors bundle-cli.ts's, and like there, the identity that varies per build
-// (here the git commit and dirty flag) is resolved HERE, once, and handed
-// down: nothing in the assembly reads the wall clock or the repository.
+import { readFileSync } from 'node:fs'
+import { resolve, join } from 'node:path'
+import { parseArgs } from 'node:util'
+import { assembleRelease, gateRelease, type ReleaseInputs } from './release-manifest.ts'
+import { REPO_ROOT } from './paths.ts'
+import { Toolbox } from './toolbox.ts'
 
-import { existsSync, readFileSync } from 'node:fs'
-import { join } from 'node:path'
-import { $ } from 'bun'
-import { checkVersion, requireBoardEnv } from './bundle-cli.ts'
-import { loadGeometry } from './geometry.ts'
-import { BUILD_ENV_DIR, REPO_ROOT } from './paths.ts'
-import {
-  assembleRelease,
-  builderImagesFrom,
-  gateReleaseDir,
-  RELEASE_CHANNELS,
-  requireReleaseTarget,
-} from './release-manifest.ts'
+const USAGE = `Usage: build/run.sh --release assemble --board BOARD --version VERSION
+  --image IMAGE --update FILE.mosupd --firmware DIR --package-manifest FILE
+  --baked-meta DIR --notes FILE --out DIR --public-key FILE (repeatable)
+  [--channel development|candidate|stable] [--profile dev|prod] [--evidence FILE]
+       build/run.sh --release gate --dir DIR --public-key FILE (repeatable)
 
-/** The board a release is cut for when nothing says otherwise, as in bundle-cli. */
-export const DEFAULT_BOARD = 'cx3576'
-
-const USAGE = `usage: bash build/run.sh --release assemble [VERSION] [--board B] [options]
-       bash build/run.sh --release gate [--board B] [--dir DIR] [--evidence PATH]
-                                       --baked-meta DIR
-
-assemble writes the customer-facing release directory for a board -- the
-flashable image and signed RAUC bundle copied in, an SBOM, a provenance
-record, a license/source-offer inventory and the release notes generated
-beside them, all bound by manifest.json and SHA256SUMS -- and then runs the
-publication gate over the result. gate re-checks an existing directory from
-scratch and refuses the first gap by name.
-
-  VERSION               the release version string; also MOS_RELEASE_VERSION
-                        (default: 0.0.0-dev)
-  --board B             the board (default: ${DEFAULT_BOARD}, or MOS_BOARD)
-  --channel C           ${RELEASE_CHANNELS.join('|')} (default: development)
-  --profile P           the image profile the release was built at (default: dev)
-  --notes PATH          the release-notes file; REQUIRED (also MOS_RELEASE_NOTES)
-  --package-manifest PATH  the image's /usr/share/mos/manifest.tsv content;
-                        REQUIRED (also MOS_PACKAGE_MANIFEST)
-  --baked-meta DIR      the image's /usr/share/mos/meta/ directory as
-                        extracted; REQUIRED for BOTH commands (also
-                        MOS_BAKED_META). It is what says whether the image was
-                        built with development-grade signing material, and a
-                        release carrying such an image is refused on the
-                        candidate and stable channels
-  --image PATH          the disk image (default: _out/<board>/<board>-mos-latest.img)
-  --update-bundle PATH  the RAUC bundle (default: _out/<board>/mos-<board>-latest.raucb);
-                        not --bundle, which run.sh reserves for its bundle MODE
-                        and refuses anywhere but first position
-  --evidence PATH       the board-evidence file (default: boards/<board>/evidence.json)
-  --out-dir DIR         where the release is written (default: _out/<board>/release);
-                        for gate, --dir is the directory to check (same default)
+Paths are relative to the repository root. Public-key files contain base64
+Ed25519 public anchors. The gate authenticates update and firmware artifacts;
+complete image, runtime and physical acceptance are separate required checks.
 `
-
-export interface AssembleCommand {
-  readonly cmd: 'assemble'
-  readonly board: string
-  readonly version: string
-  readonly channel: string
-  readonly profile: string
-  readonly notes: string | undefined
-  readonly packageManifest: string | undefined
-  readonly image: string | undefined
-  readonly bundle: string | undefined
-  readonly evidence: string | undefined
-  readonly bakedMeta: string | undefined
-  readonly outDir: string | undefined
-}
-
-export interface GateCommand {
-  readonly cmd: 'gate'
-  readonly board: string
-  readonly dir: string | undefined
-  readonly evidence: string | undefined
-  readonly bakedMeta: string | undefined
-}
-
-export type CliCommand = AssembleCommand | GateCommand
-
-/**
- * The arguments, in bundle-cli's shape: a positional version, flags that all
- * take a value, and a refusal for anything unknown rather than a forward --
- * an unrecognised flag swallowed silently is a request answered about
- * something else.
- */
-export function parseArgs(argv: readonly string[], env: Record<string, string | undefined>): CliCommand {
-  const [cmd, ...rest] = argv
-  if (cmd === '--help' || cmd === '-h') {
-    console.log(USAGE)
-    process.exit(0)
-  }
-  if (cmd !== 'assemble' && cmd !== 'gate') {
-    throw new Error(`the release CLI needs 'assemble' or 'gate' first, got ${JSON.stringify(cmd)}\n\n${USAGE}`)
-  }
-  const flags = new Map<string, string>()
-  let version: string | undefined
-  for (let i = 0; i < rest.length; i += 1) {
-    const a = rest[i] as string
-    if (a === '--help' || a === '-h') {
-      console.log(USAGE)
-      process.exit(0)
-    }
-    if (['--board', '--channel', '--profile', '--notes', '--package-manifest',
-      '--image', '--update-bundle', '--evidence', '--out-dir', '--dir', '--baked-meta'].includes(a)) {
-      const next = rest[i + 1]
-      if (next === undefined) throw new Error(`${a} needs a value\n\n${USAGE}`)
-      if (flags.has(a)) throw new Error(`${a} was given twice; one of the two would silently lose\n\n${USAGE}`)
-      flags.set(a, next)
-      i += 1
-      continue
-    }
-    if (a.startsWith('-')) throw new Error(`unknown argument ${JSON.stringify(a)}\n\n${USAGE}`)
-    if (cmd === 'gate') throw new Error(`gate takes no positional argument, got ${JSON.stringify(a)}\n\n${USAGE}`)
-    if (version !== undefined) throw new Error(`two version strings were given: ${version} and ${a}\n\n${USAGE}`)
-    version = a
-  }
-  const board = flags.get('--board') ?? env.MOS_BOARD ?? DEFAULT_BOARD
-  if (cmd === 'gate') {
-    return {
-      cmd,
-      board,
-      dir: flags.get('--dir'),
-      evidence: flags.get('--evidence'),
-      bakedMeta: flags.get('--baked-meta') ?? env.MOS_BAKED_META,
-    }
-  }
-  return {
-    cmd,
-    board,
-    version: checkVersion(version ?? env.MOS_RELEASE_VERSION ?? '0.0.0-dev'),
-    channel: flags.get('--channel') ?? 'development',
-    profile: flags.get('--profile') ?? 'dev',
-    notes: flags.get('--notes') ?? env.MOS_RELEASE_NOTES,
-    packageManifest: flags.get('--package-manifest') ?? env.MOS_PACKAGE_MANIFEST,
-    bakedMeta: flags.get('--baked-meta') ?? env.MOS_BAKED_META,
-    image: flags.get('--image'),
-    bundle: flags.get('--update-bundle'),
-    evidence: flags.get('--evidence'),
-    outDir: flags.get('--out-dir'),
-  }
-}
-
-/**
- * The two inputs that have no built default, refused by name before any file
- * is read. Release notes are written by a person and the package manifest is
- * extracted from the image; neither has a path this CLI could invent without
- * the refusal for its absence landing on the wrong file.
- */
-export function requireSupplied(value: string | undefined, flag: string, envName: string, why: string): string {
-  if (value === undefined || value === '') {
-    throw new Error(`no ${flag} was supplied (and ${envName} is unset); ${why}`)
-  }
-  return value
-}
-
-/** boards/<board>/evidence.json -- the default seam the gate consumes. */
-export function defaultEvidencePath(board: string): string {
-  return join(REPO_ROOT, 'boards', board, 'evidence.json')
-}
-
-/** _out/<board>/release -- where a board's release directory is assembled. */
-export function defaultReleaseDir(board: string): string {
-  return join(REPO_ROOT, '_out', board, 'release')
-}
-
-export async function main(argv: readonly string[]): Promise<number> {
-  const options = parseArgs(argv, process.env)
-  const boardEnv = requireBoardEnv(options.board)
-  // BEFORE either subcommand, and before any path is resolved: a board with
-  // no release path has no release directory to assemble and none to gate,
-  // and the refusal should name that rather than surface as a missing
-  // evidence file three steps later.
-  requireReleaseTarget(options.board, loadGeometry(options.board).board.releaseTarget, boardEnv)
-
-  if (options.cmd === 'gate') {
-    const dir = options.dir ?? defaultReleaseDir(options.board)
-    const bakedMeta = requireSupplied(options.bakedMeta, '--baked-meta', 'MOS_BAKED_META',
-      'the grade of an image\'s signing material is measured from its own baked /usr/share/mos/meta/, '
-      + 'and a gate that read the build host instead would answer green on every host that never built one')
-    const report = gateReleaseDir(dir, options.evidence ?? defaultEvidencePath(options.board), bakedMeta)
-    const m = report.manifest
-    console.log(`release gate: PASS ${dir}`)
-    console.log(
-      `  ${m.release.version} (${m.release.channel}) for ${m.board.name}/${m.board.profile}, `
-      + `source ${m.source.commit}${m.source.dirty ? ' (dirty)' : ''}`,
-    )
-    console.log(`  boot assurance ${m.bootAssurance}, evidence: ${report.evidence.qualification}`)
-    console.log(
-      `  trust ${m.trust.grade}`
-      + `${m.trust.developmentDomains.length > 0 ? ` (development in ${m.trust.developmentDomains.join(' ')})` : ''}`
-      + `, measured from ${bakedMeta}`,
-    )
-    console.log(`  ${report.artifactsChecked} artifacts, ${report.bytesTotal} bytes, every digest re-measured`)
-    return 0
-  }
-
-  const notes = requireSupplied(options.notes, '--notes', 'MOS_RELEASE_NOTES',
-    'a release without release notes is refused by the publication gate, so it is refused here first')
-  const packageManifest = requireSupplied(options.packageManifest, '--package-manifest', 'MOS_PACKAGE_MANIFEST',
-    'the SBOM is derived from the image\'s /usr/share/mos/manifest.tsv and never invented')
-  const bakedMeta = requireSupplied(options.bakedMeta, '--baked-meta', 'MOS_BAKED_META',
-    'the release records the grade of the signing material its image was built from, and that is '
-    + 'measured from the image\'s own /usr/share/mos/meta/ rather than declared')
-
-  // The image and bundle defaults come from the board definition, the same
-  // names the assemblers point their -latest symlinks at.
-  const geometry = loadGeometry(options.board)
-  const outBoard = join(REPO_ROOT, '_out', options.board)
-  const imagePath = options.image ?? join(outBoard, geometry.naming.latestName)
-  const bundlePath = options.bundle ?? join(outBoard, `mos-${geometry.require('LAYOUT_BOARD')}-latest.raucb`)
-
-  // The source identity, resolved once. No fallback: a release manifest with
-  // an invented commit is an identity a support case cannot resolve, which is
-  // build-env/deb/version.sh's reasoning and it holds harder here.
-  const commitR = await $`git -C ${REPO_ROOT} rev-parse HEAD`.nothrow().quiet()
-  if (commitR.exitCode !== 0) {
-    throw new Error(
-      `git rev-parse HEAD failed in ${REPO_ROOT} (exit ${commitR.exitCode}); a release manifest `
-      + `without a source commit is an identity nothing can resolve later, so there is no fallback`,
-    )
-  }
-  const commit = commitR.stdout.toString().trim()
-  const statusR = await $`git -C ${REPO_ROOT} status --porcelain`.nothrow().quiet()
-  if (statusR.exitCode !== 0) {
-    throw new Error(`git status --porcelain failed in ${REPO_ROOT} (exit ${statusR.exitCode})`)
-  }
-  const dirty = statusR.stdout.toString().trim() !== ''
-
-  const imagesEnv = join(BUILD_ENV_DIR, 'images.env')
-  const builderImages = existsSync(imagesEnv) ? builderImagesFrom(readFileSync(imagesEnv, 'utf8')) : {}
-
-  const evidencePath = options.evidence ?? defaultEvidencePath(options.board)
-  const result = assembleRelease({
-    board: options.board,
-    profile: options.profile,
-    channel: options.channel,
-    version: options.version,
-    imagePath,
-    bundlePath,
-    packageManifestPath: packageManifest,
-    bakedMetaDir: bakedMeta,
-    notesPath: notes,
-    evidencePath,
-    outDir: options.outDir ?? defaultReleaseDir(options.board),
-    commit,
-    dirty,
-    builderImages,
-  })
-  const m = result.gate.manifest
-  console.log(`assembled ${result.outDir}`)
-  console.log(
-    `  ${m.release.version} (${m.release.channel}) for ${m.board.name}/${m.board.profile}, `
-    + `source ${m.source.commit}${m.source.dirty ? ' (dirty)' : ''}`,
-  )
-  console.log(
-    `  trust ${m.trust.grade}`
-    + `${m.trust.developmentDomains.length > 0 ? ` (development in ${m.trust.developmentDomains.join(' ')})` : ''}`
-    + `, measured from ${bakedMeta}`,
-  )
-  console.log(`  ${result.gate.artifactsChecked} artifacts, ${result.gate.bytesTotal} bytes; the publication gate re-checked the directory`)
-  return 0
-}
-
-if (import.meta.main) {
+async function sourceIdentity() {
+  const tb = await Toolbox.open({ key: 'release-source', imageKey: 'IMAGE_ALPINE_3_21', manager: 'apk', packages: ['git'], tools: ['git'] }, { mounts: [REPO_ROOT] })
   try {
-    process.exit(await main(process.argv.slice(2)))
-  } catch (e) {
-    console.error(`error: ${e instanceof Error ? e.message : String(e)}`)
-    process.exit(1)
+    const git = async (args: string[]) => (await tb.must(['git', '-c', `safe.directory=${REPO_ROOT}`, '-C', REPO_ROOT, '--no-pager', ...args])).stdout.trim()
+    return { commit: await git(['rev-parse', 'HEAD']), dirty: (await git(['status', '--porcelain'])).length > 0 }
+  } finally { await tb.close() }
+}
+function releaseBoard(board: string) {
+  if (!['x64', 'virt-arm64', 'cx3576'].includes(board)) throw new Error('Unsupported release board')
+  const env = readFileSync(join(REPO_ROOT, 'boards', board, 'board.env'), 'utf8')
+  if (!/^BOARD_RELEASE_TARGET=1$/m.test(env)) throw new Error(`Board ${board} has no release publication target`)
+}
+export async function main(argv = Bun.argv.slice(2)) {
+  const strings = ['board', 'version', 'image', 'update', 'firmware', 'package-manifest', 'baked-meta', 'notes', 'out', 'channel', 'profile', 'evidence', 'dir']
+  const options: Record<string, { type: 'string' | 'boolean', multiple?: boolean }> = Object.fromEntries(strings.map(name => [name, { type: 'string' }]))
+  options['public-key'] = { type: 'string', multiple: true }; options.help = { type: 'boolean' }
+  const { values, positionals, tokens } = parseArgs({ args: argv, options, allowPositionals: true, strict: true, tokens: true })
+  if (values.help) { console.log(USAGE); return }
+  const seen = new Set<string>()
+  for (const token of tokens) if (token.kind === 'option' && token.name !== 'public-key') {
+    if (seen.has(token.name)) throw new Error(`Duplicate --${token.name}`)
+    seen.add(token.name)
   }
+  const value = (name: string) => { const v = values[name]; if (typeof v !== 'string' || !v) throw new Error(`Missing --${name}\n${USAGE}`); return v }
+  const path = (name: string) => resolve(REPO_ROOT, value(name))
+  const rawKeys = values['public-key']
+  if (!Array.isArray(rawKeys) || !rawKeys.length) throw new Error('At least one --public-key file is required')
+  const keys = rawKeys.map(p => readFileSync(resolve(REPO_ROOT, p as string), 'utf8').trim())
+  if (positionals.length !== 1) throw new Error(USAGE)
+  const mode = positionals[0]
+  if (mode === 'gate') {
+    if ([...seen].some(name => name !== 'dir')) throw new Error('Gate accepts only --dir and --public-key')
+    const report = gateRelease(path('dir'), keys)
+    releaseBoard(report.manifest.board)
+    console.log(`RELEASE_GATE_PASS board=${report.manifest.board} artifacts=${report.artifactsChecked}`)
+    return
+  }
+  if (mode !== 'assemble' || seen.has('dir')) throw new Error(USAGE)
+  const board = value('board'); releaseBoard(board)
+  const builderImages = Object.fromEntries(readFileSync(join(REPO_ROOT, 'build-env/images.env'), 'utf8').split('\n')
+    .flatMap(line => { const match = /^((?:IMAGE|LOCAL)_[A-Z0-9_]+)=(.+)$/.exec(line); return match ? [[match[1]!, match[2]!]] : [] }))
+  const report = assembleRelease({ out: path('out'), board: board as ReleaseInputs['board'], version: value('version'),
+    channel: (values.channel ?? 'development') as ReleaseInputs['channel'], profile: (values.profile ?? 'dev') as ReleaseInputs['profile'],
+    source: await sourceIdentity(), builderImages,
+    image: path('image'), update: path('update'), firmware: path('firmware'), packages: path('package-manifest'), meta: path('baked-meta'), notes: path('notes'),
+    evidence: values.evidence ? path('evidence') : join(REPO_ROOT, 'boards', board, 'evidence.json'), keys })
+  console.log(`RELEASE_GATE_PASS board=${report.manifest.board} artifacts=${report.artifactsChecked}`)
+}
+if (import.meta.main) {
+  try { await main() } catch (error) { console.error(error instanceof Error ? error.message : String(error)); process.exitCode = 1 }
 }
