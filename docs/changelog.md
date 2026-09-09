@@ -4,6 +4,23 @@ Campaign-level record, one entry per plan, newest first. Details live in the
 plan file and the task records it names; this file holds the one-paragraph
 history a reader can scan without opening either.
 
+## Power action feedback (2026-09-09)
+
+Apid now waits for mosd to admit a reboot or power-off request before answering
+202. Refusals return 409 with the reason; failed dispatch, an unavailable daemon
+and an unconfirmed timeout retain explicit backend error responses. The dashboard
+closes its confirmation dialog so success and failure remain visible, and avoids
+automatic power retries. Reboot interlocks are unchanged. Regression tests cover
+admission, refusal, failure, timeout, confirmation and cancellation; the full Rust
+and frontend gates pass. The [investigation](task/20260909-1421-apid-reboot.md)
+records fresh-image browser evidence and the unresolved original-device context.
+The completed focused plan `20260909-1425-apid-power-feedback` is consolidated
+into that open investigation rather than retained as an obsolete plan entry.
+Fresh x64 acceptance verifies a visible 409 refusal, admitted reboot, distinct
+boot IDs, reauthentication and admitted power-off, with complete exitrd cleanup
+on both shutdowns. Both architecture package pools were rebuilt at one source
+stamp; the physical device's specific failure still needs its access details.
+
 ## Signed file-based deployments (2026-09-09)
 
 Documentation cleanup replaces the accumulated API/dashboard proposals

@@ -890,3 +890,15 @@ The current status and acceptance table above supersede their pending claims.
   honesty pass at `.tmp/bench-collector-rdkt0ksz`. No serial/USB bench interface
   or board address is available in the workspace; physical acceptance remains
   pending. Collector dry-run output is not hardware evidence.
+
+## Post-delivery power action regression (2026-09-09)
+
+The [reboot investigation](20260909-1421-apid-reboot.md) fixes hidden power
+refusals and the dashboard confirmation overlay. Its fresh x64 factory image
+`_out/reboot-fixed.p8eARn/image/disk.img` and browser evidence
+`_out/reboot-fixed-api.FIa1wh` pass refusal, actual reboot, reauthentication and
+power-off, including two complete exitrd shutdowns. The Rust gate passes 1,053
+tests and the UI gate passes 154. Both package pools now use
+`git1875d1332170.dirty-1`; the earlier matrix retains its original artifacts and
+provenance. Original-device diagnosis and physical cx3576 qualification remain
+separate pending access details.

@@ -39,6 +39,12 @@ policy checks. Native deployment state and rollback refusals are specified in
 [updates](updates.md). Firmware maintenance is a separate operation described
 in [release signing](release-signing.md).
 
+Power actions return 202 only after mosd admits the request. A policy or permission
+refusal returns 409 `power_refused` with its reason; dispatch failure, unavailable
+mosd and timeout return 500, 503 and 504 respectively. Acceptance does not prove
+that reboot completed. The dashboard closes confirmation to expose this result
+and does not retry power mutations automatically.
+
 ### 2.2 Errors and redaction
 
 API errors use the published JSON envelope, including unmatched API paths and

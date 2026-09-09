@@ -151,3 +151,5 @@ thing about the tree. Both indexes now say the same thing.
 - [x] [**20260908-2115-p2-descriptor-contracts-x64 P2: freeze signed component and deployment contracts for x64**](20260908-2115-p2-descriptor-contracts-x64.md) `P1`
 
 - [-] [**20260908-2229-file-ab-delivery-x64-first Complete signed file-based deployment delivery, x64 first**](20260908-2229-file-ab-delivery-x64-first.md) `P1`
+
+- [-] [**20260909-1421-apid-reboot Diagnose and repair appliance reboot dispatch**](20260909-1421-apid-reboot.md) `P1`
