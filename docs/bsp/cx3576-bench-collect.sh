@@ -743,7 +743,7 @@ stage_inventory() {
         if [ -e /sys/class/watchdog/watchdog0/bootstatus ]; then
             measure M2-BOOTSTATUS "bootstatus=$(cat /sys/class/watchdog/watchdog0/bootstatus 2>/dev/null)"
         else
-            measure M2-BOOTSTATUS "ABSENT. The kernel config carries '# CONFIG_WATCHDOG_SYSFS is not set', which gates the watchdog class attributes. Row 10's 'the reset cause is readable afterwards' half has NO SYSFS SOURCE on this kernel -- record that as the finding, not as a failed read."
+            measure M2-BOOTSTATUS "ABSENT. The current image enables CONFIG_WATCHDOG_SYSFS=y. Investigate the flashed image and driver; row 10's reset-cause requirement remains unproven without another recorded source."
         fi
     else
         measure M2 "NO watchdog character device. The board DTS sets /watchdog@2ace0000 to okay and CONFIG_DW_WATCHDOG=y is built, so this is a defect to report, not an absence to accept."

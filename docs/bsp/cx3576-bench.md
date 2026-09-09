@@ -191,19 +191,16 @@ until then.
 The board DTS sets `/watchdog@2ace0000` to `okay` and the kernel config carries
 `CONFIG_DW_WATCHDOG=y`, `CONFIG_WATCHDOG_CORE=y` and
 `CONFIG_WATCHDOG_HANDLE_BOOT_ENABLED=y`, so a `/dev/watchdog0` is *expected*.
-Two things about that expectation are worth taking to the bench rather than
-assuming:
+The current image also enables `CONFIG_WATCHDOG_SYSFS=y` and
+`CONFIG_WATCHDOG_NOWAYOUT=y`. Record `state`, `timeout`, `identity`, `nowayout`
+and `bootstatus` from the running device. A missing attribute is a finding to
+investigate against the exact flashed image and driver; it must not be explained
+using an older disabled configuration. Attribute presence alone does not prove
+that the driver reports a watchdog reset cause.
 
-- `# CONFIG_WATCHDOG_SYSFS is not set`. The watchdog core creates the class
-  directory either way, but the attribute files — `bootstatus`, `state`,
-  `timeout`, `identity`, `nowayout` — are gated on that symbol. If they are
-  absent, **row 10's "the reset cause is readable afterwards" half has no sysfs
-  source on this kernel**, and the session records that as the finding it is
-  rather than as a failed read. The collector reads them when present and
-  records their absence explicitly.
-- `# CONFIG_WATCHDOG_NOWAYOUT is not set`, so closing `/dev/watchdog` with a
-  magic `V` disarms it. That is what makes stage 7 safe to arm and safe to
-  abort.
+PID 1 owns the active watchdog. Closing a descriptor or writing magic `V` does
+not disarm a watchdog with NOWAYOUT enabled. Stage 7 uses the deliberate kernel
+hang and captures the subsequent reset; it does not open a second watchdog owner.
 
 **M3 — which UART drives the display.** The dossier records the display as
 HDMI, and no UART drives an HDMI output; the phrasing in Gate D therefore

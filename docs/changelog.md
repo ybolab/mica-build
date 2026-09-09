@@ -4,6 +4,18 @@ Campaign-level record, one entry per plan, newest first. Details live in the
 plan file and the task records it names; this file holds the one-paragraph
 history a reader can scan without opening either.
 
+## cx3576 boot watchdog repair (2026-09-09)
+
+The RK3576 clock driver now enables the watchdog clocks needed by DesignWare
+probe, fixing the pre-Linux `required boot watchdog unavailable` stop. Probe and
+start failures report their errors before storage access or attempt consumption.
+RockUSB recovery runs cyclic watchdog service while waiting for USB. Pinned-source
+regressions reproduce both defects and pass after repair. The rebuilt complete
+image passes FIT signature negatives, 123 offline checks and flash geometry; the
+[task](task/20260909-2331-cx3576-boot-watchdog.md) identifies its exact artifacts
+and component sources. Bench instructions reflect the enabled SYSFS/NOWAYOUT
+configuration. Physical startup and watchdog acceptance remain pending.
+
 ## Timestamped factory images (2026-09-09)
 
 Factory image publication now uses `mos-BOARD-YYYYMMDD-HHmmss.img` with UTC

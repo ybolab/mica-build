@@ -949,3 +949,19 @@ Real CLI assembly, unchanged delivered-image hashes, the 14-artifact release
 gate and flash default/override/missing-image checks pass. Local review finds no
 blocking issues. Controller evidence lives in `.tmp/image-naming`; the disposable
 CLI image is removed after verification. Physical board acceptance is unchanged.
+
+## Physical cx3576 boot blocker repair (2026-09-09)
+
+The reported `required boot watchdog unavailable` stop is traced to the missing
+RK3576 clock enable callback: DesignWare probe returns -ENOSYS before Linux.
+The [focused investigation](20260909-2331-cx3576-boot-watchdog.md) adds the
+watchdog gates, explicit probe/start diagnostics and cyclic service in RockUSB
+recovery. Actual-source regressions reproduce both faults and pass after repair.
+
+Current full image: `_out/cx3576/image/mos-cx3576-20260909-235323.img`;
+SHA-256 `d8c29cd014ba574bee3c36c90adb6f44d691dd92e20da1480746a0770c17c04f`. Firmware and assembly
+use clean `d70a9b26aa4f`; root/kernel retain clean `38f2a37b9a3c`. Separate source
+records live in `_out/cx3576-watchdog-r2/build-record.json`. Required FIT signature
+negatives, all 123 offline checks, flash geometry and checksums pass. The older
+release directory does not contain this repair. Physical startup, recovery dwell,
+watchdog handoff/reset and power-cut qualification remain pending; P10 is open.

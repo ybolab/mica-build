@@ -7,6 +7,13 @@ the watchdog before storage discovery, persists a trial decrement, and loads a
 required-signature FIT. It does not import commands, boot scripts, raw-slot
 variables or an editable root command line.
 
+The mandatory RK3576 watchdog uses enabled PCLK_WDT0 and TCLK_WDT0 gates.
+A probe or start failure reports its error and enters recovery before media
+access or attempt consumption. RockUSB recovery runs the cyclic scheduler while
+waiting for USB so an armed watchdog remains serviced. The firmware build tests
+the pinned watchdog driver and recovery loop and verifies the control-FDT node.
+Physical reset and Linux handoff remain bench acceptance requirements.
+
 ## Disk contract
 
 [`board.env`](../../boards/cx3576/board.env) is authoritative.
