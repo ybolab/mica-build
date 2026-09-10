@@ -37,11 +37,12 @@ startup/shutdown plan is allowed and does not supersede that rejection.
 | C | `#317` / `58sdocnk` | Current management feature backlog |
 | D | `#318` / `z36xbrtu` | Task/plan reconciliation and global documentation |
 
-External active owner `#313` / `4ay6q72f` retains the S905X5M integration and
-its records at `docs/task/20260910-0554-s905x5m-current-system.md` and
+External owner `#313` / `4ay6q72f` retains its completed S905X5M dirty-delivery
+records at `docs/task/20260910-0554-s905x5m-current-system.md` and
 `docs/plan/20260910-0559-s905x5m-current-system.md`. These paths are absent
-from the committed base, so they remain code literals rather than links until
-L1 supplies the approved commit handoff.
+from the committed base, so they remain code literals. Implementation and
+offline acceptance were reported complete, but 108 delivery changes remain
+dirty and unstaged on `main`; no approved commit/tree handoff exists.
 
 Each code L3 owns unique task/detail notes in its isolated branch and performs
 its lifecycle changes with the PMA serializer. D owns the campaign record and
@@ -64,6 +65,26 @@ Initial active campaign L3 grants are A=2, B=1, C=2, and D=1, with at most six
 in total. Initial expensive-build grants are A=1, B=0, C=0, and D=0, with a
 campaign maximum of two and one position reserved while `#313` builds. D does
 not perform a full image build.
+
+After `#313` reported no remaining heavy work, the reserved expensive position
+returned to L1's unallocated pool. Expensive grants remain A=1 and B/C/D=0
+until specifically reassigned; active L3 grants remain A/B/C/D=2/1/2/1.
+
+### Coordination evidence
+
+The [campaign task registry](../task/20260910-1013-open-plans-campaign.md)
+records the exact A/B/C node ownership, models, dependencies, owned record
+paths, capacity use, and evidence boundaries supplied during D1. At the
+2026-09-10 10:14–10:15 UTC snapshot, all four unique L2 15-minute crons were
+enabled and nondeleted: A `gf4aphxr`, B `nkglvdlt`, C `w8lj5nbz`, and D
+`v2kr5k8p`. Running and todo labels are observations at that timestamp, not
+completion claims.
+
+The same registry records `#313` source and artifact hashes as read-only dirty
+build evidence. D3 and B1 remain blocked on the exact L1-approved committed
+identity; A may use the evidence only in its existing bounded acceptance work.
+Automated/offline passes do not satisfy physical-board rows, and dirty artifacts
+must not be relabeled as clean-commit outputs.
 
 D2/D3 obligations, not D1 changes, include investigating the missing indexed
 `cx3576-reproducible-bsp-20260907T1356Z` task and
@@ -88,6 +109,8 @@ reconciling the divergent PLAN-086 task/plan state without reviving S5.
   the handoff and preserve-not-reset rules prevent that loss.
 - Treating remote-tracking refs as local handoffs can consume stale or absent
   commits; only L1-approved shared local refs are admissible.
+- Treating dirty `main` or `#313` artifact hashes as a committed source handoff
+  can contaminate dependent branches; both remain read-only evidence.
 - Historical records can accidentally restore unsupported compatibility work
   or imply hardware proof; explicit scope and evidence gates prevent both.
 

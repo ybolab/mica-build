@@ -1258,3 +1258,32 @@ grants are A=1, B=0, C=0, D=0 (maximum two, with one position reserved while
 removed RAUC/TUF references, and PLAN-086 lifecycle divergence remain explicit
 D2/D3 obligations. No product implementation, image build, hardware proof, or
 historical reconciliation is claimed by this entry.
+
+## 2026-09-10 10:31 [progress]
+
+D1 incorporated the campaign's timestamped coordination evidence without
+changing sibling-owned records. L1 observed the unique A/B/C/D 15-minute crons
+`gf4aphxr`, `nkglvdlt`, `w8lj5nbz`, and `v2kr5k8p` enabled and nondeleted at
+2026-09-10 10:14–10:15 UTC. The registry now records A1–A4, serial B0–B7, and
+C1–C2 ownership, dependencies, models where supplied, owned paths, grant use,
+and verification boundaries. Their running and todo states remain timestamped
+observations; D owns only later global index/changelog reconciliation and does
+not reset their task or plan states.
+
+`#313` / `4ay6q72f` reported S905X5M implementation and offline acceptance
+complete and released implementation ownership, but its 108 delivery changes
+remain dirty and unstaged on `main` at source base
+`5c61f7fbb5589807e931e981b3ef8cb9bdff8b6d`. No approved commit/tree handoff
+exists. L1 validated the 1,730-entry source record with canonical
+`sourceSha256` `5eab1647263866e310b98999e9d5df063aa6bbe3248fc8a0bd7ee7a907c75b42`
+and reverified the 56-entry artifact manifest; these remain read-only dirty
+evidence, not synchronized source or hardware acceptance. D3 and B1 stay
+blocked on L1's exact approved committed identity.
+
+The recorded S905X5M artifacts retain development signing and dirty identities;
+no hardware was flashed and `releaseTarget=false`. Every physical-board row
+remains pending. `#313` retains its completed delivery records for eventual
+preservation. Its unused reserved expensive position returned to L1's
+unallocated pool; grants remain A=1 and B/C/D=0 until reassigned. No `main`
+merge, push, compatibility fallback, product implementation, image build, or
+hardware claim was performed by D1.
