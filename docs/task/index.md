@@ -189,3 +189,4 @@ thing about the tree. Both indexes now say the same thing.
 - [x] [**20260910-1012-c-fleet-app-trust-obligations Classify fleet application and trust obligations**](20260910-1012-c-fleet-app-trust-obligations.md) `P1`
 
 - [x] [**20260910-1012-c-config-update-obligations Classify configuration and update policy obligations**](20260910-1012-c-config-update-obligations.md) `P1`
+- [x] [**20260910-1046-c-provisioning-resolution-tests Verify provisioning resolution through the API route**](20260910-1046-c-provisioning-resolution-tests.md) `P1`
