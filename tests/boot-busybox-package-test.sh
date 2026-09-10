@@ -20,7 +20,7 @@ VERSIONS="${REPO_ROOT}/pkgs/mos-boot/versions.env"
 [ "${BUSYBOX_SHA256:-}" = b8cc24c9574d809e7279c3be349795c5d5ceb6fdf19ca709f80cde50e47de314 ] || { echo 'FAIL: BusyBox source digest differs from the official release checksum' >&2; exit 1; }
 
 for setting in \
-    CONFIG_STATIC=y CONFIG_ASH=y CONFIG_SH_IS_ASH=y \
+    CONFIG_STATIC=y CONFIG_BUSYBOX=y CONFIG_ASH=y CONFIG_SH_IS_ASH=y \
     CONFIG_MOUNT=y CONFIG_FEATURE_MOUNT_FLAGS=y CONFIG_UMOUNT=y \
     CONFIG_LOSETUP=y CONFIG_SWITCH_ROOT=y CONFIG_SYNC=y CONFIG_HALT=y \
     CONFIG_KILL=y CONFIG_MKDIR=y CONFIG_RMDIR=y CONFIG_READLINK=y \
