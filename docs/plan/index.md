@@ -102,4 +102,7 @@ disobeys on sight teaches a reader the wrong thing about the tree.
 
 - [-] [**20260909-2331-cx3576-boot-watchdog Restore mandatory cx3576 boot watchdog availability**](20260909-2331-cx3576-boot-watchdog.md) `2026-09-09`
 
+
+- [x] [**20260910-0047-cx3576-hdmi-fullscreen-logo Show one centered CX3576 HDMI logo without a cursor**](20260910-0047-cx3576-hdmi-fullscreen-logo.md) `2026-09-10`
+
 - [ ] [**20260910-0341-minimal-boot-shutdown Minimize boot and shutdown userspace with BusyBox**](20260910-0341-minimal-boot-shutdown.md) `2026-09-10`

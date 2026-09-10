@@ -160,6 +160,10 @@ thing about the tree. Both indexes now say the same thing.
 
 - [x] [**20260910-0040-strict-file-ab Replace the inactive deployment within a strict two-version budget**](20260910-0040-strict-file-ab.md) `P1`
 
+- [x] [**20260910-0044-cx3576-hdmi-fullscreen-logo Show one centered CX3576 HDMI logo without a cursor**](20260910-0044-cx3576-hdmi-fullscreen-logo.md) `P1`
+
+- [ ] [**20260910-0117-cx3576-late-hdmi-logo Restore the CX3576 boot logo after late HDMI attachment**](20260910-0117-cx3576-late-hdmi-logo.md) `P2`
+
 - [x] [**20260910-0254-cx3576-integrated-image Build the current integrated cx3576 image and reassess boot-log cleanup**](20260910-0254-cx3576-integrated-image.md) `P1`
 
 - [x] [**20260910-0338-minimal-boot-shutdown Assess minimal BusyBox boot and shutdown environments**](20260910-0338-minimal-boot-shutdown.md) `P1`

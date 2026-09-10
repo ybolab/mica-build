@@ -13,7 +13,7 @@ import { Signer } from '../../shared/update-envelope.ts'
 const BOOT_TOOLS = 'ai-agent/mos-boot-tools-amd64'
 const FIT_TOOLS = 'ai-agent/mos-fit-tools-amd64'
 export const X64_CMDLINE = 'console=ttyS0,115200n8 net.ifnames=0 i6300esb.heartbeat=120 ro dm_verity.require_signatures=1 panic=5 rdinit=/init'
-export const CX3576_CMDLINE = 'console=ttyFIQ0,1500000n8 net.ifnames=0 ro dm_verity.require_signatures=1 panic=5 rdinit=/init'
+export const CX3576_CMDLINE = 'console=ttyFIQ0,1500000n8 net.ifnames=0 ro dm_verity.require_signatures=1 panic=5 rdinit=/init fbcon=logo-pos:center,logo-count:1 vt.global_cursor_default=0'
 
 function docker(args: string[]) {
   const result = spawnSync('docker', args, { encoding: 'utf8', timeout: 120000 })

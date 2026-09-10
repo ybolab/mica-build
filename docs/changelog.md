@@ -42,6 +42,22 @@ updates, three-trial fallback and DATA archive retirement-failure recovery. The
 DATA-only growth; SYSTEM is 1 GiB with 197 MiB allocated. The task records the
 pinned source, reused BSP kernel and image checksum. Physical P10 remains open.
 
+## 2026-09-10 00:51 [decision]
+
+The user narrowed `20260910-0047-cx3576-hdmi-fullscreen-logo` to one centered
+CX3576 HDMI logo with no cursor and approved implementation. The earlier
+fullscreen-scaling and late-logo-lifetime proposal is superseded by correcting
+the effective kernel command line and its authenticated packaging policy.
+
+The implemented fix embeds `fbcon=logo-pos:center,logo-count:1` and
+`vt.global_cursor_default=0` in the forced kernel command line, with matching
+packaging and board declarations. Four regressions reproduce the original defect
+and pass after the repair; all 388 build tests pass. The rebuilt kernel contains
+the policy and its signed 1,299 MiB candidate image passes required FIT signatures,
+123 offline checks, flash geometry and checksum validation. The
+[delivery record](task/20260910-0044-cx3576-hdmi-fullscreen-logo.md) identifies the
+image and reused root/firmware inputs. Physical HDMI display remains untested.
+
 ## cx3576 SYSTEM reduced to 1 GiB (2026-09-10)
 
 SYSTEM is now 1024 MiB and DATA starts at 1042 MiB. Firmware layout validation,
