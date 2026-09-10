@@ -120,3 +120,9 @@ disobeys on sight teaches a reader the wrong thing about the tree.
 - [x] [**20260910-0616-cx3576-storage-display-cleanup Container storage and CX3576 boot presentation**](20260910-0616-cx3576-storage-display-cleanup.md) `2026-09-10`
 
 - [x] [**20260910-0726-unlimited-application-data Unlimited application data with bounded var**](20260910-0726-unlimited-application-data.md) `2026-09-10`
+
+- [x] [**20260910-1013-b0-lifecycle-rootfs-audit Lifecycle and rootfs closure design**](20260910-1013-b0-lifecycle-rootfs-audit.md) `2026-09-10`
+
+- [x] [**20260910-1038-b1-pinned-static-busybox B1 pinned static BusyBox boot package**](20260910-1038-b1-pinned-static-busybox.md) `2026-09-10`
+
+- [x] [**20260910-1142-b2-busybox-startup B2 explicit BusyBox startup semantics**](20260910-1142-b2-busybox-startup.md) `2026-09-10`
