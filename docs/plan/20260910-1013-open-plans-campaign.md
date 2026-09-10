@@ -147,3 +147,21 @@ publish remotely, or close the campaign.
 - At 2026-09-10 10:39 UTC, L1's authorized `#313` commit identity superseded
   the earlier no-commit state for current dependency decisions while retaining
   that prior state as changelog chronology.
+
+## Notes
+
+### D2 reconciliation — 2026-09-10 11:11 UTC
+
+| Record set | Evidence-backed disposition | Remaining dependency |
+|------------|-----------------------------|----------------------|
+| Two dangling CX3576 rows | Removed: commit `dfe16aca` added index rows only; no detail blob exists, while PLAN-087/RFCT-343/RFCT-345 represent and complete the work. | None; D3 only rechecks global links. |
+| PLAN-037 / RFCT-273 | Retained as an implementing, non-executable umbrella owned by `bkd/z36xbrtu`; dated RAUC/TUF wording is historical. | Reviewed A/B/C handoffs before D3. |
+| PLAN-086 / RFCT-336 | Retained implementing under B `8t4ghqi6` for S3/S6. S5 remains declined, not deferred or owed. | Ordered B1-B7 execution and handoff. |
+| Historical S905X5M RAUC/raw-slot records | Completed, closed, or removed according to recorded evidence; current signed-file task/plan are the replacement pointers. | Fresh newest-image physical ownership and bench inputs remain unresolved. |
+| CX3576 current physical records | Retained open; no offline or other-board evidence was promoted to physical proof. | A1/A2/A3, then A4 and D3. |
+| C-owned management/trust plans | Retained without racing their reviewed C1/C2 classifications. | C1/C2 reviewed merges, then D3 marker/status normalization. |
+| B-owned rootfs findings | Retained pending; current variance belongs to B6, not the obsolete aux-cache premise. | B4/B5 classification and B6/B7 acceptance. |
+
+The full 31-task/21-plan audit, unresolved owner decisions and exact PMA
+serializer rejections are recorded in the related campaign task. This plan and
+task remain implementing; D3 owns their final lifecycle closure.

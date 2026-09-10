@@ -4,7 +4,18 @@
 - **priority**: P1
 - **owner**: investigation/rfct-941-env-persistence-20260901
 - **plan**: [PLAN-910](../plan/PLAN-910.md)
-- **exposedBy**: [RFCT-940](RFCT-940.md)
+- **exposedBy**: RFCT-940
+
+## Reconciliation
+
+This defect is fixed and proven on historical hardware. The record remains only
+because the current S905X5M board dossier links to its evidence; RFCT-940 is a
+bare historical ID whose full record remains in Git. No installer-card, RAUC,
+raw-slot or compatibility operation below is a current instruction.
+
+The PMA serializer rejected completion because the legacy free-text status is
+not `in_progress`. Owner and status remain unchanged; D3 must not hand-edit
+them. Current S905X5M acceptance begins from a fresh complete signed-file image.
 
 ## Description
 

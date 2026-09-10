@@ -1,11 +1,17 @@
 # PLAN-916 Build and prove a reference MQTT application package
 
-- **status**: implementing
+- **status**: rejected
 - **createdAt**: 2026-08-31 19:52 UTC
 - **approvedAt**: 2026-08-31
 - **relatedTask**: [RFCT-932](../task/RFCT-932.md)
 
 ## Context
+
+This old combined-package/raw-slot hardware plan is superseded by the current
+S905X5M signed-file integration. Its historical MQTT implementation and offline
+artifact evidence remain valid history, but no partition write, RAUC path or old
+package in this record is a current execution instruction. Any current hardware
+MQTT acceptance needs a fresh newest-image owner assigned through the campaign.
 
 The delivered bridge is enabled on the s905x5m board, but the immutable
 enrollment directory is empty. No application has therefore exercised the
@@ -322,6 +328,9 @@ them, and `docs/design/bus.md` now makes them part of the application contract.
 
 ## Annotations
 
+- 2026-09-10: Superseded by
+  `20260910-0559-s905x5m-current-system`; current-image physical ownership is
+  unresolved in the campaign record and no historical raw-slot procedure may run.
 - Created for Phase 1 investigation on 2026-08-31.
 - Phase 1 findings and this Phase 2 proposal were completed on 2026-08-31.
   Awaiting explicit approval before implementation.

@@ -1337,3 +1337,60 @@ registry also records reviewed B0 commit
 into B. Grants remain L3 A/B/C/D=2/1/2/1 and expensive A=1, B/C/D=0, with the
 second expensive slot unallocated at L1. No main merge, push, publication, or
 `done` transition is authorized.
+
+## 2026-09-10 11:11 [progress]
+
+D2 reconciled the bounded open task/plan set for campaign
+`mos-open-plans-20260910-100408` without changing product code or current
+architecture/design wording.
+
+The dangling index-only task
+`cx3576-reproducible-bsp-20260907T1356Z` and plan
+`cx3576-reproducible-bsp-20260907T1400Z` were introduced together by
+`dfe16aca45fd66ccea766cbe31d5facf0787ff4a`; neither detail path has any blob
+in reachable history. PLAN-087 identifies the plan as an untracked draft from
+issue `69d0bv7y`, reconciles its measurements and scope, and records completion
+through RFCT-343 and RFCT-345. Both dangling rows were therefore removed rather
+than fabricated or restored.
+
+PLAN-037 remains an implementing, non-executable coordination umbrella owned by
+campaign D (`bkd/z36xbrtu`). Its dated RAUC/TUF and raw-slot roadmap text is
+explicitly historical; current execution follows the strict signed-file
+contracts. PLAN-086 and RFCT-336 now truthfully identify campaign B ownership
+of remaining S3/S6 work. The user's 2026-09-08 decision is unchanged in meaning:
+**S5 was declined, not deferred and not owed; the slice is out of the plan.**
+The separate BusyBox boot/shutdown work does not authorize general
+shell/network-tool reduction, outbound-SSH removal, or PAM/NSS/crypto pruning.
+
+Historical S905X5M records were reconciled against current signed-file task
+`20260910-0554-s905x5m-current-system` and plan
+`20260910-0559-s905x5m-current-system`. PLAN-910, PLAN-913, PLAN-915 and
+PLAN-916 are closed as superseded; PLAN-911 is completed by its recorded
+hardware smoke result; PLAN-912 retains the real controlled-peer gap with no
+invented owner. RFCT-915 and RFCT-335 are completed. RFCT-921, RFCT-926,
+RFCT-932, RFCT-944 and RFCT-945 are closed as superseded. RFCT-922 remains
+pending and unassigned for a controlled-peer run on a fresh current image.
+
+Four obsolete task details left the tree with their index rows: RFCT-916
+(`Declare the shared kernel surface for container networking`) had completed
+historical PLAN-911 evidence and an obsolete M2/RAUC deployment path; RFCT-925
+(`Decide the tree-wide FIT verified-boot design`) is superseded by the current
+required signed-FIT contract; RFCT-934 (`Prove the s905x5m A/B watchdog and
+rollback on hardware`) used the removed RAUC/raw-slot path, while its physical
+watchdog/power-cut gap remains open in the campaign; RFCT-940 (`The installer
+card blocks Linux boot on a board it already installed`) already said it was
+fixed and proven on hardware. Its full evidence remains in Git history.
+RFCT-941 (`The installer reinstalls on every boot because its receipt never
+persists`) is also fixed and proven, but remains because the current S905X5M
+board dossier links to its evidence; its link to deleted RFCT-940 became a bare
+historical ID. Current S905X5M physical installation, boot, peripheral,
+watchdog, recovery, power-cut, shutdown, MQTT and native-container obligations
+remain explicitly unassigned and blocked on a fresh newest-image bench run in
+the campaign record; historical evidence was not relabeled as current proof.
+
+PMA lifecycle transitions used `task-state.sh`: RFCT-273 and RFCT-336 were
+unclaimed from their stale owners and claimed by the current D and B
+coordinators; RFCT-335 and RFCT-915 were completed; RFCT-921, RFCT-926,
+RFCT-932, RFCT-944 and RFCT-945 were closed; RFCT-922 was unclaimed. Serializer
+rejections for legacy noncanonical records are preserved verbatim in the
+campaign task. No owner/status field was hand-edited after a rejection.

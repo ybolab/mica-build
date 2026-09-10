@@ -1,12 +1,18 @@
 # PLAN-913 Restore shared rootfs cold-build reproducibility
 
-- **status**: draft
+- **status**: rejected
 - **owner**: reproducibility/ldconfig-aux-cache
 - **createdAt**: 2026-08-31 07:28 UTC
 - **approvedAt**: (pending)
 - **relatedTask**: RFCT-921
 
 ## Context
+
+This aux-cache-specific proposal is superseded. Current pack-tree surgery no
+longer carries the diagnosed input, and campaign B6 owns measurement of any
+remaining cold-build variance after the current runtime composition lands.
+The measurements below remain historical evidence; they do not define B6's
+current input or acceptance result.
 
 RFCT-913 found that an otherwise identical cold arm64 rootfs differs at
 `/usr/share/factory/var/cache/ldconfig/aux-cache`, changing both the squashfs
@@ -109,5 +115,7 @@ fully reproducible by itself.
 
 ## Annotations
 
+- 2026-09-10: Superseded by campaign B6 (`dmu2xs16`), which is blocked by B5
+  and must measure current inputs rather than revive this build-v2 diagnosis.
 - 2026-08-31 07:28 UTC: investigation and proposal complete; explicit Phase 3
   approval is required before source changes or the two cold builds.

@@ -294,3 +294,94 @@ owner's status directly.
   lacking actual hardware evidence.
 - This tracking node does not complete product implementation, image builds,
   hardware proof, or historical reconciliation.
+
+### D2 reconciliation audit — 2026-09-10 11:11 UTC
+
+The tables are bounded to the 31 task rows and 21 plan rows that were not
+marked completed when D2 began. `Pair` records the index marker and detail
+status at that point; format examples are excluded.
+
+| Task | Pair | Actual obligation, owner and dependency | D2 disposition |
+|------|------|-----------------------------------------|----------------|
+| RFCT-273 | `[-]` / `in_progress` | Non-executable roadmap coordination; D owns it and waits for reviewed A/B/C handoffs. | Owner transferred with the serializer to `bkd/z36xbrtu`; retained open. |
+| RFCT-290 | `[ ]` / `pending` | Fleet architecture decision; C2 `3nblyzz4`, then D3 after reviewed handoff. | Retained; no product decision invented. |
+| RFCT-305 | `[-]` / `in_progress` | Gate-A residual classification; old issue `hw1jo2un` is done, C2 owns current classification. | Retained unchanged pending C2 review. |
+| RFCT-310 | `[-]` / `implementing` | Full Docker/git-host image proof remains to be classified against B7; old issue `e81lsy1j` is done. | Retained; noncanonical serializer blocker recorded below. |
+| RFCT-315 | `[-]` / legacy free text | Operator/effective assertions and obsolete TUF wording; C1 `kpuc7zcb`, then D3. | Retained; noncanonical serializer blocker recorded below. |
+| UI-011 | `[ ]` / `pending` | Reliable Bun V8 coverage aggregation; unassigned, no dependency. | Retained pending. |
+| RFCT-335 | `[-]` / `in_progress` | Virtual ARM64 board delivery; old issue `y6gfy207` and PLAN-085 are done. | Completed with the serializer. |
+| RFCT-336 | `[-]` / `in_progress` | PLAN-086 S3/S6; B `8t4ghqi6`, ordered B1-B7. S5 is rejected. | Ownership transferred with the serializer; retained open. |
+| `cx3576-reproducible-bsp-20260907T1356Z` | `[-]` / missing | No detail blob ever existed; PLAN-087 reconciles the untracked draft into RFCT-343 and RFCT-345. | Dangling row removed; no file fabricated. |
+| `20260908-1423-file-ab-signed-components` | `[-]` / `in_progress` | P10 physical CX3576 acceptance; A4 after A1/A2/A3. | Retained unchanged for A/D3 handoff. |
+| RFCT-915 | `[-]` / `in_progress` | Historical logind/SSH repair; PLAN-911 later records passing hardware smoke. | Completed with the serializer; current-image hardware is separate. |
+| RFCT-916 | `[-]` / legacy free text | Historical kernel-floor/M2 proof; old RAUC deployment is obsolete, current S905X5M physical networking is unassigned. | Obsolete detail and row removed after changelog preservation. |
+| RFCT-922 | `[-]` / `in_progress` | Controlled BLE GATT peer on a fresh current S905X5M image; owner and peer both unresolved. | Unclaimed with the serializer; retained pending and unassigned. |
+| RFCT-921 | `[-]` / `in_progress` | Old aux-cache diagnosis; current variance belongs to B6 after B5. | Closed with the serializer as superseded. |
+| RFCT-925 | `[ ]` / `pending` | Former FIT design debt; current signed-FIT contract supersedes it. | Obsolete detail and row removed after exact serializer rejection. |
+| RFCT-926 | `[-]` / `in_progress` | Old per-board bootm derivation; current fixed signed-FIT contract supersedes it. | Closed with the serializer. |
+| RFCT-932 | `[-]` / `in_progress` | Old combined MQTT/raw-slot deployment; current-image MQTT hardware ownership is unresolved. | Closed with the serializer as superseded. |
+| RFCT-934 | `[-]` / `blocked` | Historical RAUC/raw-slot watchdog proof; current signed-file watchdog/power-cut hardware is unassigned and needs a rig. | Obsolete detail and row removed; current gap stays open here. |
+| RFCT-940 | `[ ]` / `fixed and proven` | Installer-gate defect already fixed and proven; no remaining obligation. | Detail and row removed; Git/changelog retain history. |
+| RFCT-941 | `[-]` / `fixed and proven` | Installer-receipt defect already fixed and proven; current board dossier retains its evidence link. | Retained with owner/status unchanged after serializer rejection; old operations are historical only. |
+| RFCT-944 | `[-]` / `in_progress` | Old SD-image runtime qualification; current signed-file source is complete, fresh hardware remains unassigned. | Closed with the serializer as superseded. |
+| RFCT-945 | `[-]` / `in_progress` | Old-image Wi-Fi evidence; current-image Wi-Fi qualification remains unassigned. | Closed with the serializer as superseded. |
+| `20260908-2011-state-units-never-load` | `[ ]` / `pending` | STATE-unit reload remains real; B4/B5 classification/assignment is required. | Retained unassigned; D3 waits for B handoff. |
+| `20260908-2011-ssh-generator-vs-image-policy` | `[ ]` / `pending` | SSH-generator policy remains real; B4/B5 classification/assignment is required. | Retained unassigned; D3 waits for B handoff. |
+| `20260908-2011-wtmp-unbounded-append` | `[ ]` / `pending` | Bounded wtmp disposition remains real; B4/B5 classification/assignment is required. | Retained unassigned; D3 waits for B handoff. |
+| `20260908-2229-file-ab-delivery-x64-first` | `[-]` / `in_progress` | P10 physical CX3576 acceptance; A4 after A1/A2/A3. | Retained unchanged. |
+| `20260909-1421-apid-reboot` | `[-]` / `in_progress` | Original-device refusal/boot evidence; physical device/endpoint and owner are unresolved. | Retained; campaign names the ownership decision. |
+| `20260909-2331-cx3576-boot-watchdog` | `[-]` / `in_progress` | Current physical startup/watchdog/recovery proof; A4 after repairs and matrix. | Retained unchanged. |
+| `20260910-0025-cx3576-boot-log-cleanup` | `[-]` / `in_progress` | Resource repairs plus current-image handoff; A1/A4 dependency. | Retained unchanged for A handoff. |
+| `20260910-0117-cx3576-late-hdmi-logo` | `[ ]` / `pending` | Current late-attach logo behavior; A3 after A1. | Retained pending; A3 owns its campaign successor. |
+| `20260910-1013-open-plans-campaign` | `[-]` / `in_progress` | D coordination and D3 final reconciliation. | Retained open as required. |
+
+| Plan | Pair | Actual obligation, owner and dependency | D2 disposition |
+|------|------|-----------------------------------------|----------------|
+| PLAN-037 | `[ ]` / `approved` | Umbrella coordination only; D owns it and D3 waits for reviewed handoffs. | Canonicalized to `[-]` / `implementing`; no duplicate subtask. |
+| PLAN-054 | `[ ]` / `approved` | Fleet boundary/cost classification; C2 then D3. | Retained for reviewed C2 handoff. |
+| PLAN-069 | `[ ]` / `approved` | Conditional managed-application controls; C2 then D3. | Retained; no trigger invented. |
+| PLAN-070 | `[ ]` / `approved` | Current configuration obligations and obsolete TUF language; C1 then D3. | Retained for reviewed C1 handoff. |
+| PLAN-071 | `[ ]` / `approved` | Current native update-policy obligations; C1 then D3. | Retained for reviewed C1 handoff. |
+| PLAN-072 | `[ ]` / `approved` | Fleet registration scope; C2 then D3. | Retained for reviewed C2 handoff. |
+| PLAN-076 | `[ ]` / `approved` | Device-state reporting scope; C2 then D3. | Retained for reviewed C2 handoff. |
+| PLAN-077 | `[ ]` / `proposed` | Gate-A classification; C2 then D3. | Retained for reviewed C2 handoff. |
+| PLAN-086 | `[-]` / `approved` | S3/S6 runtime work; B1-B7. S5 stays rejected. | Canonicalized to `[-]` / `implementing`; B ownership explicit. |
+| `cx3576-reproducible-bsp-20260907T1400Z` | `[ ]` / missing | Untracked draft reconciled and completed by PLAN-087, RFCT-343 and RFCT-345. | Dangling row removed; no file fabricated. |
+| `20260908-1428-file-ab-signed-components` | `[-]` / `implementing` | P10 current CX3576 physical acceptance; A4. | Retained unchanged. |
+| PLAN-910 | `[-]` / `implementing` | Historical S905X5M RAUC/raw-slot intake; current signed-file system supersedes it. | Closed as `[~]` / `rejected`; current hardware stays open here. |
+| PLAN-911 | `[-]` / `implementing` | Four historical runtime repairs and smoke proof are recorded complete. | Completed as `[x]` / `completed`; current-image proof separate. |
+| PLAN-912 | `[ ]` / `draft` | Controlled BLE GATT peer on a fresh current image; owner/peer unresolved. | Retained draft and made unassigned. |
+| PLAN-913 | `[ ]` / `draft` | Obsolete aux-cache proposal; B6 owns current variance after B5. | Closed as `[~]` / `rejected`. |
+| PLAN-915 | `[-]` / `implementing` | Old bootm derivation superseded by current fixed FIT policy. | Closed as `[~]` / `rejected`. |
+| PLAN-916 | `[-]` / `implementing` | Old combined MQTT/raw-slot plan superseded by current S905X5M system. | Closed as `[~]` / `rejected`; fresh-image hardware unassigned. |
+| `20260909-2331-cx3576-boot-watchdog` | `[-]` / `implementing` | Current physical watchdog/recovery proof; A4. | Retained unchanged. |
+| `20260910-0029-cx3576-boot-log-cleanup` | `[ ]` / `draft` | Current resource repair/qualification; A1/A4. | Retained pending A handoff. |
+| `20260910-0341-minimal-boot-shutdown` | `[ ]` / `draft` | Separate BusyBox startup/exitrd work; B1-B7. | Retained draft; explicitly does not revive PLAN-086 S5. |
+| `20260910-1013-open-plans-campaign` | `[-]` / `implementing` | D coordination through D3. | Retained open as required. |
+
+Current unresolved ownership decisions are explicit: S905X5M fresh-image
+physical installation/peripheral/watchdog/recovery/power-cut/shutdown/MQTT/
+native-container acceptance; the original-device reboot report; and the three
+`20260908-2011-*` tasks after B4/B5 classification. No historical board result
+is treated as current proof.
+
+Serializer calls succeeded for RFCT-273, RFCT-335, RFCT-336, RFCT-915,
+RFCT-921, RFCT-922, RFCT-926, RFCT-932, RFCT-944 and RFCT-945. These exact
+legacy-format rejections were observed before the affected status/owner was
+left unchanged or the obsolete record was removed:
+
+```text
+task-state: complete requires in_progress status, found in_progress — hardware acceptance awaits an M2-bearing deployed payload
+task-state: pending task has unexpected owner: mainline
+task-state: close requires pending or in_progress status, found blocked
+task-state: complete requires in_progress status, found fixed and proven on hardware — the gate now clears; it exposed a second defect, [RFCT-941](RFCT-941.md)
+task-state: complete requires in_progress status, found fixed and proven on hardware — the receipt survives the post-burn defenv and the card no longer reinstalls
+task-state: complete requires in_progress status, found implementing
+task-state: complete requires in_progress status, found in-progress (F7/F8/F9 delivered; Rust, verify and build suites green; operator/effective content assertions owed)
+```
+
+The last two rejections belong to retained RFCT-310 and RFCT-315. Their old BKD
+issues are done, but B7 and the reviewed C1 handoff respectively still control
+the truthful next disposition; D2 did not normalize them by hand. C-owned
+approved/proposed plan heads likewise wait for reviewed C handoffs and D3's
+global lifecycle pass.

@@ -1,6 +1,6 @@
 # RFCT-944 Resolve runtime defects observed on the mainline S905X5M SD image
 
-- **status**: in_progress
+- **status**: closed
 - **priority**: P1
 - **owner**: miehq
 - **createdAt**: 2026-09-08 08:18 UTC
@@ -49,12 +49,12 @@ degraded because the optional front-panel scripts cannot execute.
 
 ## ActiveForm
 
-Implementing the approved front-panel packaging repair; see PLAN-924.
+Closed as superseded by the current S905X5M signed-file integration.
 
 ## Dependencies
 
-- **blocked by**: (none for investigation)
-- **blocks**: full runtime qualification of the mainline S905X5M image
+- **blocked by**: (none; historical image qualification superseded)
+- **blocks**: (none; current physical qualification is tracked by the campaign)
 
 ## Notes
 
@@ -161,3 +161,5 @@ the source merge.
 Upstream also masks systemd-gpt-auto-generator in future system packages.
 That source change addresses the generated EFI mount identified above, but
 the currently booted image predates it and has not been updated or retested.
+
+- close: Superseded by the current S905X5M signed-file integration and its fresh-image physical acceptance gap.

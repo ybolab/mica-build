@@ -1,6 +1,6 @@
 # RFCT-921 Make the shared rootfs cold-build reproducible
 
-- **status**: in_progress
+- **status**: closed
 - **priority**: P1
 - **owner**: reproducibility/ldconfig-aux-cache
 - **createdAt**: 2026-08-31 07:17 UTC
@@ -36,12 +36,12 @@ scope, and the repository must not be pushed.
 
 ## ActiveForm
 
-Investigating the shared ldconfig aux-cache reproducibility defect.
+Closed as superseded by campaign B6 current-input reproducibility work.
 
 ## Dependencies
 
-- **blocked by**: (none)
-- **blocks**: reproducible rootfs provenance claims
+- **blocked by**: (none; historical diagnosis superseded)
+- **blocks**: (none; campaign B6 owns current cold-build proof)
 
 ## Notes
 
@@ -65,3 +65,5 @@ Investigating the shared ldconfig aux-cache reproducibility defect.
   one-shot ldconfig work, with the same resulting main loader cache.
 - PLAN-913 records the removal decision, test guard, cold-build method, known
   x64 initramfs limitation, and external apt-input check.
+
+- close: Superseded by campaign B6, which measures current cold-build variance after current runtime composition.
