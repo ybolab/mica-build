@@ -82,7 +82,7 @@ the named board and physical observations.
   unconfirmed. The available A kernel gate is independent of future reviewed
   B/C integration, which is not imported or treated as source-identical.
 
-## Final bounded outcome
+## Earlier bounded outcome — retained chronology
 
 Collector correction and evidence delivery are complete. The coherent kernel
 gate at `38a362cd3ce46bab6d1f04489503dca9b92b664c` passed on
@@ -100,3 +100,33 @@ FIT and deployment records then require their own exact-candidate gates. No
 image, firmware, x64/virt-arm64 matrix or the passed kernel was rebuilt merely
 for documentation. This completes the bounded software/evidence deliverable,
 not exact-image composition or any of the mandatory physical rows.
+
+## Authorized composition phase — in progress
+
+The subsequent exact L1/L2 source/input handoff resolves the earlier current-root
+and native-init dependency. It authorizes read-only execution of the existing
+recipes at `9d1218e2689eb5e3fce99ad1736f3a1fdc8c8801` in a private,
+self-contained clean checkout, not B/C source integration or product edits.
+The completed status above retains the earlier outcome; the new phase state is
+recorded here and in the paired task without fabricating a PMA reopen operation.
+
+1. Verify exact source and selected inputs, preserve the passed kernel identity,
+   and rebuild only selected packages whose old stamps fail current freshness.
+   First serialize system/profile/CA/radio policy and the ARM64 CX board package;
+   collect actual archive hashes, source identity, index and layout-script proof.
+2. Complete the remaining selected ARM64 producers and existing package gates,
+   then build a new CX dev root with management, containers and normal radios.
+   Verify installed current layout, units, dependencies, public defaults and
+   console/reset policy from the actual root, not the old images.
+3. Reuse the approved native init and inherited firmware with their original
+   provenance; generate new support/FIT, signatures, fresh records and full image.
+   Run exact-candidate negative/signature/readback/offline gates without importing
+   pending B/C payload. A separately pinned approved C verifier may be used only
+   as a tool with a distinct verifier identity.
+4. Review the concrete evidence and scoped docs, record exact outcomes and
+   remaining hardware rows, then commit locally for L2 integration. D owns global
+   history. One heavy job runs at a time; each detached gate is reported promptly
+   and collected by L2 before continuing. No physical action is authorized.
+
+This is the next artifact phase of the same node, not recovery retry 2. The
+paired task holds the exact private paths, command and gate metadata.

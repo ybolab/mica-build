@@ -15,7 +15,7 @@ without relabelling its dirty-stamped build or duplicating implementation.
 
 ## ActiveForm
 
-Completed collector and coherent kernel evidence; complete-image composition and physical qualification remain blocked by the inputs below.
+Completed collector and coherent kernel evidence; the separately authorized composition phase below is in progress. Physical qualification remains blocked.
 
 ## Dependencies
 
@@ -23,6 +23,90 @@ Completed collector and coherent kernel evidence; complete-image composition and
 - **blocks**: Workstream A integration review and workstream D final reconciliation.
 
 ## Notes
+
+### Authorized composition continuation — 2026-09-10
+
+Phase state: in progress, owned by `bkd/1zjiu5h5`. The completed task/index
+status above preserves the earlier collector/kernel delivery; it does not claim
+that this new candidate exists or passes. The PMA serializer has no reopen
+operation, so this continuation is a content update under the explicit L1/L2
+handoff, not an invented status transition or a second task. Recovery retries
+remain 1.
+
+The exact L1 source/input handoff delivered through L2 authorizes a new CX3576
+development root and signed-file composition using existing recipes read-only.
+The clean branch was fast-forwarded to local L2 commit
+`9d1218e2689eb5e3fce99ad1736f3a1fdc8c8801`, tree
+`0a1c2b4ddd86945961da16cc6d4d268e636f2273`, identical to the previous A4 final
+tree. No main, sibling or remote branch was imported. The earlier root/native-init
+input blocker is resolved by this authorization to build the current root and
+reuse the explicitly selected source-equivalent native init; the two rejected
+old roots remain rejected and their historical audit below remains unchanged.
+
+Immutable, self-contained checkout and staging:
+`/srv/station/work/tmp/mos/1zjiu5h5/composition-20260910-2026-z2Ljld/`.
+`source/` has its own Git object database, no alternates, exact HEAD/tree above
+and a clean tracked/untracked state. `evidence/source-files-before.txt` records
+all tracked modes/blob identities (SHA-256
+`79f1af52e60640a0fa772ea6a0d632e4a61cf39f5c8ab9b08f78b817040d8b33`).
+The only public defaults input is `inputs/meta/updates/manifest.json`, copied
+byte-identically from this commit, SHA-256
+`a30e535b37d8ab32d62d21f118dd610d102584c214375cf229353e0ab474ce00`.
+There is no GENERATED marker, endpoint override or signing key in that input.
+
+Existing pools report stamps `git5c61f7fbb558.dirty-1` (approved S905 snapshot),
+`git97bb466792ca-1` (original main output), and `gitd64b23a7d92a.dirty-1`
+(CX storage-display snapshot). `rootfs/build.sh` requires the pool's one stamp
+to equal this checkout's `git9d1218e2689e-1`; these archives cannot be copied or
+renamed into a passing current pool. Only the selected producers will be
+rebuilt, serially, without weakening stale-source/index/ownership checks.
+
+First package gate: the five selected architecture-independent producers
+`system`, `profile`, `ca-trust`, `wifi`, `bluetooth`, then `board-cx3576` for
+ARM64. Existing `build-env/deb/preflight.sh --producer NAME` and
+`build-env/deb/build.sh --producer NAME --arch all|arm64` remain unchanged.
+Their `all` outputs also populate the private amd64 pool by recipe; that is one
+archive exported twice, not an x64 build matrix. The remaining selected native
+producers, new root, support/FIT/records/image and exact-candidate gates follow
+serially after result collection. No full-image or hardware pass is implied by
+this first partial pool.
+
+The passed kernel remains bound to `38a362cd`, not the documentation/source
+sync commit. The selected native init remains the original development binary
+`33e66fbc63ee8353f0ddcee33cd53fdc504ec146824f9ad02d3d3d9329fffd5d`
+with approved #313 source-content equivalence. Firmware and signing input
+admission follow the exact handoff; no key generation or firmware rebuild is
+authorized. A-baseline composition does not include pending B/C product changes.
+
+PMA Bun/Rust acceptance baselines apply to package provenance, pinned tools,
+compiled dependencies and artifact checks; unchanged product code is not being
+refactored or declared production-ready. New executable product behavior is
+absent in this phase, so new product RED/GREEN is not applicable; the earlier
+collector RED/GREEN is retained. All 38 mandatory CX physical rows, S905 physical
+obligations and original-device reboot remain unqualified. A coordinates and A4
+integrates; device/operator/endpoint/current-image/power inputs are unconfirmed.
+Historical D5 remains optional and nonblocking. D owns global reconciliation.
+
+Checkpoint review: pma-cr local review of the actual two-document delta and
+external gate/resource wrapper found zero reportable issues (PASS). Product
+source is unchanged. `bash -n` passed for both external scripts; all six existing
+producer preflights passed (23 examined inputs total); `make docs-verify` and
+scoped `git diff --check` passed. The documentation log is
+`evidence/docs-composition-checkpoint.log`, SHA-256
+`8a05e614b6a6f3057988dc2ab915a7d38c1dca9b9fb13c021799786872185216`.
+
+Prepared command: `bash /srv/station/work/tmp/mos/1zjiu5h5/composition-20260910-2026-z2Ljld/package-policy-gate.sh`.
+Script SHA-256: `6ad5386d2a3cf895db6d982c40dad99f85692671402479aa9b52513a0a9bc108`;
+invocation-only Docker wrapper SHA-256:
+`e9625db5b77d4d9d4cf59c784261c9605e301cdd0a2e6396b8f942126b8937d8`.
+The persistent-shell session is `1zjiu5h5-a3c184`; authoritative live/final
+metadata will be `evidence/package-policy-gate.json`, with PID, UTC times,
+source/tree, command, script hash and exitCode. Full output is
+`evidence/package-policy-gate.log` plus per-producer logs. This is prepared-gate
+metadata, not a claim that the package build has already passed. No old resource
+was deleted; the prior kernel evidence and build image remain preserved.
+
+### Original collector/kernel tracking
 
 - Campaign: `mos-open-plans-20260910-100408`; issue: `1zjiu5h5`; coordinator: `6064wf7l`.
 - Full-tier approval and scoped local commits were supplied by the campaign dispatch. Compatibility, migrations, RAUC, raw-slot and old-package support are excluded.
