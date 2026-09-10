@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # mos-build-side: container -- replace the control FDT's required public FIT keys.
 set -euo pipefail
-[ "$#" -eq 4 ] || { echo 'usage: embed-trust.sh CONTROL_DTB CERTIFICATE_BUNDLE OUTPUT_DTB TOOLS_DIRECTORY' >&2; exit 2; }
+[ "$#" -eq 4 ] || { echo 'usage: embed-fit-trust.sh CONTROL_DTB CERTIFICATE_BUNDLE OUTPUT_DTB TOOLS_DIRECTORY' >&2; exit 2; }
 control=$1
 bundle=$2
 output=$3

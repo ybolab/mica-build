@@ -43,6 +43,7 @@ export function maintainFirmware(options: FirmwareMaintenance): Firmware {
   const installedEnvelope = read(options.installed, 16384)
   const installed = authenticateFirmware(installedEnvelope.toString('utf8'), options.keys)
   if (candidate.board !== options.board || installed.board !== options.board) throw new Error('Firmware maintenance board mismatch')
+  if (candidate.target.format === 'amlogic-boot0') throw new Error('Amlogic boot0 maintenance requires the board recovery package')
   const efi = candidate.target.format === 'efi'
   if (efi ? !options.esp || !!options.rkdeveloptool : !options.rkdeveloptool || !!options.esp) throw new Error('Select exactly the board firmware destination')
   if (efi) {

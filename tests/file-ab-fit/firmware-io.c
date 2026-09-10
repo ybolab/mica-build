@@ -13,7 +13,29 @@ typedef long long loff_t;
 #define UCLASS_MMC 2
 #define BUTTON_ON 1
 #define FS_TYPE_EXT 1
+#ifdef S905X5M
+#define IS_SD(mmc) selected_sd
+#define BOOT_EMMC 1
+static int boot_source = BOOT_EMMC, boot_index = 1, selected_sd = 1;
+static int store_get_type(void) { return boot_source; }
+static int store_bootup_bootidx(const char *name) { assert(!strcmp(name, "bootloader")); return boot_index; }
+#define ENV_A 245760
+#define ENV_B 253952
+#define SYSTEM_START 262144
+#define FIRMWARE_SECTORS 262080
+#define FIT_ADDRESS 0x28000000UL
+#define WATCHDOG_MS 60000
+#define EXPECT_FLUSHES 0
+#else
 #define IS_SD(mmc) 0
+#define ENV_A 32768
+#define ENV_B 34816
+#define SYSTEM_START 36864
+#define FIRMWARE_SECTORS 36800
+#define FIT_ADDRESS 0x60000000UL
+#define WATCHDOG_MS 120000
+#define EXPECT_FLUSHES 1
+#endif
 struct blk_desc { unsigned int blksz; int uclass_id, devnum; };
 struct mmc { int unused; };
 struct udevice { int unused; };
@@ -54,8 +76,8 @@ static void put_unaligned_le32(uint32_t value, unsigned char *p)
 static unsigned long blk_dread(struct blk_desc *d, unsigned long sector, unsigned long blocks, void *out)
 {
     assert(armed && d == &disk && blocks == 128);
-    int copy = sector == 32768 ? 0 : 1;
-    assert(sector == 32768 || sector == 34816);
+    int copy = sector == ENV_A ? 0 : 1;
+    assert(sector == ENV_A || sector == ENV_B);
     reads++;
     if (copy == fail_copy || (fault == 3 && writes)) return 127;
     memcpy(out, medium[copy], 65536);
@@ -64,36 +86,44 @@ static unsigned long blk_dread(struct blk_desc *d, unsigned long sector, unsigne
 }
 static unsigned long blk_dwrite(struct blk_desc *d, unsigned long sector, unsigned long blocks, const void *in)
 {
-    assert(d == &disk && sector == 34816 && blocks == 128 && loads == 0);
+    assert(d == &disk && sector == ENV_B && blocks == 128 && loads == 0);
     writes++;
     memcpy(medium[1], in, fault == 1 ? 32768 : 65536);
     return fault == 1 ? 64 : blocks;
 }
+#ifndef S905X5M
 static int mmc_flush_cache(struct mmc *m)
 { assert(m == &mmc && writes == 1 && loads == 0); flushes++; return fault == 2 ? -1 : 0; }
+#endif
 static void blkcache_invalidate(int kind, int number)
-{ assert(kind == UCLASS_MMC && number == 0 && flushes == 1); invalidations++; }
+{ assert(kind == UCLASS_MMC && number == 0 && flushes == EXPECT_FLUSHES); invalidations++; }
 static struct blk_desc *mmc_get_blk_desc(struct mmc *m) { assert(m == &mmc); return &disk; }
 static int part_get_info(struct blk_desc *d, int number, struct disk_partition *p)
 {
-    const unsigned long starts[] = {64, 36864, 36864 + system_sectors};
-    const unsigned long sizes[] = {36800, system_sectors, data_sectors};
+    const unsigned long starts[] = {64, SYSTEM_START, SYSTEM_START + system_sectors};
+    const unsigned long sizes[] = {FIRMWARE_SECTORS, system_sectors, data_sectors};
     const char *names[] = {"firmware", "system", "data"};
     assert(d == &disk);
     if (number == 4) return -1;
     p->start = starts[number - 1]; p->size = sizes[number - 1];
     strcpy((char *)p->name, names[number - 1]); return 0;
 }
-static void disable_ctrlc(int disable) { assert(disable == 1); }
+static void disable_ctrlc(int disable) { assert(disable == 1 || disable == 0); }
 static int env_set(const char *key, const char *value)
-{ assert(!strcmp(key, "verify") && !strcmp(value, "yes")); return 0; }
+{
+    assert((!strcmp(key, "verify") && !strcmp(value, "yes")) ||
+           (!strcmp(key, "bootargs") && strstr(value, "dm_verity.require_signatures=1")));
+    return 0;
+}
+#ifndef S905X5M
 static int button_get_by_label(const char *label, struct udevice **out)
 { assert(!strcmp(label, "recovery")); *out = &device; return 0; }
 static int button_get_state(struct udevice *d) { assert(d == &device); return recovery_key; }
+#endif
 static int uclass_get_device(int kind, int number, struct udevice **out)
 { assert(kind == UCLASS_WDT && number == 0); *out = &device; return watchdog_probe_error; }
 static int wdt_start(struct udevice *d, unsigned long timeout, int flags)
-{ assert(d == &device && timeout == 120000 && flags == 0); if (watchdog_start_error) return watchdog_start_error; armed = 1; return 0; }
+{ assert(d == &device && timeout == WATCHDOG_MS && flags == 0); if (watchdog_start_error) return watchdog_start_error; armed = 1; return 0; }
 static void wdt_reset(struct udevice *d) { assert(d == &device); }
 static struct mmc *find_mmc_device(int n) { assert(armed && n == 0); return &mmc; }
 static int mmc_init(struct mmc *m) { assert(m == &mmc); return 0; }
@@ -108,20 +138,30 @@ static int fs_set_blk_dev(const char *kind, const char *part, int type)
 static int fs_size(const char *path, loff_t *size) { assert(strstr(path, "/boot.itb")); *size = 4096; return 0; }
 static int fs_read(const char *path, unsigned long address, loff_t offset, loff_t size, loff_t *loaded)
 {
-    (void)path; assert(address == 0x60000000UL && offset == 0 && size == 4096);
-    assert(!fault && writes == 1 && flushes == 1 && invalidations == 1 && reads == 3);
+    (void)path; assert(address == FIT_ADDRESS && offset == 0 && size == 4096);
+    assert(!fault && writes == 1 && flushes == EXPECT_FLUSHES && invalidations == 1 && reads == 3);
     loads++; *loaded = size; return 0;
 }
 static int fdt_check_header(const void *p) { (void)p; return 0; }
 static loff_t fdt_totalsize(const void *p) { (void)p; return 4096; }
+#ifndef S905X5M
 static void bootm_boot_start(unsigned long address, const char *args)
-{ assert(address == 0x60000000UL && strstr(args, "dm_verity.require_signatures=1")); launches++; longjmp(stopped, 1); }
+{ assert(address == FIT_ADDRESS && strstr(args, "dm_verity.require_signatures=1")); launches++; longjmp(stopped, 1); }
 static int run_command(const char *command, int flag)
 { assert(!strcmp(command, "rockusb 0 mmc 0") && flag == 0); recovery_calls++; return 0; }
+#else
+static int run_command(const char *command, int flag)
+{ assert(!strcmp(command, "bootm 0x28000000") && flag == 0); launches++; longjmp(stopped, 1); }
+static void cli_loop(void) { recovery_calls++; longjmp(stopped, 2); }
+#endif
 static void __noreturn hang(void) { longjmp(stopped, 2); }
 static void do_reset(void *command, int flag, int argc, void *argv)
 { (void)command; (void)flag; (void)argc; (void)argv; longjmp(stopped, 3); }
+#ifdef S905X5M
+#include "../../boards/s905x5m/bsp/uboot/mos-file-boot.c"
+#else
 #include "../../boards/cx3576/bsp/uboot/mos-file-boot.c"
+#endif
 
 static void boot_command(void)
 {
@@ -150,11 +190,17 @@ static void prepare(void)
     watchdog_probe_error = watchdog_start_error = 0;
     recovery_key = recovery_calls = 0;
     system_sectors = 2097152; data_sectors = 524288;
+#ifdef S905X5M
+    boot_source = BOOT_EMMC; boot_index = 1; selected_sd = 1;
+#endif
 }
 int main(void)
 {
     unsigned char original[65536];
     for (fault = 0; fault <= 4; fault++) {
+#ifdef S905X5M
+        if (fault == 2) continue; /* SD has no eMMC cache flush operation. */
+#endif
         prepare(); memcpy(original, medium[0], sizeof(original));
         int outcome = setjmp(stopped);
         if (!outcome) boot_command();
@@ -167,7 +213,7 @@ int main(void)
             assert(records.entry[0].tries == 2 && medium[1][4] == 3);
         } else {
             assert(outcome == 2 && launches == 0 && loads == 0);
-            assert(flushes == (fault == 1 ? 0 : 1));
+            assert(flushes == (fault == 1 ? 0 : EXPECT_FLUSHES));
         }
     }
     for (int phase = 0; phase < 2; phase++) {
@@ -178,6 +224,18 @@ int main(void)
         if (!outcome) boot_command();
         assert(outcome == 2 && armed == 0 && writes == 0 && reads == 0 && loads == 0 && launches == 0);
     }
+#ifdef S905X5M
+    for (int invalid = 0; invalid < 3; invalid++) {
+        prepare();
+        if (invalid == 0) boot_source = 0;
+        else if (invalid == 1) boot_index = 2;
+        else selected_sd = 0;
+        int outcome = setjmp(stopped);
+        if (!outcome) boot_command();
+        assert(outcome == 2 && reads == 0 && writes == 0 && loads == 0 && launches == 0);
+        assert(armed == (invalid == 2));
+    }
+#endif
     fault = 0;
     prepare(); data_sectors = 8 * 2097152UL;
     assert(valid_layout(&disk) == 0);
@@ -196,11 +254,13 @@ int main(void)
     int outcome = setjmp(stopped);
     if (!outcome) boot_command();
     assert(outcome == 2 && writes == 0 && loads == 0 && launches == 0);
+#ifndef S905X5M
     prepare(); recovery_key = BUTTON_ON;
     outcome = setjmp(stopped);
     if (!outcome) boot_command();
     assert(outcome == 2 && recovery_calls == 1 && armed == 0);
     assert(writes == 0 && reads == 0 && loads == 0 && launches == 0);
+#endif
     puts("FIT_FIRMWARE_IO_PASS: actual C policy refuses write, flush and readback failures before FIT load");
     return 0;
 }

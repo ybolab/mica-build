@@ -42,4 +42,13 @@ for arch in amd64 arm64; do
         exit 1
     fi
 done
+printf 'mos-system\nmos-board-s905x5m\n' >"$WORK/s905x5m.pkgs"
+bash "$ENTRY" select --arch arm64 --packages "$WORK/s905x5m.pkgs" >"$WORK/s905x5m"
+for package in alsa-utils libasound2t64 libatopology2t64 libfftw3-single3 libgomp1 libsamplerate0; do
+    grep -q "^${package}"$'\t' "$WORK/s905x5m"
+done
+if grep -q $'^bluez\t' "$WORK/s905x5m"; then
+    echo 'FAIL: S905X5M audio dependency selected Bluetooth' >&2
+    exit 1
+fi
 echo 'RESULT: PASS (minimal base and additive system/radio selection on both architectures)'

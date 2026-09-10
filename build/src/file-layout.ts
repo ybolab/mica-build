@@ -7,7 +7,7 @@ export interface FilePartition {
 export interface FileLayout {
   board: string, backend: 'systemd-boot' | 'uboot-fit', diskGuid: string,
   alignSectors: number, partitions: FilePartition[], sizeSectors: number,
-  firmware?: { loaderStartSector: number, loaderSizeSectors: number, envOffsets: [number, number], envSize: number }
+  firmware?: { loaderStartSector?: number, loaderSizeSectors?: number, envOffsets: [number, number], envSize: number }
 }
 
 export function parseFileLayout(source: string): FileLayout {
@@ -49,13 +49,20 @@ export function parseFileLayout(source: string): FileLayout {
   if (alignSectors !== (fit ? 1 : 2048)) throw new Error('Invalid GPT alignment')
   let firmware: FileLayout['firmware']
   if (fit) {
-    const loaderBytes = number('UBOOT_MAX_BYTES')
-    firmware = { loaderStartSector: number('UBOOT_SEEK_SECTOR'), loaderSizeSectors: loaderBytes / 512,
-      envOffsets: [number('UENV_A_OFFSET_BYTES'), number('UENV_B_OFFSET_BYTES')], envSize: number('UENV_SIZE_BYTES') }
-    if (firmware.loaderStartSector !== 64 || !Number.isSafeInteger(firmware.loaderSizeSectors)
-      || 64 * 512 + loaderBytes !== firmware.envOffsets[0]
-      || firmware.envOffsets[0] !== 16 * 1048576 || firmware.envOffsets[1] !== 17 * 1048576
-      || firmware.envSize !== 65536 || partitions[1]!.startSector !== 18 * 2048
+    firmware = { envOffsets: [number('UENV_A_OFFSET_BYTES'), number('UENV_B_OFFSET_BYTES')], envSize: number('UENV_SIZE_BYTES') }
+    const amlogic = get('LAYOUT_BOARD') === 's905x5m'
+    if (!amlogic) {
+      const loaderBytes = number('UBOOT_MAX_BYTES')
+      firmware.loaderStartSector = number('UBOOT_SEEK_SECTOR')
+      firmware.loaderSizeSectors = loaderBytes / 512
+      if (get('LAYOUT_BOARD') !== 'cx3576' || firmware.loaderStartSector !== 64
+        || !Number.isSafeInteger(firmware.loaderSizeSectors) || 64 * 512 + loaderBytes !== firmware.envOffsets[0]) throw new Error('Invalid protected loader range')
+    } else if (env.values.has('UBOOT_SEEK_SECTOR') || env.values.has('UBOOT_MAX_BYTES')) {
+      throw new Error('Amlogic hardware bootloader cannot occupy the system disk')
+    }
+    if (firmware.envOffsets[0] !== (amlogic ? 120 : 16) * 1048576
+      || firmware.envOffsets[1] !== (amlogic ? 124 : 17) * 1048576
+      || firmware.envSize !== 65536 || partitions[1]!.startSector !== (amlogic ? 128 : 18) * 2048
       || partitions[0]!.type !== '8da63339-0007-60c0-c436-083ac8230908') throw new Error('Invalid protected firmware ranges')
   }
   return { board: get('LAYOUT_BOARD'), backend: backend as FileLayout['backend'], diskGuid: guid('DISK_GUID'), alignSectors, partitions, sizeSectors: end + 2048, ...(firmware ? { firmware } : {}) }

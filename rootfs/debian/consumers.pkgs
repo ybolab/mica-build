@@ -1,7 +1,9 @@
 # Local package families allowed to add upstream runtime dependencies.
 mos-apid
 mos-bluetooth
+mos-bm201-front-panel
 mos-board-cx3576
+mos-board-s905x5m
 mos-board-virt-arm64
 mos-board-x64
 mos-busybox
@@ -12,6 +14,9 @@ mos-mqttd
 mos-podman
 mos-profile-dev
 mos-profile-prod
+mos-s905x5m-bluetooth
+mos-s905x5m-wifi
+mos-s905x5m-wireless
 mos-system
 mos-wifi
 mos-wifi-ap

@@ -170,7 +170,8 @@ producer, not a stage. `docs/design/build.md` §1.1 has the whole model.
 - **`virt-arm64`** — ARM64 UEFI/QEMU using the same signed-file contracts.
 - **`cx3576`** — CX3576-Z, Rockchip RK3576, vendor kernel, signed-policy U-Boot
   and FIT, Wi-Fi and Bluetooth. Physical acceptance remains a separate gate.
-- **`s905x5m`** — independent BSP retained; no current MOS system-image target.
+- **`s905x5m`** — BM201 / Amlogic S7D, SD development image with required
+  signed FIT and paired MOS firmware in eMMC boot0; physical qualification pending.
 
 A board produces artifacts and the OS build consumes artifacts; neither side
 reaches into the other's build. Kernel configs must satisfy the shared

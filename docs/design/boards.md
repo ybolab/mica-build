@@ -472,7 +472,7 @@ merge the same shared fragment before `olddefconfig`. Board intake tiers:
 | x64 | amd64 | UEFI Secure Boot → counted systemd-boot entry → signed UKI | Full QEMU runtime, API, updates, faults and shutdown |
 | virt-arm64 | arm64 | AAVMF Secure Boot → counted systemd-boot entry → signed UKI | Full QEMU runtime/API and common update/fault policy |
 | cx3576 | arm64 | Fixed MOS U-Boot → required signed FIT | Current full-image offline/FIT/IO proof; physical bench qualification pending |
-| s905x5m | arm64 | Independent BSP retained | Not a current MOS system-image release target |
+| s905x5m | arm64 | eMMC boot0 MOS firmware → SD native records → required signed FIT | SD development port; physical qualification pending, excluded from qualified releases |
 
 Exact current artifact IDs and gate results are recorded in the
 [file-deployment delivery task](../task/20260908-2229-file-ab-delivery-x64-first.md).
