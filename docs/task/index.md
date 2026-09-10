@@ -176,6 +176,8 @@ thing about the tree. Both indexes now say the same thing.
 
 - [x] [**20260910-0517-writable-var-regdb Writable var with bounded DATA storage and matching regdb**](20260910-0517-writable-var-regdb.md) `P1`
 
+- [x] [**20260910-0555-apid-spa-interaction-refactor Repair and refactor apid console interaction**](20260910-0555-apid-spa-interaction-refactor.md) `P1`
+
 - [x] [**20260910-0616-cx3576-storage-display-cleanup Isolate container storage and finish CX3576 boot presentation fixes**](20260910-0616-cx3576-storage-display-cleanup.md) `P1`
 
 - [x] [**20260910-0726-unlimited-application-data Remove system, user and container data limits**](20260910-0726-unlimited-application-data.md) `P1`

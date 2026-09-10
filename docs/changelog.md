@@ -1,5 +1,36 @@
 # Changelog
 
+## apid console rebuilt on the shadcn registry (2026-09-10)
+
+The [approved console refactor](task/20260910-0555-apid-spa-interaction-refactor.md)
+replaces the hand-written component layer with shadcn `base-nova` primitives over
+`@base-ui/react` and extracts a shared composite library the feature pages
+consume. Sixteen registry primitives were added through the CLI and fifteen
+composites built on them; `src/components/`, the duplicate `cn`, the `lib/api`
+re-export and 500 of 591 stylesheet lines are gone, and the remaining stylesheet
+carries only tokens, in oklch, plus two decorative marks. No dependency was
+added: the toast is `@base-ui/react/toast` through the registry's own wrapper.
+
+Eleven confirmations had each re-derived the same interaction and ten never
+closed their dialog, because `base-nova` leaves closing to the caller by design;
+they are now one `ConfirmDialog` that owns the close, the pending state and the
+report. Every write reports success as well as failure through one toast
+channel, replacing 94 inline callouts of which only eight ever said a write had
+worked. Dialogs are bounded by the viewport and scroll their own body, so a
+1024x520 panel no longer clips the title off the top and the buttons off the
+bottom. The language picker left the header menu, which used to stay open behind
+its own backdrop.
+
+`verify-ui-policy.sh` now enforces the library rule in `build.sh --check`: no
+forbidden UI ecosystem, no hand-written primitive, no raw control or colour
+literal in a feature, and one component tree. Coverage measures the application
+rather than a seven-file allowlist — 82% of statements over 1,593, against a
+previously reported 97% over 208. Tests went from 154 to 232, plus 22 browser
+cases; three visual baselines were regenerated for the deliberate `base-nova`
+spacing change. Two defects were found by browser measurement during the work: a
+menu label outside a group crashed the settings menu, and the header controls
+rendered white on white.
+
 ## Unlimited system, user and container data (2026-09-10)
 
 The [quota correction](task/20260910-0726-unlimited-application-data.md) removes byte and inode limits
