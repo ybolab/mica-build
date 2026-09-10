@@ -21,7 +21,7 @@ with disk.open("rb") as stream:
     assert zlib.crc32(table) == checksum
     entries = [table[i:i + size] for i in range(0, len(table), size) if any(table[i:i + 16])]
     assert len(entries) == 3
-    expected = [("firmware", 64, 36863), ("system", 36864, 4231167), ("data", 4231168, 4755455)]
+    expected = [("firmware", 64, 36863), ("system", 36864, 2134015), ("data", 2134016, 2658303)]
     for entry, (name, first, last) in zip(entries, expected):
         assert struct.unpack_from("<QQ", entry, 32) == (first, last)
         assert entry[56:128].decode("utf-16le").rstrip("\0") == name

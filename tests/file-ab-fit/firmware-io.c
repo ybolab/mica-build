@@ -26,6 +26,7 @@ static jmp_buf stopped;
 static int fault, reads, writes, flushes, invalidations, loads, launches, armed;
 static int fail_copy = -1;
 static int watchdog_probe_error, watchdog_start_error;
+static unsigned long system_sectors = 2097152, data_sectors = 524288;
 static uint32_t crc32(uint32_t crc, const unsigned char *p, size_t size)
 {
     crc = ~crc;
@@ -65,7 +66,8 @@ static void blkcache_invalidate(int kind, int number)
 static struct blk_desc *mmc_get_blk_desc(struct mmc *m) { assert(m == &mmc); return &disk; }
 static int part_get_info(struct blk_desc *d, int number, struct disk_partition *p)
 {
-    const unsigned long starts[] = {64, 36864, 4231168}, sizes[] = {36800, 4194304, 524288};
+    const unsigned long starts[] = {64, 36864, 36864 + system_sectors};
+    const unsigned long sizes[] = {36800, system_sectors, data_sectors};
     const char *names[] = {"firmware", "system", "data"};
     assert(d == &disk);
     if (number == 4) return -1;
@@ -127,6 +129,7 @@ static void prepare(void)
     reads = writes = flushes = invalidations = loads = launches = armed = 0;
     fail_copy = -1;
     watchdog_probe_error = watchdog_start_error = 0;
+    system_sectors = 2097152; data_sectors = 524288;
 }
 int main(void)
 {
@@ -154,6 +157,17 @@ int main(void)
         int outcome = setjmp(stopped);
         if (!outcome) mos_file_boot();
         assert(outcome == 2 && armed == 0 && writes == 0 && reads == 0 && loads == 0 && launches == 0);
+    }
+    fault = 0;
+    prepare(); data_sectors = 8 * 2097152UL;
+    assert(valid_layout(&disk) == 0);
+    for (int invalid = 0; invalid < 2; invalid++) {
+        prepare();
+        if (invalid == 0) system_sectors = 4194304;
+        else data_sectors = 524287;
+        int outcome = setjmp(stopped);
+        if (!outcome) mos_file_boot();
+        assert(outcome == 2 && writes == 0 && reads == 0 && loads == 0 && launches == 0);
     }
     // One unreadable copy may use the other; two corrupt copies must stop.
     fault = 0; prepare(); fail_copy = 1; armed = 1;

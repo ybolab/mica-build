@@ -87,7 +87,9 @@ eMMC `/dev/mmcblk0`; the concrete part remains a required bench measurement.
 Current `LAYOUT_VERSION=3` has FIRMWARE, SYSTEM and DATA. The authoritative
 geometry is [board.env](../../boards/cx3576/board.env). FIRMWARE covers the loader
 and two bounded record copies. Firmware maintenance preserves both copies.
-SYSTEM holds immutable component files and signed deployments. DATA is last,
+SYSTEM occupies 1 GiB from 18 MiB and holds immutable component files and signed
+deployments. The 256 MiB factory DATA partition starts at 1042 MiB; the complete
+factory image is 1299 MiB including the GPT tail. DATA is last,
 grows alone, and backs selected persistent leaves while `/var` stays read-only.
 The current image growth test compares every FIRMWARE and SYSTEM byte.
 

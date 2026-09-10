@@ -29,11 +29,14 @@ test('refuse changed partition order, overlap, zero length and duplicate GUIDs',
 test('cx3576 reserves one raw firmware partition across loader and both environments', () => {
   const layout = parseFileLayout(readFileSync(join(REPO_ROOT, 'boards/cx3576/board.env'), 'utf8'))
   expect(layout.partitions.map(p => p.name)).toEqual(['FIRMWARE', 'SYSTEM', 'DATA'])
-  expect(layout.partitions.map(p => p.startSector)).toEqual([64, 18 * 2048, 2066 * 2048])
+  expect(layout.partitions.map(p => p.startSector)).toEqual([64, 18 * 2048, 1042 * 2048])
   expect(layout.partitions[0]!.sizeSectors).toBe(18 * 2048 - 64)
+  expect(layout.partitions[1]!.sizeSectors * 512).toBe(1024 * 1048576)
+  expect(layout.sizeSectors * 512).toBe(1299 * 1048576)
   expect(layout.firmware).toEqual({ loaderStartSector: 64, loaderSizeSectors: 32704, envOffsets: [16777216, 17825792], envSize: 65536 })
   expect(() => checkCapacity(layout, 100 * 1048576, 60 * 1048576)).not.toThrow()
-  expect(() => checkCapacity(layout, 600 * 1048576, 80 * 1048576)).toThrow('SYSTEM')
+  expect(() => checkCapacity(layout, 220 * 1048576, 78 * 1048576)).not.toThrow()
+  expect(() => checkCapacity(layout, 221 * 1048576, 78 * 1048576)).toThrow('SYSTEM')
 })
 
 test('cx3576 refuses relocated, overlapping or unprotected firmware ranges', () => {

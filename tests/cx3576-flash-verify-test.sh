@@ -23,9 +23,9 @@ STUB
 chmod +x "$work/rkdeveloptool"
 python3 - "$work/image.img" <<'PY'
 import pathlib, struct, sys, uuid, zlib
-path=pathlib.Path(sys.argv[1]); size=2323*1048576; last=size//512-1
+path=pathlib.Path(sys.argv[1]); size=1299*1048576; last=size//512-1
 entries=bytearray(128*128)
-for n,(name,first,end) in enumerate([('firmware',64,36863),('system',36864,4231167),('data',4231168,4755455)]):
+for n,(name,first,end) in enumerate([('firmware',64,36863),('system',36864,2134015),('data',2134016,2658303)]):
  o=n*128
  entries[o:o+16]=uuid.UUID('8DA63339-0007-60C0-C436-083AC8230908' if n==0 else '0FC63DAF-8483-4772-8E79-3D69D8477DE4').bytes_le
  entries[o+16:o+32]=uuid.UUID(f'5AC35760-0002-4000-8000-00000000000{n+1}').bytes_le
@@ -48,10 +48,10 @@ run() {
 run "$work/image.img" || { cat "$work/output"; exit 1; }
 [ "$(awk '{print $1}' "$RK_LOG" | tr '\n' ' ')" = 'wl rl rl rd ' ]
 awk '$1=="rl" {print $2,$3}' "$RK_LOG" > "$work/ranges"
-printf '0 36864\n36864 4720640\n' > "$work/expected"
+printf '0 36864\n36864 2623488\n' > "$work/expected"
 cmp "$work/ranges" "$work/expected"
 echo 'PASS: complete flash and both readbacks precede reset'
-for offset in 32768 20971520 2167406592; do
+for offset in 32768 20971520 1093664768; do
     export RK_CORRUPT=$offset
     if run "$work/image.img"; then echo "FAIL: corrupt byte $offset accepted"; exit 1; fi
     ! rg -q '^rd$' "$RK_LOG"

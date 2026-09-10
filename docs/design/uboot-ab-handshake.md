@@ -21,8 +21,8 @@ Physical reset and Linux handoff remain bench acceptance requirements.
 | Partition | Range | Contents |
 |---|---|---|
 | FIRMWARE | LBA 64 through 36863 | Loader and both trial-record copies |
-| SYSTEM | 18 MiB through 2066 MiB | Immutable kernel/support/root objects and signed deployment envelopes |
-| DATA | From 2066 MiB, 256 MiB in the factory image | Persistent state, metadata, user data and bounded disposable namespaces |
+| SYSTEM | 18 MiB through 1042 MiB | 1 GiB of immutable kernel/support/root objects and signed deployment envelopes |
+| DATA | From 1042 MiB, 256 MiB in the factory image | Persistent state, metadata, user data and bounded disposable namespaces |
 
 The loader starts at byte 32768 and is bounded to 16744448 bytes. Two 64 KiB
 record copies start at absolute disk offsets 16 MiB and 17 MiB. Those offsets
