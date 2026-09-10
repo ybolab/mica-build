@@ -333,3 +333,245 @@ test('container storage requires its own enabled bind outside var', async () => 
   f.file('/etc/systemd/system/mos-containers.mount', '[Mount]\nWhat=/mnt/data/var/containers\nWhere=/mos/containers\nOptions=bind,private,nosuid,nodev\n')
   expect(await f.check('file-root-container-policy')).toBe('fail')
 })
+
+const NATIVE_ENDPOINT_CHECK = 'file-root-native-endpoints'
+const NATIVE_PATHS = ['/usr/bin/mosd', '/usr/bin/apid', '/usr/bin/mos-deploy']
+
+function nativeElf(payload = 'clean native fixture'): Buffer {
+  // ELF64 executable with one loadable segment; no toolchain or execution needed.
+  const bytes = Buffer.alloc(120 + Buffer.byteLength(payload) + 1)
+  bytes.set([0x7f, 0x45, 0x4c, 0x46, 2, 1, 1])
+  bytes.writeUInt16LE(2, 16)
+  bytes.writeUInt16LE(62, 18)
+  bytes.writeUInt32LE(1, 20)
+  bytes.writeBigUInt64LE(0x400078n, 24)
+  bytes.writeBigUInt64LE(64n, 32)
+  bytes.writeUInt16LE(64, 52)
+  bytes.writeUInt16LE(56, 54)
+  bytes.writeUInt16LE(1, 56)
+  bytes.writeUInt32LE(1, 64)
+  bytes.writeUInt32LE(5, 68)
+  bytes.writeBigUInt64LE(0x400000n, 80)
+  bytes.writeBigUInt64LE(0x400000n, 88)
+  bytes.writeBigUInt64LE(BigInt(bytes.length), 96)
+  bytes.writeBigUInt64LE(BigInt(bytes.length), 104)
+  bytes.writeBigUInt64LE(4096n, 112)
+  bytes.write(payload, 120)
+  return bytes
+}
+
+function nativeFiles(f: ReturnType<typeof fixture>): number {
+  let bytes = 0
+  for (const path of NATIVE_PATHS) {
+    const content = nativeElf(`clean ${path}`)
+    f.file(path, content)
+    bytes += content.byteLength
+  }
+  return bytes
+}
+
+async function expectNativeRefusal(f: ReturnType<typeof fixture>, path: string, reason: string): Promise<string> {
+  const result = await f.checkResult(NATIVE_ENDPOINT_CHECK)
+  expect(result.verdict, result.message).toBe('fail')
+  expect(result.message).toContain(path)
+  expect(result.message).toContain(reason)
+  return result.message
+}
+
+test('native endpoint check requires all three clean ELFs and reports exact scan evidence', async () => {
+  const f = fixture(), bytes = nativeFiles(f)
+  const result = await f.checkResult(NATIVE_ENDPOINT_CHECK)
+  expect(result.verdict, result.message).toBe('pass')
+  expect(result.message).toContain('scannedFiles=3')
+  expect(result.message).toContain(`scannedBytes=${bytes}`)
+  expect(result.message).toContain(`examinedPaths=${NATIVE_PATHS.join(',')}`)
+})
+
+test.each([
+  'https://updates.example/v1/manifest.json',
+  'https://fleet.example/v1/register',
+])('configured %s stays valid while the identical literal inside an ELF fails', async (url) => {
+  const f = fixture(); nativeFiles(f)
+  const configured = manifest()
+  objectAt(configured, 'update').source = url
+  writeManifest(f, configured)
+  f.file('/mos/config/updates.json', JSON.stringify({ source: { url } }))
+  expect(await f.check('file-root-public-defaults')).toBe('pass')
+  expect(await f.check(NATIVE_ENDPOINT_CHECK)).toBe('pass')
+  f.file('/usr/bin/mosd', nativeElf(url))
+  await expectNativeRefusal(f, '/usr/bin/mosd', 'endpoint')
+})
+
+test.each(NATIVE_PATHS)('compiled endpoint in %s is found in raw non-UTF-8 bytes without leaking content', async (path) => {
+  const f = fixture(); nativeFiles(f)
+  f.file(path, Buffer.concat([nativeElf(), Buffer.from([0xff, 0x00]),
+    Buffer.from('https://user:DO_NOT_ECHO_ENDPOINT@updates.example/v1/manifest.json?token=DO_NOT_ECHO_TOKEN'),
+    Buffer.from([0x00, 0xfe])]))
+  const message = await expectNativeRefusal(f, path, 'endpoint')
+  expect(message).not.toContain('DO_NOT_ECHO_ENDPOINT')
+  expect(message).not.toContain('DO_NOT_ECHO_TOKEN')
+  expect(message).not.toContain('https://')
+  expect(message).toContain('scannedFiles=3')
+  expect(message).toMatch(/scannedBytes=[1-9][0-9]*/)
+  expect(message).toContain(`examinedPaths=${NATIVE_PATHS.join(',')}`)
+})
+
+test.each([
+  'http://localhost/updates/manifest.json',
+  'https://127.0.0.1:9443/fleet/register',
+  'http://[::1]/v1/manifest.json',
+  'HTTPS://UPDATES.EXAMPLE/v1/manifest.json',
+  'wss://fleet.example/v1/device',
+  'ws://fleet.example/v1/device',
+  'mqtts://fleet.example:8883/devices',
+  'mqtt://fleet.example:1883/devices',
+  'https://control.example/v1/register',
+  'https://\u66f4\u65b0.example/v1/manifest.json',
+])('native endpoint check does not exempt network location %s', async (url) => {
+  const f = fixture(); nativeFiles(f)
+  f.file('/usr/bin/apid', nativeElf(url))
+  await expectNativeRefusal(f, '/usr/bin/apid', 'endpoint')
+})
+
+test('native scan includes only the three current first-party inputs', async () => {
+  const f = fixture(), bytes = nativeFiles(f)
+  f.file('/usr/bin/third-party', nativeElf('https://updates.example/v1/manifest.json'))
+  const result = await f.checkResult(NATIVE_ENDPOINT_CHECK)
+  expect(result.verdict, result.message).toBe('pass')
+  expect(result.message).toContain('scannedFiles=3')
+  expect(result.message).toContain(`scannedBytes=${bytes}`)
+  expect(result.message).not.toContain('third-party')
+})
+
+test.each(NATIVE_PATHS)('missing native input %s fails instead of scanning a subset', async (path) => {
+  const f = fixture(); nativeFiles(f)
+  rmSync(join(f.root, path))
+  await expectNativeRefusal(f, path, 'missing')
+})
+
+test('no native inputs cannot produce a zero-work pass', async () => {
+  const f = fixture()
+  await expectNativeRefusal(f, '/usr/bin/mosd', 'missing')
+})
+
+test.each(NATIVE_PATHS)('empty native input %s is refused', async (path) => {
+  const f = fixture(); nativeFiles(f); f.file(path, '')
+  await expectNativeRefusal(f, path, 'empty')
+})
+
+test.each(NATIVE_PATHS)('non-ELF native input %s is refused', async (path) => {
+  const f = fixture(); nativeFiles(f); f.file(path, '#!/bin/sh\nexit 0\n')
+  await expectNativeRefusal(f, path, 'ELF')
+})
+
+test('ELF magic alone cannot count as an examined native executable', async () => {
+  const f = fixture(); nativeFiles(f)
+  f.file('/usr/bin/mosd', Buffer.from([0x7f, 0x45, 0x4c, 0x46]))
+  await expectNativeRefusal(f, '/usr/bin/mosd', 'ELF')
+})
+
+test.each(NATIVE_PATHS)('native input %s cannot be a symlink to a clean ELF', async (path) => {
+  const f = fixture(); nativeFiles(f)
+  f.file('/usr/bin/clean-target', nativeElf())
+  rmSync(join(f.root, path))
+  symlinkSync('clean-target', join(f.root, path))
+  await expectNativeRefusal(f, path, 'non-symlink')
+})
+
+test('native special file is refused before reading can block', async () => {
+  const f = fixture(); nativeFiles(f)
+  const path = '/usr/bin/mosd'
+  rmSync(join(f.root, path))
+  const made = spawnSync('mkfifo', [join(f.root, path)], { encoding: 'utf8', timeout: 5000 })
+  expect(made.status, `${made.stdout}${made.stderr}`).toBe(0)
+  await expectNativeRefusal(f, path, 'regular')
+})
+
+test('native directory is refused before reading', async () => {
+  const f = fixture(); nativeFiles(f)
+  rmSync(join(f.root, 'usr/bin/apid'))
+  mkdirSync(join(f.root, 'usr/bin/apid'))
+  await expectNativeRefusal(f, '/usr/bin/apid', 'regular')
+})
+
+test.each(['usr', 'usr/bin'])('native parent %s cannot redirect the scan outside the unpacked image', async (parent) => {
+  const f = fixture(), host = fixture()
+  nativeFiles(host)
+  mkdirSync(dirname(join(f.root, parent)), { recursive: true })
+  symlinkSync(join(host.root, parent), join(f.root, parent))
+  await expectNativeRefusal(f, '/usr/bin/mosd', 'non-symlink')
+})
+
+test('an unpacked-root symlink cannot pass native input verification', async () => {
+  const f = fixture(), host = fixture(); nativeFiles(host)
+  const link = join(f.root, 'root-link')
+  symlinkSync(host.root, link)
+  const check = ROOT_CHECKS.find(c => c.id === NATIVE_ENDPOINT_CHECK)!
+  await expect(check.run({ board: loadBoard(boardEnvPath('x64')), image: 'fixture', tools: NO_TOOLS,
+    workDir: f.root, outDir: f.root, unpackRoot: async () => link })).rejects.toThrow('unpacked-image directory')
+})
+
+
+test('native scheme fragments and relative API routes do not name a network location', async () => {
+  const f = fixture(); nativeFiles(f)
+  f.file('/usr/bin/apid', nativeElf('https://\0http://\0ws://\0wss://\0mqtt://\0mqtts://\0/api/v1/update'))
+  expect(await f.check(NATIVE_ENDPOINT_CHECK)).toBe('pass')
+})
+
+test.each([
+  ['class', (bytes: Buffer) => { bytes[4] = 0 }],
+  ['byte order', (bytes: Buffer) => { bytes[5] = 0 }],
+  ['ident version', (bytes: Buffer) => { bytes[6] = 0 }],
+  ['object type', (bytes: Buffer) => { bytes.writeUInt16LE(1, 16) }],
+  ['header version', (bytes: Buffer) => { bytes.writeUInt32LE(0, 20) }],
+  ['header size', (bytes: Buffer) => { bytes.writeUInt16LE(0, 52) }],
+])('native ELF with invalid %s cannot be counted as scanned', async (_field, mutate) => {
+  const f = fixture(); nativeFiles(f)
+  const bytes = nativeElf(); mutate(bytes)
+  f.file('/usr/bin/mosd', bytes)
+  const message = await expectNativeRefusal(f, '/usr/bin/mosd', 'ELF')
+  expect(message).toContain('scannedFiles=0; scannedBytes=0; examinedPaths=')
+})
+
+test('native endpoint check accepts a position-independent ELF executable', async () => {
+  const f = fixture(); nativeFiles(f)
+  const bytes = nativeElf(); bytes.writeUInt16LE(3, 16)
+  f.file('/usr/bin/mosd', bytes)
+  expect(await f.check(NATIVE_ENDPOINT_CHECK)).toBe('pass')
+})
+
+test('native endpoint check reads big-endian ELF headers correctly', async () => {
+  const f = fixture(); nativeFiles(f)
+  const bytes = nativeElf(); bytes[5] = 2
+  for (const offset of [16, 18, 52, 54, 56, 58, 60, 62]) bytes.writeUInt16BE(bytes.readUInt16LE(offset), offset)
+  for (const offset of [20, 48, 64, 68]) bytes.writeUInt32BE(bytes.readUInt32LE(offset), offset)
+  for (const offset of [24, 32, 40, 72, 80, 88, 96, 104, 112]) bytes.writeBigUInt64BE(bytes.readBigUInt64LE(offset), offset)
+  f.file('/usr/bin/mosd', bytes)
+  expect(await f.check(NATIVE_ENDPOINT_CHECK)).toBe('pass')
+})
+
+test('native endpoint check accepts a complete ELF32 executable', async () => {
+  const f = fixture(); nativeFiles(f)
+  const bytes = Buffer.alloc(85)
+  bytes.set([0x7f, 0x45, 0x4c, 0x46, 1, 1, 1])
+  bytes.writeUInt16LE(2, 16)
+  bytes.writeUInt16LE(3, 18)
+  bytes.writeUInt32LE(1, 20)
+  bytes.writeUInt32LE(0x400054, 24)
+  bytes.writeUInt32LE(52, 28)
+  bytes.writeUInt16LE(52, 40)
+  bytes.writeUInt16LE(32, 42)
+  bytes.writeUInt16LE(1, 44)
+  bytes.writeUInt32LE(1, 52)
+  bytes.writeUInt32LE(0x400000, 60)
+  bytes.writeUInt32LE(0x400000, 64)
+  bytes.writeUInt32LE(bytes.length, 68)
+  bytes.writeUInt32LE(bytes.length, 72)
+  bytes.writeUInt32LE(5, 76)
+  bytes.writeUInt32LE(4096, 80)
+  bytes[84] = 0xc3
+  f.file('/usr/bin/mosd', bytes)
+  const result = await f.checkResult(NATIVE_ENDPOINT_CHECK)
+  expect(result.verdict, result.message).toBe('pass')
+  expect(result.message).toContain('scannedFiles=3')
+})

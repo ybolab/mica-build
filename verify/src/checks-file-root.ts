@@ -307,4 +307,52 @@ export const ROOT_CHECKS: readonly CheckCase[] = [
         `${PUBLIC_DEFAULTS_FACT}; scannedFiles=${result.files.length}; scannedBytes=${result.bytes}; examinedPaths=${result.files.join(',')}`)]
     },
   },
+  {
+    id: 'file-root-native-endpoints', shell: { pass: 'native binaries contain no default update or fleet endpoints' },
+    run: async ctx => {
+      const root = await packedRoot(ctx)
+      if (entry(root, '/')?.isDirectory() !== true) throw new Error(`${root} is not an actual unpacked-image directory`)
+      const paths = ['/usr/bin/mosd', '/usr/bin/apid', '/usr/bin/mos-deploy']
+      const examined: string[] = [], endpoints: string[] = []
+      let byteCount = 0
+      const result = (ok: boolean, reason: string) => [verdict('file-root-native-endpoints', ok,
+        `${reason}; scannedFiles=${examined.length}; scannedBytes=${byteCount}; examinedPaths=${examined.join(',')}`)]
+      for (const parent of ['/usr', '/usr/bin']) {
+        const directory = entry(root, parent)
+        if (directory === undefined) return result(false, `/usr/bin/mosd: required directory ${parent} is missing`)
+        if (!directory.isDirectory()) return result(false, `/usr/bin/mosd: ${parent} must be a regular non-symlink directory`)
+      }
+      for (const path of paths) {
+        const file = entry(root, path)
+        if (file === undefined) return result(false, `${path}: required native input is missing`)
+        if (!file.isFile()) return result(false, `${path}: must be a regular non-symlink file`)
+        if (file.size === 0) return result(false, `${path}: required native input is empty`)
+        let bytes: Buffer
+        try {
+          bytes = readFileSync(pathInRoot(root, path, false))
+        }
+        catch {
+          return result(false, `${path}: cannot read the regular file`)
+        }
+        // Identify a complete ELF executable header before counting bytes as scanned.
+        const headerSize = bytes[4] === 2 ? 64 : 52
+        if (bytes.length < headerSize || bytes.readUInt32BE(0) !== 0x7f454c46
+          || (bytes[4] !== 1 && bytes[4] !== 2) || (bytes[5] !== 1 && bytes[5] !== 2) || bytes[6] !== 1) {
+          return result(false, `${path}: must contain a complete ELF executable header`)
+        }
+        const word = (offset: number) => bytes[5] === 1 ? bytes.readUInt16LE(offset) : bytes.readUInt16BE(offset)
+        const version = bytes[5] === 1 ? bytes.readUInt32LE(20) : bytes.readUInt32BE(20)
+        if ((word(16) !== 2 && word(16) !== 3) || version !== 1 || word(headerSize === 64 ? 52 : 40) !== headerSize) {
+          return result(false, `${path}: must contain a complete ELF executable header`)
+        }
+        examined.push(path)
+        byteCount += bytes.byteLength
+        // Inspect raw bytes, including non-UTF-8 sections. A scheme fragment without
+        // an authority is not an endpoint; no host or domain is implicitly exempt.
+        if (/(?:https?|wss?|mqtts?):\/\/[^\x00-\x20\x7f"'<>`{}\\/]+/i.test(bytes.toString('latin1'))) endpoints.push(path)
+      }
+      if (endpoints.length !== 0) return result(false, `${endpoints.join(',')}: contains a compiled network endpoint literal`)
+      return result(true, 'native binaries contain no default update or fleet endpoints')
+    },
+  },
 ]
