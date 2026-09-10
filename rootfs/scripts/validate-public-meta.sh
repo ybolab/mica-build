@@ -13,6 +13,21 @@ done
 script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 repo_root=$(cd "$script_dir/../.." && pwd)
 
+# Inspect the supplied spelling before resolving dot components or symlinks.
+input_path=$meta_dir
+case "$input_path" in
+/*) ;;
+*) input_path="$PWD/$input_path" ;;
+esac
+while [ -n "$input_path" ] && [ "$input_path" != / ]; do
+    input_path=${input_path%/}
+    [ ! -L "$input_path" ] || {
+        printf 'error: public metadata directory has a symlink component: %q\n' "$input_path" >&2
+        exit 1
+    }
+    input_path=${input_path%/*}
+done
+
 [ -d "$meta_dir" ] && [ ! -L "$meta_dir" ] || {
     echo 'error: public metadata directory is missing or is a symlink' >&2
     exit 1
@@ -101,10 +116,41 @@ const nullableString = (value, path) => {
   if (value !== null && typeof value !== "string") fail(path, "must be a string or null")
 }
 
-const text = await Bun.stdin.text()
+const bytes = await Bun.stdin.arrayBuffer()
+let text
+try {
+  // Preserve a BOM for JSON validation; never replace malformed byte sequences.
+  text = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(bytes)
+} catch {
+  fail("document", "invalid UTF-8")
+}
 let intervalSource
 let document
 try {
+  // Track decoded member names before JSON.parse can discard duplicates.
+  // Whole string tokens keep key-like text out of the structural stack;
+  // JSON.parse below remains responsible for the complete JSON grammar.
+  const stack = []
+  for (const match of text.matchAll(/"(?:\\[\s\S]|[^"\\])*"|[{}\[\],:]/g)) {
+    const token = match[0]
+    const parent = stack.at(-1)
+    if (token === "{" || token === "[") {
+      const path = !parent ? "manifest"
+        : parent.keys ? keyPath(parent.path, parent.key) : `${parent.path}[${parent.index}]`
+      stack.push({ path, keys: token === "{" ? new Set() : null, key: "", needsKey: true, index: 0 })
+    } else if (token === "}" || token === "]") {
+      stack.pop()
+    } else if (token === "," && parent) {
+      parent.needsKey = true
+      parent.index += 1
+    } else if (token.startsWith("\"") && parent?.keys && parent.needsKey) {
+      const key = JSON.parse(token)
+      if (parent.keys.has(key)) fail(keyPath(parent.path, key), "duplicate key")
+      parent.keys.add(key)
+      parent.key = key
+      parent.needsKey = false
+    }
+  }
   document = JSON.parse(text, (key, value, context) => {
     if (key === "checkIntervalMinutes" && typeof value === "number") intervalSource = context?.source
     return value

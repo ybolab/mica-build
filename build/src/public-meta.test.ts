@@ -36,7 +36,7 @@ function writeManifest(value: unknown = example()): void {
 }
 
 function validate(path: string = meta) {
-  return spawnSync('bash', [VALIDATOR, path], { encoding: 'utf8', timeout: OPEN_TIMEOUT_MS })
+  return spawnSync('bash', [VALIDATOR, path], { cwd: work, encoding: 'utf8', timeout: OPEN_TIMEOUT_MS })
 }
 
 function output(result: ReturnType<typeof validate>): string {
@@ -46,7 +46,7 @@ function output(result: ReturnType<typeof validate>): string {
 function expectRefusal(expected: string, path: string = meta): string {
   const result = validate(path)
   const message = output(result)
-  expect(result.status, message).not.toBe(0)
+  expect(result.status, message).toBe(1)
   expect(message).toContain(expected)
   return message
 }
@@ -58,6 +58,60 @@ beforeEach(() => {
 })
 
 afterEach(() => rmSync(work, { recursive: true, force: true }))
+
+describe('repair boundary cases execute the shipped root validator', () => {
+  test.each([
+    ['schema', '"schema":', '"schema":"DO_NOT_ECHO_DUPLICATE",'],
+    ['schema', '"schema":', '"\\u0073chema":"DO_NOT_ECHO_DUPLICATE",'],
+    ['product.vendor', '"vendor":', '"vendor":"DO_NOT_ECHO_DUPLICATE",'],
+    ['update.policy', '"policy":', '"\\u0070olicy":"DO_NOT_ECHO_DUPLICATE",'],
+  ])('duplicate member %s is refused before an earlier value is discarded', (path, key, duplicate) => {
+    const raw = JSON.stringify(example()).replace(key, `${duplicate}${key}`)
+    writeFileSync(join(meta, 'updates/manifest.json'), raw)
+    const message = expectRefusal(path)
+    expect(message).toContain('duplicate key')
+    expect(message).not.toContain('DO_NOT_ECHO_DUPLICATE')
+  })
+
+  test('invalid UTF-8 bytes are refused without substitution or a value dump', () => {
+    const value = example()
+    objectAt(value, 'product').vendor = 'BINARY_SENTINEL'
+    const parts = JSON.stringify(value).split('BINARY_SENTINEL')
+    expect(parts).toHaveLength(2)
+    writeFileSync(join(meta, 'updates/manifest.json'), Buffer.concat([
+      Buffer.from(parts[0]!), Buffer.from([0xff]), Buffer.from('DO_NOT_ECHO_BINARY'), Buffer.from(parts[1]!),
+    ]))
+    const message = expectRefusal('updates/manifest.json')
+    expect(message).toContain('invalid UTF-8')
+    expect(message).not.toContain('DO_NOT_ECHO_BINARY')
+  })
+
+  test('unique keys, non-ASCII and escaped key-like strings preserve the full u64 boundary', () => {
+    const value = example()
+    objectAt(value, 'product').vendor = 'München \\"vendor": {"schema": 0}, ["schema"]\n'
+    objectAt(value, 'http').credentialHosts = ['one', 'two,"schema":{},three']
+    const raw = JSON.stringify(value).replace('München', 'München\\u0020').replace('1440', '18446744073709551615')
+    writeFileSync(join(meta, 'updates/manifest.json'), raw)
+    const result = validate()
+    expect(result.status, output(result)).toBe(0)
+  })
+
+  test.each(['meta', 'meta/', 'meta/.', 'meta//./'])('ordinary relative input %s is accepted', (path) => {
+    const result = validate(path)
+    expect(result.status, output(result)).toBe(0)
+  })
+
+  test.each(['', '/', '/.'])('an ancestor symlink is refused with suffix %s', (suffix) => {
+    const alias = join(work, 'alias-parent')
+    symlinkSync(work, alias)
+    expectRefusal('symlink', `${alias}/meta${suffix}`)
+  })
+
+  test.each(['/', '/.', '/../meta'])('an input symlink cannot hide behind %s', (suffix) => {
+    symlinkSync(meta, join(work, 'meta-alias'))
+    expectRefusal('symlink', `meta-alias${suffix}`)
+  })
+})
 
 describe('required refusal RED cases execute the shipped root validator', () => {
   test('an unexpected updates/root.key is refused by relative path', () => {
