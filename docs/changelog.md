@@ -72,6 +72,16 @@ the policy and its signed 1,299 MiB candidate image passes required FIT signatur
 [delivery record](task/20260910-0044-cx3576-hdmi-fullscreen-logo.md) identifies the
 image and reused root/firmware inputs. Physical HDMI display remains untested.
 
+## cx3576 boot-log repair planning (2026-09-10)
+
+The [repair plan](plan/20260910-0029-cx3576-boot-log-cleanup.md) classifies the
+historical boot diagnostics, records disconnected HDMI as expected, and covers
+board configuration, FIT descriptions, and current-image physical acceptance.
+Exact archive accounting confirms that the released 32.1 MiB initramfs includes
+a separate 16.45 MiB shutdown payload retained by the runtime design. The plan
+distinguishes Linux fixes from vendor BL31 limitations; implementation remains
+pending approval.
+
 ## cx3576 SYSTEM reduced to 1 GiB (2026-09-10)
 
 SYSTEM is now 1024 MiB and DATA starts at 1042 MiB. Firmware layout validation,

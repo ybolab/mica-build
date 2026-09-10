@@ -102,6 +102,8 @@ disobeys on sight teaches a reader the wrong thing about the tree.
 
 - [-] [**20260909-2331-cx3576-boot-watchdog Restore mandatory cx3576 boot watchdog availability**](20260909-2331-cx3576-boot-watchdog.md) `2026-09-09`
 
+- [ ] [**20260910-0029-cx3576-boot-log-cleanup Repair cx3576 boot configuration and qualify the current image**](20260910-0029-cx3576-boot-log-cleanup.md) `2026-09-10`
+
 
 - [x] [**20260910-0047-cx3576-hdmi-fullscreen-logo Show one centered CX3576 HDMI logo without a cursor**](20260910-0047-cx3576-hdmi-fullscreen-logo.md) `2026-09-10`
 

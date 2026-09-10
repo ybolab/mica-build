@@ -158,6 +158,8 @@ thing about the tree. Both indexes now say the same thing.
 
 - [x] [**20260909-2358-cx3576-system-1g Reduce cx3576 SYSTEM to 1 GiB**](20260909-2358-cx3576-system-1g.md) `P1`
 
+- [-] [**20260910-0025-cx3576-boot-log-cleanup Resolve cx3576 boot configuration mismatches and verify runtime handoff**](20260910-0025-cx3576-boot-log-cleanup.md) `P1`
+
 - [x] [**20260910-0040-strict-file-ab Replace the inactive deployment within a strict two-version budget**](20260910-0040-strict-file-ab.md) `P1`
 
 - [x] [**20260910-0044-cx3576-hdmi-fullscreen-logo Show one centered CX3576 HDMI logo without a cursor**](20260910-0044-cx3576-hdmi-fullscreen-logo.md) `P1`
