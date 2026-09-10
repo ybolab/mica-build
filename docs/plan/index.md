@@ -122,3 +122,5 @@ disobeys on sight teaches a reader the wrong thing about the tree.
 - [x] [**20260910-0726-unlimited-application-data Unlimited application data with bounded var**](20260910-0726-unlimited-application-data.md) `2026-09-10`
 
 - [x] [**20260910-1012-c-config-update-obligations Classify configuration and update policy obligations**](20260910-1012-c-config-update-obligations.md) `2026-09-10`
+
+- [-] [**20260910-1050-c-public-meta-source-validation Validate public metadata before root staging**](20260910-1050-c-public-meta-source-validation.md) `2026-09-10`
