@@ -217,6 +217,53 @@ function inspectPublicMeta(root: string): MetaProblem | MetaEvidence {
   return { files: paths, bytes: byteCount }
 }
 
+interface NativeDiagnostic { readonly text: string, readonly following: readonly string[] }
+
+// Exact source diagnostics and complete following text observed in the signed
+// sample. Following text establishes the URL boundary; it is not part of the URL.
+const DBUS_DIAGNOSTICS: readonly NativeDiagnostic[] = [
+  { text: 'Invalid address. See https://dbus.freedesktop.org/doc/dbus-specification.html#addresses', following: ['mid > len'] },
+  { text: 'Invalid member name. See https://dbus.freedesktop.org/doc/dbus-specification.html#message-protocol-names-member', following: ['Invalid interface name. See https://dbus.freedesktop.org/doc/dbus-specification.html#message-protocol-names-interface'] },
+  { text: 'Invalid error name. See https://dbus.freedesktop.org/doc/dbus-specification.html#message-protocol-names-error', following: ['org.freedesktop.DBusInvalid unique name. See https://dbus.freedesktop.org/doc/dbus-specification.html#message-protocol-names-bus'] },
+  { text: 'Invalid unique name. See https://dbus.freedesktop.org/doc/dbus-specification.html#message-protocol-names-bus', following: ['BusName::UniqueBusName::WellKnownOwnedErrorNameOwnedUniqueNameInvalid bus name. See https://dbus.freedesktop.org/doc/dbus-specification.html#message-protocol-names-bus'] },
+  { text: 'Invalid bus name. See https://dbus.freedesktop.org/doc/dbus-specification.html#message-protocol-names-bus', following: ['mid > len'] },
+]
+
+const NATIVE_DIAGNOSTICS: Readonly<Record<string, readonly NativeDiagnostic[]>> = {
+  '/usr/bin/mosd': [
+    ...DBUS_DIAGNOSTICS,
+    { text: 'Invalid interface name. See https://dbus.freedesktop.org/doc/dbus-specification.html#message-protocol-names-interface', following: ['Invalid well-known name. See https://dbus.freedesktop.org/doc/dbus-specification.html#message-protocol-names-bus'] },
+    { text: 'Invalid well-known name. See https://dbus.freedesktop.org/doc/dbus-specification.html#message-protocol-names-bus', following: ['Invalid error name. See https://dbus.freedesktop.org/doc/dbus-specification.html#message-protocol-names-error'] },
+  ],
+  '/usr/bin/apid': [
+    ...DBUS_DIAGNOSTICS,
+    { text: 'Invalid interface name. See https://dbus.freedesktop.org/doc/dbus-specification.html#message-protocol-names-interface', following: ['Invalid error name. See https://dbus.freedesktop.org/doc/dbus-specification.html#message-protocol-names-error'] },
+    { text: 'peer closed connection without sending TLS close_notify: https://docs.rs/rustls/latest/rustls/manual/_03_howto/index.html#unexpected-eof', following: ['internal error: entered unreachable code'] },
+    { text: 'Node.js ES modules are not directly supported, see https://docs.rs/getrandom#nodejs-es-module-support', following: ['Errorinternal_codedescriptionunknown_code\0'] },
+  ],
+  '/usr/bin/mos-deploy': [
+    { text: 'Fatal internal error. Please consider filing a bug report at https://github.com/clap-rs/clap/issues', following: ['a Display implementation returned an error unexpectedly', 'falseTryFromIntErrora Display implementation returned an error unexpectedly', 'internal error: entered unreachable code'] },
+  ],
+}
+
+// Exact embedded-source attribution is recorded in the native endpoint plan.
+// Complete D-Bus/UI namespaces and UI diagnostic locations, scoped by binary.
+const NATIVE_NON_ENDPOINTS: Readonly<Record<string, ReadonlySet<string>>> = {
+  '/usr/bin/mosd': new Set(['http://www.freedesktop.org/standards/dbus/1.0/introspect.dtd']),
+  '/usr/bin/apid': new Set([
+    'http://www.freedesktop.org/standards/dbus/1.0/introspect.dtd',
+    'https://react.i18next.com/latest/usetranslation-hook',
+    'https://tailwindcss.com',
+    'http://www.w3.org/2000/svg',
+    'https://react.dev/errors/',
+    'http://www.w3.org/1998/Math/MathML',
+    'http://www.w3.org/1999/xlink',
+    'http://www.w3.org/XML/1998/namespace',
+    'http://localhost',
+    'https://base-ui.com/production-error',
+  ]),
+}
+
 export const ROOT_CHECKS: readonly CheckCase[] = [
   ...required.map(path => ({ id: `file-root-required:${path}`, shell: { pass: `required ${path}` },
     run: async ctx => [verdict(`file-root-required:${path}`, regularFileInRoot(await packedRoot(ctx), path), `required ${path}`)] } satisfies CheckCase)),
@@ -305,6 +352,72 @@ export const ROOT_CHECKS: readonly CheckCase[] = [
       if ('reason' in result) return [publicMetaRefusal(result)]
       return [verdict('file-root-public-defaults', true,
         `${PUBLIC_DEFAULTS_FACT}; scannedFiles=${result.files.length}; scannedBytes=${result.bytes}; examinedPaths=${result.files.join(',')}`)]
+    },
+  },
+  {
+    id: 'file-root-native-endpoints', shell: { pass: 'native binaries contain no default update or fleet endpoints' },
+    run: async ctx => {
+      const root = await packedRoot(ctx)
+      if (entry(root, '/')?.isDirectory() !== true) throw new Error(`${root} is not an actual unpacked-image directory`)
+      const paths = ['/usr/bin/mosd', '/usr/bin/apid', '/usr/bin/mos-deploy']
+      const examined: string[] = [], endpoints: string[] = []
+      let byteCount = 0
+      const result = (ok: boolean, reason: string) => [verdict('file-root-native-endpoints', ok,
+        `${reason}; scannedFiles=${examined.length}; scannedBytes=${byteCount}; examinedPaths=${examined.join(',')}`)]
+      for (const parent of ['/usr', '/usr/bin']) {
+        const directory = entry(root, parent)
+        if (directory === undefined) return result(false, `/usr/bin/mosd: required directory ${parent} is missing`)
+        if (!directory.isDirectory()) return result(false, `/usr/bin/mosd: ${parent} must be a regular non-symlink directory`)
+      }
+      for (const path of paths) {
+        const file = entry(root, path)
+        if (file === undefined) return result(false, `${path}: required native input is missing`)
+        if (!file.isFile()) return result(false, `${path}: must be a regular non-symlink file`)
+        if (file.size === 0) return result(false, `${path}: required native input is empty`)
+        let bytes: Buffer
+        try {
+          bytes = readFileSync(pathInRoot(root, path, false))
+        }
+        catch {
+          return result(false, `${path}: cannot read the regular file`)
+        }
+        // Identify a complete ELF executable header before counting bytes as scanned.
+        const headerSize = bytes[4] === 2 ? 64 : 52
+        if (bytes.length < headerSize || bytes.readUInt32BE(0) !== 0x7f454c46
+          || (bytes[4] !== 1 && bytes[4] !== 2) || (bytes[5] !== 1 && bytes[5] !== 2) || bytes[6] !== 1) {
+          return result(false, `${path}: must contain a complete ELF executable header`)
+        }
+        const word = (offset: number) => bytes[5] === 1 ? bytes.readUInt16LE(offset) : bytes.readUInt16BE(offset)
+        const version = bytes[5] === 1 ? bytes.readUInt32LE(20) : bytes.readUInt32BE(20)
+        if ((word(16) !== 2 && word(16) !== 3) || version !== 1 || word(headerSize === 64 ? 52 : 40) !== headerSize) {
+          return result(false, `${path}: must contain a complete ELF executable header`)
+        }
+        examined.push(path)
+        byteCount += bytes.byteLength
+        // Invalid UTF-8 cannot start an authority. Keep later replacement characters
+        // in the candidate so a suffix cannot be truncated into an exact exemption.
+        const text = bytes.toString('utf8')
+        const literals = text.matchAll(/(?:https?|wss?|mqtts?):\/\/[^\x00-\x20\x7f"'<>`{}\\/\ufffd][^\x00-\x20\x7f"'<>`{}\\]*/gi)
+        for (const literal of literals) {
+          if (NATIVE_NON_ENDPOINTS[path]?.has(literal[0])) continue
+          const diagnostic = NATIVE_DIAGNOSTICS[path]?.some(({ text: source, following }) => {
+            const offset = source.indexOf('https://'), url = source.slice(offset)
+            const start = literal.index - offset
+            return start >= 0 && text.slice(start, literal.index + url.length) === source
+              && (literal[0] === url || following.some(next => {
+                const token = next.match(/^[^\x00-\x20\x7f"'<>`{}\\]*/)?.[0]
+                return literal[0] === url + token
+                  && text.slice(literal.index + url.length, literal.index + url.length + next.length) === next
+              }))
+          })
+          if (!diagnostic) {
+            endpoints.push(path)
+            break
+          }
+        }
+      }
+      if (endpoints.length !== 0) return result(false, `${endpoints.join(',')}: contains a compiled network endpoint literal`)
+      return result(true, 'native binaries contain no default update or fleet endpoints')
     },
   },
 ]
