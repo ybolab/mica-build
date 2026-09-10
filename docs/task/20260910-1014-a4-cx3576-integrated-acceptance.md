@@ -30,8 +30,9 @@ Phase state: in progress, owned by `bkd/1zjiu5h5`. The completed task/index
 status above preserves the earlier collector/kernel delivery; it does not claim
 that this new candidate exists or passes. The PMA serializer has no reopen
 operation, so this continuation is a content update under the explicit L1/L2
-handoff, not an invented status transition or a second task. Recovery retries
-remain 1.
+handoff, not an invented status transition or a second task. Composition began
+with recovery count 1. The subsequently authorized archive-acquisition recovery
+below consumes recovery retry 2, the existing maximum; no automatic retry 3.
 
 The exact L1 source/input handoff delivered through L2 authorizes a new CX3576
 development root and signed-file composition using existing recipes read-only.
@@ -279,6 +280,90 @@ log `evidence/root/docs-root-checkpoint.log`, SHA-256
 `8a05e614b6a6f3057988dc2ab915a7d38c1dca9b9fb13c021799786872185216`.
 Scoped `git diff --check` passed. This review does not pre-approve root results
 that do not yet exist; gate startup and terminal metadata remain separate.
+
+### Root acquisition failure and authorized recovery retry 2
+
+The first root gate ran at exact `9d1218e2` from
+2026-09-10T21:11:38Z to 21:21:41Z, exit 2. The 15-archive pool and 14-package
+CX dev resolution passed, but the first missing runtime archive acquisition
+hit the unchanged 600-second ceiling:
+
+```text
+debian-base: error: download exceeded the 600s ceiling and was killed: https://snapshot.debian.org/archive/debian/20260905T000000Z/pool/main/a/adduser/adduser_3.152_all.deb
+make: *** [Makefile:70: os-rootfs-cx3576] Error 1
+```
+
+No root installation, pack, smoke or signed candidate completed. This is an
+acquisition failure, not a demonstrated package, kernel or hardware defect; the
+evidence does not distinguish network delay from a stalled download process.
+The full `evidence/root/root-gate.log` is 1,158 bytes / 28 raw lines, SHA-256
+`277d9af70aa8492387077de85a07a1d2b6609929ba25056a33bb5723972d72f9`;
+`root-build.log` is 802 bytes / 22 raw lines, SHA-256
+`f9e6adc21ef42c604c563666acbf7521585ad1c48232e2f876fe113434daa788`.
+Original script, wrapper, terminal metadata and logs remain unchanged, bound by
+`evidence/root-recovery-2/failed-gate-SHA256SUMS`. The three partial output files
+(package selection and public-meta copies) are preserved, with their paths and
+hashes recorded, by moving only the owned `source/_out/cx3576/` directory to
+`evidence/root-recovery-2/failed-root-output/`. Nothing from an external cache
+was moved or deleted; the private cache's original helper is preserved.
+
+The L2 recovery dispatch explicitly authorizes retry 2 in this same issue and
+requires a changed input condition. The current manifest renderer selects 172
+ARM64/all runtime archives plus one debootstrap helper. All 173 exact inputs
+were found and verified before copying: 172 from
+`/srv/mos/tmp/s905x5m-current/source/_out/debian-base/debs/`, plus the already
+valid helper in the private cache. The other two allowed cache locations were
+not needed for recovery. Validation checks current-lock SHA-256, Package,
+Version and Architecture. The strict lock schema has no separate size field;
+after cryptographic identity verification, actual byte sizes were measured and
+required equal at the destination. Total selected bytes: 53,411,310.
+
+The failed `adduser` input is version `3.152`, architecture `all`, 190,932 bytes,
+SHA-256 `e50984d2e1ef6300e3fd51303839842189a077b10cb5cadff1923df10c61c493`.
+Its current `rootfs/debian/packages/adduser.json` hash is
+`8249577c1771167a46649d522108d9a4d043e242577904b4c24ec8fce6dee520`.
+Only validated Debian upstream archives were copied to the existing supported
+`source/_out/debian-base/debs/<sha256>.deb` locations, under the cache lock.
+No old MOS package, root, image, source or signing input was imported or relabelled.
+
+Recovery evidence under `evidence/root-recovery-2/`:
+
+| Evidence | Result / SHA-256 |
+|---|---|
+| `cache-recovery.log` | `timeout 45 bash cache-recovery-2.sh`, 2026-09-10T21:34:58Z..21:35:04Z, exit 0; `3f851b0f2f21c5cf287aa5226054569664a000bf9f15a1be0600c3a1d27110b7` |
+| `cache-copy-map.tsv` | 173 per-archive source/destination/lock/version/architecture/hash/size mappings; `e34b9ce84d35dd6d0b51599b1fbefc9fe5766cb2106b87449385f2ed2a6ae2e8` |
+| `recovered-cache-SHA256SUMS` | All destination hashes revalidated; `e7468fd99b57c19d748c4fe80e69d77ca5094e9afd16a1ed32ab9e05c0674112` |
+| `cache-verify.log` | Original `rootfs/debian/docker.sh verify --arch arm64 --packages evidence/native/resolved-packages.txt`, pinned labeled container, network disabled, 21:35:41Z..21:35:43Z, exit 0; `e469e9166d1797f2f2d9740650ae9e31f9f1b6be5afc7ed8d3d5c4fc6f33aca1` |
+
+The unchanged verifier reports 172 runtime packages and also checks the helper.
+This is a complete acquisition-input pass, not a root or runtime pass. No blind
+network replay was needed; the original snapshot/version/hash pins and 600s
+ceiling remain unchanged. Policy/native/kernel gates remain valid and unrerun.
+
+Prepared recovery command:
+`bash /srv/station/work/tmp/mos/1zjiu5h5/composition-20260910-2026-z2Ljld/root-recovery-2-gate.sh`.
+Fresh metadata/log/build log are `evidence/root-recovery-2/root-gate.json`,
+`root-gate.log`, and `root-build.log`; the new wrapper's load-only OCI copy also
+lives under that recovery evidence directory. The root recipe, source identity,
+selected packages, dev/radio/public-meta inputs, size/smoke gates, shared-tag
+safety and single-heavy-job limit are unchanged. Additional pre/post guards
+verify the recovered cache and immutable failed-attempt evidence. The new root
+still requires actual artifact semantics, smoke-row classification and later
+support/FIT/records/image gates. All physical/NPU rows and optional D5 retain
+their prior classifications; C.D4's exact tool handoff remains a later scan input.
+
+Recovery checkpoint review: pma-cr shared policy, PASS with zero high-confidence
+findings in the actual three-document delta and private cache/gate orchestration.
+The input recovery changes no product behavior; the recorded RED is the real
+acquisition gate above, while the cache verification is GREEN only for inputs.
+`bash -n` passed for all three recovery scripts. `make docs-verify` passed at
+2026-09-10T21:38:19Z..21:38:20Z, exit 0, log
+`evidence/root-recovery-2/docs-recovery-checkpoint.log`, SHA-256
+`8a05e614b6a6f3057988dc2ab915a7d38c1dca9b9fb13c021799786872185216`;
+scoped `git diff --check` passed. The recovery gate script is SHA-256
+`9a802f299105624a16e5bff70629ec5bfbdca9086ff1b0cc3fefe5f210b0607e`,
+and its invocation wrapper is
+`a1fc7e2561139a0c51839c36a3dc84b6766ed35bc7b52fd970a027798ee57929`.
 
 ### Original collector/kernel tracking
 

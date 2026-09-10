@@ -148,3 +148,12 @@ with the unchanged CX dev root recipe and mandatory smoke gate, then inspect
 actual root semantics before signed composition. No policy/native/kernel
 rebuild or new source synchronization is needed. The pending exact C.D4 verifier
 handoff gates its later candidate scan, not this root build.
+
+Subsequent root acquisition failed at 2026-09-10T21:21:41Z, exit 2: the pinned
+`adduser_3.152_all.deb` download reached the original 600s ceiling before root
+installation. L2 authorized recovery retry 2 (maximum 2). The current lock's
+172 runtime archives and bootstrap helper were then verified from exact existing
+caches and staged privately; the unchanged offline cache verifier passed.
+This demonstrated input change permits one recovery root gate, with new logs
+and preserved failed evidence. No product edit, timeout relaxation, package or
+kernel rebuild, automatic retry 3, or hardware pass is authorized or claimed.
