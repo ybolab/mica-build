@@ -66,7 +66,7 @@ qualification run.**
 | A controlled Bluetooth peer and named profile | current row N3 | controller enumeration alone is insufficient |
 | A second CAN node (250 kbit/s, classic, FD off) | 7 | `can.conf` ships those values |
 | A host PC for the USB gadget console | 7 | `mos-gadget` binds a CDC ACM getty |
-| A USB keyboard and named HDMI sink/capture | current rows D1-D4; contextual D5 observation only | records connected boot, tty2, VT return and late attach separately |
+| A USB keyboard and named HDMI sink/capture | current rows D1-D4; historical D5 observation is optional | records connected boot, tty2, VT return and late attach separately |
 | Versioned NPU, encoder and decoder fixtures with expected outputs | current rows A1-A3 | the repository currently names no accepted workload fixture |
 | Signed component archives, including a deliberate failed-health candidate | 3, 4 | §6 |
 
@@ -104,9 +104,9 @@ not run**, and the collector refuses it rather than producing a row.
 | 8 | `update` | 3 | stage 7's reset was absorbed: native state and the preceding reset are recorded |
 | 9 | `powercut` | 4 | stage 8 left the device on a named confirmed deployment with a usable retained fallback |
 | 10 | `storagefill` | 5 (fill) | stage 9 completed, and the run directory has been copied off |
-| 11 | display (manual) | D1-D4 plus unresolved D5 | stage 10 completed; the named sink, USB keyboard and visual recorder are attached for D1-D4; D5 adds no independent destructive run |
-| 12 | accelerators (manual) | A1-A3 | stage 11 completed; accepted fixtures and expected outputs are named before execution |
-| 13 | `recovery` | 12, R1-R2 | everything above is copied off the device; this stage destroys |
+| 11 | display (manual) | D1-D4; historical D5 is optional | stage 10 completed; the named sink, USB keyboard and visual recorder are attached for D1-D4; D5 adds no pass gate or independent destructive run |
+| 12 | accelerators (manual) | A1-A3 | stage 11's mandatory D1-D4 observations completed; accepted fixtures and expected outputs are named before execution |
+| 13 | `recovery` | 12, R1-R2 | all required preceding evidence and any optional evidence actually captured are copied off the device; this stage destroys |
 
 ### Why that order and not another
 
@@ -429,11 +429,14 @@ U-Boot-to-Linux hang method. Capture one uninterrupted trace showing U-Boot
 arming before eMMC access, Linux driver takeover, PID 1 ownership and configured
 timeouts; then run the early expiry and post-PID-1 expiry as separate cases.
 
-The inherited [PLAN-088](../plan/PLAN-088.md) D5 HDMI-panic requirement is not a
-current pass criterion. If the operator elects to capture non-qualifying visual
-context, connect the named HDMI sink before this already-approved post-PID-1
-crash and record it beside the authoritative serial trace. Do not repeat the
-crash solely for display evidence.
+Under L1's 2026-09-10 ruling, the inherited
+[PLAN-088](../plan/PLAN-088.md) D5 HDMI-panic requirement is superseded by the
+current console policy and is not a campaign pass criterion. The existing
+watchdog/crash tests still require authoritative serial diagnostics, reset
+cause and their independent watchdog/recovery results. If the operator elects
+to capture the optional HDMI state at the same time, connect the named sink
+before the already-approved post-PID-1 crash. Do not repeat the crash solely for
+display evidence.
 
 ### Stage 8 — `update` (row 3)
 
@@ -481,11 +484,11 @@ The collector's `storagefill` prompt still expects `/mos` and `/srv` quota
 refusal and rejects unlisted `/var` writes. That prompt is stale and must not be
 used for a current pass until a scoped collector follow-up corrects it.
 
-### Stage 11 — display (manual rows D1-D4 plus unresolved D5)
+### Stage 11 — display (manual rows D1-D4; historical D5 is optional)
 
 Run D1-D4 independently and bind each state to the exact sink,
-cable/connector, image and boot ID. Handle D5 only as the optional review in
-step 5:
+cable/connector, image and boot ID. D5 is not a prerequisite for this or any
+following stage; handle it only as the optional review in step 5:
 
 1. Boot with HDMI connected. Capture the connector status, EDID modes and fb0
    state, and visually record one centered **YBO - Hub OS** logo with its
@@ -502,13 +505,12 @@ step 5:
    current artwork is init-only; the existing late-HDMI task owns the software
    gap.
 5. Review any visual state captured during the approved stage 7 watchdog crash
-   as non-qualifying context beside the authoritative serial trace. If no sink
-   was connected then, record no D5 observation and do not repeat the crash for
-   display acceptance. The inherited
-   [PLAN-088](../plan/PLAN-088.md) HDMI-panic requirement conflicts with the
-   current signed command line policy; L1 must decide whether it remains a
-   current product requirement before anyone defines a pass criterion or
-   implements a panic display path.
+   as `not qualified / optional observation` beside the authoritative serial
+   trace. If no sink was connected then, record no D5 observation and do not
+   repeat the crash. L1's 2026-09-10 ruling supersedes the inherited
+   [PLAN-088](../plan/PLAN-088.md) HDMI-panic requirement for this campaign; the
+   screen observation neither passes nor blocks this or any following stage and
+   proves neither support nor impossibility.
 
 ### Stage 12 — accelerators (manual current rows A1-A3)
 
@@ -890,7 +892,7 @@ journald is volatile. Capture each boot's journal and serial trace before
 rebooting; a later collector invocation cannot recover the previous journal.
 Only observed hardware outcomes belong in physical qualification rows.
 
-## 10. Current display evidence boundary and inherited D5 conflict
+## 10. Current display evidence boundary and historical D5 ruling
 
 The shipped software contract is one centered **YBO - Hub OS** logo with the
 approved gradient, an idle tty1, and an authenticated tty2 selected by
@@ -908,13 +910,24 @@ that current init-only artwork has no redraw owner after VT use or late attach;
 those two rows remain known software gaps plus unobserved hardware rows, not
 new regressions inferred from old evidence.
 
-D5 does not currently promise that a panic is visible on HDMI. It preserves the
-older [PLAN-088](../plan/PLAN-088.md) requirement as an unresolved conflict with
-the current forced signed command line, which routes kernel and service output to
-`ttyFIQ0`, omits `console=tty1` and protects the artwork from console output.
-Serial is the guaranteed diagnostic path. A visual observation captured while
-HDMI is already connected for the approved watchdog test is contextual only;
-do not introduce a separate destructive test. L1 must decide whether HDMI panic
-visibility remains a product requirement before implementation or acceptance.
+D5 retains historical [PLAN-088](../plan/PLAN-088.md) section 2.2 and its
+`console=tty1` reasoning only for chronology. L1 ruled on 2026-09-10 that it is
+superseded by the current console policy and is not mandatory campaign
+acceptance. That policy was completed at
+`3579a2cdac58160779cfa3f02860f15104c5dc96` and retained in approved source
+`5d0dca577a782aa707d9530779c4b23f2a7eda31`: the
+[display design](../design/display.md) section 4,
+[board environment](../../boards/cx3576/board.env) line 55 and
+[forced kernel configuration](../../boards/cx3576/bsp/kernel/config/kernel-cx3576z.config)
+line 491 route kernel and service output only to `ttyFIQ0` and omit
+`console=tty1`. Authenticated tty2 remains the recovery path.
+
+Serial is the guaranteed diagnostic path for the required watchdog/crash and
+recovery results. A simultaneous screen observation is `not qualified /
+optional observation`; it neither blocks later stages nor proves that HDMI can
+or cannot show panic pixels. Do not introduce another crash test. A future
+dedicated panic screen or diagnostic request needs a separate concrete
+implementation and acceptance boundary; this procedure does not claim delivery
+of such a feature.
 
 > status: board-dependent — evidence: `docs/design/display.md`, `docs/task/20260910-0616-cx3576-storage-display-cleanup.md`

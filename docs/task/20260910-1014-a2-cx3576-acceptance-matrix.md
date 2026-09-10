@@ -15,7 +15,8 @@ leave unobserved hardware obligations explicitly blocked.
 ## ActiveForm
 
 Completed the current CX3576 matrix and bounded bench procedure with every
-same-image hardware obligation explicitly blocked on its missing evidence.
+mandatory same-image hardware obligation explicitly blocked on its missing
+evidence.
 
 ## Dependencies
 
@@ -41,7 +42,7 @@ below never means that the corresponding physical row passed.
 | `SW-CX` | [Storage/display delivery](20260910-0616-cx3576-storage-display-cleanup.md) and `IMG-OLD`'s 125 zero-skip offline checks | Static, compiled-artifact and QEMU evidence for 1 GiB SYSTEM, DATA layout, signed FIT, writable `/var`, private mounts, reset isolation and tty2 policy. It is not same-image board evidence. |
 | `SW-QUOTA` | [Unlimited application-data delivery](20260910-0726-unlimited-application-data.md) | Current-source layout tests and a focused real-ext4 fixture prove zero byte/inode limits for projects 100/102 and bounded project 101. No complete CX3576 image was rebuilt, so `IMG-OLD` does not contain this correction. |
 | `HIST-0` | `/srv/mos/_out/tio.log`, 95,919 bytes, SHA-256 `f614fb0c15e5263a2f3262b65cefcd3d6305d2544dcacc0b684c452e73adab8f` | Supplied 2026-09-08 historical startup context only. It predates the current source and acceptance image, contains no complete current-image run, and neither qualifies a row nor proves a current regression. |
-| `HW-0` | No confirmed board endpoint, flashed-image identity, storage-device identity, power rig or current run directory | The common blocker for every same-image hardware row. No endpoint or disk name is inferred. |
+| `HW-0` | No confirmed board endpoint, flashed-image identity, storage-device identity, power rig or current run directory | The common blocker for every mandatory same-image hardware row. It does not apply to superseded D5, and no endpoint or disk name is inferred. |
 
 ### Current source handoff (2026-09-10)
 
@@ -58,14 +59,33 @@ original artifacts remain dirty-stamped builds with recorded source-content
 equivalence, and the exact artifact evidence is queued to A4. No old CX3576
 artifact is relabelled as current by this handoff.
 
+### D5 console-policy ruling (2026-09-10)
+
+L1 ruled that historical PLAN-088 D4, which required a panic to reach HDMI, is
+not mandatory acceptance for this campaign and authorizes no implementation.
+The current policy was completed by commit
+`3579a2cdac58160779cfa3f02860f15104c5dc96` and remains in the approved source
+`5d0dca577a782aa707d9530779c4b23f2a7eda31`: [display design](../design/display.md)
+section 4, [board.env](../../boards/cx3576/board.env) line 55 and the
+[forced kernel configuration](../../boards/cx3576/bsp/kernel/config/kernel-cx3576z.config)
+line 491 select only `ttyFIQ0` and omit `console=tty1`. Local recovery access
+remains authenticated tty2.
+
+[PLAN-088](../plan/PLAN-088.md) section 2.2 depended on `console=tty1`, so it is
+historical requirement context rather than current software-support evidence.
+This ruling does not prove that panic pixels can never appear on HDMI and does
+not claim that a panic display feature was delivered. Any future dedicated
+panic screen or diagnostic request needs a separate implementation and
+acceptance boundary.
+
 The acceptance vocabulary is deliberately strict: `software-backed / blocked`
 means that relevant non-hardware gates exist but the physical obligation is
 unobserved; `blocked` means no admissible current result exists; and `known
 software gap / blocked` means source documentation already identifies an unmet
-behavior and hardware evidence is also absent. `unresolved requirement /
-current-policy conflict` preserves an inherited requirement that conflicts with
-the current documented policy; it is neither implemented nor an acceptance
-promise until L1 makes the product decision.
+behavior and hardware evidence is also absent. `superseded by current console
+policy` applies only to historical D5: its hardware result is `not qualified /
+optional observation`, not a pass, software-support claim, mandatory hardware
+blocker or claim that HDMI panic output is impossible.
 
 ### Identity, startup, power, watchdog and recovery
 
@@ -109,7 +129,7 @@ promise until L1 makes the product decision.
 | D2 | Alt+F2 and Ctrl+Alt+F2 select tty2, which presents ordinary authenticated getty with no autologin | QEMU keyboard selection reached the tty2 login prompt but did not submit a password | software-backed / blocked | On a connected HDMI/USB-keyboard bench, use both shortcuts, authenticate with a test credential, log out, and prove tty1 has no getty and tty2 has no autologin. |
 | D3 | Returning from tty2 restores the centered product presentation | [Display design](../design/display.md) records that no redraw owner exists | known software gap / blocked | Do not manufacture a pass. Record current I1 behavior after logout/VT return; implementation belongs to the existing display follow-up before acceptance can pass. |
 | D4 | HDMI attached after a headless boot receives the product presentation without reboot | [Late-HDMI task](20260910-0117-cx3576-late-hdmi-logo.md) records the init-only artwork lifetime gap | known software gap / blocked | Boot I1 without a sink, record absent/present connector and fb0 transitions, attach the named sink, and retain the visual/runtime result. A software owner must resolve any confirmed redraw gap. |
-| D5 | Reconcile the inherited HDMI panic-visibility requirement with the current serial diagnostic policy | [PLAN-088](../plan/PLAN-088.md) promised HDMI panic visibility, but the current [display design](../design/display.md) routes the forced signed kernel/service output to `ttyFIQ0`, omits `console=tty1` and protects the artwork from console output | unresolved requirement / current-policy conflict | L1 must decide whether HDMI panic visibility remains a current product requirement before any implementation or pass criterion is defined. If HDMI is already connected during the approved watchdog test, record the visual state as non-qualifying context; do not add another destructive test. Serial remains the current guaranteed diagnostic path. |
+| D5 | Historical PLAN-088 D4: a panic reaches an already connected HDMI sink | [PLAN-088](../plan/PLAN-088.md) section 2.2 required `console=tty1`; the current serial-only command-line evidence and L1 ruling are recorded above | superseded by current console policy; hardware result: not qualified / optional observation | No D5 pass evidence is required. Existing watchdog/crash tests retain serial diagnostics and their independent watchdog/recovery results. If HDMI is already connected, its visual state may be recorded without another crash; that observation proves neither current support nor impossibility. A future panic display request requires separate scope. |
 | A1 | NPU completes a representative inference with checked output and stable resources | Compiled node/resources and old probe messages exist; no workload pass | blocked | A4/operator must name a versioned model, runner, input and expected output digest. Run repeated inference on I1 while recording driver binding, IOMMU/MMIO ownership, clocks, power and errors. |
 | A2 | Hardware encoder completes a representative encode and exposes required clocks/resets/resources | Compiled resources exist; no functional encode evidence | blocked | A4/operator must name a versioned input, codec/settings and expected output checks. Record hardware-device use, output validity, resource state and repeated operation. |
 | A3 | Hardware decoder completes a representative decode and exposes required clocks/resets/resources | Compiled resources exist; no functional decode evidence | blocked | A4/operator must name a versioned bitstream and expected frame/output checks. Record hardware-device use, output validity, resource state and repeated operation. |
@@ -121,9 +141,11 @@ promise until L1 makes the product decision.
 | F3 | Sustained load stays inside the board/enclosure thermal envelope and throttles without crash | Static thermal policy only | blocked | Record enclosure/airflow, zones/trips/frequencies, thirty minutes of representative sustained load and five-minute cooldown on I1. |
 | F4 | Local management and provisioning remain usable with external network absent | x64 offline QEMU evidence in `SW-FILE` | software-backed / blocked | Start I1 with network physically absent, use the confirmed local management path, and record provisioning, configuration and shutdown without relying on network time or a guessed API endpoint. |
 
-No row is hardware-complete. The acceptance series must stop before destructive
-actions until I1 is satisfied and the operator has explicitly identified the
-bench device, its system medium, console, API route and power control.
+No mandatory row is hardware-complete. D5 is a retained historical row with an
+optional observation, not a current hardware blocker. The acceptance series
+must stop before destructive actions until I1 is satisfied and the operator has
+explicitly identified the bench device, its system medium, console, API route
+and power control.
 
 ### Collector gaps reported for A4 or a scoped follow-up
 
@@ -194,31 +216,33 @@ raw slot, RAUC package, update package or migration support is accepted.
 - Executable RED/GREEN: not applicable to this documentation-only task. No
   source, collector, build, QEMU or device test was run.
 - Reconciliation note for workstream D: the live matrix adds no physical pass;
-  I1 and all same-image rows remain blocked, with known D3/D4 redraw gaps and
-  the collector gaps above. No global changelog or sibling status was edited.
+  I1 and all mandatory same-image rows remain blocked, with known D3/D4 redraw
+  gaps and the collector gaps above. Superseded D5 is optional and does not
+  block them. No global changelog or sibling status was edited.
 
 ### Review rework 1 (2026-09-10)
 
 - Merged L2 integration commit
   `4c00a322a7fd7f65ddb11ec59ef24275c868e128` after confirming that only the
   task and plan indexes required mechanical conflict resolution.
-- Reclassified D5 as an unresolved inherited requirement/current-policy
-  conflict. Serial diagnostics remain the guaranteed current policy; an HDMI
-  observation during the already-approved watchdog test is contextual and
-  cannot pass D5. L1 owns the product decision before implementation or a hard
-  acceptance criterion.
+- Commit `081b2f286991ec7fd2df5948e84e616817e2ce13` first preserved D5 as an
+  unresolved inherited requirement/current-policy conflict. L1's 2026-09-10
+  ruling resolves that interim classification: D5 is superseded by current
+  console policy, with hardware result `not qualified / optional observation`.
+  Serial diagnostics and the independent watchdog/recovery results remain
+  mandatory; no panic-display implementation or extra crash is authorized.
 - Corrected I1's complete-image handoff owner to A4 through L2 and recorded the
   approved #313 and integrated-source commits without changing `SRC-0` or any
   historical artifact identity.
-- Rework validation passes: `make docs-verify` reports 195/195 index, 516/516
+- Rework validation passes: `make docs-verify` reports 195/195 index, 519/519
   links, 726/726 truth-status, 249/249 translation coverage and 131/131 board
-  checks; the focused consistency check finds all 39 rows, the D5 conflict,
+  checks; the focused consistency check finds all 39 rows, the D5 ruling,
   serial policy, A4-through-L2 owner and source handoff; `git diff --check`
   reports no correction whitespace errors.
-- Documentation-focused `pma-cr` re-review checked evidence classification,
-  stage sequencing, source chronology and write scope; no actionable finding
-  remains. No language-stack review pack applies to these documentation-only
-  changes.
+- Documentation-focused `pma-cr` final re-review checked the superseded D5
+  classification, required-stage sequencing, source chronology and write scope;
+  no actionable finding remains. No language-stack review pack applies to these
+  documentation-only changes.
 
 ## Notes
 
@@ -229,4 +253,4 @@ raw slot, RAUC package, update package or migration support is accepted.
 - Historical `/srv/mos/_out/tio.log` is read-only context and cannot qualify a
   current exact-image hardware row.
 
-- complete: Completed the evidence-classified CX3576 acceptance matrix and current signed-file bench procedure; all same-image hardware rows remain explicitly blocked.
+- complete: Completed the evidence-classified CX3576 acceptance matrix and current signed-file bench procedure; all mandatory same-image hardware rows remain explicitly blocked, while historical D5 is superseded and optional.

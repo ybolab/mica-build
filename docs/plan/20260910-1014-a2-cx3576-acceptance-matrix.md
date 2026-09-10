@@ -64,8 +64,8 @@ is confirmed.
 
 ## Outcome
 
-- Classified 39 current obligations without promoting any same-image hardware
-  row to pass.
+- Classified 39 logical rows — 38 current mandatory obligations plus retained
+  historical D5 — without promoting any same-image hardware row to pass.
 - Bound the archived image, metadata snapshot and historical log to their exact
   hashes and evidence classes; the archived image predates the current
   unlimited-data correction and cannot satisfy the clean-source flash gate.
@@ -81,10 +81,17 @@ is confirmed.
 - Recorded the L1-approved #313 source commit and L2 integrated-source commit
   while preserving `SRC-0` as the original investigation baseline; A4 through
   L2 owns the exact complete-image handoff.
-- Preserved D5 among the 39 obligations but reclassified the inherited
-  HDMI-panic requirement as an unresolved conflict with the current serial
-  diagnostic policy. An observation during the existing watchdog test is
-  contextual only; L1 must decide the product requirement before implementation
-  or a hard acceptance criterion.
+- Preserved D5 among the 39 logical rows. Commit
+  `081b2f286991ec7fd2df5948e84e616817e2ce13` first recorded the inherited
+  HDMI-panic requirement as unresolved; L1's 2026-09-10 ruling now classifies it
+  as superseded by current console policy, with hardware result `not qualified /
+  optional observation`.
+- The ruling is bound to completed policy commit
+  `3579a2cdac58160779cfa3f02860f15104c5dc96`, approved source
+  `5d0dca577a782aa707d9530779c4b23f2a7eda31`, the forced `ttyFIQ0` command line
+  and authenticated tty2 recovery. It authorizes no `console=tty1`, panic
+  renderer, extra crash or other implementation; a future panic display request
+  needs a separate implementation and acceptance boundary.
 - No task-state transition was made: the completed documentation deliverable is
-  being corrected in place, and all physical acceptance rows remain unpassed.
+  being corrected in place, and all mandatory physical acceptance rows remain
+  unpassed.
