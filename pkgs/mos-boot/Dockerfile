@@ -44,7 +44,30 @@ RUN cd /source && patch -p1 < /policy.patch && \
         -Dversion-tag=257.13-mos1 -Dvcs-tag=false && \
     ninja -C /build-arm64 src/boot/systemd-bootaa64.efi
 
+FROM tools AS busybox-build
+RUN printf 'Package: *\nPin: origin snapshot.debian.org\nPin-Priority: 1001\n' > /etc/apt/preferences.d/snapshot && \
+    apt-get update -qq && apt-get install -y --no-install-recommends \
+        ca-certificates curl make gcc libc6-dev gcc-aarch64-linux-gnu qemu-user bzip2 && \
+    rm -rf /var/lib/apt/lists/*
+COPY versions.env /versions.env
+COPY busybox.config busybox.required-applets check-busybox.sh build-busybox.sh /tools/
+RUN set -eu; . /versions.env; \
+    curl --fail --location --retry 3 --max-time 120 "${BUSYBOX_URL}" -o /busybox.tar.bz2; \
+    echo "${BUSYBOX_SHA256}  /busybox.tar.bz2" | sha256sum -c -; \
+    mkdir /busybox-source; tar -xjf /busybox.tar.bz2 --strip-components=1 -C /busybox-source; \
+    SOURCE_DATE_EPOCH=1577836800 bash /tools/build-busybox.sh /busybox-source /busybox-out/x64 x64 ''; \
+    SOURCE_DATE_EPOCH=1577836800 bash /tools/build-busybox.sh /busybox-source /busybox-out/aa64 aa64 aarch64-linux-gnu- qemu-aarch64; \
+    for arch in x64 aa64; do \
+        printf 'SOURCE_VERSION=%s\nSOURCE_URL=%s\nSOURCE_SHA256=%s\nSOURCE_ARCHIVE=busybox-%s.tar.bz2\n' \
+            "${BUSYBOX_VERSION}" "${BUSYBOX_URL}" "${BUSYBOX_SHA256}" "${BUSYBOX_VERSION}" \
+            >> "/busybox-out/${arch}/busybox.provenance"; \
+    done; \
+    find /busybox-out -exec touch -h -d @1577836800 {} +
+
 FROM tools AS artifact-tools
 COPY --from=loader-build /build/src/boot/systemd-bootx64.efi /usr/lib/systemd/boot/efi/systemd-bootx64.efi
 COPY --from=loader-build /build-arm64/src/boot/systemd-bootaa64.efi /usr/lib/systemd/boot/efi/systemd-bootaa64.efi
 COPY --from=loader-build /source/LICENSE.LGPL2.1 /usr/share/doc/mos-systemd-boot/LICENSE.LGPL2.1
+COPY --from=busybox-build /busybox-out/ /usr/lib/mos/boot-busybox/
+COPY --from=busybox-build /busybox-source/LICENSE /usr/share/doc/mos-boot-busybox/copyright
+COPY --from=busybox-build /busybox.tar.bz2 /usr/share/mos-sources/busybox-1.36.1.tar.bz2
