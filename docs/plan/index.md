@@ -128,3 +128,4 @@ disobeys on sight teaches a reader the wrong thing about the tree.
 - [x] [**20260910-1046-c-public-defaults-guide Update the public defaults guide**](20260910-1046-c-public-defaults-guide.md) `2026-09-10`
 
 - [x] [**20260910-1050-c-public-meta-source-validation Validate public metadata before root staging**](20260910-1050-c-public-meta-source-validation.md) `2026-09-10`
+- [x] [**20260910-1050-c-packed-public-meta-validation Validate packed public metadata independently**](20260910-1050-c-packed-public-meta-validation.md) `2026-09-10`
