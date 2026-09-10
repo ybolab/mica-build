@@ -47,7 +47,8 @@ RUN cd /source && patch -p1 < /policy.patch && \
 FROM tools AS busybox-build
 RUN printf 'Package: *\nPin: origin snapshot.debian.org\nPin-Priority: 1001\n' > /etc/apt/preferences.d/snapshot && \
     apt-get update -qq && apt-get install -y --no-install-recommends \
-        ca-certificates curl make gcc libc6-dev gcc-aarch64-linux-gnu qemu-user bzip2 && \
+        ca-certificates curl make gcc libc6-dev gcc-aarch64-linux-gnu \
+        libc6-dev-arm64-cross qemu-user bzip2 && \
     rm -rf /var/lib/apt/lists/*
 COPY versions.env /versions.env
 COPY busybox.config busybox.required-applets check-busybox.sh build-busybox.sh /tools/
