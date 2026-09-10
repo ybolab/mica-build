@@ -418,6 +418,22 @@ for board in "${ALL_BOARDS[@]}"; do
     done
 done
 
+# Optional board components must also be reachable through their explicit selection.
+for board in "${ALL_BOARDS[@]}"; do
+    for file in "$PACKAGES_DIR"/component-"$board"-*.pkgs; do
+        [ -f "$file" ] || continue
+        component=${file##*/component-$board-}; component=${component%.pkgs}
+        run_resolve "$PACKAGES_DIR" --board "$board" --profile dev \
+            --radios "$(board_radios "$board")" --without "" --components "$component"
+        if [ "$resolve_rc" -ne 0 ]; then
+            fail "component $board/$component is unreachable: $resolve_err"
+        else
+            REACHED="$REACHED $resolve_out"
+            RESOLUTIONS_N=$((RESOLUTIONS_N + 1))
+        fi
+    done
+done
+
 REACHED=$(printf '%s\n' $REACHED | sort -u | tr '\n' ' ')
 REACHED_N=0
 for _pkg in ${REACHED}; do REACHED_N=$((REACHED_N + 1)); done

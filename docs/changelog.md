@@ -1,5 +1,21 @@
 # Changelog
 
+## S905X5M signed-file development images (2026-09-10)
+
+The [S905X5M port](task/20260910-0554-s905x5m-current-system.md) now produces
+current signed SD images using paired MOS firmware in eMMC boot0. Native records
+at 120/124 MiB, required FIT verification and independent firmware receipts
+replace the retired cfgload/raw-slot path. Root/kernel updates preserve firmware;
+only DATA grows. Wi-Fi and Bluetooth remain independently selectable, with shared
+SDIO transport, protected pairing state and an optional BM201 front panel.
+
+The kernel embeds content/regulatory trust and fixes the vendor watchdog for
+userspace ownership, a 60-second timeout and NOWAYOUT. Final firmware/FIT and
+content signatures, 104 offline image checks, interrupted transactions and real
+DATA-only growth passed. ARM64 root smoke has 11 passes and one known crun
+emulator limitation. Physical board acceptance remains pending and the board is
+excluded from qualified releases. No compatibility migration is supplied.
+
 ## Split apid console chunks (2026-09-10)
 
 The [approved bundle split](task/20260910-0836-apid-ui-chunk-split.md) groups the

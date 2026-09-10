@@ -668,3 +668,17 @@ os-release-gate:
 
 os-release-verify-test:
 	bash tests/release-verify-test.sh
+
+.PHONY: os-rootfs-s905x5m os-image-s905x5m-sd os-verify-s905x5m-sd os-s905x5m-hwinit-test
+os-rootfs-s905x5m:
+	MOS_BOARD=s905x5m bash rootfs/build.sh
+
+# The SD system image requires the paired MOS firmware in eMMC boot0.
+os-image-s905x5m-sd:
+	$(MAKE) os-image MOS_BOARD=s905x5m
+
+os-verify-s905x5m-sd:
+	$(MAKE) os-verify MOS_BOARD=s905x5m
+
+os-s905x5m-hwinit-test:
+	bash tests/s905x5m-wireless.sh

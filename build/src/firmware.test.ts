@@ -5,6 +5,21 @@ import { Signer } from '../../shared/update-envelope.ts'
 import { canonicalJson, componentId } from './components.ts'
 import { authenticateFirmware, parseFirmware, type Firmware } from './firmware.ts'
 
+test('S905X5M firmware binds a framed eMMC boot0 payload, never a GPT write', () => {
+  const value = { ...fixture(), board: 's905x5m',
+    target: { format: 'amlogic-boot0', payloadOffset: 512, maxBytes: 4193792 } }
+  value.id = componentId(value)
+  expect(canonicalJson(parseFirmware(canonicalJson(value)))).toBe(canonicalJson(value))
+  for (const change of [
+    { payloadOffset: 0 }, { payloadOffset: 32768 }, { maxBytes: 4194304 },
+    { format: 'amlogic-boot1' }, { device: '/dev/mmcblk0' },
+  ]) {
+    const bad = { ...value, target: { ...value.target, ...change } }
+    bad.id = componentId(bad)
+    expect(() => parseFirmware(canonicalJson(bad))).toThrow()
+  }
+})
+
 function fixture(board: Firmware['board'] = 'cx3576') {
   const value: Firmware = { schema: 'mos/firmware/v1', id: '', board, arch: board === 'x64' ? 'amd64' : 'arm64', generation: 1,
     version: 'firmware-1', artifact: { bytes: 1048576, sha256: 'a'.repeat(64) },

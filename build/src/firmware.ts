@@ -4,13 +4,14 @@ import { authenticatePayload, canonicalJson, componentId } from './components.ts
 export interface Firmware {
   schema: 'mos/firmware/v1'
   id: string
-  board: 'x64' | 'virt-arm64' | 'cx3576'
+  board: 'x64' | 'virt-arm64' | 'cx3576' | 's905x5m'
   arch: 'amd64' | 'arm64'
   generation: number
   version: string
   artifact: Artifact
   target: { format: 'efi', partition: 1, path: string }
     | { format: 'rockchip-loader', diskOffset: 32768, maxBytes: 16744448 }
+    | { format: 'amlogic-boot0', payloadOffset: 512, maxBytes: 4193792 }
 }
 
 function requireValue(value: unknown, message: string): asserts value {
@@ -30,7 +31,7 @@ export function parseFirmware(payload: string): Firmware {
   requireValue(canonicalJson(value) === payload, 'noncanonical or duplicate fields')
   const firmware = object(value, ['schema', 'id', 'board', 'arch', 'generation', 'version', 'artifact', 'target'])
   requireValue(firmware.schema === 'mos/firmware/v1', 'unsupported schema')
-  requireValue(['x64', 'virt-arm64', 'cx3576'].includes(firmware.board as string)
+  requireValue(['x64', 'virt-arm64', 'cx3576', 's905x5m'].includes(firmware.board as string)
     && firmware.arch === (firmware.board === 'x64' ? 'amd64' : 'arm64'), 'board/architecture mismatch')
   requireValue(Number.isSafeInteger(firmware.generation) && (firmware.generation as number) > 0, 'invalid generation')
   requireValue(typeof firmware.version === 'string' && /^[a-zA-Z0-9][a-zA-Z0-9._+-]{0,127}$/.test(firmware.version), 'invalid version')
@@ -43,6 +44,10 @@ export function parseFirmware(payload: string): Firmware {
   if (firmware.board === 'cx3576') {
     const target = object(firmware.target, ['format', 'diskOffset', 'maxBytes'])
     requireValue(target.format === 'rockchip-loader' && target.diskOffset === 32768 && target.maxBytes === 16744448, 'invalid loader write range')
+  } else if (firmware.board === 's905x5m') {
+    const target = object(firmware.target, ['format', 'payloadOffset', 'maxBytes'])
+    requireValue(target.format === 'amlogic-boot0' && target.payloadOffset === 512 && target.maxBytes === 4193792
+      && (artifact.bytes as number) <= 4193792, 'invalid Amlogic boot0 payload')
   } else {
     const target = object(firmware.target, ['format', 'partition', 'path'])
     const filename = firmware.board === 'x64' ? 'BOOTX64.EFI' : 'BOOTAA64.EFI'

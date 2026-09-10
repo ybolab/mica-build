@@ -1,7 +1,7 @@
 import { expect, test } from 'bun:test'
 import { factoryImageFilename, isFactoryImageFilename } from './image-name.ts'
 
-test.each(['x64', 'virt-arm64', 'cx3576'])('factory image names use UTC seconds for %s', board => {
+test.each(['x64', 'virt-arm64', 'cx3576', 's905x5m'])('factory image names use UTC seconds for %s', board => {
   const filename = factoryImageFilename(board, new Date('2026-09-10T00:42:33.999+08:00'))
   expect(filename).toBe(`mos-${board}-20260909-164233.img`)
   expect(isFactoryImageFilename(filename, board)).toBe(true)

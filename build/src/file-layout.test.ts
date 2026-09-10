@@ -5,6 +5,25 @@ import { parseFileLayout, checkCapacity } from './file-layout.ts'
 import { REPO_ROOT } from './paths.ts'
 import { TOOL_TIMEOUT_MS } from './testing.ts'
 
+test('s905x5m protects Amlogic reservations and native records before SYSTEM', () => {
+  const source = readFileSync(join(REPO_ROOT, 'boards/s905x5m/board.env'), 'utf8')
+  const layout = parseFileLayout(source)
+  expect(layout.backend).toBe('uboot-fit')
+  expect(layout.partitions.map(p => p.startSector)).toEqual([64, 128 * 2048, 1152 * 2048])
+  expect(layout.partitions[0]!.sizeSectors).toBe(128 * 2048 - 64)
+  expect(layout.firmware?.envOffsets).toEqual([120 * 1048576, 124 * 1048576])
+  expect(layout.sizeSectors * 512).toBe(1409 * 1048576)
+  for (const [before, after] of [
+    ['UENV_A_OFFSET_BYTES=125829120', 'UENV_A_OFFSET_BYTES=113246208'],
+    ['UENV_B_OFFSET_BYTES=130023424', 'UENV_B_OFFSET_BYTES=125829120'],
+    ['SYSTEM_START_MIB=128', 'SYSTEM_START_MIB=124'],
+    ['FIRMWARE_SIZE_SECTORS=262080', 'FIRMWARE_SIZE_SECTORS=36800'],
+  ]) {
+    expect(source).toContain(before!)
+    expect(() => parseFileLayout(source.replace(before!, after!))).toThrow()
+  }
+})
+
 test('x64 has exactly ESP, SYSTEM and last-growing DATA with independent capacity checks', () => {
   const layout = parseFileLayout(readFileSync(join(REPO_ROOT, 'boards/x64/board.env'), 'utf8'))
   expect(layout.partitions.map(p => p.name)).toEqual(['ESP', 'SYSTEM', 'DATA'])
