@@ -1,6 +1,6 @@
 # 20260910-1221-c-offline-fleet-config Project offline fleet desired configuration
 
-- **status**: in_progress
+- **status**: completed
 - **priority**: P1
 - **owner**: worker-c/r3suq4rc
 - **createdAt**: 2026-09-10 12:21
@@ -96,3 +96,22 @@ Projecting offline fleet desired configuration through provisioning status.
 - Final PMA-CR Rust review covered the complete delivery diff from reviewed
   local L2 commit `f30e2492a4f4a0d29f91f13d02abbcc2f92c093a` through
   repair 1. Verdict: PASS, with no high-confidence findings.
+- Final repair 1 acceptance is preserved at
+  `/tmp/r3suq4rc-repair1-rust-gate-e8473277.log`: the command
+  `timeout 1800 make os-rust-gate` ran from clean source commit
+  `e8473277af2088ba67da85e3d1da9b167ac4c7ea`, tree
+  `615be66f57ffac92e6becd91b7c98bec7a90e164`, PID `1445269`, from
+  `2026-09-10T20:21:14Z` to `2026-09-10T20:24:38Z`. Both `mosd` and
+  `mos-deploy` passed and the wrapper recorded exit 0. Delivery-diff identity
+  `20f88260108135094ab8c8938b0a7f8c67ca409b` is the Git SHA-1 blob object
+  ID of the ten authorized paths' binary diff bytes from reviewed local L2
+  `f30e2492a4f4a0d29f91f13d02abbcc2f92c093a`, produced by
+  `git hash-object --stdin`; it is not SHA-256.
+- Final reviewed local L2 sync
+  `9f773a9cb1ad1bd882e2f11784288aea4a9e262f` was merged as
+  `f616db2047001eee4335ed429de6951e482b3923` after acceptance. It contains
+  protocol design only. All six tested settings/APID/manifest/lock path modes
+  and blobs remain byte-identical to `e8473277`.
+- Final tracking-only PMA-CR review: PASS, with no high-confidence findings.
+
+- complete: Repair 1 passed the authenticated route, focused settings and APID suites, API pins, scoped clippy, and the final full Rust gate on e8473277; delivery remains offline desired configuration only, with fleet client, credentials, activity, networking, and protocol implementation outside scope.

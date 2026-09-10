@@ -1,8 +1,9 @@
 # 20260910-1221-c-offline-fleet-config Project offline fleet desired configuration
 
-- **status**: implementing
+- **status**: completed
 - **createdAt**: 2026-09-10 12:21
 - **approvedAt**: 2026-09-10 12:14
+- **completedAt**: 2026-09-10 20:33
 - **relatedTask**: 20260910-1221-c-offline-fleet-config
 
 ## Context
@@ -72,3 +73,8 @@ existing-package edge in `pkgs/mosd/Cargo.lock`.
   the existing workspace `url` crate to close the malformed-host finding
   without changing update-origin semantics or normalizing projected values.
 - The final scoped PMA-CR Rust review passed without findings.
+- The single final repair 1 Rust gate passed both workspaces on clean commit
+  `e8473277af2088ba67da85e3d1da9b167ac4c7ea`; the later reviewed protocol
+  design sync preserved every tested source blob. Fleet client, credentials,
+  activity, networking, and protocol implementation remain outside delivery.
+- Final tracking-only PMA-CR review passed without findings.
