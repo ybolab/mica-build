@@ -189,3 +189,5 @@ thing about the tree. Both indexes now say the same thing.
 - [x] [**20260910-1013-b0-lifecycle-rootfs-audit Audit lifecycle and rootfs closure**](20260910-1013-b0-lifecycle-rootfs-audit.md) `P1`
 
 - [x] [**20260910-1038-b1-pinned-static-busybox B1 pinned static BusyBox boot package**](20260910-1038-b1-pinned-static-busybox.md) `P1`
+
+- [-] [**20260910-1142-b2-busybox-startup B2 explicit BusyBox startup semantics**](20260910-1142-b2-busybox-startup.md) `P1`
