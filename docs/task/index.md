@@ -187,3 +187,5 @@ thing about the tree. Both indexes now say the same thing.
 - [x] [**20260910-0836-apid-ui-chunk-split Split the apid console entry bundle**](20260910-0836-apid-ui-chunk-split.md) `P2`
 
 - [x] [**20260910-1013-b0-lifecycle-rootfs-audit Audit lifecycle and rootfs closure**](20260910-1013-b0-lifecycle-rootfs-audit.md) `P1`
+
+- [x] [**20260910-1038-b1-pinned-static-busybox B1 pinned static BusyBox boot package**](20260910-1038-b1-pinned-static-busybox.md) `P1`
