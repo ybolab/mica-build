@@ -34,8 +34,34 @@ export KBUILD_BUILD_TIMESTAMP="@${SOURCE_DATE_EPOCH}"
 export KBUILD_BUILD_USER=mos
 export KBUILD_BUILD_HOST=boot-builder
 
-make -C "${SOURCE}" O="${BUILD}" KCONFIG_ALLCONFIG="${CONFIG}" \
-    CROSS_COMPILE="${CROSS_PREFIX}" allnoconfig
+make -C "${SOURCE}" O="${BUILD}" CROSS_COMPILE="${CROSS_PREFIX}" allnoconfig
+while IFS= read -r setting; do
+    case "${setting}" in
+    CONFIG_*=*) symbol=${setting%%=*} ;;
+    '# CONFIG_'*' is not set')
+        symbol=${setting#\# }
+        symbol=${symbol% is not set}
+        ;;
+    *) continue ;;
+    esac
+    grep -Eq "^(${symbol}=|# ${symbol} is not set)$" "${BUILD}/.config" || {
+        echo "error: BusyBox ${EFI_ARCH} configuration symbol is unavailable: ${symbol}" >&2
+        exit 1
+    }
+    sed -i -e "/^${symbol}=/c\\${setting}" \
+        -e "/^# ${symbol} is not set$/c\\${setting}" "${BUILD}/.config"
+done <"${CONFIG}"
+make -C "${SOURCE}" O="${BUILD}" CROSS_COMPILE="${CROSS_PREFIX}" silentoldconfig
+while IFS= read -r setting; do
+    case "${setting}" in
+    CONFIG_*=*|'# CONFIG_'*' is not set') ;;
+    *) continue ;;
+    esac
+    grep -Fqx "${setting}" "${BUILD}/.config" || {
+        echo "error: BusyBox ${EFI_ARCH} configuration did not retain: ${setting}" >&2
+        exit 1
+    }
+done <"${CONFIG}"
 make -C "${SOURCE}" O="${BUILD}" CROSS_COMPILE="${CROSS_PREFIX}" \
     -j"${BUSYBOX_BUILD_JOBS}" busybox
 
