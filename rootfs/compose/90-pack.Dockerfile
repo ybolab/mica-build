@@ -3,21 +3,12 @@
 # The last link in the chain (stages/README.md says what the chain is), and the
 # only stage file with more than one FROM of its own.
 
-# Four stages in one file:
-#   closed        FROM the previous chain tag, on the target platform. The last
-#     four things done to the device root: take the package inventory, capture
-#     the package-manager logs, remove package management, write the build
-#     report. They are here rather than in 10-base because they are ordered
-#     last by construction -- dpkg-query has to see every package any feature
-#     or board stage installed, and the purge has to be the last step that
-#     needs dpkg.
-#   pack          FROM bookworm, on the build platform. Packing runs mksquashfs
-#     and veritysetup over a tree and never executes anything from it, so it
-#     does not want emulation.
-#   artifact      FROM scratch, the export surface the driver writes out.
-#   factory-root  FROM scratch, on the target platform: the packed root itself
-#     as an OCI image, so the smoke runner can execute the self-built binaries
-#     in the root that ships them.
+# inventoried/captured preserve native inputs and the configured target tree.
+# closed applies the existing device policy transformations in disposable state.
+# pack-tools/pack run on the build platform, preserve the installed transfer,
+# select an empty runtime tree offline, then measure and pack only that tree.
+# factory-root exports the selected tree; factory-checked verifies that transfer.
+# artifact exports the matching verity image, inventories and debug counterparts.
 
 # Two export surfaces, not one, because they are different kinds of thing:
 # `artifact` is files the assembler consumes, `factory-root` is an image a
@@ -44,7 +35,14 @@ ARG MOS_IMAGE_DEBIAN_BOOKWORM
 
 # Close the device root: pin the account dates, inventory, log capture, purge,
 # report.
-FROM ${MOS_STAGE_PREV} AS closed
+FROM --platform=$BUILDPLATFORM ${MOS_IMAGE_DEBIAN_BOOKWORM} AS pack-tools
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        squashfs-tools cryptsetup-bin libcap2-bin python3 \
+        binutils-x86-64-linux-gnu binutils-aarch64-linux-gnu \
+    && rm -rf /var/lib/apt/lists/*
+RUN dpkg-query -W -f='${Package}\t${Version}\t${Architecture}\n' | LC_ALL=C sort > /pack-tools.tsv
+
+FROM ${MOS_STAGE_PREV} AS inventoried
 
 # The shadow last-change day, pinned for every account.
 
@@ -68,7 +66,8 @@ FROM ${MOS_STAGE_PREV} AS closed
 # the purge below, which is what takes the package manager away; `chage` itself
 # ships (90-pack's purge notes list it among the setgid binaries that stay).
 RUN --mount=type=bind,source=rootfs/scripts,target=/mos-scripts \
-    sh /mos-scripts/account-pin-shadow-dates.sh
+    sh /mos-scripts/account-pin-shadow-dates.sh && \
+    sha256sum /mos-scripts/account-pin-shadow-dates.sh >> /mos-build-inputs/transform-sources.sha256
 
 # Package inventory. Split from the size measurement below because the package
 # manager is removed in between: dpkg-query needs /var/lib/dpkg, and TOTAL_MB
@@ -86,7 +85,19 @@ RUN dpkg-query -W -f='${Package}\t${Installed-Size}\n' > /rootfs-report.pkgs
 RUN install -d -m 0755 /usr/share/mos && \
     { printf '#package\tversion\tarchitecture\n'; \
     dpkg-query -W -f='${Package}\t${Version}\t${Architecture}\n' | LC_ALL=C sort; } \
-    >/usr/share/mos/manifest.tsv
+    >/usr/share/mos/manifest.tsv && \
+    cp /usr/share/mos/manifest.tsv /mos-build-inputs/manifest.tsv
+
+# Read the configured target without running it or changing its metadata.
+FROM pack-tools AS captured
+RUN --network=none \
+    --mount=type=bind,from=inventoried,source=/,target=/installed \
+    --mount=type=bind,source=rootfs/runtime,target=/mos-runtime \
+    mkdir /capture && \
+    python3 /mos-runtime/compose.py snapshot --root /installed --output /capture/configured.json
+
+FROM inventoried AS closed
+COPY --from=captured /capture/configured.json /mos-build-inputs/configured.json
 
 
 
@@ -145,7 +156,8 @@ RUN --mount=type=bind,source=rootfs/scripts,target=/mos-scripts \
 # the database is exactly what makes that unit start running, against a
 # read-only /usr, on every boot. The unit and its enablement go with the data.
 RUN --mount=type=bind,source=rootfs/scripts,target=/mos-scripts \
-    sh /mos-scripts/hwdb-remove.sh
+    sh /mos-scripts/hwdb-remove.sh && \
+    sha256sum /mos-scripts/hwdb-remove.sh >> /mos-build-inputs/transform-sources.sha256
 
 # Reconcile the enablement links with the preset policy this root SHIPS
 # (PLAN-088). Here, in `closed`, and above the purge, for the same reasons the
@@ -167,7 +179,8 @@ RUN --mount=type=bind,source=rootfs/scripts,target=/mos-scripts \
 # composed cx3576 root: 37 rules, 104 enablement links examined, exactly 1
 # removed.
 RUN --mount=type=bind,source=rootfs/scripts,target=/mos-scripts \
-    sh /mos-scripts/preset-enforce.sh
+    sh /mos-scripts/preset-enforce.sh && \
+    sha256sum /mos-scripts/preset-enforce.sh >> /mos-build-inputs/transform-sources.sha256
 
 # Remove package management from the packed root. Nothing can install a
 # package on this device: the root is a read-only dm-verity squashfs and
@@ -223,7 +236,8 @@ RUN --mount=type=bind,source=rootfs/scripts,target=/mos-scripts \
 # against different tool semantics, and outbound ssh/scp is a field-support
 # capability, not packaging residue.
 RUN --mount=type=bind,source=rootfs/scripts,target=/mos-scripts \
-    sh /mos-scripts/package-manager-purge.sh
+    sh /mos-scripts/package-manager-purge.sh && \
+    sha256sum /mos-scripts/package-manager-purge.sh >> /mos-build-inputs/transform-sources.sha256
 
 # Build report (moved out of the tree by the pack stage; never ships in the
 # image).
@@ -241,7 +255,7 @@ RUN --mount=type=bind,source=rootfs/scripts,target=/mos-scripts \
 RUN mv /rootfs-report.pkgs /rootfs-report.txt
 
 # Pack: squashfs-zstd + appended dm-verity hash tree.
-FROM --platform=$BUILDPLATFORM ${MOS_IMAGE_DEBIAN_BOOKWORM} AS pack
+FROM pack-tools AS pack
 # ARG is per-stage. BOARD_RADIOS is declared again here because the pack stage
 # asserts properties of the assembled root that depend on it -- which board
 # state directories are precious, and therefore which mount units must exist.
@@ -268,11 +282,17 @@ ARG MOS_BOARD
 # and this apt layer is then keyed on nothing but the base digest, so an amd64
 # board and an arm64 board share it; installing only the selected one would put
 # MOS_ARCH in the cache key and rebuild this layer every time the board changed.
-RUN apt-get update && apt-get install -y --no-install-recommends \
-        squashfs-tools cryptsetup-bin libcap2-bin \
-        binutils-x86-64-linux-gnu binutils-aarch64-linux-gnu \
-    && rm -rf /var/lib/apt/lists/*
-COPY --from=closed / /rootfs/
+# Transfer via tar so native hardlinks, owners, capabilities and xattrs survive.
+RUN --network=none \
+    --mount=type=bind,from=closed,source=/,target=/installed \
+    --mount=type=bind,source=rootfs/runtime,target=/mos-runtime \
+    mkdir /rootfs /out && \
+    python3 /mos-runtime/compose.py snapshot --root /installed --output /out/closed.json && \
+    bash -o pipefail -c 'tar -C /installed --numeric-owner --xattrs --xattrs-include="*" --one-file-system -cf - . | tar -C /rootfs --same-owner --xattrs --xattrs-include="*" -xf -' && \
+    python3 /mos-runtime/compose.py compare --root /rootfs --snapshot /out/closed.json && \
+    mv /rootfs/mos-build-inputs /out/build-inputs && \
+    cp /pack-tools.tsv /out/build-inputs/pack-tools.tsv
+
 
 # Guard the mos-owned files against CJK text (repo rule: code and docs are
 # English). The scanned set is the overlay's mount units, seed scripts,
@@ -387,14 +407,27 @@ RUN --mount=type=bind,source=rootfs/scripts,target=/mos-scripts \
 # consumer of separated debug information resolves on. Kernel modules are not
 # touched: their symbol tables are what the module loader relocates against.
 RUN --mount=type=bind,source=rootfs/scripts,target=/mos-scripts \
-    MOS_ARCH="${MOS_ARCH}" sh /mos-scripts/pack-export-debug.sh
+    MOS_ARCH="${MOS_ARCH}" sh /mos-scripts/pack-export-debug.sh && \
+    sha256sum /mos-scripts/pack-strip-build-residue.sh /mos-scripts/pack-tree-surgery.sh \
+      /mos-scripts/pack-shadow-relocate.sh /mos-scripts/pack-export-boot.sh \
+      /mos-scripts/pack-export-debug.sh >> /out/build-inputs/transform-sources.sha256
+
+# Installation and transformations end here. Only this selected scratch tree
+# reaches measurement, SquashFS and factory-root export; selection has no network.
+ARG SQUASHFS_TIME
+RUN --network=none \
+    --mount=type=bind,source=rootfs/runtime,target=/mos-runtime \
+    python3 /mos-runtime/compose.py compose --root /rootfs --output /runtime \
+      --inputs /out/build-inputs --arch "$MOS_ARCH" --epoch "$SQUASHFS_TIME" \
+      --debug /out/debug --report /out/rootfs-report.runtime.json && \
+    python3 /mos-runtime/select.py verify --root /runtime --report /out/rootfs-report.runtime.json
 
 # TOTAL_MB, measured HERE rather than in `closed`, because the two lines above
 # are what finish the shipping root: a number taken before them describes a tree
 # that is roughly 95 MB larger than anything this build writes to a slot, and
 # build.sh's budget gate reads this number. Appended to the report in the
 # position it has always occupied, so the file's shape does not move.
-RUN echo "TOTAL_MB $(du -sxm /rootfs | cut -f1)" >> /out/rootfs-report.txt
+RUN echo "TOTAL_MB $(du -sxm /runtime | cut -f1)" >> /out/rootfs-report.txt
 
 # Privilege inventory of the SOURCE tree, captured before packing so the packed
 # image can be diffed against it. Numeric uid/gid deliberately: the tree is
@@ -402,7 +435,7 @@ RUN echo "TOTAL_MB $(du -sxm /rootfs | cut -f1)" >> /out/rootfs-report.txt
 # cannot resolve ids like _ssh or messagebus, so names would not round-trip.
 # %M is the symbolic mode, which is exactly what `unsquashfs -lln` prints, so
 # the two inventories are directly comparable.
-RUN find /rootfs -xdev -perm /6000 -printf '%M %U %G %P\n' 2>/dev/null \
+RUN find /runtime -xdev -perm /6000 -printf '%M %U %G %P\n' 2>/dev/null \
         | sort > /out/privileged-src.txt
 
 # File capabilities depend on xattrs surviving both the buildkit layer export
@@ -411,7 +444,7 @@ RUN find /rootfs -xdev -perm /6000 -printf '%M %U %G %P\n' 2>/dev/null \
 # added to the allowlist.
 RUN { echo; \
       echo "== file capabilities =="; \
-      getcap -r /rootfs 2>/dev/null | sed 's|^/rootfs||' | sort; \
+      getcap -r /runtime 2>/dev/null | sed 's|^/runtime||' | sort; \
     } >> /out/rootfs-report.txt
 
 # Pack, in three steps so each can carry its own explanation and cache
@@ -450,6 +483,10 @@ RUN --mount=type=bind,source=rootfs/scripts,target=/mos-scripts \
 # -lln prints numeric ids, matching how privileged-src.txt was written.
 RUN --mount=type=bind,source=rootfs/scripts,target=/mos-scripts \
     sh /mos-scripts/pack-assert-privileged.sh
+RUN --network=none \
+    --mount=type=bind,source=rootfs/runtime,target=/mos-runtime \
+    unsquashfs -no-progress -d /roundtrip /out/rootfs.squashfs && \
+    python3 /mos-runtime/select.py verify --root /roundtrip --report /out/rootfs-report.runtime.json
 
 # Step 3 -- dm-verity. veritysetup gets the pinned salt, whose default is
 # random, and --no-superblock, and the two are one decision: without a
@@ -461,19 +498,10 @@ RUN --mount=type=bind,source=rootfs/scripts,target=/mos-scripts \
 # bound by the signed root descriptor. Append the tree after the SquashFS data.
 RUN --mount=type=bind,source=rootfs/scripts,target=/mos-scripts \
     sh /mos-scripts/pack-verity.sh
+RUN --network=none \
+    --mount=type=bind,source=rootfs/runtime,target=/mos-runtime \
+    python3 /mos-runtime/compose.py measure-packed --root /runtime --out /out
 
-
-FROM scratch AS artifact
-COPY --from=pack /out/pkg-logs/ /pkg-logs/
-COPY --from=pack /out/rootfs-verity.img /
-COPY --from=pack /out/rootfs-verity.env /
-COPY --from=pack /out/rootfs-report.txt /
-COPY --from=pack /out/boot/ /boot/
-# The separated debug information, one `.debug` per shipped binary plus the
-# manifest that names the build-id tying each to its binary. Outside the root by
-# construction -- this is the whole point of the split -- and read by the image
-# contract's debug-export family out of _out/<board>/debug/.
-COPY --from=pack /out/debug/ /debug/
 
 # The factory root as an OCI image.
 
@@ -486,20 +514,10 @@ COPY --from=pack /out/debug/ /debug/
 # them in. This is that root, in the one form a container runtime can be handed
 # directly.
 
-# /rootfs comes from `pack`, not `closed`. `closed` is the cheaper answer -- it
-# is already an image, already on the target platform, and exporting it costs a
-# tag -- but it is not what ships. Everything between the two, the tree surgery
-# and the shadow relocation above, is the difference: /var moves aside to
-# /usr/share/factory/var and leaves an empty mountpoint, /etc/shadow becomes a
-# symlink to /run/mos/shadow, /etc/resolv.conf becomes a symlink into /run.
-# /rootfs at this point is the byte-for-byte input to mksquashfs, so this
-# exports the root that ships and nothing adjacent to it.
-
-# It is the last thing in the file for the reader, not for docker: `COPY
-# --from=pack` takes pack's final state wherever this stage is written, so its
-# position changes nothing docker does. Placed above the surgery it would read
-# as a capture of the tree before it, which is the wrong tree and an easy
-# mistake to inherit.
+# /runtime is the exact selection verified before mksquashfs. Installation,
+# account configuration and the existing whole-var/shadow/DNS transformations
+# are finished before this tree is copied. Disposable installation databases,
+# archives and debug counterparts live outside the selected tree.
 
 # There is no `--platform` flag here, so the stage is built for TARGETPLATFORM
 # and the image declares the board's architecture, which is what makes `docker
@@ -508,4 +526,26 @@ COPY --from=pack /out/debug/ /debug/
 # binfmt_misc unmounted. Building the arm64 root is still gated on emulation;
 # exporting one is not.
 FROM scratch AS factory-root
-COPY --from=pack /rootfs/ /
+COPY --from=pack /runtime/ /
+
+# The artifact build verifies the candidate factory stage before its OCI export.
+# A lossy COPY must fail here; final OCI serialization still needs B7 extraction.
+FROM pack AS factory-checked
+RUN --network=none \
+    --mount=type=bind,from=factory-root,source=/,target=/factory-check \
+    --mount=type=bind,source=rootfs/runtime,target=/mos-runtime \
+    python3 /mos-runtime/select.py verify --root /factory-check --report /out/rootfs-report.runtime.json
+
+FROM scratch AS artifact
+COPY --from=factory-checked /out/pkg-logs/ /pkg-logs/
+COPY --from=factory-checked /out/rootfs-verity.img /
+COPY --from=factory-checked /out/rootfs-verity.env /
+COPY --from=factory-checked /out/rootfs-report.txt /
+COPY --from=factory-checked /out/rootfs-report.runtime.json /
+COPY --from=factory-checked /out/build-inputs/ /build-inputs/
+COPY --from=factory-checked /out/boot/ /boot/
+# The separated debug information, one `.debug` per shipped binary plus the
+# manifest that names the build-id tying each to its binary. Outside the root by
+# construction -- this is the whole point of the split -- and read by the image
+# contract's debug-export family out of _out/<board>/debug/.
+COPY --from=factory-checked /out/debug/ /debug/

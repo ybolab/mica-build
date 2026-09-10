@@ -8,7 +8,7 @@
 
 set -eu
 test -n "${SQUASHFS_TIME}"
-mksquashfs /rootfs /out/rootfs.squashfs \
+mksquashfs /runtime /out/rootfs.squashfs \
     -comp zstd -Xcompression-level 19 \
     -noappend -no-exports \
     -mkfs-time "${SQUASHFS_TIME}" -all-time "${SQUASHFS_TIME}" \

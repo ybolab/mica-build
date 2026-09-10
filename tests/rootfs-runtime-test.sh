@@ -3,4 +3,4 @@
 set -euo pipefail
 command -v python3 >/dev/null
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
-exec python3 "$ROOT/tests/rootfs-runtime/selection_test.py"
+exec python3 "$ROOT/tests/rootfs-runtime/composition_test.py"
