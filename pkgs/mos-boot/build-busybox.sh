@@ -44,7 +44,7 @@ while IFS= read -r setting; do
         ;;
     *) continue ;;
     esac
-    grep -Eq "^(${symbol}=|# ${symbol} is not set)$" "${BUILD}/.config" || {
+    grep -Eq "^(${symbol}=.*|# ${symbol} is not set)$" "${BUILD}/.config" || {
         echo "error: BusyBox ${EFI_ARCH} configuration symbol is unavailable: ${symbol}" >&2
         exit 1
     }
