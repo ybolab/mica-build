@@ -192,3 +192,7 @@ thing about the tree. Both indexes now say the same thing.
 - [x] [**20260910-1046-c-provisioning-resolution-tests Verify provisioning resolution through the API route**](20260910-1046-c-provisioning-resolution-tests.md) `P1`
 
 - [x] [**20260910-1910-fleet-device-plane-protocol Design the fleet device-to-plane protocol**](20260910-1910-fleet-device-plane-protocol.md) `P1`
+- [x] [**20260910-1046-c-public-defaults-guide Update the public defaults guide**](20260910-1046-c-public-defaults-guide.md) `P1`
+
+- [x] [**20260910-1050-c-public-meta-source-validation Validate public metadata before root staging**](20260910-1050-c-public-meta-source-validation.md) `P1`
+- [x] [**20260910-1050-c-packed-public-meta-validation Validate packed public metadata independently**](20260910-1050-c-packed-public-meta-validation.md) `P1`
