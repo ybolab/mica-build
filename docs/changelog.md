@@ -4,6 +4,18 @@ Campaign-level record, one entry per plan, newest first. Details live in the
 plan file and the task records it names; this file holds the one-paragraph
 history a reader can scan without opening either.
 
+## Integrated cx3576 image and boot-log review (2026-09-10)
+
+The [integrated image task](task/20260910-0254-cx3576-integrated-image.md) combines
+current strict A/B root/init with the centered HDMI logo and native U-Boot console
+repairs. The timestamped 1,299 MiB image preserves 1 GiB SYSTEM and passes 389
+build tests, 123 offline checks, FIT signature negatives and DATA-only growth.
+Source hashes and reused component identities are recorded with the image.
+Review of the existing boot-log proposal confirms remaining board/config/FIT
+items and updates the initramfs measurement; accelerator and physical acceptance
+remain separate. The pre-existing `embed-trust.sh:15` shell-lint failure remains
+explicit. Other owners' changes and the draft cleanup plan are preserved.
+
 ## Strict two-deployment file A/B replacement (2026-09-10)
 
 The [approved replacement task](task/20260910-0040-strict-file-ab.md) replaces old
