@@ -9,18 +9,22 @@ mkdir -p /tmp/fit-keys
 ln -s /signing/key.pem /tmp/fit-keys/mos.key
 ln -s /signing/cert.pem /tmp/fit-keys/mos.crt
 cd /output
-cat > boot.its <<'ITS'
+read -r kernel_address fdt_address ramdisk_address < /input/fit-addresses
+for address in "$kernel_address" "$fdt_address" "$ramdisk_address"; do
+    [[ "$address" =~ ^0x[0-9a-f]{8}$ ]]
+done
+cat > boot.its <<ITS
 /dts-v1/;
 / {
     description = "MOS authenticated kernel package";
     #address-cells = <1>;
     images {
         kernel { description = "YBO - Hub OS Linux kernel"; data = /incbin/("/input/kernel"); type = "kernel"; arch = "arm64"; os = "linux"; compression = "none";
-            load = <0x42000000>; entry = <0x42000000>; hash { algo = "sha256"; }; };
-        fdt { description = "CX3576-Z device tree"; data = /incbin/("/input/board.dtb"); type = "flat_dt"; arch = "arm64"; compression = "none";
-            load = <0x52000000>; hash { algo = "sha256"; }; };
+            load = <$kernel_address>; entry = <$kernel_address>; hash { algo = "sha256"; }; };
+        fdt { description = "MOS board device tree"; data = /incbin/("/input/board.dtb"); type = "flat_dt"; arch = "arm64"; compression = "none";
+            load = <$fdt_address>; hash { algo = "sha256"; }; };
         ramdisk { description = "MOS authenticated boot and shutdown environment"; data = /incbin/("initramfs.cpio"); type = "ramdisk"; arch = "arm64"; os = "linux"; compression = "none";
-            load = <0x54000000>; hash { algo = "sha256"; }; };
+            load = <$ramdisk_address>; hash { algo = "sha256"; }; };
     };
     configurations {
         default = "conf";

@@ -1,7 +1,7 @@
 #include <assert.h>
 #include <stdio.h>
 #include <string.h>
-#include "../../boards/cx3576/bsp/uboot/mos-records.h"
+#include "../../boards/common/mos-records.h"
 
 int main(void)
 {

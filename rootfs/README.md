@@ -1,7 +1,7 @@
 # rootfs — locked Debian runtime composition
 
 Builds a Debian trixie and systemd userspace root for x64, virt-arm64 and
-cx3576. Root, kernel/support and firmware are independent signed components.
+cx3576 and s905x5m. Root, kernel/support and firmware are independent signed components.
 The root contains no board kernel or module payload and no metadata trust anchors.
 It is assembled into a current three-partition complete factory image.
 

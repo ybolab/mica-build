@@ -9,12 +9,16 @@ image=$(bash build-env/from.sh --arch=amd64 --ref LOCAL_MOS_BUILD_C)
 # mos-build-side: container-block -- the pinned C compiler builds and runs the firmware policy.
 docker run --rm --label ai-agent=true --network traefik -v "$PWD:/src:ro" -v "$work:/out" \
     --entrypoint /bin/bash "$image" -ceu '
-    mkdir -p /out/include/asm /out/include/u-boot
-    for header in blk bootm button command console dm env fs hang image malloc memalign mmc part wdt asm/unaligned u-boot/crc; do
+    mkdir -p /out/include/amlogic /out/include/asm /out/include/u-boot
+    for header in common cli amlogic/storage blk bootm button command console dm env fs hang image malloc memalign mmc part wdt asm/unaligned u-boot/crc; do
         touch /out/include/$header.h
     done
-    gcc -std=c11 -Wall -Wextra -Werror -fsanitize=address,undefined \
-        -I/out/include /src/tests/file-ab-fit/firmware-io.c -o /out/firmware-io
+    for board in cx3576 s905x5m; do
+    flags=
+    [ "$board" != s905x5m ] || flags=-DS905X5M
+    gcc $flags -std=c11 -Wall -Wextra -Werror -fsanitize=address,undefined \
+        -I/out/include -I/src/boards/common /src/tests/file-ab-fit/firmware-io.c -o /out/firmware-io
     timeout 20 /out/firmware-io
+    done
 '
 # mos-build-side: host

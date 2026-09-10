@@ -28,7 +28,7 @@ export function seedArguments(args: string[]): { files: { source: string, target
 }
 
 export async function seedDataImage(board: string, image: string, files: { source: string, target: string }[], enabled: string[] = []): Promise<void> {
-  if (!['x64', 'virt-arm64', 'cx3576'].includes(board) || files.length === 0 || files.length > 64) throw new Error('Invalid DATA seed inputs')
+  if (!['x64', 'virt-arm64', 'cx3576', 's905x5m'].includes(board) || files.length === 0 || files.length > 64) throw new Error('Invalid DATA seed inputs')
   image = resolve(image)
   if (!lstatSync(image).isFile()) throw new Error('DATA seed requires a regular offline disk image')
   for (const file of files) {

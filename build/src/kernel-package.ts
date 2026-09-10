@@ -9,11 +9,12 @@ import { REPO_ROOT } from './paths.ts'
 import { parseBoardEnv } from './verify-package.ts'
 import { parseFirmware, type Firmware } from './firmware.ts'
 import { Signer } from '../../shared/update-envelope.ts'
+import { FIT_BOARDS, fitBoard, validateFitKernel } from './fit-board.ts'
 
 const BOOT_TOOLS = 'ai-agent/mos-boot-tools-amd64'
 const FIT_TOOLS = 'ai-agent/mos-fit-tools-amd64'
 export const X64_CMDLINE = 'console=ttyS0,115200n8 net.ifnames=0 i6300esb.heartbeat=120 ro dm_verity.require_signatures=1 panic=5 rdinit=/init'
-export const CX3576_CMDLINE = 'console=ttyFIQ0,1500000n8 net.ifnames=0 ro dm_verity.require_signatures=1 panic=5 rdinit=/init fbcon=logo-pos:center,logo-count:1 vt.global_cursor_default=0'
+export const CX3576_CMDLINE = FIT_BOARDS.cx3576.cmdline
 
 function docker(args: string[]) {
   const result = spawnSync('docker', args, { encoding: 'utf8', timeout: 120000 })
@@ -29,7 +30,7 @@ function packageBoot(mode: 'kernel' | 'firmware' | 'fit', input: string, output:
 }
 
 export interface KernelInputs {
-  board: 'x64' | 'virt-arm64' | 'cx3576'
+  board: 'x64' | 'virt-arm64' | 'cx3576' | 's905x5m'
   kernelDirectory: string
   init: string
   publicKeys: string[]
@@ -46,20 +47,24 @@ export async function packKernel(inputs: KernelInputs, tb: Toolbox): Promise<Ker
   const arch = board === 'x64' ? 'amd64' : 'arm64'
   const efiArch = board === 'x64' ? 'x64' : 'aa64'
   const kernelName = board === 'x64' ? 'bzImage' : 'Image'
-  const fit = board === 'cx3576'
+  const fit = fitBoard(board)
   const bootFile = fit ? 'boot.itb' : 'boot.efi'
-  const cmdline = fit ? CX3576_CMDLINE : board === 'x64' ? X64_CMDLINE : X64_CMDLINE.replace('ttyS0', 'ttyAMA0')
+  const cmdline = fit ? fit.cmdline : board === 'x64' ? X64_CMDLINE : X64_CMDLINE.replace('ttyS0', 'ttyAMA0')
   if (existsSync(output)) throw new Error(`Kernel output exists: ${output}`)
   if (publicKeys.length < 1 || publicKeys.length > 8 || publicKeys.some(key => Buffer.from(key, 'base64').length !== 32 || Buffer.from(key, 'base64').toString('base64') !== key)) throw new Error('Invalid metadata trust set')
   for (const uuid of [systemPartUuid, dataPartUuid]) if (!/^[0-9a-fA-F]{8}(-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}$/.test(uuid)) throw new Error('Invalid storage partition UUID')
   const release = readFileSync(join(kernelDirectory, 'kernel.release'), 'utf8').trim()
   const config = readFileSync(join(kernelDirectory, 'config'), 'utf8')
   for (const symbol of ['BLK_DEV_LOOP', 'BLK_DEV_DM', 'DM_VERITY', 'DM_VERITY_VERIFY_ROOTHASH_SIG', 'SYSTEM_TRUSTED_KEYRING', 'EXT4_FS', 'SQUASHFS', 'WATCHDOG_NOWAYOUT',
-    ...(fit ? ['DW_WATCHDOG', 'CMDLINE_FORCE'] : ['EFI_STUB', 'I6300ESB_WDT'])]) {
+    ...(fit ? [fit.watchdog, 'CMDLINE_FORCE'] : ['EFI_STUB', 'I6300ESB_WDT'])]) {
     if (!config.split('\n').includes(`CONFIG_${symbol}=y`)) throw new Error(`Kernel is missing built-in ${symbol}`)
   }
   if (!/^CONFIG_SYSTEM_TRUSTED_KEYS="[^"\n]+"$/m.test(config)) throw new Error('Kernel has no embedded content anchor')
-  if (fit && !config.split('\n').includes(`CONFIG_CMDLINE="${CX3576_CMDLINE}"`)) throw new Error('FIT kernel command policy differs from authenticated packaging')
+  if (fit && !config.split('\n').includes(`CONFIG_CMDLINE="${fit.cmdline}"`)) throw new Error('FIT kernel command policy differs from authenticated packaging')
+  if (board === 'cx3576' || board === 's905x5m') {
+    const image = readFileSync(join(kernelDirectory, kernelName))
+    validateFitKernel(board, image.subarray(0, 64), image.length, artifactFile(join(kernelDirectory, FIT_BOARDS[board].dtb)).bytes)
+  }
   mkdirSync(dirname(output), { recursive: true })
   const work = `${output}.building`
   mkdirSync(work)
@@ -67,12 +72,12 @@ export async function packKernel(inputs: KernelInputs, tb: Toolbox): Promise<Ker
     const firmware = fit ? join(work, 'firmware') : undefined
     if (firmware) {
       mkdirSync(firmware)
-      const boardEnv = parseBoardEnv(readFileSync(join(REPO_ROOT, 'boards/cx3576/board.env'), 'utf8'), 'board.env')
+      const boardEnv = parseBoardEnv(readFileSync(join(REPO_ROOT, 'boards', board, 'board.env'), 'utf8'), 'board.env')
       const files = boardEnv.values.get('BOARD_FIRMWARE_FILES')!.split(' ')
       for (const file of files) {
         if (!/^\/usr\/lib\/firmware\/[a-zA-Z0-9_.-]+$/.test(file)) throw new Error('Invalid board firmware path')
         const name = file.slice('/usr/lib/firmware/'.length)
-        const source = join(REPO_ROOT, 'boards/cx3576/bsp/rootfs/firmware', name)
+        const source = join(REPO_ROOT, 'boards', board, 'bsp/rootfs/firmware', name)
         artifactFile(source)
         copyFileSync(source, join(firmware, name))
       }
@@ -81,7 +86,7 @@ export async function packKernel(inputs: KernelInputs, tb: Toolbox): Promise<Ker
       docker(['run', '--rm', '--label', 'ai-agent=true', '--network', 'traefik',
         '-v', `${resolve(firmware)}:/output`, '-v', `${resolve(regulatoryTrust)}:/regdb-certs.pem:ro`,
         FIT_TOOLS, 'sh', '/tools/regdb.sh', '/regdb-certs.pem', '/output'])
-      copyFileSync(join(REPO_ROOT, 'boards/cx3576/bsp/component-copyright'), join(firmware, 'mos-component-copyright'))
+      copyFileSync(join(REPO_ROOT, 'boards', board, 'bsp/component-copyright'), join(firmware, 'mos-component-copyright'))
     }
     const support = await packSupport(join(kernelDirectory, 'modules.tar'), release, firmware, join(work, 'support'), contentSigning, tb)
     if (firmware) rmSync(firmware, { recursive: true })
@@ -91,7 +96,7 @@ export async function packKernel(inputs: KernelInputs, tb: Toolbox): Promise<Ker
     mkdirSync(boot)
     const buildId = componentId({
       board, arch, kernel: artifactFile(join(kernelDirectory, kernelName)), config: artifactFile(join(kernelDirectory, 'config')),
-      ...(fit ? { dtb: artifactFile(join(kernelDirectory, 'rk3576-src.dtb')) } : {}),
+      ...(fit ? { dtb: artifactFile(join(kernelDirectory, fit.dtb)), addresses: fit.addresses } : {}),
       init: artifactFile(init), publicKeys, systemPartUuid, dataPartUuid, supportId: componentId(support), cmdline,
       packager: docker(['image', 'inspect', '--format', '{{.Id}}', fit ? FIT_TOOLS : BOOT_TOOLS]),
       bootCertificate: artifactFile(bootSigning.certificate),
@@ -101,7 +106,10 @@ export async function packKernel(inputs: KernelInputs, tb: Toolbox): Promise<Ker
     writeFileSync(join(input, 'cmdline'), cmdline)
     writeFileSync(join(input, 'os-release'), 'ID=mos\nPRETTY_NAME="MOS"\n')
     copyFileSync(join(kernelDirectory, kernelName), join(input, 'kernel'))
-    if (fit) copyFileSync(join(kernelDirectory, 'rk3576-src.dtb'), join(input, 'board.dtb'))
+    if (fit) {
+      copyFileSync(join(kernelDirectory, fit.dtb), join(input, 'board.dtb'))
+      writeFileSync(join(input, 'fit-addresses'), `${fit.addresses.join(' ')}\n`)
+    }
     copyFileSync(join(kernelDirectory, 'kernel.release'), join(input, 'kernel.release'))
     copyFileSync(init, join(input, 'mos-init'))
     packageBoot(fit ? 'fit' : 'kernel', input, boot, bootSigning, efiArch)
@@ -125,7 +133,7 @@ export async function packKernel(inputs: KernelInputs, tb: Toolbox): Promise<Ker
 
 export type FirmwareInputs = {
   output: string, metadataKey: string, generation: number, version: string
-} & ({ board: 'x64' | 'virt-arm64', bootSigning: ContentSigning } | { board: 'cx3576', input: string })
+} & ({ board: 'x64' | 'virt-arm64', bootSigning: ContentSigning } | { board: 'cx3576' | 's905x5m', input: string })
 
 /** Firmware maintenance has its own signed artifact, independent of deployments. */
 export function packBootFirmware(inputs: FirmwareInputs): Firmware {
@@ -135,17 +143,19 @@ export function packBootFirmware(inputs: FirmwareInputs): Firmware {
   const work = `${output}.building`
   mkdirSync(work)
   try {
-    const filename = board === 'cx3576' ? 'u-boot-rockchip.bin' : board === 'x64' ? 'BOOTX64.EFI' : 'BOOTAA64.EFI'
-    if (inputs.board === 'cx3576') {
+    const filename = board === 's905x5m' ? 'u-boot.bin.signed' : board === 'cx3576' ? 'u-boot-rockchip.bin' : board === 'x64' ? 'BOOTX64.EFI' : 'BOOTAA64.EFI'
+    if ('input' in inputs) {
       const artifact = artifactFile(inputs.input)
-      if (artifact.bytes > 16744448 || readFileSync(inputs.input).subarray(0, 4).toString('ascii') !== 'RKNS') throw new Error('Invalid bounded Rockchip loader')
+      if (inputs.board === 'cx3576' && (artifact.bytes > 16744448 || readFileSync(inputs.input).subarray(0, 4).toString('ascii') !== 'RKNS')) throw new Error('Invalid bounded Rockchip loader')
+      if (inputs.board === 's905x5m' && (artifact.bytes < 1703936 || artifact.bytes > 4193792)) throw new Error('Invalid bounded Amlogic boot0 payload')
       copyFileSync(inputs.input, join(work, filename))
     } else {
       packageBoot('firmware', work, work, inputs.bootSigning, inputs.board === 'x64' ? 'x64' : 'aa64')
     }
     const value = { schema: 'mos/firmware/v1', id: '', board, arch: board === 'x64' ? 'amd64' : 'arm64',
       generation: inputs.generation, version: inputs.version, artifact: artifactFile(join(work, filename)),
-      target: board === 'cx3576' ? { format: 'rockchip-loader', diskOffset: 32768, maxBytes: 16744448 }
+      target: board === 's905x5m' ? { format: 'amlogic-boot0', payloadOffset: 512, maxBytes: 4193792 }
+        : board === 'cx3576' ? { format: 'rockchip-loader', diskOffset: 32768, maxBytes: 16744448 }
         : { format: 'efi', partition: 1, path: `EFI/BOOT/${filename}` } }
     value.id = componentId(value)
     const component = parseFirmware(canonicalJson(value))
