@@ -626,3 +626,87 @@ test('replacement characters cannot truncate an endpoint into an exact UI exempt
   f.file('/usr/bin/apid', Buffer.concat([nativeElf('http://localhost'), Buffer.from('http://localhost'), Buffer.from([0xff]), Buffer.from('/updates')]))
   await expectNativeRefusal(f, '/usr/bin/apid', 'endpoint')
 })
+
+const NATIVE_DIAGNOSTIC_CASES: Array<[string, string, string]> = [
+  ['/usr/bin/mosd', 'Invalid address. See https://dbus.freedesktop.org/doc/dbus-specification.html#addresses', 'mid > len'],
+  ['/usr/bin/mosd', 'Invalid member name. See https://dbus.freedesktop.org/doc/dbus-specification.html#message-protocol-names-member', 'Invalid interface name. See https://dbus.freedesktop.org/doc/dbus-specification.html#message-protocol-names-interface'],
+  ['/usr/bin/mosd', 'Invalid interface name. See https://dbus.freedesktop.org/doc/dbus-specification.html#message-protocol-names-interface', 'Invalid well-known name. See https://dbus.freedesktop.org/doc/dbus-specification.html#message-protocol-names-bus'],
+  ['/usr/bin/mosd', 'Invalid well-known name. See https://dbus.freedesktop.org/doc/dbus-specification.html#message-protocol-names-bus', 'Invalid error name. See https://dbus.freedesktop.org/doc/dbus-specification.html#message-protocol-names-error'],
+  ['/usr/bin/mosd', 'Invalid error name. See https://dbus.freedesktop.org/doc/dbus-specification.html#message-protocol-names-error', 'org.freedesktop.DBusInvalid unique name. See https://dbus.freedesktop.org/doc/dbus-specification.html#message-protocol-names-bus'],
+  ['/usr/bin/mosd', 'Invalid unique name. See https://dbus.freedesktop.org/doc/dbus-specification.html#message-protocol-names-bus', 'BusName::UniqueBusName::WellKnownOwnedErrorNameOwnedUniqueNameInvalid bus name. See https://dbus.freedesktop.org/doc/dbus-specification.html#message-protocol-names-bus'],
+  ['/usr/bin/mosd', 'Invalid bus name. See https://dbus.freedesktop.org/doc/dbus-specification.html#message-protocol-names-bus', 'mid > len'],
+  ['/usr/bin/apid', 'peer closed connection without sending TLS close_notify: https://docs.rs/rustls/latest/rustls/manual/_03_howto/index.html#unexpected-eof', 'internal error: entered unreachable code'],
+  ['/usr/bin/apid', 'Invalid address. See https://dbus.freedesktop.org/doc/dbus-specification.html#addresses', 'mid > len'],
+  ['/usr/bin/apid', 'Invalid member name. See https://dbus.freedesktop.org/doc/dbus-specification.html#message-protocol-names-member', 'Invalid interface name. See https://dbus.freedesktop.org/doc/dbus-specification.html#message-protocol-names-interface'],
+  ['/usr/bin/apid', 'Invalid interface name. See https://dbus.freedesktop.org/doc/dbus-specification.html#message-protocol-names-interface', 'Invalid error name. See https://dbus.freedesktop.org/doc/dbus-specification.html#message-protocol-names-error'],
+  ['/usr/bin/apid', 'Invalid error name. See https://dbus.freedesktop.org/doc/dbus-specification.html#message-protocol-names-error', 'org.freedesktop.DBusInvalid unique name. See https://dbus.freedesktop.org/doc/dbus-specification.html#message-protocol-names-bus'],
+  ['/usr/bin/apid', 'Invalid unique name. See https://dbus.freedesktop.org/doc/dbus-specification.html#message-protocol-names-bus', 'BusName::UniqueBusName::WellKnownOwnedErrorNameOwnedUniqueNameInvalid bus name. See https://dbus.freedesktop.org/doc/dbus-specification.html#message-protocol-names-bus'],
+  ['/usr/bin/apid', 'Invalid bus name. See https://dbus.freedesktop.org/doc/dbus-specification.html#message-protocol-names-bus', 'mid > len'],
+  ['/usr/bin/apid', 'Node.js ES modules are not directly supported, see https://docs.rs/getrandom#nodejs-es-module-support', 'Errorinternal_codedescriptionunknown_code\0'],
+  ['/usr/bin/mos-deploy', 'Fatal internal error. Please consider filing a bug report at https://github.com/clap-rs/clap/issues', ''],
+  ['/usr/bin/mos-deploy', 'Fatal internal error. Please consider filing a bug report at https://github.com/clap-rs/clap/issues', 'a Display implementation returned an error unexpectedly'],
+  ['/usr/bin/mos-deploy', 'Fatal internal error. Please consider filing a bug report at https://github.com/clap-rs/clap/issues', 'falseTryFromIntErrora Display implementation returned an error unexpectedly'],
+  ['/usr/bin/mos-deploy', 'Fatal internal error. Please consider filing a bug report at https://github.com/clap-rs/clap/issues', 'internal error: entered unreachable code'],
+]
+
+test.each(NATIVE_DIAGNOSTIC_CASES)('exact diagnostic and attested adjacent text in %s remain non-endpoints: %s', async (path, message, adjacent) => {
+  const f = fixture(); nativeFiles(f)
+  for (const payload of [message, `${message}${adjacent}`]) {
+    f.file(path, nativeElf(payload))
+    const result = await f.checkResult(NATIVE_ENDPOINT_CHECK)
+    expect(result.verdict, result.message).toBe('pass')
+    expect(result.message).toContain('scannedFiles=3')
+  }
+})
+
+test.each(NATIVE_DIAGNOSTIC_CASES)('changing a diagnostic URL in %s is refused: %s', async (path, message, adjacent) => {
+  const f = fixture(); nativeFiles(f)
+  f.file(path, nativeElf(`${message}/updates${adjacent}`))
+  await expectNativeRefusal(f, path, 'endpoint')
+})
+
+test.each(NATIVE_DIAGNOSTIC_CASES)('an unknown adjacent suffix in %s cannot use a known diagnostic prefix: %s', async (path, message, adjacent) => {
+  const f = fixture(); nativeFiles(f)
+  f.file(path, nativeElf(`${message}X${adjacent}`))
+  await expectNativeRefusal(f, path, 'endpoint')
+})
+
+test.each(NATIVE_DIAGNOSTIC_CASES)('an unattributed standalone URL in %s cannot use diagnostic exemptions: %s', async (path, message, adjacent) => {
+  const f = fixture(); nativeFiles(f)
+  f.file(path, nativeElf(`${message.slice(message.indexOf('https://'))}${adjacent}`))
+  await expectNativeRefusal(f, path, 'endpoint')
+})
+
+test.each(NATIVE_DIAGNOSTIC_CASES)('an injected endpoint adjacent to a diagnostic in %s is refused: %s', async (path, message, adjacent) => {
+  const f = fixture(); nativeFiles(f)
+  for (const separator of ['', '\0']) {
+    f.file(path, nativeElf(`${message}${adjacent}${separator}https://updates.example/v1/manifest.json`))
+    await expectNativeRefusal(f, path, 'endpoint')
+  }
+})
+
+test.each(NATIVE_DIAGNOSTIC_CASES)('a diagnostic in the wrong native binary is refused: %s / %s', async (path, message, adjacent) => {
+  const f = fixture(); nativeFiles(f)
+  const other = path === '/usr/bin/mos-deploy' ? '/usr/bin/mosd' : '/usr/bin/mos-deploy'
+  f.file(other, nativeElf(`${message}${adjacent}`))
+  await expectNativeRefusal(f, other, 'endpoint')
+})
+
+test.each(['/usr/bin/mosd', '/usr/bin/apid'])('the exact D-Bus introspection DTD in %s is a namespace only', async (path) => {
+  const f = fixture(); nativeFiles(f)
+  const dtd = 'http://www.freedesktop.org/standards/dbus/1.0/introspect.dtd'
+  f.file(path, nativeElf(dtd))
+  expect(await f.check(NATIVE_ENDPOINT_CHECK)).toBe('pass')
+  f.file(path, nativeElf(`${dtd}/updates`))
+  await expectNativeRefusal(f, path, 'endpoint')
+  nativeFiles(f)
+  f.file('/usr/bin/mos-deploy', nativeElf(dtd))
+  await expectNativeRefusal(f, '/usr/bin/mos-deploy', 'endpoint')
+})
+
+
+test.each(NATIVE_DIAGNOSTIC_CASES.filter(([, , adjacent]) => adjacent.includes(' ')))('a truncated adjacent token cannot excuse a changed URL in %s: %s', async (path, message, adjacent) => {
+  const f = fixture(); nativeFiles(f)
+  f.file(path, nativeElf(`${message}${adjacent.split(' ')[0]}`))
+  await expectNativeRefusal(f, path, 'endpoint')
+})
