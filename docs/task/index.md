@@ -187,5 +187,6 @@ thing about the tree. Both indexes now say the same thing.
 - [x] [**20260910-0836-apid-ui-chunk-split Split the apid console entry bundle**](20260910-0836-apid-ui-chunk-split.md) `P2`
 
 - [x] [**20260910-1012-c-config-update-obligations Classify configuration and update policy obligations**](20260910-1012-c-config-update-obligations.md) `P1`
+- [x] [**20260910-1046-c-provisioning-resolution-tests Verify provisioning resolution through the API route**](20260910-1046-c-provisioning-resolution-tests.md) `P1`
 
 - [-] [**20260910-1050-c-public-meta-source-validation Validate public metadata before root staging**](20260910-1050-c-public-meta-source-validation.md) `P1`
