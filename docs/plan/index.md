@@ -118,3 +118,5 @@ disobeys on sight teaches a reader the wrong thing about the tree.
 - [x] [**20260910-0616-cx3576-storage-display-cleanup Container storage and CX3576 boot presentation**](20260910-0616-cx3576-storage-display-cleanup.md) `2026-09-10`
 
 - [x] [**20260910-0726-unlimited-application-data Unlimited application data with bounded var**](20260910-0726-unlimited-application-data.md) `2026-09-10`
+
+- [x] [**20260910-1014-a1-cx3576-resource-repairs CX3576 accelerator and resource repairs**](20260910-1014-a1-cx3576-resource-repairs.md) `2026-09-10`
