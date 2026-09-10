@@ -86,7 +86,7 @@ BINARY_SIZE="$(stat -c %s "${OUTPUT}/busybox")"
     printf 'BINARY_SHA256=%s\n' "${BINARY_SHA256}"
     printf 'BINARY_SIZE=%s\n' "${BINARY_SIZE}"
     printf 'CONFIG_SHA256=%s\n' "${CONFIG_SHA256}"
-    printf 'LICENSE=GPL-2.0-or-later\n'
+    printf 'LICENSE=GPL-2.0-only\n'
     printf 'SOURCE_DATE_EPOCH=%s\n' "${SOURCE_DATE_EPOCH}"
 } >"${OUTPUT}/busybox.provenance"
 find "${OUTPUT}" -exec touch -h -d "@${SOURCE_DATE_EPOCH}" {} +

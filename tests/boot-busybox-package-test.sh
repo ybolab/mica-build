@@ -8,6 +8,8 @@ CHECK="${REPO_ROOT}/pkgs/mos-boot/check-busybox.sh"
 CONFIG="${REPO_ROOT}/pkgs/mos-boot/busybox.config"
 REQUIRED="${REPO_ROOT}/pkgs/mos-boot/busybox.required-applets"
 VERSIONS="${REPO_ROOT}/pkgs/mos-boot/versions.env"
+DOCKERFILE="${REPO_ROOT}/pkgs/mos-boot/Dockerfile"
+BUILD="${REPO_ROOT}/pkgs/mos-boot/build-busybox.sh"
 
 [ -x "${CHECK}" ] || { echo "FAIL: ${CHECK} is missing or not executable" >&2; exit 1; }
 [ -f "${CONFIG}" ] || { echo "FAIL: ${CONFIG} is missing" >&2; exit 1; }
@@ -18,6 +20,15 @@ VERSIONS="${REPO_ROOT}/pkgs/mos-boot/versions.env"
 [ "${BUSYBOX_VERSION:-}" = 1.36.1 ] || { echo 'FAIL: latest upstream stable BusyBox is not pinned at 1.36.1' >&2; exit 1; }
 [ "${BUSYBOX_URL:-}" = https://busybox.net/downloads/busybox-1.36.1.tar.bz2 ] || { echo 'FAIL: BusyBox source URL is not the official release archive' >&2; exit 1; }
 [ "${BUSYBOX_SHA256:-}" = b8cc24c9574d809e7279c3be349795c5d5ceb6fdf19ca709f80cde50e47de314 ] || { echo 'FAIL: BusyBox source digest differs from the official release checksum' >&2; exit 1; }
+[ "$(grep -Fc "printf 'LICENSE=GPL-2.0-only" "${BUILD}")" -eq 1 ] || { echo 'FAIL: BusyBox provenance does not record its GPL-2.0-only license' >&2; exit 1; }
+for packaged_source in \
+    'COPY --from=busybox-build /busybox-source/LICENSE /usr/share/doc/mos-boot-busybox/copyright' \
+    'COPY --from=busybox-build /busybox.tar.bz2 /usr/share/mos-sources/busybox-1.36.1.tar.bz2'; do
+    [ "$(grep -Fxc -- "${packaged_source}" "${DOCKERFILE}")" -eq 1 ] || {
+        echo "FAIL: Dockerfile does not preserve BusyBox provenance: ${packaged_source}" >&2
+        exit 1
+    }
+done
 
 for setting in \
     CONFIG_STATIC=y CONFIG_BUSYBOX=y CONFIG_ASH=y CONFIG_SH_IS_ASH=y \
