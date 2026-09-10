@@ -2,7 +2,7 @@
 
 `boards/<name>/board.env` declares the board's target architecture, current disk
 geometry and hardware capabilities. The active system-image targets are x64,
-virt-arm64 and cx3576. `build/src/file-layout.ts` parses the current layout;
+virt-arm64, cx3576 and the s905x5m development port. `build/src/file-layout.ts` parses the current layout;
 `make os-layout-lint` exercises it.
 
 > status: shipped — evidence: `build/src/file-layout.ts`, `make os-layout-lint`
@@ -30,22 +30,21 @@ from persistent device storage.
 | `LAYOUT_BOARD` | Exact target board identity |
 | `MOS_ARCH` | `amd64` or `arm64` userspace architecture |
 | `BOOT_BACKEND` | `systemd-boot` or `uboot-fit` |
-| `BOARD_RELEASE_TARGET` | Whether the board is a current MOS image target |
+| `BOARD_RELEASE_TARGET` | Whether the board is a qualified release target |
 | `DISK_GUID` | Factory disk identity, checked before DATA growth |
 
-No version dispatch or old-layout reader is provided. s905x5m retains independent
-BSP inputs and declares `BOARD_RELEASE_TARGET=0`; its vendor layout is not an
-alternate MOS installation contract.
+No version dispatch or old-layout reader is provided. s905x5m supports current
+development images with `BOARD_RELEASE_TARGET=0` pending physical qualification.
 
 ## Three partitions
 
-UEFI uses `LAYOUT_PARTITIONS="ESP SYSTEM DATA"`; cx3576 uses
+UEFI uses `LAYOUT_PARTITIONS="ESP SYSTEM DATA"`; FIT boards use
 `LAYOUT_PARTITIONS="FIRMWARE SYSTEM DATA"`. Partition numbers are exactly 1–3,
 with distinct GUIDs and contiguous declared ranges. Sector size is 512 bytes.
 The last partition is the only one grown after factory assembly.
 
 Each partition declares `_PARTNUM`, `_LABEL`, `_GUID`, `_TYPECODE` and `_ROLE`.
-ESP, SYSTEM and DATA use `_START_MIB` and `_SIZE_MIB`. The raw cx3576 FIRMWARE
+ESP, SYSTEM and DATA use `_START_MIB` and `_SIZE_MIB`. The raw FIT FIRMWARE
 range uses `_START_SECTOR` and `_SIZE_SECTORS`. SYSTEM and DATA additionally name
 their filesystem UUID/label. ESP declares its FAT volume identity and required
 fixed firmware path.
@@ -80,6 +79,17 @@ trial decrement, and only then loads a required signed FIT. DATA growth compares
 protected firmware/SYSTEM bytes and preserves their identities.
 
 > status: shipped — evidence: `boards/cx3576/bsp/uboot/mos-file-boot.c`, `build/src/firmware-maintenance.ts`, `tests/repart-loader-test.sh`
+
+## s905x5m protected firmware ranges
+
+FIRMWARE starts at sector 64 and ends at 128 MiB. Its 64 KiB native records are
+at absolute 120 and 124 MiB; SYSTEM starts at 128 MiB. Unlike the CX3576 loader,
+the Amlogic loader is external to the SD GPT and has no `UBOOT_SEEK` or
+`UBOOT_MAX_BYTES` declaration. Its signed receipt specifies eMMC boot0 framing
+and size independently. Offline image verification checks the paired exported
+firmware; native boot0 readback checks installation.
+
+> status: shipped — evidence: `boards/s905x5m/board.env`, `pkgs/mos-deploy/src/firmware.rs`
 
 ## Hardware and product capabilities
 

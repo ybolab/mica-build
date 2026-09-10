@@ -2,14 +2,32 @@
 # mos-build-side: container -- authenticate against the actual shipped control FDT.
 set -euo pipefail
 cd /w
-dumpimage -T flat_dt -p 4 -o embedded-control.dtb /firmware/u-boot.itb > extract.log 2>&1
-cmp embedded-control.dtb /firmware/u-boot.dtb
+if [ -f /firmware/u-boot.bin.signed ]; then
+    python3 - <<'PY_FIP'
+from pathlib import Path
+import struct
+import subprocess
+payload = Path('/firmware/u-boot.bin.signed').read_bytes()
+offset = payload.find(b'ZSTD', 1703936)
+assert offset >= 1703936
+size, compressed = struct.unpack_from('<II', payload, offset + 4)
+raw = subprocess.run(['zstd', '-d', '-c'], input=payload[offset + 12:offset + 12 + compressed], capture_output=True, check=True).stdout
+control = Path('/firmware/u-boot.dtb').read_bytes()
+assert len(raw) == size and control in raw
+Path('embedded-control.dtb').write_bytes(control)
+print('AMLOGIC_FIP_CONTROL_EMBEDDED_PASS')
+PY_FIP
+else
+    dumpimage -T flat_dt -p 4 -o embedded-control.dtb /firmware/u-boot.itb > extract.log 2>&1
+    cmp embedded-control.dtb /firmware/u-boot.dtb
+fi
 [ "$(fdtget embedded-control.dtb /signature required-mode)" = any ]
 mapfile -t required_keys < <(fdtget -l embedded-control.dtb /signature)
 [ "${#required_keys[@]}" -ge 1 ] && [ "${#required_keys[@]}" -le 8 ]
 for key in "${required_keys[@]}"; do
     [ "$(fdtget embedded-control.dtb "/signature/$key" required)" = conf ]
 done
+if [ -f /firmware/u-boot-rockchip.bin ]; then
 python3 - <<'PY'
 from pathlib import Path
 loader=Path('/firmware/u-boot-rockchip.bin').read_bytes()
@@ -17,6 +35,7 @@ fit=Path('/firmware/u-boot.itb').read_bytes()
 assert len(loader)<=16744448 and loader.count(fit)==1
 print('FIT_FIRMWARE_CONTROL_EMBEDDED_PASS')
 PY
+fi
 fit_check_sign -f /kernel/boot.itb -k embedded-control.dtb > accepted.log 2>&1
 grep -q 'Signature check OK' accepted.log
 echo 'FIT_REQUIRED_SIGNATURE_PASS'

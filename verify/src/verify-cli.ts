@@ -26,7 +26,7 @@ async function main() {
       default: throw new Error(`Unknown option ${arg}`)
     }
   }
-  if (!/^(x64|virt-arm64|cx3576)$/.test(name) || !image || !keys.length) throw new Error('Explicit current board, full factory image and metadata public keys are required')
+  if (!/^(x64|virt-arm64|cx3576|s905x5m)$/.test(name) || !image || !keys.length) throw new Error('Explicit current board, full factory image and metadata public keys are required')
   const board = loadBoard(boardEnvPath(name))
   mkdirSync(work, { recursive: true })
   const workDir = mkdtempSync(join(work, `${name}-`))

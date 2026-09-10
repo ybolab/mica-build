@@ -8,8 +8,8 @@ openssl req -x509 -newkey rsa:2048 -nodes -sha256 -days 1 -subj /CN=MOS-FIT-rota
 cp /kernel/boot.itb next.itb
 mkimage -F -k next-key -r next.itb > signing.log 2>&1
 cat /old.crt next-key/mos.crt > overlap.pem
-bash /source/embed-trust.sh /firmware/u-boot.dtb overlap.pem overlap.dtb /usr/local/bin
-bash /source/embed-trust.sh /firmware/u-boot.dtb next-key/mos.crt next.dtb /usr/local/bin
+bash /source/embed-fit-trust.sh /firmware/u-boot.dtb overlap.pem overlap.dtb /usr/local/bin
+bash /source/embed-fit-trust.sh /firmware/u-boot.dtb next-key/mos.crt next.dtb /usr/local/bin
 test "$(fdtget overlap.dtb /signature required-mode)" = any
 test "$(fdtget -l overlap.dtb /signature | wc -l)" = 2
 test "$(fdtget -l next.dtb /signature | wc -l)" = 1
@@ -28,7 +28,7 @@ if fit_check_sign -f unsigned.itb -k overlap.dtb > unsigned.log 2>&1; then
     echo 'error: overlap accepted an unsigned FIT' >&2; exit 1
 fi
 cat next-key/mos.crt next-key/mos.crt > duplicate.pem
-if bash /source/embed-trust.sh /firmware/u-boot.dtb duplicate.pem duplicate.dtb /usr/local/bin > duplicate.log 2>&1; then
+if bash /source/embed-fit-trust.sh /firmware/u-boot.dtb duplicate.pem duplicate.dtb /usr/local/bin > duplicate.log 2>&1; then
     echo 'error: duplicate boot keys were accepted' >&2; exit 1
 fi
 grep -q 'duplicate public boot key' duplicate.log

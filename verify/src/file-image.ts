@@ -1,5 +1,5 @@
 import { mkdirSync, readFileSync, statSync } from 'node:fs'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { artifactFile } from '../../build/src/component-build.ts'
 import { authenticatePayload, componentId, parseDeployment, type Artifact, type VerityImage } from '../../build/src/components.ts'
 import type { FileLayout } from '../../build/src/file-layout.ts'
@@ -112,7 +112,7 @@ export async function verifyFactoryImage(layout: FileLayout, image: string, publ
       const { readdirSync } = await import('node:fs')
       requireFact(readdirSync(join(supportRoot, 'modules')).join() === d.kernel.release, 'Support modules release mismatch')
       requireFact(statSync(join(supportRoot, 'modules', d.kernel.release, 'modules.dep')).isFile(), 'Support modules.dep missing')
-      if (layout.board === 'cx3576') {
+      if (fit) {
         for (const name of ['regulatory.db', 'regulatory.db.p7s']) requireFact(statSync(join(supportRoot, 'firmware', name)).isFile(), `Support regulatory database missing: ${name}`)
       }
       verified.set(supportRoot, support)
@@ -147,12 +147,16 @@ export async function verifyFactoryImage(layout: FileLayout, image: string, publ
   if (firmware.target.format === 'rockchip-loader') {
     const loader = extractRange(image, firmware.target.diskOffset, firmware.artifact.bytes, join(workDir, 'loader'))
     checkArtifact(loader, firmware.artifact)
+  } else if (firmware.target.format === 'amlogic-boot0') {
+    checkArtifact(join(dirname(image), 'firmware.bin'), firmware.artifact)
   } else {
     const loader = join(workDir, 'loader')
     await fatCopyOut(tools, esp, firmware.target.path, loader)
     checkArtifact(loader, firmware.artifact)
   }
-  report('separately authenticated installed firmware receipt and exact loader readback')
+  report(firmware.target.format === 'amlogic-boot0'
+    ? 'authenticated external Amlogic firmware payload; installed boot0 requires device readback'
+    : 'separately authenticated installed firmware receipt and exact loader readback')
   const result: string[] = []
   for (const [id, file] of roots) {
     const root = join(workDir, `root-${id}`)

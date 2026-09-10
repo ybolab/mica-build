@@ -23,15 +23,15 @@ export function entryText(deployment: Deployment): string {
 }
 
 export async function assembleFileImage(layout: FileLayout, deployments: FactoryDeployment[], keys: string[], firmwareDirectory: string, output: string, tb: Toolbox): Promise<string> {
-  if (!['x64', 'virt-arm64', 'cx3576'].includes(layout.board) || deployments.length !== 2) throw new Error('Factory image requires two deployments')
+  if (!['x64', 'virt-arm64', 'cx3576', 's905x5m'].includes(layout.board) || deployments.length !== 2) throw new Error('Factory image requires two deployments')
   const fit = layout.backend === 'uboot-fit'
   const firmwareEnvelope = readFileSync(join(firmwareDirectory, 'firmware.json'), 'utf8')
   const manifest = authenticateFirmware(firmwareEnvelope, keys)
   if (manifest.board !== layout.board) throw new Error('Factory firmware board mismatch')
-  const firmware = join(firmwareDirectory, fit ? 'u-boot-rockchip.bin' : layout.board === 'x64' ? 'BOOTX64.EFI' : 'BOOTAA64.EFI')
+  const firmware = join(firmwareDirectory, layout.board === 's905x5m' ? 'u-boot.bin.signed' : fit ? 'u-boot-rockchip.bin' : layout.board === 'x64' ? 'BOOTX64.EFI' : 'BOOTAA64.EFI')
   const artifact = artifactFile(firmware)
   if (artifact.bytes !== manifest.artifact.bytes || artifact.sha256 !== manifest.artifact.sha256) throw new Error('Factory firmware integrity mismatch')
-  if (fit !== (layout.board === 'cx3576')) throw new Error('Factory boot backend mismatch')
+  if (fit !== ['cx3576', 's905x5m'].includes(layout.board)) throw new Error('Factory boot backend mismatch')
   if (existsSync(output)) throw new Error(`Image output exists: ${output}`)
   const records = deployments.map(input => {
     const identity = JSON.parse(readFileSync(join(input.kernelDirectory, 'boot.json'), 'utf8')).identity as BootIdentity
@@ -48,6 +48,10 @@ export async function assembleFileImage(layout: FileLayout, deployments: Factory
   const work = `${output}.building`
   mkdirSync(work)
   try {
+    if (layout.board === 's905x5m') {
+      copyFileSync(firmware, join(work, 'firmware.bin'))
+      writeFileSync(join(work, 'firmware.json'), firmwareEnvelope)
+    }
     const system = join(work, 'system-tree')
     const esp = join(work, 'esp-tree')
     const data = join(work, 'data-tree')

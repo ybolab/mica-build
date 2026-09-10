@@ -139,7 +139,7 @@ jobs:
           done
 
       - name: Firmware record parsing and persistent attempt IO
-        run: make os-fit-records-test os-trust-domain-test
+        run: make os-fit-records-test os-trust-domain-test os-s905x5m-hwinit-test
 
       - name: Native file transactions survive interrupted IO and ENOSPC
         run: make os-file-transaction-faults
