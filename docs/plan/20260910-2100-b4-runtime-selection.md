@@ -85,6 +85,12 @@ python3 rootfs/runtime/select.py verify \
   and derives the shipped-contributor record through the existing release path.
 - `--ownership`: captured native dpkg `info/*.list`, including native
   `name:architecture.list` filenames. No new ownership serialization is needed.
+  Each selected consumer and each package named by an active root rule must have
+  exactly one captured list before matching that rule. Both native filename
+  forms for the same package are ambiguous and refused. An installed package
+  not required by selection or rules can be omitted from the capture; its
+  payload is not implicitly selected. Missing required lists cannot silently
+  shrink multi-package roots.
   Common directory ownership is explicitly shared; multiple file owners fail.
   Merged-usr aliases resolve inside the staged root, never against host `/`.
 - `--rules`: defaults to the checked-in declarations. Each consumer has `roots`
@@ -113,6 +119,11 @@ python3 rootfs/runtime/select.py verify \
   acceptance test and concrete retained producer/resources. Only a specifically
   named `/dev/null` mask can have an empty producer list. This retains the
   intentional SSH mask and does not exempt arbitrary dangling symlinks.
+  Every active link declaration is itself a required resource, independently of
+  ordinary root matches. Parent aliases are resolved inside the installed root;
+  duplicate declarations for one canonical path fail. The actual node must be
+  a symlink with the exact target: files and directories are refused even if
+  executable or otherwise valid resources. Producer resources are always retained.
 - An empty output root and absent external report are required. Installation and
   source transformations must be finished and quiescent. Failed selection never
   publishes a successful report; a failed copy may leave a partial destination
@@ -203,3 +214,23 @@ with its exact source hunk through L2 B before editing policy/native code.
   execution evidence. No compiler/toolchain/network/image build is needed.
 - Final required checks, source commit, log hashes and review result are recorded
   in the task after the gate run. All temporary fixtures are owned and cleaned.
+
+## Corrective round 1 evidence
+
+L2's R1/R2 review identified two selection refusals missing from the original
+implementation. Eight new fixture methods (53 total tests) reproduce file and
+directory substitutions for the SSH mask and volatile accounting link, canonical
+alias handling, missing multi-package ownership input and duplicate native
+ownership captures. Valid link/producer preservation, complete capture and
+intentional package filtering remain positive controls.
+
+On unchanged selector commit `87b2c833be8a514b4e8eff7fa622dc0ef767c897`, the new
+suite exited 1 with 10 assertion failures. After the bounded changes it exited 0
+with all 53 tests passing. Original and corrective evidence are retained in the
+task; the accepted unrelated shell-lint failure is not rerun or reclassified.
+
+The residual ownership map above is unchanged. B5 must additionally preserve
+native ownership captures for every package referenced by its selected rules;
+its SSH-mask and accounting-link transfers must pass the strengthened node-type
+and canonical-path controls. These are selector guarantees only, not proof of
+first-boot system units, Quadlets, SSH authentication/listening or login bounds.

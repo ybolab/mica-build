@@ -186,11 +186,14 @@ class Selector:
             self.packages[name] = dict(package=name, version=version, architecture=arch)
         require(bool(self.packages), 'empty package inventory')
         self.owners = {}
+        self.ownership_packages = set()
         lists = sorted(Path(args.ownership).glob('*.list'))
         require(bool(lists), 'no captured dpkg ownership lists')
         for file in lists:
             name, _, arch = file.stem.partition(':')
             require(name in self.packages and (not arch or arch == self.packages[name]['architecture']), f'unknown ownership package: {file.name}')
+            require(name not in self.ownership_packages, f'duplicate ownership list: {name}')
+            self.ownership_packages.add(name)
             for line in file.read_text().splitlines():
                 require(line == normalized(line) or line == '/.', f'ambiguous ownership path: {line}')
                 canonical, _ = self.resolve(normalized(line), follow_leaf=False, missing=True)
@@ -211,6 +214,7 @@ class Selector:
                 require(name not in self.consumers, f'duplicate selected consumer: {name}')
                 require(name in self.declarations['consumers'], f'no runtime declaration: {name}')
                 require(name in self.packages, f'selected consumer not installed: {name}')
+                require(name in self.ownership_packages, f'missing ownership list: {name}')
                 self.consumers.append(name)
         require(bool(self.consumers), 'empty consumer selection')
         self.files = {}
@@ -289,14 +293,15 @@ class Selector:
         for parent in parents:
             self.add(parent, f'path link for {path}')
         self.retain(physical, reason)
+        if physical in self.links:
+            contract = self.links[physical]
+            require(self.files[physical]['type'] == 'symlink', f'runtime link must be a symlink: {physical}')
+            require(not executable and os.readlink(self.at(physical)) == contract['target'], f'runtime link target changed: {physical}')
+            self.files[physical]['runtime_link'] = contract
+            for required in contract['requires']:
+                self.add(required, f'runtime link producer for {physical}')
+            return
         if self.files[physical]['type'] == 'symlink':
-            if physical in self.links:
-                contract = self.links[physical]
-                require(not executable and os.readlink(self.at(physical)) == contract['target'], f'runtime link target changed: {physical}')
-                self.files[physical]['runtime_link'] = contract
-                for required in contract['requires']:
-                    self.add(required, f'runtime link producer for {physical}')
-                return
             try:
                 resolved, links = self.resolve(path)
             except Refusal as error:
@@ -399,9 +404,11 @@ class Selector:
                         isinstance(link['requires'], list), f'invalid runtime link: {consumer}')
                 path = normalized(link['path'])
                 normalized(link['target'] if link['target'].startswith('/') else str(Path(path).parent) + '/' + link['target'])
-                require(path not in self.links, f'duplicate runtime link: {path}')
+                physical, _ = self.resolve(path, follow_leaf=False)
+                require(physical not in self.links, f'duplicate runtime link: {physical}')
                 require(link['requires'] or link['target'] == '/dev/null', f'runtime link has no producer resources: {path}')
-                self.links[path] = link
+                self.links[physical] = link
+                roots.append((path, consumer, {'kind': 'resource', 'reason': 'runtime link contract'}))
             for rule in declaration['roots']:
                 require(set(rule) <= {'paths', 'packages', 'kind', 'reason', 'generated', 'expect'} and
                         {'paths', 'kind', 'reason'} <= set(rule) and rule['paths'] and rule['reason'] and
@@ -413,6 +420,7 @@ class Selector:
                     require(rule.get('packages') and not rule.get('generated'), f'owned rule needs packages: {consumer}')
                     for package in rule['packages']:
                         require(package in self.packages, f'root package not installed: {package}')
+                        require(package in self.ownership_packages, f'missing ownership list: {package}')
                     # Match each path component: '*' never becomes recursive copying.
                     matches = [p for p in sorted(self.owners) if self.owners[p] & set(rule['packages']) and
                                any(len(p.split('/')) == len(pattern.split('/')) and

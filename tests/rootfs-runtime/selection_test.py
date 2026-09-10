@@ -282,6 +282,95 @@ class SelectionTest(unittest.TestCase):
     def test_runtime_link_requires_generator(self):
         (self.root / 'etc/tmpfiles.d/mos-var.conf').unlink(); self.refuse('/etc/tmpfiles.d/mos-var.conf')
 
+    def test_declared_runtime_links_reject_file_and_directory_substitutions(self):
+        for path in ['/etc/systemd/system-generators/systemd-ssh-generator', '/var/log/wtmp']:
+            at = self.root / path[1:]
+            target = os.readlink(at)
+            for kind in ['file', 'directory']:
+                with self.subTest(path=path, kind=kind):
+                    at.unlink()
+                    if kind == 'file':
+                        self.write(path, elf() if path.endswith('generator') else b'persistent accounting data', 0o755)
+                    else:
+                        at.mkdir()
+                    try:
+                        self.refuse('runtime link must be a symlink: ' + path)
+                    finally:
+                        at.rmdir() if kind == 'directory' else at.unlink()
+                        at.symlink_to(target)
+                        if self.out.exists():
+                            shutil.rmtree(self.out)
+                        if self.report.exists():
+                            self.report.unlink()
+        report = self.selected()
+        rows = {row['path']: row for row in report['files']}
+        for link in self.rules['consumers']['mos-system']['runtime_links']:
+            self.assertEqual(rows[link['path']]['type'], 'symlink')
+            self.assertEqual(rows[link['path']]['target'], link['target'])
+            self.assertEqual(rows[link['path']]['runtime_link'], link)
+
+    def test_runtime_link_declaration_is_itself_required(self):
+        declaration = self.rules['consumers']['mos-system']
+        for rule in declaration['roots']:
+            rule['paths'] = [path for path in rule['paths'] if path != '/var/log/wtmp']
+        declaration['roots'] = [rule for rule in declaration['roots'] if rule['paths']]
+        report = self.selected()
+        rows = {row['path']: row for row in report['files']}
+        self.assertIn('/var/log/wtmp', rows)
+        self.assertIn('/etc/tmpfiles.d/mos-var.conf', rows)
+        shutil.rmtree(self.out); self.report.unlink()
+        (self.root / 'etc/tmpfiles.d/mos-var.conf').unlink()
+        self.refuse('/etc/tmpfiles.d/mos-var.conf')
+
+    def test_runtime_link_declaration_uses_canonical_parent(self):
+        self.link('/etc-alias', 'etc')
+        self.capture_ownership()
+        self.rules['consumers']['mos-system']['runtime_links'][0]['path'] = '/etc-alias/systemd/system-generators/systemd-ssh-generator'
+        report = self.selected()
+        rows = {row['path']: row for row in report['files']}
+        path = '/etc/systemd/system-generators/systemd-ssh-generator'
+        self.assertEqual(rows[path]['runtime_link']['target'], '/dev/null')
+        self.assertEqual(rows['/etc-alias']['target'], 'etc')
+        shutil.rmtree(self.out); self.report.unlink()
+        (self.root / path[1:]).unlink()
+        self.write(path, elf(), 0o755)
+        self.refuse('runtime link must be a symlink: ' + path)
+
+    def test_runtime_link_canonical_alias_is_ambiguous(self):
+        self.link('/etc-alias', 'etc')
+        self.capture_ownership()
+        links = self.rules['consumers']['mos-system']['runtime_links']
+        links.append({**links[0], 'path': '/etc-alias/systemd/system-generators/systemd-ssh-generator'})
+        self.refuse('duplicate runtime link')
+
+    def test_multi_package_roots_require_each_ownership_list(self):
+        self.write('/usr/share/doc/unused/copyright', b'operator tool copyright')
+        (self.db / 'unused.list').write_text('/usr/bin/unselected\n/usr/share/doc/unused\n/usr/share/doc/unused/copyright\n')
+        self.rules['consumers']['mos-system']['roots'].append({
+            'packages': ['mos-system', 'unused'], 'paths': ['/usr/bin/*'],
+            'kind': 'executable', 'reason': 'selected operator tools from two required installed packages',
+        })
+        report = self.selected()
+        row = next(row for row in report['files'] if row['path'] == '/usr/bin/unselected')
+        self.assertEqual(row['origins'], [{'package': 'unused', 'version': '1', 'architecture': 'all'}])
+        shutil.rmtree(self.out); self.report.unlink()
+        (self.db / 'unused.list').unlink()
+        self.refuse('missing ownership list: unused')
+        self.assertFalse(self.out.exists())
+
+    def test_selected_consumer_requires_ownership_capture(self):
+        (self.db / 'mos-system.list').unlink()
+        self.refuse('missing ownership list: mos-system')
+
+    def test_unrequired_package_ownership_may_be_omitted(self):
+        (self.db / 'unused.list').unlink()
+        report = self.selected()
+        self.assertNotIn('/usr/bin/unselected', {row['path'] for row in report['files']})
+
+    def test_native_ownership_capture_must_be_unambiguous(self):
+        shutil.copyfile(self.db / 'libfixture:amd64.list', self.db / 'libfixture.list')
+        self.refuse('duplicate ownership list: libfixture')
+
     def test_undeclared_runtime_link(self):
         self.rules['consumers']['mos-system']['runtime_links'].pop(); self.refuse('broken link')
 
