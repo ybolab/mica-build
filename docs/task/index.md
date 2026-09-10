@@ -183,3 +183,5 @@ thing about the tree. Both indexes now say the same thing.
 - [x] [**20260910-0726-unlimited-application-data Remove system, user and container data limits**](20260910-0726-unlimited-application-data.md) `P1`
 
 - [x] [**20260910-0836-apid-ui-chunk-split Split the apid console entry bundle**](20260910-0836-apid-ui-chunk-split.md) `P2`
+
+- [-] [**20260910-1013-open-plans-campaign Establish open plans campaign tracking**](20260910-1013-open-plans-campaign.md) `P1`
