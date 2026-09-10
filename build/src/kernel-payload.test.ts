@@ -1,0 +1,46 @@
+import { afterEach, describe, expect, test } from 'bun:test'
+import { chmodSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { kernelExecutables } from './kernel-package.ts'
+import { componentId } from './components.ts'
+
+const owned: string[] = []
+afterEach(() => { for (const path of owned.splice(0)) rmSync(path, { recursive: true, force: true }) })
+function fixture(machine = 62) {
+  const root = mkdtempSync(join(tmpdir(), 'mos-b3-kernel-payload-')); owned.push(root)
+  const bytes = Buffer.alloc(128); bytes.set([0x7f, 69, 76, 70, 2, 1, 1]); bytes.writeUInt16LE(3, 16)
+  bytes.writeUInt16LE(machine, 18); bytes.writeUInt32LE(1, 20); bytes.writeUInt16LE(64, 52)
+  const init = join(root, 'mos-init'), shutdown = join(root, 'mos-shutdown')
+  for (const path of [init, shutdown]) writeFileSync(path, bytes, { mode: 0o755 })
+  return { root, bytes, init, shutdown }
+}
+
+describe('required authenticated native lifecycle input', () => {
+  test('both architectures participate in identity with exact helper bytes', () => {
+    for (const [arch, machine] of [['amd64', 62], ['arm64', 183]] as const) {
+      const input = fixture(machine)
+      const first = kernelExecutables(input.init, input.shutdown, arch)
+      input.bytes[100] = 1; writeFileSync(input.shutdown, input.bytes)
+      const changed = kernelExecutables(input.init, input.shutdown, arch)
+      expect(changed.init).toEqual(first.init)
+      expect(changed.shutdown).not.toEqual(first.shutdown)
+      expect(componentId(changed)).not.toBe(componentId(first))
+    }
+  })
+  test('missing, foreign-architecture, non-ELF and unsafe modes are refused', () => {
+    const input = fixture()
+    for (const path of [undefined, join(input.root, 'absent'), input.root]) {
+      expect(() => kernelExecutables(input.init, path as string, 'amd64')).toThrow()
+    }
+    expect(() => kernelExecutables(input.init, input.shutdown, 'arm64')).toThrow('architecture')
+    const alias = join(input.root, 'alias'); symlinkSync(input.shutdown, alias)
+    expect(() => kernelExecutables(input.init, alias, 'amd64')).toThrow()
+    for (const mode of [0o644, 0o777, 0o4755]) {
+      chmodSync(input.shutdown, mode)
+      expect(() => kernelExecutables(input.init, input.shutdown, 'amd64')).toThrow()
+    }
+    chmodSync(input.shutdown, 0o755); writeFileSync(input.shutdown, '#!/bin/sh\nreboot -f\n'.padEnd(128, ' '))
+    expect(() => kernelExecutables(input.init, input.shutdown, 'amd64')).toThrow('ELF')
+  })
+})
