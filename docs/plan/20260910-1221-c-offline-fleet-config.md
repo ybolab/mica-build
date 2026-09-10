@@ -48,7 +48,9 @@ Only `pkgs/mosd/mosd-settings/src/configuration.rs`, the minimal fleet-path
 state and resolver call in `pkgs/mosd/apid/src/routes.rs` and
 `pkgs/mosd/apid/src/provisioning_api.rs`, authenticated fixtures in
 `pkgs/mosd/apid/src/tests/provisioning_api.rs`, and this task/plan with their
-index rows may change.
+index rows may change. Repair 1's exact L1 handoff additionally permits only
+the `mosd-settings/Cargo.toml` direct `url` dependency and that member's
+existing-package edge in `pkgs/mosd/Cargo.lock`.
 
 ## Alternatives
 
@@ -66,6 +68,7 @@ index rows may change.
 - The authenticated-route RED and focused GREEN are recorded in the related
   task. The initial scoped PMA-CR Rust review passed without findings.
 - Repair 1 adds strict null-boolean and complete HTTPS URL contract evidence.
-  The null-boolean finding is resolved; malformed-host tests remain RED until
-  the explicitly requested `mosd-settings` dependency and lockfile path
-  handoff permits the existing workspace `url` crate to be used.
+  The null-boolean finding was resolved first; the later exact handoff permits
+  the existing workspace `url` crate to close the malformed-host finding
+  without changing update-origin semantics or normalizing projected values.
+- The final scoped PMA-CR Rust review passed without findings.

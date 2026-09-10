@@ -71,7 +71,28 @@ Projecting offline fleet desired configuration through provisioning status.
 - Finding F1 is repaired: present booleans deserialize strictly while omitted
   booleans remain absent. The focused settings test passed 1/1 and the two
   authenticated null-boolean route tests passed 2/2.
-- Finding F2 remains intentionally RED. No existing source caller exposes a
-  complete URL validator to `mosd-settings`; the workspace already declares
-  `url = "2"` and locks `url` 2.5.8, but adding the `mosd-settings` dependency
-  edge and its lockfile member edge awaits the explicit two-path handoff.
+- At partial checkpoint `e67bc8d17aa7f5553a56b99a4e2f60922b81d727`,
+  finding F2 remained intentionally RED. No existing source caller exposed a
+  complete URL validator to `mosd-settings`; the workspace already declared
+  `url = "2"` and locked `url` 2.5.8, but the direct dependency edge was not
+  yet in scope.
+- L1 handoff `01M26EYZK24Q3XK4ZC02XEB46Y` granted exactly
+  `mosd-settings/Cargo.toml` and the workspace lockfile member edge. The final
+  lock diff adds only `url` to `mosd-settings`; it changes no package version,
+  source, checksum, or other dependency edge.
+- Repair 1 focused GREEN is preserved at
+  `/tmp/r3suq4rc-repair1-green.log`: source commit
+  `e67bc8d17aa7f5553a56b99a4e2f60922b81d727`, tree
+  `cd02250eecdf8b8a52ad97a86c689b6828b3278f`, repair-diff identity
+  `32b74b3ede6622d5ea4b78ef6e2e65f171a68929`, PID `1436896`, from
+  `2026-09-10T20:16:33Z` to `2026-09-10T20:17:18Z`, exit 0. Locked metadata
+  and tree resolution selected `url` 2.5.8; settings fleet tests passed 3/3
+  and the authenticated provisioning module passed 21/21 with 326 filtered.
+- Scoped format and clippy are preserved at
+  `/tmp/r3suq4rc-repair1-clippy.log` against the same source and diff identity:
+  PID `1437422`, `2026-09-10T20:17:59Z` through
+  `2026-09-10T20:18:22Z`, exit 0. API spec pins passed 42/42; documentation
+  verification and scoped diff checks also passed.
+- Final PMA-CR Rust review covered the complete delivery diff from reviewed
+  local L2 commit `f30e2492a4f4a0d29f91f13d02abbcc2f92c093a` through
+  repair 1. Verdict: PASS, with no high-confidence findings.
