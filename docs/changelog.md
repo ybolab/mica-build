@@ -1,5 +1,16 @@
 # Changelog
 
+## Split apid console chunks (2026-09-10)
+
+The [approved bundle split](task/20260910-0836-apid-ui-chunk-split.md) groups the
+console's vendor libraries into React, Base UI, router and i18n chunks that the
+browser fetches and compiles in parallel, and removes a route re-export that had
+hoisted the whole system page into the entry. The entry chunk falls from 594 kB
+to 106 kB and no chunk trips Vite's size warning. On an appliance the saving is
+parse and compile time on a weak core; the bundle is served from local flash, so
+transfer was never the cost. The policy gate now refuses a route module that
+exports anything but its route, which is the mistake that caused the hoist.
+
 ## apid console rebuilt on the shadcn registry (2026-09-10)
 
 The [approved console refactor](task/20260910-0555-apid-spa-interaction-refactor.md)
