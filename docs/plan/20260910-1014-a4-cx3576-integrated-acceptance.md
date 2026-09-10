@@ -139,3 +139,12 @@ selected CX archive set. Container-engine binary reuse was validated against
 the approved original package and pinned sources, not relabelled as a new
 upstream compile. Full root/signature/image and physical acceptance remain
 separate following stages; no full two-architecture package matrix is claimed.
+
+Native-package milestone collected: the remaining five selected producers
+passed at exact `9d1218e2` on 2026-09-10T20:48:22Z..20:57:03Z, exit 0.
+All 14 selected archives and their recorded ELF/dependency/ownership evidence
+were checked; three dpkg-shlibdeps warnings remain explicitly recorded. Proceed
+with the unchanged CX dev root recipe and mandatory smoke gate, then inspect
+actual root semantics before signed composition. No policy/native/kernel
+rebuild or new source synchronization is needed. The pending exact C.D4 verifier
+handoff gates its later candidate scan, not this root build.

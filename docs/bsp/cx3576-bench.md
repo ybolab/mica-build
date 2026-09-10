@@ -936,8 +936,10 @@ the final zero application-quota policy. The subsequent exact L1/L2 handoff
 authorizes a new root at `9d1218e2689eb5e3fce99ad1736f3a1fdc8c8801` and
 selects the source-equivalent development native init. The six policy/board
 producers passed on 2026-09-10T20:29:32Z..20:31:34Z, including the actual packed
-current layout script. Remaining native packages and new root/FIT/records/image
-gates are in progress in A4's linked detail. This is not an image ready to flash
+current layout script. The five native producers then passed at
+2026-09-10T20:48:22Z..20:57:03Z; all 14 selected package archives are present,
+with dependency warnings preserved. New root/FIT/records/image gates are in
+progress in A4's linked detail. This is not an image ready to flash
 or a physical qualification result; the two old roots remain inadmissible.
 
 journald is volatile. Capture each boot's journal and serial trace before

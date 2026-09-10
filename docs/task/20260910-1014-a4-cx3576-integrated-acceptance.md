@@ -189,6 +189,97 @@ Scoped `git diff --check` passed. Native gate script SHA-256:
 invocation-only wrapper SHA-256:
 `06937c5684ce5609ca80827db639bc1bd7eb5e267f53d6e37b8723ae90bbbfd5`.
 
+### Native package result and current root continuation
+
+The native gate completed at 2026-09-10T20:57:03Z (started 20:48:22Z), exit 0.
+A4 revalidated the full log (71,933 bytes / 1,491 raw newline lines, SHA-256
+`0f2909d425c12eccb59c2fd1dc71932fb9125080a56160badb4dfd4c15311db4`),
+script/metadata agreement, every entry of `evidence/native/native-pool-SHA256SUMS`
+and the unchanged `9d1218e2` checkout. That checksum manifest is
+`0eeb2f7f828004358d4e24cb10bec84934348801e9e92fb88fb6d8a6ac6493db`;
+`native-pool-manifest.txt` is
+`ef2a2f9e0d8e7dd94e15607f721b0ac6e9c008625e9b83cb0f8f32a43b749afc`.
+There are 15 archives, with exactly 14 selected for the CX dev root; the extra
+prod profile is not installed. No selected non-directory ownership collisions
+were found. The native ELF/control/dependency record is
+`evidence/native/native-archives-fields-and-elf.txt`, SHA-256
+`22098d3abde7ab6215769332e552304798899fa1cbff849f9a8f4b0f8f1417d3`.
+
+| New ARM64 archive | SHA-256 |
+|---|---|
+| mos-busybox | `ee631f2bd99bb69bb5f3966bf8038b0e07ca4e5f168482e5a13198bfa26d06eb` |
+| mos-deploy | `3076c9fb30df3e396c087f50a40f8a7a12dab53436ec01769a42b4df681620ca` |
+| mosd | `7fc6d71f6e7c276adbcdc1a1ad3f797ddcb1b48c478605110df5315b9b32bf9f` |
+| mos-apid | `c683efe0c532cc995355cee4e0d1a512814197b49de7a14d6b3eae45167561cf` |
+| mos-mqttd | `25525c029d3fa3ac696ed6c39e5037a8257fd8c4fa50b5577cd7b45f44438ec4` |
+| mos-mqtt-broker | `1565103a51b1af1c784c79ce65919f8141e9a35831cf95987ceee9fe832b9e61` |
+| mos-podman | `7c99640f84705350229d7a05d69ebfa797b12eae03a414d74c5e8cc4863c213a` |
+
+All carry stamp `git9d1218e2689e-1`; podman's upstream version is `5.8.6`,
+the other package versions are `0.1.0`. The original seven container-engine
+binaries retain their explicitly inherited provenance above. The compiler
+record reports target `aarch64-unknown-linux-gnu`, ELF architecture `aarch64`
+and embedded commit `9d1218e2689e`; its SHA-256 is
+`24f98efc3a892f4ef6d7dbe7482d6ce1d520cd612ac9d4d1ce7aba5b424fc603`.
+The actual UI-output checksum manifest is
+`a4c3b5665e4413c27672ee5fa4bdb8affcdd64af3f79ea3ca29aa6aafb074f03`.
+Neither record establishes root execution or physical behavior.
+
+Warnings retained, not converted into a zero-warning claim: busybox packaging
+reported two `dpkg-shlibdeps: warning: diversions involved - output may be incorrect`
+lines for libc6's `/lib/ld-linux-aarch64.so.1` diversion. Podman packaging
+reported `dpkg-shlibdeps: warning: couldn't parse dynamic symbol definition: no symbols`,
+preceded by objdump's `catatonit: not a dynamic object` / relocation diagnostics.
+Actual root loader/dependency execution remains a following gate.
+
+The next command is `bash /srv/station/work/tmp/mos/1zjiu5h5/composition-20260910-2026-z2Ljld/root-gate.sh`.
+It runs the unchanged `make os-rootfs-cx3576` / `rootfs/build.sh` with
+`MOS_BOARD=cx3576 MOS_PROFILE=dev WITH_MOSD=1 WITH_CONTAINERS=1`, the committed
+`wifi bluetooth` selection and only `inputs/meta` as public defaults. There is
+no size-budget override, feature decline, stale pool bypass or smoke opt-out.
+The immutable source remains `9d1218e2`; no package or kernel rebuild is needed.
+Fresh root output is `source/_out/cx3576/`, with recipe-owned local Debian cache
+under `source/_out/debian-base/`. Root gate metadata/log are
+`evidence/root/root-gate.json` and `evidence/root/root-gate.log`; the build log
+is `evidence/root/root-build.log`. The gate checks source/pool immutability and
+retains root, verity, composition, debug and OCI records for final collection.
+
+Bun 1.4.0 is copied mechanically into `tools-root/bun` from the committed
+`IMAGE_BUN_1` digest, rather than installed globally. Binary SHA-256:
+`33d56b070be6a9e3da0ab013038b43d1645d0534ca811ecdba4472599117eb4b`.
+Docker invocations carry task labels/names and narrow mounts. The existing
+shared factory-root alias is preserved: a separate `evidence/root/load-copy/`
+OCI archive changes only index name annotations to
+`ai-agent/mos-a4-factory-root:cx3576-9d1218e2`. Original output bytes stay intact;
+manifest/layer content digests, both archive hashes and annotation mapping are
+checked/recorded. The existing smoke verifier still identifies and executes the
+image by the original content digests, with its original failure semantics.
+The task wrapper's metadata-only archive operation passed a focused host fixture;
+that fixture is not a root, loader, device or hardware test.
+
+Actual new-root inspection must still establish the packed layout hash
+`683ce0839962ae2cf8f016e05f7d6fcde27bc6ffe39dda58b42bdbd676ae3414`,
+whole writable bounded `/var`, zero byte/inode application limits, private
+container storage/tmp binds, reset isolation, authenticated tty2, installed
+units/tools and loader closure. Support/FIT/signatures/fresh records/full image
+and candidate-specific negative/readback/offline checks remain subsequent work.
+The pending reviewed C.D4 endpoint verifier is a separately identified tool for
+this actual candidate after L1's exact handoff, not a dependency of root
+construction or a reason to import C payload. Its S905 sample cannot qualify
+this candidate. All physical rows and NPU ownership remain unqualified; optional
+historical D5 remains nonblocking. Earlier completed collector/kernel tracking
+and the composition phase's in-progress state are preserved.
+
+Root checkpoint review: pma-cr shared-policy review of the actual three-document
+delta and private orchestration, PASS with zero high-confidence findings.
+No product or collector behavior changed; new product RED/GREEN is not claimed.
+`bash -n root-gate.sh bin-root/docker` and the metadata-only archive fixture
+passed. `make docs-verify` passed at 2026-09-10T21:10:00Z..21:10:02Z, exit 0,
+log `evidence/root/docs-root-checkpoint.log`, SHA-256
+`8a05e614b6a6f3057988dc2ab915a7d38c1dca9b9fb13c021799786872185216`.
+Scoped `git diff --check` passed. This review does not pre-approve root results
+that do not yet exist; gate startup and terminal metadata remain separate.
+
 ### Original collector/kernel tracking
 
 - Campaign: `mos-open-plans-20260910-100408`; issue: `1zjiu5h5`; coordinator: `6064wf7l`.
