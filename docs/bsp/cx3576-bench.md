@@ -926,6 +926,15 @@ records subsequent collector/build deltas without rewriting that baseline.
 No current same-image physical CX3576 acceptance result has been
 captured.
 
+The coherent kernel gate at `38a362cd3ce46bab6d1f04489503dca9b92b664c`
+passed on 2026-09-10 (19:16:56Z..19:31:44Z), including full ARM64 kernel/object
+integration, resolved config, compiled DTB and retained-logo/call evidence.
+Exact hashes and warning limitations are in the integrated acceptance detail.
+This is not a newly signed FIT/support component or complete flashed image.
+The input audit found that both known CX packed roots predate the final zero
+application-quota policy; an admissible current root and source-bound native
+init must be supplied before new composition and candidate-specific gates.
+
 journald is volatile. Capture each boot's journal and serial trace before
 rebooting; a later collector invocation cannot recover the previous journal.
 Only observed hardware outcomes belong in physical qualification rows.
@@ -947,8 +956,9 @@ connected boot, tty2, return from tty2 and late HDMI attachment. The older
 pre-A3 init-only baseline. Reviewed A3 commit
 `209982d98f83ef149d2c3850adc63debc42f4c5a` now provides retained logo data,
 VT-return redraw and Rockchip hotplug redraw with controlled host fixtures.
-That is delivered software evidence, not a coherent ARM64 kernel/object result
-or a physical D3/D4 pass. A4 records the compiled-artifact result separately;
+That host evidence alone was not a coherent ARM64 kernel/object result. A4's
+`38a362cd` gate now supplies compiled integration and retained object/call proof,
+but still no physical D3/D4 or kernel lock-scheduling pass;
 the exact-image HDMI/VT observations remain unqualified until a bench is named.
 
 D5 retains historical [PLAN-088](../plan/PLAN-088.md) section 2.2 and its

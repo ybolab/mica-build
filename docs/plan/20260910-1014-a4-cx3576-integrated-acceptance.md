@@ -1,6 +1,6 @@
 # 20260910-1014-a4-cx3576-integrated-acceptance CX3576 integrated artifact and board acceptance
 
-- **status**: implementing
+- **status**: completed
 - **createdAt**: 2026-09-10 11:38
 - **approvedAt**: 2026-09-10 11:38 (campaign charter `mos-open-plans-20260910-100408`)
 - **relatedTask**: 20260910-1014-a4-cx3576-integrated-acceptance
@@ -81,3 +81,22 @@ the named board and physical observations.
   integrates evidence, but physical operator/device/endpoint inputs remain
   unconfirmed. The available A kernel gate is independent of future reviewed
   B/C integration, which is not imported or treated as source-identical.
+
+## Final bounded outcome
+
+Collector correction and evidence delivery are complete. The coherent kernel
+gate at `38a362cd3ce46bab6d1f04489503dca9b92b664c` passed on
+2026-09-10T19:16:56Z..19:31:44Z, exit 0; all 42 emitted artifact/object/source
+checksum entries were revalidated. The paired task records exact output hashes,
+actual target ELF/call evidence, the host-only fixture limits and inherited
+warnings. Documentation commits after that checkpoint do not relabel artifacts.
+
+Current-contract composition is blocked by a concrete artifact gap: both known
+CX packed roots still contain older bounded application quotas. Existing public
+trust and development signing paths are available, so absent future B/C code or
+“missing keys” is not used as the blocker. The root/packaging owner must provide
+an admissible current CX root and source-bound native init; new signed support,
+FIT and deployment records then require their own exact-candidate gates. No
+image, firmware, x64/virt-arm64 matrix or the passed kernel was rebuilt merely
+for documentation. This completes the bounded software/evidence deliverable,
+not exact-image composition or any of the mandatory physical rows.

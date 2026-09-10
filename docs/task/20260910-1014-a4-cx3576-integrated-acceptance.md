@@ -1,6 +1,6 @@
 # 20260910-1014-a4-cx3576-integrated-acceptance CX3576 integrated artifact and board acceptance
 
-- **status**: in_progress
+- **status**: completed
 - **priority**: P1
 - **owner**: bkd/1zjiu5h5
 - **createdAt**: 2026-09-10 11:38
@@ -15,7 +15,7 @@ without relabelling its dirty-stamped build or duplicating implementation.
 
 ## ActiveForm
 
-Verifying the coherent CX3576 artifacts and preparing exact-image board evidence collection.
+Completed collector and coherent kernel evidence; complete-image composition and physical qualification remain blocked by the inputs below.
 
 ## Dependencies
 
@@ -46,8 +46,8 @@ superseded and unable to block later stages.
 
 Reviewed A3 commit `209982d98f83ef149d2c3850adc63debc42f4c5a`
 replaces A2's earlier init-only/no-redraw software baseline. Its host fixtures
-remain source-level evidence until the coherent ARM64 build below completes;
-D1-D4 still require exact-image physical observations.
+were source-level evidence before the coherent ARM64 build recorded below;
+that build has now passed, while D1-D4 still require exact-image observations.
 
 ## Software evidence before coherent kernel build
 
@@ -74,8 +74,9 @@ bound; repeated captures overwrote previous snapshots. The corrections add
 live GetState and healthz probes before/after the 180-second window, immutable
 API/mode binding and unique capture directories. An additional fixture checks
 API loss after the window. Host stubs do not constitute elapsed board health.
-The resulting scoped review has no remaining findings; full kernel and physical
-verification are still pending, not covered by this collector review.
+The resulting scoped review had no remaining findings. At that checkpoint,
+full kernel and physical verification were pending and not covered by the
+collector review; the completed kernel result is recorded separately below.
 
 Recovery evidence root: `/srv/station/work/tmp/mos/1zjiu5h5/recovery-1/`.
 
@@ -140,31 +141,166 @@ application/fleet platform is included.
 | S905X5M update interruption and shutdown | blocked | Signed-file update/fallback on the paired image, real storage-power cuts with external boundary evidence, and authenticated shutdown/power return. Automated fault injection is not physical power-loss proof. |
 | Original-device apid reboot | blocked | A coordinates this obligation, but the original device identity, current image, authenticated endpoint and operator/serial trace are missing. Another device or board cannot substitute for the original-device result. |
 
-## Pending coherent build
+## Coherent compiled milestone
 
-One labeled, task-specific CX3576 kernel build will be launched from a clean
-committed A4 milestone in a persistent tmux shell. It will use the existing
-digest-pinned builder, the complete six-patch kernel series, the explicit
-read-only CX3576 public verity certificate, and no private signing material.
-The existing certificate is
+The kernel gate passed on clean source commit
+`38a362cd3ce46bab6d1f04489503dca9b92b664c`, tree
+`b3bb2b0e3fe90bba5f93fe346589ba627af4fd33`. Subsequent documentation commits
+are not kernel rebuild identities. The complete six-patch series was applied to
+vendor commit `c6157104418d012823413c02f9222f3fe123dd25`; release is `6.1.115`.
+The labeled equivalent of the recorded `make cx3576-kernel` recipe used the
+existing digest-pinned Ubuntu builder and retained target `build` for objects.
+The explicit public verity certificate was
 `/srv/mos/_out/boards/cx3576/verity-trust/101209c31085b09853c688d64c374d899ab904d508a4f69f0ae9b676c4ea0212/signer.cert.pem`,
 SHA-256 `101209c31085b09853c688d64c374d899ab904d508a4f69f0ae9b676c4ea0212`.
-The labeled equivalent of `make cx3576-kernel` retains the Docker build stage
-for actual ARM64 objects, vmlinux, complete patched source, DTB and modpost
-inspection; the build-time pnmtologo generator is a host executable.
+No private key was used for this build.
 
-The current A-baseline kernel milestone does not depend on future B/C changes.
-No newly assembled complete CX image or signed FIT candidate exists yet; after
-kernel collection, assess the exact available firmware, root/support provenance,
-signing inputs and fresh component-record requirements before composition.
-Do not run candidate-specific FIT/readback/image checks against an old image.
+Evidence base `E` below is
+`/srv/station/work/tmp/mos/1zjiu5h5/recovery-1/`.
+
+| Gate record | Actual result |
+|---|---|
+| Command / lifecycle | `bash /srv/station/work/tmp/mos/1zjiu5h5/recovery-1/kernel-gate.sh`; 2026-09-10T19:16:56Z..19:31:44Z, exit 0; gate PID 1358217; persistent-shell tmux `1zjiu5h5-a3c184`, shell PID 1358207. Final `kernel-gate.json` and `GATE_EXIT_CODE=0` agree. |
+| Complete gate log | `kernel-gate.log`, 378252 bytes, SHA-256 `5573248d7d764a89a182c4f9bf950b0b0aaea774bab4e35e46de3fa6b0a5cef1` |
+| Complete build log | `kernel-build.log`, 372502 bytes, SHA-256 `8518b988ee65b1ab182901e9e68f4fbba96cd7cf89227bc4ae83e42f8d6fce5e`; actual kernel/module MODPOST and final vmlinux link completed. |
+| Immutable output manifest | `compiled/SHA256SUMS`, SHA-256 `9aab7b62df43ed349728e4f24d4041b557392d28c16a20fd7ef001eee349af0e`; all 42 artifact/object/ELF/source entries revalidated. |
+| Collection audit | `timeout 60 bash E/collect-final.sh`, 2026-09-10T19:52:56Z..19:53:01Z, exit 0; `collection.log` SHA-256 `a4dd91a084d9274dc1b729be34433936cfc737b1e0c271f3a3fb198cc92db3fc`; `collection.json` records command/source/time/exit. |
+| Retained builder | `ai-agent/mos-cx-a4-kernel:38a362cd`, identity `sha256:2da9f07e885f4ddff2f0a66493782a6f62cc241cf11de170ad0c27f5ca78d3cb`; labels bind task and source. Contains complete patched `/ksrc` for review. |
+
+### Final kernel and support inputs
+
+Paths are relative to `E/compiled/artifact/`. `modules.tar` is the compiled
+support input, not a signed support component or a complete root.
+
+| Artifact | SHA-256 |
+|---|---|
+| `Image` (44687872 bytes) | `f0380b3ca03d61943a4aa6ace2c0378cd057ee82ff408a764dc0b19f4976519c` |
+| `rk3576-src.dtb` (284944 bytes) | `912d6091cf22c6ce110eefa53b39fd8e53e64ddfb3c1a0a382559ecf1d3de39c` |
+| `.config` | `b558db2876d9eacf14c547597913fd552bc923ca372053684dc15570949edf8b` |
+| `modules.tar` (5529600 bytes) | `d2a760ef015217e8ab2b6fb75bf65891862025eb1f18faee2e72a311e4e3e479` |
+| `regdb-certs.pem` | `a6a84c88b61d65e275549627c36d52d6ff78f57466ec1dd3ec8d6319cbaf8d2e` |
+| `kernel.release` | `157ec590c0eeaa193c9f22b60379c343d9b60e12adf52db15932995c4001444e` |
+| `System.map` | `f3d0352854b6eae213763a3d67719245f1406a176008e7298fe2092f31e71200` |
+| `vmlinux` | `8225f314a3c8c3c386d02ae42b70d370045adacd0d7ad6a082d35892e1da7325` |
+
+The resolved config has built-in LOGO/CLUT224, DRM/ROCKCHIP/fbdev/fbcon and
+disabled deferred takeover. Forced command line retains serial-only ttyFIQ0,
+required verity signatures, centered single logo and disabled cursor. These
+compiled settings are not a newly signed FIT command-line verification. Current
+source still reserves authenticated tty2, without tty1 getty or autologin.
+
+### Actual objects and semantics
+
+Objects are under `E/compiled/objects/` at their original kernel-relative paths;
+full symbol/relocation/readelf reports are under `compiled/elf/`.
+
+| Kernel-relative object | SHA-256 |
+|---|---|
+| `drivers/video/rockchip/mpp/mpp_rkvenc2.o` | `1f2e616c620898e5a59df48ccda38ed08f3afe3d7c8fd3ca3c42e0d121a0e625` |
+| `drivers/video/logo/pnmtologo` (x86-64 host generator) | `5a8a0473a33b8613870c7d053530e4de60915cf2852217e900d8482585a970e7` |
+| `drivers/video/logo/logo.o` | `4fa8fc0f0f47bd88aadcceb825c9289f8f1f814146ae72f78e6c6505b8675dc4` |
+| `drivers/video/logo/logo_linux_clut224.o` | `0e095412751af8f729f4aab607cb9cdfbf2b718305237de9de4f0f4b0d29a28a` |
+| `drivers/video/fbdev/core/fbmem.o` | `097af50d064a1c8a72010e00d942de1e071bf8e92cb9780016a73553bd46a2c0` |
+| `drivers/video/fbdev/core/fbcon.o` | `f84fe9c94b76a07c4a0b415495af8e776694aac55c2c05247b174fd33d6a3d44` |
+| `drivers/gpu/drm/rockchip/rockchip_drm_fb.o` | `6e9adbe8773ae5b15e391992c9c6fdf179deed7422ba4ea8da8e2909e3254108` |
+
+All six target objects and vmlinux identify as AArch64. `fb_find_logo` is in
+ordinary `.text`; descriptor/data/CLUT occupy permanent `.rodata`, with symbol
+sizes 32/291600/669 bytes (292301 total before alignment), without init-section
+references in the two logo objects. `fbcon_show_idle_logo` was inlined into
+`fbcon_switch`: actual CALL26 relocations at 0x3e68 and 0x3e94 reach
+`fb_prepare_logo` and `fb_show_logo`. `rockchip_drm_output_poll_changed` has a
+CALL26 at 0x1c0 to `fbcon_update_vcs` with the visible-update argument set.
+The encoder object retains the fixed-rate diagnostic and the guarded OPP call
+chain; its integrated source hash remains A1's expected
+`4ca030244b13f6355c802ecc7f941142565650cac85be93a7a74d8c3d5c9fe8f`.
+
+The full patched-source A1 fixture passed, A3 passed 30 behavioral plus three
+host ELF section assertions, and the new DTB fixture passed both encoders and
+the decoder's fixed clock/reset contracts. Logs and SHA-256:
+
+- `compiled/encoder-fixture.log`: `4fb23638dd200dd636a66de2feebe1aefc070f6ea4d212070cbd3dde31845abc`.
+- `compiled/display-fixture.log`: `a651e5f2619a6678d0c5747750e3ba5c4714f6503c3e941f1b0b4e5aaa68d8e1`.
+- `compiled/resource-dt.log`: `57eec2662605420d574febb5afcf98dfe2a6840e024440e008cf297af636d88b`.
+
+NPU overlapping IOMMU/MMIO ownership remains OPEN. Neither these fixtures nor
+whole-kernel compilation establishes scheduling/lock behavior, login execution,
+physical display, accelerator workloads or support for framebuffer growth beyond
+the original allocation. MODPOST found no section mismatch or unresolved symbol.
+Preserved warning limits: 12 package-install missing-manpage warnings, vendor
+`drivers/gpu/drm/rockchip/dw-dp.c:3199` `%d`/`size_t` format warning, and Docker's
+`InvalidDefaultArgInFrom` advisory for the deliberately explicit base-image arg.
+This is not a warning-free build and no product repair was attempted.
+
+## Current A-baseline composition input audit
+
+This audit does not wait for future B/C implementation. It found an actual
+missing current-contract CX root, so no new complete image was composed and
+candidate-only FIT negatives, image offline checks and flash readback were not
+run against an old image. Two known packed roots were read with a narrow,
+read-only, labeled container; `packed-root-audit.log` SHA-256
+`5712ad5511caffea23f58aa301b5f113472c1475a75ce462ac52d2567c3b541e`,
+with exact times/exit 0 in `packed-root-audit.json`.
+
+| Input | Availability / exact boundary |
+|---|---|
+| Current CX root | **Missing admissible artifact.** `/srv/mos/.tmp/cx-storage-display/source/_out/cx-storage-display/components/root/rootfs.img` SHA-256 `2a4eb3d442592bb36c32586ff38576b9e7710b6689bc3f091e4a99b9eae62147`, component `4d8f0bb540d4e4f7a32c362c198e84c2303e3a83268ee3d0deada5eac469c776`, still has bounded projects 100/102. Its packed layout script hash is `be1d586be333f8dede0c7e7f3d3f262e59fdb3ac681ac9d8da2c0021618ea193`; current source is `683ce0839962ae2cf8f016e05f7d6fcde27bc6ffe39dda58b42bdbd676ae3414` with zero limits. The prior unlimited-data task explicitly did not rebuild the image. |
+| Other known CX root | `/srv/mos/_out/cx3576/rootfs-verity.img`, SHA-256 `c7acdbb0f7eaabb7ad0293ba000024dcc6b2907f60489ea537beafc049ea2165`, is older `git97bb466792ca-1` package output; its packed script still bounds project 100 and lacks the separate container project. It is also inadmissible. |
+| Native init | The old CX input at the storage-display snapshot's `_out/cx-storage-display/inputs/mos-init` has SHA-256 `92ef814981a692274bd8b1263d943ef87c338a051c47a0f872e2473c798b67f2`, attributed to `0209c4bf...`; six relevant deployment source files differ from the accepted A baseline. Do not silently reuse it. Approved #313 evidence has the newer `/srv/mos/tmp/s905x5m-current/init/mos-init` hash `33e66fbc63ee8353f0ddcee33cd53fdc504ec146824f9ad02d3d3d9329fffd5d` and build log; its original source equivalence is retained, not relabelled a clean A rebuild or used to substitute an S905 root. |
+| Firmware candidate | Storage-display snapshot `_out/cx-storage-display/firmware/u-boot-rockchip.bin` SHA-256 `1386f1ce5263fa66b04ee3cab2f40d19802dac923f477f4691968b31c6a1af05`; signed `firmware.json` hash `46f83d67458ffc78d7b2889209685e428fe655bdb5ec0e3cd7cc7b553164866a`. The three core recorded CX boot source hashes match current source. This remains the inherited development firmware candidate, not a new firmware build or newly paired FIT acceptance. |
+| Support | New modules and exported regdb trust are available above; the five board radio files were hashed from the committed source in `collection.log`. No new signed `support.img`/descriptor was published. Reusing old support would discard the current kernel modules and is not allowed. |
+| Signing/public trust | Existing storage-display snapshot `.tmp/content-signing/signer.cert.pem` matches the compiled verity anchor. Its content private key, `.tmp/signing/boot/signer.key.pem` and `.tmp/signing/updates/signer.key.pem` exist; only existence was checked, with no private-key reads, generation or signing. Public boot certificate SHA-256 `c9cd2241cc47266b302aceae71a280c4892f9bcaf32026c96f361cde42aad74b`; metadata public-key-file hash `0eb4c0e03777d6f416660023e74457b888c71bd246956b3b53caaaa80e856ff6`. Therefore “signing keys absent” is not the composition blocker. |
+| Packaging tooling | Read-only audit pinned existing FIT tools image `sha256:d75165f107b50d2c1cc0e9d07b49802ed78cc6b066f6b63595f7b38290145380`; its fit/initramfs/regdb script hashes match the accepted A source. This is tool/input inspection, not consumption of a new B3/C payload. |
+| FIT / deployment records | No FIT, kernel/support component ID or fresh factory deployment envelopes exist for this new Image. Old generations 11/12 reference the old root/kernel and cannot be relabelled. New records and candidate-specific offline/signature/readback gates require an admissible current CX root and the explicitly selected source-bound init/trust/firmware combination. |
+
+Required handoff through L2/L1 to the shared root/packaging owner: a newly
+composed CX3576 root on the accepted A baseline (or a separately approved exact
+source), including package/source manifest, rootfs-verity image/parameters and
+digests, with zero quotas on `/mos`, `/srv`, `/mos/containers`, bounded writable
+whole `/var`, private container paths and current authenticated tty2. Confirm the
+native init artifact's source/content identity alongside that root. This is a
+specific artifact dependency, not a request for speculative product changes or
+a blanket dependency on later B3/C work. The one passed kernel needs no rebuild.
+
 A later combined milestone requires L1's exact reviewed B/C handoff: B3 owns
 native shutdown and bounded kernel-payload plumbing; C owns public-meta/verifier
 and release/sourceIdentity/Toolbox changes. None is imported here. Board flashing
 also independently requires confirmed hardware admission.
+
+## Final review and disposition
+
+Final local review covers the entire owned collector/test delta from the
+authorized L2 base, plus this artifact/input documentation update. No product
+source or sibling records were edited. Stale logs cannot replace the live
+required-health probes; optional-unit failures remain diagnostics; dry-run
+results are downgraded in both report tables; API/image/media/mode rebinding is
+refused; repeated boot IDs are not extra cycles. Operator reports still require
+raw external evidence review and do not turn simulated data into hardware proof.
+
+| Review severity | Remaining findings |
+|---|---|
+| Critical | 0 |
+| High | 0 |
+| Medium | 0 |
+| Low | 0 |
+
+Verdict: PASS for the bounded local change. Final cheap-gate commands, UTC times,
+exit identities and hashes are retained in `E/final-delivery.log` and
+`E/final-delivery.json`. Original RED and all intermediate logs remain intact.
+No fresh executable behavior was changed in this result-collection turn.
+The completed task is the collector/kernel/input evidence deliverable; signed
+image composition and every mandatory physical obligation above remain blocked.
+
+The completed gate uses no active heavy token. Retain the labeled builder image,
+full patched source, compiled artifacts, source snapshot and logs for L2 review;
+no existing owner artifact or shared cache is removed. The idle task tmux shell
+was removed after confirming it had no child process. The short input
+audit container was read-only and used `--rm`; no bench interface was touched.
 
 Change-history handoff for D through L2: this task/plan pair and the scoped bench
 delta supersede only the collector gaps, distinguish reviewed A3 software from
 the older A2 investigation baseline, retain historical optional D5, and map A/A4
 coordination separately from missing physical inputs. No sibling, historical
 task status, global index history or changelog is reconciled here.
+
+- complete: Completed bounded collector, coherent kernel and input-provenance evidence; current CX root composition and all mandatory physical rows remain explicitly blocked. No hardware completion is claimed.
