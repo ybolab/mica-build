@@ -12,8 +12,12 @@ Native records retire B before collection; shared components survive, and new B
 is activated only after durable publication. Both FIT environment copies forget
 retired objects. Factory and runtime capacity checks budget two deployments,
 including measured ext4 overhead. Native tests cover 549 interrupted/error cases,
-transaction restart and replacement-only space availability. Virtual boot/update
-acceptance and clean image rebuilding follow the implementation commit.
+transaction restart and replacement-only space availability; Rust/build suites
+pass 46/385 tests. Clean-source x64 and ARM64 guests pass signed startup, component
+updates, three-trial fallback and DATA archive retirement-failure recovery. The
+1,299 MiB cx3576 image passes 123 offline checks, required FIT signatures and
+DATA-only growth; SYSTEM is 1 GiB with 197 MiB allocated. The task records the
+pinned source, reused BSP kernel and image checksum. Physical P10 remains open.
 
 ## cx3576 SYSTEM reduced to 1 GiB (2026-09-10)
 

@@ -22,6 +22,11 @@ P1 and P2 are complete. P3-P9 are implemented with the software evidence below;
 P10 remains open for physical cx3576 acceptance; software measurement and cleanup pass.
 The dated investigation describes the starting point, not the current system.
 
+The user-approved 2026-09-10 amendment limits installation to two deployments,
+with acquisition on DATA and retirement of inactive B before replacement.
+Implementation and current acceptance are recorded in the
+[strict A/B task](../task/20260910-0040-strict-file-ab.md).
+
 ### Investigation snapshot (2026-09-08, before implementation)
 
 | Area | Observed implementation | Consequence |
@@ -49,7 +54,7 @@ Related live work includes PLAN-086 runtime composition and PLAN-077/RFCT-305 tr
 | Decision | Selected design |
 |---|---|
 | Root storage | Immutable SquashFS + verity files on a dedicated ext4 SYSTEM filesystem |
-| Redundancy | Two retained deployments referencing immutable components; one staged/trial candidate may temporarily require a third generation |
+| Redundancy | At most two deployments referencing immutable components; confirmed running A survives replacement of inactive B |
 | Update unit | Boot firmware, kernel package, and rootfs are separate artifacts; a release specifies an exact tested kernel/rootfs combination |
 | Root trust | Kernel verifies a detached PKCS#7 signature over the verity root hash using an embedded X.509 trust anchor |
 | Runtime integrity | dm-verity continues checking blocks on demand; no whole-rootfs scan is added to every boot |
@@ -168,7 +173,7 @@ On cx3576, preserve the currently proven loader placement at sector 64 and envir
 
 STATE, META and EPHEMERAL cease to be partitions. Their distinct retention and ownership rules are represented by directories on DATA. SYSTEM remains separate: large bootable objects should not share their filesystem with ordinary user and runtime writes.
 
-Proposed initial build defaults are SYSTEM 2 GiB and a 512 MiB UEFI ESP. These are sizing proposals, not measured minimums. The assembler must check the measured peak footprint: current deployment + retained rollback + staged replacement + filesystem overhead/reserve. Check ESP and SYSTEM independently. Keep the sizes in `board.env`, with an explicit build-time refusal if the chosen images do not fit. DATA stays last and is the only partition grown automatically. STATE/VAR/META have no GPT size or UUID; runtime capacity policy replaces their former fixed-size partitions.
+Current build defaults are SYSTEM 1 GiB on cx3576, SYSTEM 2 GiB on x64/virt-arm64, and a 512 MiB UEFI ESP. The assembler checks two complete payloads plus filesystem overhead and reserves, including the formatted ext4 metadata and reserved blocks. The installer checks actual free space plus reclaimable inactive-B blocks before retirement, then rechecks actual free space before publication. Check ESP and SYSTEM independently. Keep the sizes in `board.env`, with an explicit build-time refusal if the chosen images do not fit. DATA stays last and is the only partition grown automatically. STATE/VAR/META have no GPT size or UUID; runtime capacity policy replaces their former fixed-size partitions.
 
 Normal filesystem mounts are SYSTEM read-only at `/mnt/system`, ESP read-only at `/boot` on UEFI, and DATA read-write at `/mnt/data`. The updater temporarily enables writes on SYSTEM/ESP when needed; it must not remount the entire shared DATA filesystem read-only at transaction completion. The real root remains a read-only dm-verity mapping throughout, including the `/var`, `/var/lib`, `/var/cache`, and `/var/log` parent directories. Existing `/run` and `/tmp` memory-backed behavior remains unchanged.
 
@@ -267,16 +272,19 @@ The previous partition-based reset assumptions in `pkgs/mosd/mosd/src/reset.rs`,
 
 The device retains a current deployment and a rollback deployment. A candidate is written under a fresh immutable deployment ID. Logical A/B labels may be presented in diagnostics, but filenames are not overwritten in place merely because a label is reused.
 
-The factory image includes two valid deployment records that may share the same initial kernel and rootfs objects; it never ships an empty fallback image. After a successful update, retain exactly the confirmed deployment and its predecessor. During a trial, the previous retained pair may remain until the candidate is confirmed; storage and boot-entry enumeration must account for this bounded third generation.
+The factory image includes two valid deployment records that may share the same initial kernel and rootfs objects; it never ships an empty fallback image. Installation requires confirmed running A. After authenticating the incoming deployment and checking replacement capacity, retire inactive B and reclaim its exclusive objects before publishing new B. During replacement A remains bootable; during trial A is the fallback. Confirmation makes new B current and retains A as its predecessor. SYSTEM and native boot records never require a third deployment.
 
 ```text
 SYSTEM/
   kernels/<kernel-id>/support.img, support.roothash, support.roothash.p7s
   kernels/<kernel-id>/boot.itb              # cx3576 only
   roots/<root-id>/rootfs.img, rootfs.roothash, rootfs.roothash.p7s
-  deployments/<deployment-id>.json
-  deployments/<deployment-id>.sig
-  staging/<transaction-id>/
+  deployments/<deployment-id>.json        # signed envelope
+
+DATA/
+  mos/updates/downloads/
+  mos/updates/staging/
+  mos/updates/verified/
 
 ESP/                                      # UEFI only
   EFI/mos/kernels/<kernel-id>.efi
@@ -343,12 +351,12 @@ The current server/client catalog mismatch is resolved as part of this work: imp
 
 Update transaction, serialized against another install, GC, reset, and firmware maintenance:
 
-1. Read the actual running deployment and authoritative boot state; refuse a new activation while another candidate is unconfirmed.
-2. Authenticate the release, determine missing component objects, and reserve DATA workspace, SYSTEM, and ESP capacity separately.
+1. Read the actual running deployment and authoritative boot state; require confirmed healthy A and refuse installation while another candidate is unconfirmed.
+2. Authenticate the release, determine missing component objects, and check the DATA acquisition workspace.
 3. Download/resume into `/mos/updates/downloads`; check length and digest before promoting into the verified workspace.
-4. Stage missing objects on their destination filesystem under non-boot-visible names. Never write a currently referenced object, truncate a mounted image, or modify an existing object in place.
-5. Verify all artifact metadata/signatures and read back newly written data. Installation may perform a complete verification pass; boot does not require one.
-6. Fsync each new file, publish immutable object names, and fsync the affected directories. Write and persist the signed deployment descriptor only after all referenced objects are durable.
+4. Verify every incoming or reused object and its metadata/signatures. Preflight SYSTEM and ESP space, counting only blocks reclaimable from inactive B while preserving all objects used by A or incoming B. Invalid input or insufficient capacity leaves the old pair intact.
+5. Durably retire inactive B's native entry, including both redundant FIT environment copies. Reconcile DATA fallback/candidate references, reclaim B-exclusive objects, and recheck actual destination space.
+6. Copy missing objects under temporary destination names, fsync each file, publish immutable names, and fsync directories. Write and persist the signed deployment descriptor only after all referenced objects are durable. Never overwrite an existing object or truncate a mounted image.
 7. Publish the candidate through the boot backend last: one redundant-environment update on cx3576, or the final boot-visible counted entry on UEFI. For UEFI, SYSTEM and UKI contents must be durable before the ESP entry can be published.
 8. Flush/check write results and return writable mounts to the expected state. Record `reboot-required` only after activation has been verified from the authoritative backend.
 9. On restart, trial the candidate. The health gate confirms that exact deployment after existing essential services and verified support mounts pass.
@@ -501,7 +509,7 @@ Excluded: old-layout migration, old `.raucb` support, compatibility shims, delta
 3. **Incomplete trust chain.** Signed root content alone cannot authenticate a replaced kernel/U-Boot; assurance reporting must distinguish development verification from an anchored boot chain.
 4. **Module and firmware ownership mistakes.** A successful root mount can still produce a broken device if the wrong support image is mounted or mounted too late.
 5. **Persistent-state changes.** Filesystem rollback does not restore database/configuration contents. Trial-boot write policy is required for the retained fallback to work.
-6. **Space and garbage collection.** Shared unchanged objects reduce copies, but safe staging may need three generations temporarily. Deleting a shared running object is never an acceptable way to make room.
+6. **Space and garbage collection.** Replacement trades the old inactive fallback for space while preserving confirmed running A. Both FIT environment copies must forget retired B before collection. Keep objects shared with A or incoming B; temporary acquisition belongs on DATA and SYSTEM budgets two deployments.
 7. **Trust rotation and expiry.** A kernel with old anchors may reject a new rootfs; a mistaken expiry policy can make offline installed systems unbootable. These require separate tests from download authentication.
 8. **Watchdog coverage.** A boot-attempt counter cannot reset a hung board. Automatic recovery claims depend on actual reset coverage from firmware through the health gate.
 9. **Writable namespace coverage, cleanup and pressure.** Missing a real writer can break startup or shutdown when var parents become read-only. Cleanup can cross into persistent binds if it traverses runtime paths, and a bulk writer can consume essential capacity if project limits are absent or bypassed. Writer discovery, same-device assumptions, quota inheritance, privileged writers and reset scope need explicit tests.
