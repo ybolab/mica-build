@@ -20,6 +20,14 @@ approved source `5d0dca577a782aa707d9530779c4b23f2a7eda31`) in merge commit
 local configuration/status call chain. It does not relabel the original matrix
 as evidence collected at the synchronized HEAD.
 
+The same amendment later synchronizes the reviewed C.D5 implementation from
+local workstream C HEAD `578bc651a4d2b3faaea21310105ec5aa931f784e`
+(exact D5 commit `8bdc375cc34116d1293f2ee4074bd486e184a434`) in merge
+commit `345b947eb33f228edac732b8573b64cf731aec21`. The targeted refresh below
+uses that identity only for the provisioning-status consumer and scheduling
+dependency; the 65-row classification remains evidence from the original
+baseline.
+
 ## Proposal
 
 Record an obligation-level classification with current file-and-line evidence,
@@ -180,9 +188,13 @@ The matrix above classifies **historical contract validity**. It does not grant
 twenty implementation tasks. The campaign needs a second property:
 **dispatchability now**, which requires an approved consumer, a complete input
 and output contract, an integrated call chain, owned paths and the applicable
-dependency already merged. On that test, this amendment finds **zero presently
-dispatchable application/fleet slices**. This is a scheduling conclusion, not a
-change to any of the 65 classifications.
+dependency already merged. On that test, the D5-synchronized amendment finds
+**one presently dispatchable downstream backend slice, `FLEET-CONFIG`, covering
+two of the historically valid rows**. C2 has no implementation authorization:
+L2 must assign a separate implementation L3. Every application slice and every
+fleet client, report, runtime, persistence-buffer and UI slice remains deferred,
+decision-dependent or campaign-excluded. This is a scheduling conclusion, not
+a change to any of the 65 classifications.
 
 The 20 delivered rows also have different proof grades: eight are delivered
 design approvals (`PLAN-054/COND-product`, Q1, Q4–Q7, registration architecture
@@ -205,7 +217,7 @@ candidate named here is not a new obligation or authorization.
 | `APP-SECRETS` | `PLAN-069/SW protected secret store` | deferred | No managed runtime or authenticated application mutation consumes a secret. A store or API without that consumer would be a new credential surface, not a bounded slice. |
 | `APP-AUDIT` | `PLAN-069/SW audit projection` | deferred | There are no application operations producing durable tasks. Do not create a consumerless ring, route or daemon. |
 | `APP-ROLLBACK` | `PLAN-069/SW health-gated rollback` | deferred | It depends on an admitted activation, retained artifact and real health gate; runtime image proof would later need an expensive QEMU grant. |
-| `FLEET-CONFIG` | `PLAN-072/C1 local config and off transition`; `PLAN-076/B8` | conditional backend proposal; not dispatchable now | The only concrete consumer is the existing provisioning-status projection described below. Any revision of its route, handler or projection waits for C.D5 (`g4if0wrb`) to be reviewed and merged into local `bkd/58sdocnk`, then needs a fresh scoped approval. |
+| `FLEET-CONFIG` | `PLAN-072/C1 local config and off transition`; `PLAN-076/B8` | dispatchable as one separate backend L3; not implemented or authorized in C2 | The existing provisioning-status projection is the concrete consumer described below. C.D5 (`g4if0wrb`) is reviewed and delivered as `8bdc375cc34116d1293f2ee4074bd486e184a434`, merged in local L2 HEAD `578bc651a4d2b3faaea21310105ec5aa931f784e`. L2 may instantiate this exact config/projection slice after accepting this amendment; the implementation L3 must first merge current local `bkd/58sdocnk`. |
 | `FLEET-REPORT` | `PLAN-076/B1`, `PLAN-076/B2` | deferred | The field allowlist is historically approved, but there is no existing report caller, preview or sender. A new `GetFleetReport` library/bus member by itself is consumerless. |
 | `FLEET-THERMAL` | `PLAN-076/B3` | deferred | Window aggregation has no report consumer until `FLEET-REPORT` has an approved integrated caller. |
 | `FLEET-SCHEDULE` | `PLAN-076/B6` | deferred | There is no approved client or sender to schedule; do not create `fleetd` or a timer first. |
@@ -222,11 +234,12 @@ managed native admission remains later pending its non-root identity and sandbox
 external catalog/cloud/plane contracts are outside this repository. No entry in
 the table turns those later scopes into implementation work.
 
-### Conditional `FLEET-CONFIG` integrated chain
+### Dispatchable-next `FLEET-CONFIG` integrated chain
 
-This is the only bounded next proposal because it reuses a current caller. It
-is **not dispatchable at this amendment's HEAD** and it does not implement
-registration or enable network activity.
+This is the only consumer-backed slice ready for a separate downstream
+implementation assignment because it reuses a current caller and its D5 route
+proof. It is **not implemented or authorized in this C2 documentation unit**,
+and it does not implement registration or enable network activity.
 
 1. **Entry and input.** The established offline pour lets an integrator write
    `/mos/config/*.json` while the device is stopped; mosd validates those files
@@ -253,41 +266,66 @@ registration or enable network activity.
    absent `enabled` selects the baked default; absent `reporting` defaults on
    only when effective `enabled` is on. Reporting is always effectively off
    when fleet is off, and the operator projection includes only overlay keys
-   actually present.
+   actually present. C.D5 separately proves the current `update.source`
+   contract: an omitted source and an explicit `null` remain distinguishable
+   in the operator projection while both clear the override back to baked
+   (`pkgs/mosd/apid/src/tests/provisioning_api.rs:255-275`). Applying the same
+   rule to the candidate fleet URL is a proposed current-schema choice, not a
+   claim that the absent fleet reader already implements it.
 2. **Read and resolution.** The baked defaults come from
    `/usr/share/mos/meta/updates/manifest.json`; synchronized source still has
    code defaults `enabled=false`, `url=null`
-   (`pkgs/mosd/mosd-settings/src/configuration.rs:223-267`). The conditional
-   change extends the one existing resolver in that file to read
+   (`pkgs/mosd/mosd-settings/src/configuration.rs:223-267`). The downstream
+   implementation extends the one existing resolver in that file to read
    `/mos/config/fleet.json`; it must not introduce a second configuration
    reader. The document is unique because fleet desired configuration must
    survive reboot and A/B, remain separate from `updates.json` and from a future
    STATE credential, and inherit the existing reset discipline. The only write
    in this slice is the already-approved offline pour; there is no new runtime
-   writer, route or credential file.
+   writer, route or credential file. Runtime reads remain inside the existing
+   linked `mosd-settings` resolver and existing APID process; the slice installs
+   no new binary, service or unit.
 3. **Existing caller and observable behavior.** The authenticated
    `GET /api/v1/provisioning/status` route is mounted in
-   `pkgs/mosd/apid/src/routes.rs:711-716`; its handler calls
-   `configuration::provisioning_status_at` and returns its `operator` and
-   `effective` values (`pkgs/mosd/apid/src/provisioning_api.rs:199-288`). The
-   current resolver says the fleet document does not exist and emits only baked
-   values (`pkgs/mosd/mosd-settings/src/configuration.rs:1187-1270`). The
+   `pkgs/mosd/apid/src/routes.rs:731-736`; its handler reads the fixed
+   production inputs, calls `configuration::provisioning_status_at`, and
+   returns its `operator` and `effective` values
+   (`pkgs/mosd/apid/src/provisioning_api.rs:199-275`). C.D5's authenticated
+   route tests prove the actual updates-file precedence, exact projection,
+   fail-closed behavior and redaction through that caller
+   (`pkgs/mosd/apid/src/tests/provisioning_api.rs:148-335`); they do not prove a
+   fleet reader. The current resolver says the fleet document does not exist
+   and emits only baked values
+   (`pkgs/mosd/mosd-settings/src/configuration.rs:1187-1270`). The
    proposal ends that chain with the exact desired operator/effective fleet
    projection. It must expose no `registered`, `connected`, `lastReport` or
    other activity member and must open no socket; `enabled=true` is desired
    configuration, not evidence of registration.
-4. **RED, GREEN and ownership.** The smallest RED is a resolver/status test with
-   baked off/null plus the shown poured document: it must return the raw
-   operator values and effective URL/switches, then reject a trust-anchor key,
-   while the response contains no activity state. The GREEN commands are
-   `make os-rust-gate` and `make os-apid-api-spec-pins`. Expected write paths
-   are limited to `pkgs/mosd/mosd-settings/src/configuration.rs` and its tests,
-   plus the existing provisioning handler/test/OpenAPI projection only if the
-   merged C.D5 interface requires them. There is no new crate, daemon, buffer,
-   UI, rootfs/build/signing path or expensive resource. C.D5 must be reviewed
-   and merged into local `bkd/58sdocnk` before the implementing L3 is created;
-   that L3 must first merge the resulting shared local commit into a clean
-   branch and revalidate the call signature.
+4. **RED, GREEN and ownership.** The smallest integrated RED is an authenticated
+   route test named
+   `the_status_resolves_an_isolated_fleet_document_without_activity_state` that
+   supplies baked off/null plus the shown isolated fleet document and currently
+   observes baked-only fleet output. It must turn GREEN only when the response
+   returns the raw present operator keys and effective URL/switches, rejects an
+   anchor-shaped key without reflecting its value, and contains no activity
+   state. Extend the existing resolver with a fixed
+   production `/mos/config/fleet.json` input and a test-only isolated-path seam,
+   following D5's `DEFAULT_UPDATES_PATH` pattern; do not make either path
+   request-, environment- or runtime-configurable. Exact write paths are
+   `pkgs/mosd/mosd-settings/src/configuration.rs`,
+   `pkgs/mosd/apid/src/routes.rs`,
+   `pkgs/mosd/apid/src/provisioning_api.rs`, and
+   `pkgs/mosd/apid/src/tests/provisioning_api.rs`. No OpenAPI shape change is
+   expected because `operator` and `effective` are already projected objects.
+   The GREEN commands are `make os-rust-gate` and
+   `make os-apid-api-spec-pins`. C.D5 is satisfied by reviewed commit
+   `8bdc375cc34116d1293f2ee4074bd486e184a434` in local L2 HEAD
+   `578bc651a4d2b3faaea21310105ec5aa931f784e`; the implementing L3 must first
+   merge the then-current local `bkd/58sdocnk` and revalidate these paths. No
+   further shared build/signing/rootfs/release handoff or expensive resource is
+   needed for this exact slice, but L2 must provide exclusive source ownership.
+   Any expansion into a client, installed unit, package, UI or publication path
+   requires a new L1 handoff.
 
 ### Decision brief A — fleet
 
@@ -508,6 +546,14 @@ choice.
   refreshed at that synchronized HEAD. The remaining 65-row file evidence is
   still explicitly baseline-specific and is not represented as a full current
   source re-audit.
+- A later targeted synchronization merged exact local L2 HEAD
+  `578bc651a4d2b3faaea21310105ec5aa931f784e` as
+  `345b947eb33f228edac732b8573b64cf731aec21`; it contains reviewed C.D5 commit
+  `8bdc375cc34116d1293f2ee4074bd486e184a434`. Only D5's real authenticated
+  provisioning-status caller, fixed production updates-path seam, route-test
+  evidence and resulting `FLEET-CONFIG` scheduling dependency were refreshed.
+  D5 did not add a fleet document reader, client, activity state or network
+  behavior.
 - `jq -r '.paths | keys[]' pkgs/mosd/apid/openapi.json` contained no
   `/api/v1/apps`, `/api/v1/app-catalog` or `/api/v1/fleet` path. Focused `rg`
   found no `mos-appd` or `fleetd` crate/unit. These are absence observations,

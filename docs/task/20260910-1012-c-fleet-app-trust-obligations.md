@@ -135,14 +135,15 @@ complete matrix and original dependency candidates are in
   superseded, 20 valid historical implementation obligations and 15 unresolved
   product decisions. Delivered rows split into eight design approvals, ten
   software mechanism/test acceptances and two documentation outcomes.
-- Presently dispatchable application/fleet slices: **zero**. `FLEET-CONSOLE`
-  remains historically valid but is campaign-excluded UI work. Consumerless
-  crates, registries, daemons, buffers, routes and libraries are deferred.
-- `FLEET-CONFIG` is the only bounded conditional backend proposal. It reuses
-  the existing offline pour and provisioning-status projection, reports desired
-  operator/effective settings only, creates no connection state and opens no
-  network. It depends on C.D5 (`g4if0wrb`) being reviewed and merged into local
-  `bkd/58sdocnk`, followed by a fresh scoped approval and upstream sync.
+- At the first amendment's pre-D5 synchronized HEAD, presently dispatchable
+  application/fleet slices were **zero**. `FLEET-CONSOLE` remained historically
+  valid but campaign-excluded UI work, and consumerless crates, registries,
+  daemons, buffers, routes and libraries were deferred.
+- `FLEET-CONFIG` was the only bounded conditional backend proposal. It reused
+  the existing offline pour and provisioning-status projection, reported
+  desired operator/effective settings only, created no connection state and
+  opened no network. Its then-unsatisfied dependency was C.D5 (`g4if0wrb`)
+  review and merge into local `bkd/58sdocnk`.
 - The two decision briefs now ask only: (A) integrate the user-specified
   existing plane with complete wire/credential/retry contracts or defer the
   client; (B) approve the proposed pure-local curated OCI catalog and
@@ -170,6 +171,55 @@ complete matrix and original dependency candidates are in
   preserves both parents' rows.
 - PMA-CR documentation self-review — PASS with no blocking, high or medium
   findings: claims are evidence-scoped, proposed formats/callers are labeled
-  absent and unauthorized, no secret/key material is present, and zero
-  dispatchable slices is stated consistently.
+  absent and unauthorized, no secret/key material is present, and the
+  pre-D5 zero-dispatch conclusion is stated consistently for that source
+  identity.
 - No Rust/Bun, image, QEMU, board or power-cut matrix is required or claimed.
+
+### D5 dependency refresh
+
+- At the next clean synchronization boundary, local `bkd/58sdocnk` resolved
+  exactly to `578bc651a4d2b3faaea21310105ec5aa931f784e`, containing reviewed D5
+  commit `8bdc375cc34116d1293f2ee4074bd486e184a434`. It was merged
+  noninteractively as `345b947eb33f228edac732b8573b64cf731aec21`, with parents
+  `1e1c65238ea2a9e8bac5a7fc548c507a8a2ec59a` and
+  `578bc651a4d2b3faaea21310105ec5aa931f784e`. The merge completed without
+  conflicts; both owners' index rows were preserved.
+- D5 is now a delivered dependency: production still fixes the operator update
+  input to `DEFAULT_UPDATES_PATH`, while a test-only seam drives isolated real
+  route tests. Those tests prove authenticated resolver consumption, exact
+  operator/effective projections, fail-closed invalid or unreadable documents,
+  redaction, and the unchanged rule that omitted and explicit-null
+  `update.source` values both clear the effective override to baked while
+  remaining distinct in the raw operator projection.
+- Updated campaign disposition: **one downstream-dispatchable backend slice,
+  `FLEET-CONFIG`, covering two historically valid obligations**. It has a real
+  offline-input → resolver → authenticated-status consumer chain. C2 still has
+  zero production implementation authorization; L2 must instantiate a separate
+  implementation L3 that first merges current local `bkd/58sdocnk`. All
+  application slices, fleet client/report/runtime/buffer work and UI remain
+  deferred, decision-dependent or excluded.
+- Exact future source ownership is limited to the configuration resolver and
+  the existing APID status path/test seam. No new shared build, rootfs, signing,
+  verify, packaging, publication or expensive-resource handoff is needed for
+  that exact slice. Any such expansion requires a new L1 handoff.
+
+### D5 dependency refresh verification
+
+- `make docs-verify` — PASS (log:
+  `/tmp/mos-c2-d5-sync-docs-verify.log`): index 195/195, links 509/509,
+  truth-status 724/724, Chinese coverage 249/249 and board dossier 131/131.
+- `git diff --check` — PASS (log:
+  `/tmp/mos-c2-d5-sync-diff-check.log`, empty apart from command metadata).
+- Bounded assertions — PASS (log:
+  `/tmp/mos-c2-d5-sync-assertions.log`): 65/65 unique obligations with the
+  unchanged 20/10/20/15 split, exactly two decision briefs, exactly one
+  downstream-dispatchable candidate row, exact D5 ancestry, and only the two
+  C2 records in the authored working diff.
+- PMA-CR documentation self-review — PASS with no blocking, high or medium
+  finding: D5 evidence is separated from the baseline matrix, the one
+  dispatchable slice has an actual caller and exact paths/test contract, absent
+  fleet behavior remains labeled proposed, and no implementation, activity
+  state, network, secret, key, UI or shared publication grant is claimed.
+- No Rust/Bun, image, QEMU, board or power-cut matrix was run or claimed for
+  this documentation-only refresh.
