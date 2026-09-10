@@ -931,9 +931,31 @@ passed on 2026-09-10 (19:16:56Z..19:31:44Z), including full ARM64 kernel/object
 integration, resolved config, compiled DTB and retained-logo/call evidence.
 Exact hashes and warning limitations are in the integrated acceptance detail.
 This is not a newly signed FIT/support component or complete flashed image.
-The input audit found that both known CX packed roots predate the final zero
-application-quota policy; an admissible current root and source-bound native
-init must be supplied before new composition and candidate-specific gates.
+The earlier input audit rejected both known CX packed roots because they predate
+the final zero application-quota policy. The subsequent exact L1/L2 handoff
+authorizes a new root at `9d1218e2689eb5e3fce99ad1736f3a1fdc8c8801` and
+selects the source-equivalent development native init. The six policy/board
+producers passed on 2026-09-10T20:29:32Z..20:31:34Z, including the actual packed
+current layout script. The five native producers then passed at
+2026-09-10T20:48:22Z..20:57:03Z; all 14 selected package archives are present,
+with dependency warnings preserved. The first root gate failed before
+installation when a pinned archive download reached its 600s ceiling. All 173
+required upstream cache inputs were subsequently verified for authorized
+recovery retry 2. That gate emitted a new current-layout root (254 MB against
+the 400 MB installed-size budget), then terminated at 2026-09-10T21:48:19Z,
+exit 2, before mandatory smoke execution: the task-owned OCI load-copy editor
+corrupted its copy. The original OCI remains readable, SHA-256
+`d23db6942e49b002aee615d60027a962eaf4752097d09755a7eae55529365f5f`;
+the emitted verity image is
+`1ff6626307d43294aa6c01777ce1e2a8c0478e06d9630e9f890a87545f662569`.
+Read-only extraction confirms the current layout/public defaults, private
+container paths and no-autologin getty template; it is not runtime enforcement,
+login or workload evidence. A4's linked detail records exact artifact and
+failure identities, warnings and an unimplemented adapter recovery proposal.
+Both retries are exhausted: composition is blocked pending L1's concrete
+decision through L2. Smoke, signed root/support/FIT, fresh records, full image
+and candidate-specific verifier checks remain open. This is not an image ready
+to flash or a physical qualification result; the two old roots remain inadmissible.
 
 journald is volatile. Capture each boot's journal and serial trace before
 rebooting; a later collector invocation cannot recover the previous journal.

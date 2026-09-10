@@ -15,7 +15,7 @@ without relabelling its dirty-stamped build or duplicating implementation.
 
 ## ActiveForm
 
-Completed collector and coherent kernel evidence; complete-image composition and physical qualification remain blocked by the inputs below.
+Completed collector and coherent kernel evidence; composition is blocked after recovery retry 2, pending L1's concrete recovery decision. Physical qualification remains blocked.
 
 ## Dependencies
 
@@ -23,6 +23,513 @@ Completed collector and coherent kernel evidence; complete-image composition and
 - **blocks**: Workstream A integration review and workstream D final reconciliation.
 
 ## Notes
+
+### Authorized composition continuation — 2026-09-10
+
+Phase state: blocked pending L1's concrete recovery decision, owned by
+`bkd/1zjiu5h5`. Recovery retries 2 of 2 are exhausted. The completed task/index
+status above preserves the earlier collector/kernel delivery; it does not claim
+that this new candidate exists or passes. The PMA serializer has no reopen
+operation, so this continuation is a content update under the explicit L1/L2
+handoff, not an invented status transition or a second task. Composition began
+with recovery count 1. The subsequently authorized archive-acquisition recovery
+below consumes recovery retry 2, the existing maximum; no automatic retry 3.
+
+The exact L1 source/input handoff delivered through L2 authorizes a new CX3576
+development root and signed-file composition using existing recipes read-only.
+The clean branch was fast-forwarded to local L2 commit
+`9d1218e2689eb5e3fce99ad1736f3a1fdc8c8801`, tree
+`0a1c2b4ddd86945961da16cc6d4d268e636f2273`, identical to the previous A4 final
+tree. No main, sibling or remote branch was imported. The earlier root/native-init
+input blocker is resolved by this authorization to build the current root and
+reuse the explicitly selected source-equivalent native init; the two rejected
+old roots remain rejected and their historical audit below remains unchanged.
+
+Immutable, self-contained checkout and staging:
+`/srv/station/work/tmp/mos/1zjiu5h5/composition-20260910-2026-z2Ljld/`.
+`source/` has its own Git object database, no alternates, exact HEAD/tree above
+and a clean tracked/untracked state. `evidence/source-files-before.txt` records
+all tracked modes/blob identities (SHA-256
+`79f1af52e60640a0fa772ea6a0d632e4a61cf39f5c8ab9b08f78b817040d8b33`).
+The only public defaults input is `inputs/meta/updates/manifest.json`, copied
+byte-identically from this commit, SHA-256
+`a30e535b37d8ab32d62d21f118dd610d102584c214375cf229353e0ab474ce00`.
+There is no GENERATED marker, endpoint override or signing key in that input.
+
+Existing pools report stamps `git5c61f7fbb558.dirty-1` (approved S905 snapshot),
+`git97bb466792ca-1` (original main output), and `gitd64b23a7d92a.dirty-1`
+(CX storage-display snapshot). `rootfs/build.sh` requires the pool's one stamp
+to equal this checkout's `git9d1218e2689e-1`; these archives cannot be copied or
+renamed into a passing current pool. Only the selected producers will be
+rebuilt, serially, without weakening stale-source/index/ownership checks.
+
+First package gate: the five selected architecture-independent producers
+`system`, `profile`, `ca-trust`, `wifi`, `bluetooth`, then `board-cx3576` for
+ARM64. Existing `build-env/deb/preflight.sh --producer NAME` and
+`build-env/deb/build.sh --producer NAME --arch all|arm64` remain unchanged.
+Their `all` outputs also populate the private amd64 pool by recipe; that is one
+archive exported twice, not an x64 build matrix. The remaining selected native
+producers, new root, support/FIT/records/image and exact-candidate gates follow
+serially after result collection. No full-image or hardware pass is implied by
+this first partial pool.
+
+The passed kernel remains bound to `38a362cd`, not the documentation/source
+sync commit. The selected native init remains the original development binary
+`33e66fbc63ee8353f0ddcee33cd53fdc504ec146824f9ad02d3d3d9329fffd5d`
+with approved #313 source-content equivalence. Firmware and signing input
+admission follow the exact handoff; no key generation or firmware rebuild is
+authorized. A-baseline composition does not include pending B/C product changes.
+
+PMA Bun/Rust acceptance baselines apply to package provenance, pinned tools,
+compiled dependencies and artifact checks; unchanged product code is not being
+refactored or declared production-ready. New executable product behavior is
+absent in this phase, so new product RED/GREEN is not applicable; the earlier
+collector RED/GREEN is retained. All 38 mandatory CX physical rows, S905 physical
+obligations and original-device reboot remain unqualified. A coordinates and A4
+integrates; device/operator/endpoint/current-image/power inputs are unconfirmed.
+Historical D5 remains optional and nonblocking. D owns global reconciliation.
+
+Checkpoint review: pma-cr local review of the actual two-document delta and
+external gate/resource wrapper found zero reportable issues (PASS). Product
+source is unchanged. `bash -n` passed for both external scripts; all six existing
+producer preflights passed (23 examined inputs total); `make docs-verify` and
+scoped `git diff --check` passed. The documentation log is
+`evidence/docs-composition-checkpoint.log`, SHA-256
+`8a05e614b6a6f3057988dc2ab915a7d38c1dca9b9fb13c021799786872185216`.
+
+Prepared command: `bash /srv/station/work/tmp/mos/1zjiu5h5/composition-20260910-2026-z2Ljld/package-policy-gate.sh`.
+Script SHA-256: `6ad5386d2a3cf895db6d982c40dad99f85692671402479aa9b52513a0a9bc108`;
+invocation-only Docker wrapper SHA-256:
+`e9625db5b77d4d9d4cf59c784261c9605e301cdd0a2e6396b8f942126b8937d8`.
+The persistent-shell session is `1zjiu5h5-a3c184`; authoritative live/final
+metadata will be `evidence/package-policy-gate.json`, with PID, UTC times,
+source/tree, command, script hash and exitCode. Full output is
+`evidence/package-policy-gate.log` plus per-producer logs. This is prepared-gate
+metadata, not a claim that the package build has already passed. No old resource
+was deleted; the prior kernel evidence and build image remain preserved.
+
+### Policy package result and native package continuation
+
+The policy gate completed at 2026-09-10T20:31:34Z (started 20:29:32Z), exit 0.
+Its full log is 57,787 bytes / 853 raw newline lines, SHA-256
+`f43bf9eb5c4ac74ea0fdd78899ca42ce69d5799ed2d6d5b19e9482cdc68ac3bc`.
+Metadata and final `GATE_EXIT_CODE=0` agree; PID 1460571 is absent and the
+persistent shell has no unfinished child. A4 revalidated every entry in
+`evidence/policy-package-SHA256SUMS` (manifest SHA-256
+`a521e69191d90bc1899edfb23bcf623634cd851776b1313b92294611f272565c`),
+the clean source/tree, archive metadata and the actual packed layout script.
+The source, logs, eight ARM64-pool archives and seven identical `all` exports in
+the private amd64 pool are preserved. Native-gate preparation saves the old
+indexes separately before adding new archives and regenerating the current
+ARM64 index; no passed producer is rebuilt.
+
+| Policy archive | SHA-256 |
+|---|---|
+| mos-system | `6f4d2a45f4be398de573f0df332d4f163aa3065749a63311dbd828a4118c31cd` |
+| mos-board-cx3576 | `205120d096dcd6481597061195f834fb0e9bf00e119d89c80cbf23907ae517eb` |
+| mos-ca-trust | `95d85a6475d12e6d8102f672cf7759c393de9d634c4c5552c72a54d7e0c1e65d` |
+| mos-profile-dev | `92062c50a4a1dbeafa737c953227c445537bd3aec96ba7c80bb7a3f15e6979f8` |
+| mos-profile-prod (emitted, not selected for the dev root) | `4b1c93bc64563d0858e866d40ae00d901ab1de3ad27b04cabe0f358633b72705` |
+| mos-wifi | `58789c7038191c68cf356dd0b2c415a12fb85b09ce1564b761f9e6c6c36c9d3d` |
+| mos-wifi-ap | `b73154791419f6c628875267e47e3f355d5a71d8d54456adbc90e3d4b98c9f75` |
+| mos-bluetooth | `20c324b2430a9072d77ab723a984e779b22a83807df7d295d326f977e0a256c4` |
+
+All versions are `0.1.0+git9d1218e2689e-1`; only the board package is ARM64,
+the others are `all`. Full fields/Depends/content listings are preserved at
+`evidence/native/policy-archives-fields-and-contents.txt`, SHA-256
+`908f0a4bcfd0b3d93f77db5c4c2de617b9cf5455defa7ee355c715b1d5b4c930`.
+This partial pool is not a complete selected-pool, root or image pass.
+
+The next gate serializes the remaining selected producers `busybox`, `deploy`,
+`mosd`, `mqtt`, `podman`, all at `--arch arm64`, through the unchanged
+`build-env/deb/build.sh`. Rust builds use the existing pinned builder, locked
+dependencies, producer-private targets and four compile jobs; the APID producer
+builds its UI with the pinned Bun image and embeds that actual output. The
+unchanged UI is not a new UI implementation or a new broad UI-policy pass.
+
+The container-engine binaries are reused from the approved #313 snapshot at
+`/srv/mos/tmp/s905x5m-current/source/pkgs/podman/out-arm64`, with no new upstream
+compile. A4 checked all 15 recorded `pkgs/podman/` source hashes against the
+immutable approved source record and current checkout, the seven binary hashes,
+their AArch64 ELF headers, and their byte identity to the original approved
+`mos-podman_5.8.6+git5c61f7fbb558.dirty-1_arm64.deb` (SHA-256
+`eebb5681924737cf46f2028add1b3666e17bc682a8c84db7b28918f481de5e1b`).
+The versions-lock digest is
+`89c2b2b5934ab24205dbbf6f614f36c87ea33666f7cd928ff60bb2111707de98`.
+Only these binary outputs and their original manifests were copied into the
+private output directory; no source or old Debian archive was imported.
+The new package will retain this explicit inherited binary provenance while
+packaging the current configuration at the new exact source stamp.
+
+Input audit: `collect-policy-and-native-inputs.sh`,
+2026-09-10T20:38:19Z..20:38:24Z, exit 0; log
+`evidence/native/input-audit.log`, SHA-256
+`8516b9018828fc13411bbee1f78672f368abd97ef3e19ca9708148ff9cb5ee36`.
+Four generic producer preflights passed, and the selected ARM64 podman hook
+reports 8 examined inputs, 0 missing, 0 warned. No native-init fallback was used.
+
+The prepared next command is `bash /srv/station/work/tmp/mos/1zjiu5h5/composition-20260910-2026-z2Ljld/package-native-gate.sh`.
+Its authoritative metadata/log are `evidence/native/package-native-gate.json`
+and `evidence/native/package-native-gate.log`; the same persistent-shell session
+is reused. The gate checks selected archive stamp, ELF/loader/NEEDED metadata,
+non-directory ownership across all 14 resolved CX dev packages, and unchanged
+source/tool identities. Runtime dependency resolution still belongs to the new
+root build and smoke gate. `tests/deb-package-gate.sh` has no selected-board or
+single-architecture mode: its all-board/two-architecture reproducibility matrix
+is not claimed by this scoped package inspection and is not weakened or edited.
+No root, FIT, signed records, full image or physical result exists yet.
+
+Checkpoint review: pma-cr shared policy, PASS with zero high-confidence findings
+in the three-document delta and task-owned gate orchestration. No product or
+collector behavior changed, so no new RED/GREEN result is claimed. Shell syntax
+checks passed for the native gate, Docker wrapper and input-audit script;
+`make docs-verify` passed at 2026-09-10T20:47:26Z..20:47:28Z, exit 0, log
+`evidence/native/docs-native-checkpoint.log`, SHA-256
+`8a05e614b6a6f3057988dc2ab915a7d38c1dca9b9fb13c021799786872185216`.
+Scoped `git diff --check` passed. Native gate script SHA-256:
+`d8f8210f4be530cc89b6440374785c5cce31338b54565c841c1b40e067d7fd4c`;
+invocation-only wrapper SHA-256:
+`06937c5684ce5609ca80827db639bc1bd7eb5e267f53d6e37b8723ae90bbbfd5`.
+
+### Native package result and current root continuation
+
+The native gate completed at 2026-09-10T20:57:03Z (started 20:48:22Z), exit 0.
+A4 revalidated the full log (71,933 bytes / 1,491 raw newline lines, SHA-256
+`0f2909d425c12eccb59c2fd1dc71932fb9125080a56160badb4dfd4c15311db4`),
+script/metadata agreement, every entry of `evidence/native/native-pool-SHA256SUMS`
+and the unchanged `9d1218e2` checkout. That checksum manifest is
+`0eeb2f7f828004358d4e24cb10bec84934348801e9e92fb88fb6d8a6ac6493db`;
+`native-pool-manifest.txt` is
+`ef2a2f9e0d8e7dd94e15607f721b0ac6e9c008625e9b83cb0f8f32a43b749afc`.
+There are 15 archives, with exactly 14 selected for the CX dev root; the extra
+prod profile is not installed. No selected non-directory ownership collisions
+were found. The native ELF/control/dependency record is
+`evidence/native/native-archives-fields-and-elf.txt`, SHA-256
+`22098d3abde7ab6215769332e552304798899fa1cbff849f9a8f4b0f8f1417d3`.
+
+| New ARM64 archive | SHA-256 |
+|---|---|
+| mos-busybox | `ee631f2bd99bb69bb5f3966bf8038b0e07ca4e5f168482e5a13198bfa26d06eb` |
+| mos-deploy | `3076c9fb30df3e396c087f50a40f8a7a12dab53436ec01769a42b4df681620ca` |
+| mosd | `7fc6d71f6e7c276adbcdc1a1ad3f797ddcb1b48c478605110df5315b9b32bf9f` |
+| mos-apid | `c683efe0c532cc995355cee4e0d1a512814197b49de7a14d6b3eae45167561cf` |
+| mos-mqttd | `25525c029d3fa3ac696ed6c39e5037a8257fd8c4fa50b5577cd7b45f44438ec4` |
+| mos-mqtt-broker | `1565103a51b1af1c784c79ce65919f8141e9a35831cf95987ceee9fe832b9e61` |
+| mos-podman | `7c99640f84705350229d7a05d69ebfa797b12eae03a414d74c5e8cc4863c213a` |
+
+All carry stamp `git9d1218e2689e-1`; podman's upstream version is `5.8.6`,
+the other package versions are `0.1.0`. The original seven container-engine
+binaries retain their explicitly inherited provenance above. The compiler
+record reports target `aarch64-unknown-linux-gnu`, ELF architecture `aarch64`
+and embedded commit `9d1218e2689e`; its SHA-256 is
+`24f98efc3a892f4ef6d7dbe7482d6ce1d520cd612ac9d4d1ce7aba5b424fc603`.
+The actual UI-output checksum manifest is
+`a4c3b5665e4413c27672ee5fa4bdb8affcdd64af3f79ea3ca29aa6aafb074f03`.
+Neither record establishes root execution or physical behavior.
+
+Warnings retained, not converted into a zero-warning claim: busybox packaging
+reported two `dpkg-shlibdeps: warning: diversions involved - output may be incorrect`
+lines for libc6's `/lib/ld-linux-aarch64.so.1` diversion. Podman packaging
+reported `dpkg-shlibdeps: warning: couldn't parse dynamic symbol definition: no symbols`,
+preceded by objdump's `catatonit: not a dynamic object` / relocation diagnostics.
+Actual root loader/dependency execution remains a following gate.
+
+The next command is `bash /srv/station/work/tmp/mos/1zjiu5h5/composition-20260910-2026-z2Ljld/root-gate.sh`.
+It runs the unchanged `make os-rootfs-cx3576` / `rootfs/build.sh` with
+`MOS_BOARD=cx3576 MOS_PROFILE=dev WITH_MOSD=1 WITH_CONTAINERS=1`, the committed
+`wifi bluetooth` selection and only `inputs/meta` as public defaults. There is
+no size-budget override, feature decline, stale pool bypass or smoke opt-out.
+The immutable source remains `9d1218e2`; no package or kernel rebuild is needed.
+Fresh root output is `source/_out/cx3576/`, with recipe-owned local Debian cache
+under `source/_out/debian-base/`. Root gate metadata/log are
+`evidence/root/root-gate.json` and `evidence/root/root-gate.log`; the build log
+is `evidence/root/root-build.log`. The gate checks source/pool immutability and
+retains root, verity, composition, debug and OCI records for final collection.
+
+Bun 1.4.0 is copied mechanically into `tools-root/bun` from the committed
+`IMAGE_BUN_1` digest, rather than installed globally. Binary SHA-256:
+`33d56b070be6a9e3da0ab013038b43d1645d0534ca811ecdba4472599117eb4b`.
+Docker invocations carry task labels/names and narrow mounts. The existing
+shared factory-root alias is preserved: a separate `evidence/root/load-copy/`
+OCI archive changes only index name annotations to
+`ai-agent/mos-a4-factory-root:cx3576-9d1218e2`. Original output bytes stay intact;
+manifest/layer content digests, both archive hashes and annotation mapping are
+checked/recorded. The existing smoke verifier still identifies and executes the
+image by the original content digests, with its original failure semantics.
+The task wrapper's metadata-only archive operation passed a focused host fixture;
+that fixture is not a root, loader, device or hardware test.
+
+Actual new-root inspection must still establish the packed layout hash
+`683ce0839962ae2cf8f016e05f7d6fcde27bc6ffe39dda58b42bdbd676ae3414`,
+whole writable bounded `/var`, zero byte/inode application limits, private
+container storage/tmp binds, reset isolation, authenticated tty2, installed
+units/tools and loader closure. Support/FIT/signatures/fresh records/full image
+and candidate-specific negative/readback/offline checks remain subsequent work.
+The pending reviewed C.D4 endpoint verifier is a separately identified tool for
+this actual candidate after L1's exact handoff, not a dependency of root
+construction or a reason to import C payload. Its S905 sample cannot qualify
+this candidate. All physical rows and NPU ownership remain unqualified; optional
+historical D5 remains nonblocking. Earlier completed collector/kernel tracking
+and the composition phase's in-progress state are preserved.
+
+Root checkpoint review: pma-cr shared-policy review of the actual three-document
+delta and private orchestration, PASS with zero high-confidence findings.
+No product or collector behavior changed; new product RED/GREEN is not claimed.
+`bash -n root-gate.sh bin-root/docker` and the metadata-only archive fixture
+passed. `make docs-verify` passed at 2026-09-10T21:10:00Z..21:10:02Z, exit 0,
+log `evidence/root/docs-root-checkpoint.log`, SHA-256
+`8a05e614b6a6f3057988dc2ab915a7d38c1dca9b9fb13c021799786872185216`.
+Scoped `git diff --check` passed. This review does not pre-approve root results
+that do not yet exist; gate startup and terminal metadata remain separate.
+
+### Root acquisition failure and authorized recovery retry 2
+
+The first root gate ran at exact `9d1218e2` from
+2026-09-10T21:11:38Z to 21:21:41Z, exit 2. The 15-archive pool and 14-package
+CX dev resolution passed, but the first missing runtime archive acquisition
+hit the unchanged 600-second ceiling:
+
+```text
+debian-base: error: download exceeded the 600s ceiling and was killed: https://snapshot.debian.org/archive/debian/20260905T000000Z/pool/main/a/adduser/adduser_3.152_all.deb
+make: *** [Makefile:70: os-rootfs-cx3576] Error 1
+```
+
+No root installation, pack, smoke or signed candidate completed. This is an
+acquisition failure, not a demonstrated package, kernel or hardware defect; the
+evidence does not distinguish network delay from a stalled download process.
+The full `evidence/root/root-gate.log` is 1,158 bytes / 28 raw lines, SHA-256
+`277d9af70aa8492387077de85a07a1d2b6609929ba25056a33bb5723972d72f9`;
+`root-build.log` is 802 bytes / 22 raw lines, SHA-256
+`f9e6adc21ef42c604c563666acbf7521585ad1c48232e2f876fe113434daa788`.
+Original script, wrapper, terminal metadata and logs remain unchanged, bound by
+`evidence/root-recovery-2/failed-gate-SHA256SUMS`. The three partial output files
+(package selection and public-meta copies) are preserved, with their paths and
+hashes recorded, by moving only the owned `source/_out/cx3576/` directory to
+`evidence/root-recovery-2/failed-root-output/`. Nothing from an external cache
+was moved or deleted; the private cache's original helper is preserved.
+
+The L2 recovery dispatch explicitly authorizes retry 2 in this same issue and
+requires a changed input condition. The current manifest renderer selects 172
+ARM64/all runtime archives plus one debootstrap helper. All 173 exact inputs
+were found and verified before copying: 172 from
+`/srv/mos/tmp/s905x5m-current/source/_out/debian-base/debs/`, plus the already
+valid helper in the private cache. The other two allowed cache locations were
+not needed for recovery. Validation checks current-lock SHA-256, Package,
+Version and Architecture. The strict lock schema has no separate size field;
+after cryptographic identity verification, actual byte sizes were measured and
+required equal at the destination. Total selected bytes: 53,411,310.
+
+The failed `adduser` input is version `3.152`, architecture `all`, 190,932 bytes,
+SHA-256 `e50984d2e1ef6300e3fd51303839842189a077b10cb5cadff1923df10c61c493`.
+Its current `rootfs/debian/packages/adduser.json` hash is
+`8249577c1771167a46649d522108d9a4d043e242577904b4c24ec8fce6dee520`.
+Only validated Debian upstream archives were copied to the existing supported
+`source/_out/debian-base/debs/<sha256>.deb` locations, under the cache lock.
+No old MOS package, root, image, source or signing input was imported or relabelled.
+
+Recovery evidence under `evidence/root-recovery-2/`:
+
+| Evidence | Result / SHA-256 |
+|---|---|
+| `cache-recovery.log` | `timeout 45 bash cache-recovery-2.sh`, 2026-09-10T21:34:58Z..21:35:04Z, exit 0; `3f851b0f2f21c5cf287aa5226054569664a000bf9f15a1be0600c3a1d27110b7` |
+| `cache-copy-map.tsv` | 173 per-archive source/destination/lock/version/architecture/hash/size mappings; `e34b9ce84d35dd6d0b51599b1fbefc9fe5766cb2106b87449385f2ed2a6ae2e8` |
+| `recovered-cache-SHA256SUMS` | All destination hashes revalidated; `e7468fd99b57c19d748c4fe80e69d77ca5094e9afd16a1ed32ab9e05c0674112` |
+| `cache-verify.log` | Original `rootfs/debian/docker.sh verify --arch arm64 --packages evidence/native/resolved-packages.txt`, pinned labeled container, network disabled, 21:35:41Z..21:35:43Z, exit 0; `e469e9166d1797f2f2d9740650ae9e31f9f1b6be5afc7ed8d3d5c4fc6f33aca1` |
+
+The unchanged verifier reports 172 runtime packages and also checks the helper.
+This is a complete acquisition-input pass, not a root or runtime pass. No blind
+network replay was needed; the original snapshot/version/hash pins and 600s
+ceiling remain unchanged. Policy/native/kernel gates remain valid and unrerun.
+
+Prepared recovery command:
+`bash /srv/station/work/tmp/mos/1zjiu5h5/composition-20260910-2026-z2Ljld/root-recovery-2-gate.sh`.
+Fresh metadata/log/build log are `evidence/root-recovery-2/root-gate.json`,
+`root-gate.log`, and `root-build.log`; the new wrapper's load-only OCI copy also
+lives under that recovery evidence directory. The root recipe, source identity,
+selected packages, dev/radio/public-meta inputs, size/smoke gates, shared-tag
+safety and single-heavy-job limit are unchanged. Additional pre/post guards
+verify the recovered cache and immutable failed-attempt evidence. The new root
+still requires actual artifact semantics, smoke-row classification and later
+support/FIT/records/image gates. All physical/NPU rows and optional D5 retain
+their prior classifications; C.D4's exact tool handoff remains a later scan input.
+
+Recovery checkpoint review: pma-cr shared policy, PASS with zero high-confidence
+findings in the actual three-document delta and private cache/gate orchestration.
+The input recovery changes no product behavior; the recorded RED is the real
+acquisition gate above, while the cache verification is GREEN only for inputs.
+`bash -n` passed for all three recovery scripts. `make docs-verify` passed at
+2026-09-10T21:38:19Z..21:38:20Z, exit 0, log
+`evidence/root-recovery-2/docs-recovery-checkpoint.log`, SHA-256
+`8a05e614b6a6f3057988dc2ab915a7d38c1dca9b9fb13c021799786872185216`;
+scoped `git diff --check` passed. The recovery gate script is SHA-256
+`9a802f299105624a16e5bff70629ec5bfbdca9086ff1b0cc3fefe5f210b0607e`,
+and its invocation wrapper is
+`a1fc7e2561139a0c51839c36a3dc84b6766ed35bc7b52fd970a027798ee57929`.
+
+### Recovery retry 2 terminal collection — composition blocked
+
+The recovery root gate ran at immutable source
+`9d1218e2689eb5e3fce99ad1736f3a1fdc8c8801`, tree
+`0a1c2b4ddd86945961da16cc6d4d268e636f2273`, from
+2026-09-10T21:39:53Z to 21:48:19Z, exit 2. Command:
+`bash /srv/station/work/tmp/mos/1zjiu5h5/composition-20260910-2026-z2Ljld/root-recovery-2-gate.sh`.
+The script hash remains `9a802f299105624a16e5bff70629ec5bfbdca9086ff1b0cc3fefe5f210b0607e`.
+Its metadata and actual final `GATE_EXIT_CODE=2` agree. Under
+`evidence/root-recovery-2/`, `root-gate.log` is 88,886 bytes / 1,357 raw lines,
+SHA-256 `ffaa21625a4b9f65a0a648e8cc71ea67e8f4402c418c197cd731a8a49e2cdb1b`;
+`root-build.log` is 88,530 bytes / 1,351 raw lines,
+SHA-256 `f73c15a4905ece781335abe494d9258fcde8d6a6f64fbc4a4093ce7fed011c44`.
+PID 1651526 is absent. This is a terminal RED, not a successful root gate.
+
+Cache recovery did work: the original recipe reports 172 packages verified,
+zero archives downloaded, 68 bootstrap packages installed, and 14 local packages
+composed into a 186-package root. Both `10-compose` and `90-pack` emitted
+outputs; their stage content hashes are respectively
+`6196ed100a05dae8933fe89f031a12442118ad6bf855620eeac585b20458e335` and
+`c54d255aadd41069f633a9d312abb4cd5b259d18e68c4d6497613cfb28a2f796`.
+The recipe passed its 254 MB installed-size / 400 MB budget check, then the
+mandatory smoke path stopped before executing any packed binary:
+
+```text
+error: docker load -i .../source/_out/cx3576/factory-root.oci exited 2: tar: Skipping to next header
+tar: Exiting with failure status due to previous errors
+make: *** [Makefile:70: os-rootfs-cx3576] Error 1
+```
+
+#### Emitted bytes, not a signed or runtime-qualified root
+
+Read-only terminal evidence is under `evidence/root-terminal-collection/` in
+the same private composition directory. The eight-file
+`emitted-artifact-SHA256SUMS` has SHA-256
+`591ab92e2308b1d2c9dc070c96dcd73a505405d19fc2625c787aa4a7c2071b5d`.
+The original archive, failed copy, scripts and full logs were rehashed before
+and after inspection; no failed evidence, cache, pool or source was overwritten.
+The source remains tracked-clean; its post-collection tracked-file manifest is
+byte-identical to `source-files-before.txt` (`79f1af52...d8b33`).
+
+| Emitted artifact / member | Bytes | SHA-256 |
+|---|---:|---|
+| `source/_out/cx3576/factory-root.oci` | 87,746,048 | `d23db6942e49b002aee615d60027a962eaf4752097d09755a7eae55529365f5f` |
+| `source/_out/cx3576/rootfs-verity.img` | 76,947,456 | `1ff6626307d43294aa6c01777ce1e2a8c0478e06d9630e9f890a87545f662569` |
+| Squashfs prefix of that image (not a separately emitted file) | 76,337,152 | `00f9ef0994a2249c65f353e040f0e4de5abaae46842a47949b8006f4efad1f0a` |
+| OCI manifest blob | 566 | `1cfe2b6af1505f84fca72a956407de0ede9ea451a687e88abdabfe6277934e5c` |
+| OCI config blob | 519 | `e792668a72fda93591ea7391175b88e2d9cfcc00e6d175a3d8af02f622de380d` |
+| OCI gzip layer blob | 87,738,135 | `b81521445d696de35197f123a526fc98d7a716911ae7efad16f93de61a1e95f1` |
+
+All three original blob hashes and descriptor sizes match. The layer's observed
+uncompressed digest `30f90114a0d5c02b03a9ef4c9b770358ad29752f3057b76bd4b2a03f3521fa71`
+matches the OCI config; its labels bind ARM64/Linux content to source `9d1218e2`.
+The verity record reports SHA-256, 4,096-byte data/hash blocks, 18,637 data blocks,
+hash start block 18,637, 149,096 data sectors and fixed salt ending `0001`.
+Recorded root hash:
+`1282f27ad8be31cc941b43baccb180602a53827443f88a3ae623422ce06e28df`.
+This is emitted geometry/root-hash evidence, not a content signature, fresh
+deployment record, runtime verity test or complete SYSTEM image.
+
+The completed pack log records CJK, build-residue, disposable-var,
+extension-directory, shadow-chain and privileged-file assertions, boot export,
+debug splitting and verity generation. Twelve of 1,050 ELF files were stripped
+and their debug files exported. Retained diagnostics include mksquashfs
+`Unrecognised xattr prefix system.posix_acl_access` and
+`system.posix_acl_default`, plus Docker `InvalidDefaultArgInFrom` warnings;
+these are not a zero-warning pass. The earlier three dpkg-shlibdeps warnings
+also remain open for actual root loader/runtime assessment.
+
+Selective extraction from the original OCI, without executing its files,
+confirmed the current `mos-data-layout` hash
+`683ce0839962ae2cf8f016e05f7d6fcde27bc6ffe39dda58b42bdbd676ae3414`.
+Its project 100/102 byte and inode limits are zero; project 101 bounds variable
+data to 32..256 MiB and 2,048..16,384 inodes. Installed `var.mount` binds the
+whole `/var` privately from DATA. The separate private container bind uses
+DATA/containers, graph storage `/mos/containers/storage` and image-copy tmp
+`/mos/containers/tmp`. These installed settings support the intended isolation;
+actual mounts, quota enforcement and reset isolation are not runtime-verified.
+The actual public manifest matches input hash `a30e535b...74ce00`. Installed
+logind reserves tty2 with `NAutoVTs=0`; the extracted getty template invokes
+agetty/login without autologin. No login or VT switch was executed.
+
+The 16 extracted files have checksum manifest `packed-file-SHA256SUMS`, SHA-256
+`7b6cf661942693499dc49ccf77bbc4b850d963a653850c5cce1a0ae73f34d0e1`.
+Actual packed ELF hashes are: mosd
+`c51f63b2cfcd3ea385ed454d457eb3bfae2c43ba0bd7cccbfc5bf310fec570c5`, apid
+`8ebf33df0f439ebcb384c2cd3f560825084e2330d1a9504b8e326fb7118d29ef`, and mos-mqttd
+`44961a4f53b1d702e7450cc6cb4c3c3a010343ff46f0ac361cc38e06566e23f0`.
+Readelf identifies all three as ELF64 AArch64 with interpreter
+`/lib/ld-linux-aarch64.so.1` and NEEDED libc, libm and libgcc_s. Reading those
+fields is not loader resolution, execution or the pending C.D4 endpoint scan.
+
+#### Adapter failure boundary and proposed recovery (not implemented)
+
+The original OCI lists all seven members with exit 0 and valid header checksums.
+It contains only two directories and five regular files, including the three
+content-addressed blobs; there are no outer links or sparse members. The failed
+load-only copy is 87,746,560 bytes, SHA-256
+`83e4c61d449047d3b01e40707ce6cff680f4755155ca6ea293eabd4340fafa27`.
+Its `tar -tf` exits 2. Read-only byte comparison proves:
+
+- The first difference is byte 87,735,808 (512-byte block 171359), inside the
+  gzip layer, before the requested index edit. That original block is absent
+  from the copy; the following bytes through the config move 512 bytes earlier.
+- The unchanged layer header still declares 87,738,135 bytes. Reading that
+  declared payload from the copy hashes to
+  `98c375c82c2618eddb81c34ddbeeb5b41136578ecbd34923cb9b741b7b1aae81`, not its
+  content-addressed name. The config header moves from block 171370 to 171369,
+  inside the preceding member's declared span, so tar misses it as a member.
+  The config bytes at their shifted position still hash to the correct digest.
+- The original index was removed and the 651-byte replacement is present at
+  block 171374. No `members-*` or final checksum file was produced. With the
+  wrapper's `set -e`, this places failure in the edit/append path before its
+  final validation and real `/usr/bin/docker load` at line 62.
+
+The implicated owned adapter is `bin-root-recovery-2/docker:48-50`: copy,
+`tar --delete`, then `tar --append`. GNU tar is 1.34. The original archive has
+171,379 blocks (19 modulo 20), while the failed copy has 171,380. These measured
+boundaries locate the corruption; they do not establish the internal tar
+implementation cause or prove product-root corruption. The previous small
+namespace fixture did not cover this emitted archive boundary and did not
+protect against this failure. Full raw headers and slice-equality results are
+in `tar-boundary.json` and `tar-relations.json`; the latter has SHA-256
+`54e34f9093311c5d31d3e26d144f6d2a6b67f20bf0f023558d767fcd511a00e4`.
+
+Minimal proposal for L1 through L2: replace only the task adapter's in-place
+edits with a fresh load-only archive reconstructed from this readable original,
+preserving every original member's content and metadata except the two approved
+index tag annotations. Before any load, compare member sets, header validity,
+descriptor sizes, all blob hashes, unchanged annotation fields and original
+archive hash. Use the actual large-member/tail boundary as the RED fixture,
+then prove reconstruction GREEN; a tiny regular-tar fixture is insufficient.
+This is structurally suitable for the observed simple seven-member OCI, but
+Docker acceptance remains untested. If approved, run the unchanged smoke entry
+against the original root record with content-digest identity and task-only tag
+isolation; refuse tag-only identity as exact evidence. No package, kernel or
+root rebuild is justified by this adapter defect. No correction, new archive,
+Docker load, smoke run or retry was performed during terminal collection.
+
+Composition is BLOCKED: retries 2 of 2 are exhausted, and L1's concrete recovery
+decision must arrive through L2 before further execution. Root smoke, actual
+loader/service/device closure, signed root/support/FIT, fresh records, full-image
+layout/signature/negative/readback gates and the exact C.D4 candidate scan remain
+open. All mandatory CX/S905/original-device hardware rows remain unqualified;
+A coordinates, A4 integrates, and physical operator/bench/current-image inputs
+are still missing. NPU ownership is OPEN; historical optional D5 is nonblocking.
+Heavy jobs: zero. The idle persistent shell 1460561 / `1zjiu5h5-a3c184` and all
+source, package, cache, build, archive and failed evidence resources are preserved.
+No running labeled container was observed; nothing was deleted or retagged.
+D's history note is this partial packed-root milestone and adapter blocker,
+not completed composition or a hardware qualification.
+
+Terminal review: pma-cr shared-policy review of the actual three-document delta
+is PASS, with zero new documentation findings. The separate owned adapter has
+one confirmed HIGH data-integrity finding at `bin-root-recovery-2/docker:49-50`
+(WARNING); it remains explicitly unfixed pending L1, and the earlier fixture
+PASS is not an actual-archive acceptance. No new executable change or GREEN
+recovery is claimed. `timeout 30 make docs-verify` passed on
+2026-09-10T22:14:20Z..22:14:22Z, exit 0; terminal evidence log
+`docs-terminal.log` SHA-256
+`8a05e614b6a6f3057988dc2ab915a7d38c1dca9b9fb13c021799786872185216`.
+Scoped `git diff --check` passed. This review/gate qualifies documentation only.
+
+### Original collector/kernel tracking
 
 - Campaign: `mos-open-plans-20260910-100408`; issue: `1zjiu5h5`; coordinator: `6064wf7l`.
 - Full-tier approval and scoped local commits were supplied by the campaign dispatch. Compatibility, migrations, RAUC, raw-slot and old-package support are excluded.

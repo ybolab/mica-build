@@ -82,7 +82,7 @@ the named board and physical observations.
   unconfirmed. The available A kernel gate is independent of future reviewed
   B/C integration, which is not imported or treated as source-identical.
 
-## Final bounded outcome
+## Earlier bounded outcome — retained chronology
 
 Collector correction and evidence delivery are complete. The coherent kernel
 gate at `38a362cd3ce46bab6d1f04489503dca9b92b664c` passed on
@@ -100,3 +100,81 @@ FIT and deployment records then require their own exact-candidate gates. No
 image, firmware, x64/virt-arm64 matrix or the passed kernel was rebuilt merely
 for documentation. This completes the bounded software/evidence deliverable,
 not exact-image composition or any of the mandatory physical rows.
+
+## Authorized composition phase — blocked pending L1 decision
+
+The subsequent exact L1/L2 source/input handoff resolves the earlier current-root
+and native-init dependency. It authorizes read-only execution of the existing
+recipes at `9d1218e2689eb5e3fce99ad1736f3a1fdc8c8801` in a private,
+self-contained clean checkout, not B/C source integration or product edits.
+The completed status above retains the earlier outcome; the new phase state is
+recorded here and in the paired task without fabricating a PMA reopen operation.
+
+1. Verify exact source and selected inputs, preserve the passed kernel identity,
+   and rebuild only selected packages whose old stamps fail current freshness.
+   First serialize system/profile/CA/radio policy and the ARM64 CX board package;
+   collect actual archive hashes, source identity, index and layout-script proof.
+2. Complete the remaining selected ARM64 producers and existing package gates,
+   then build a new CX dev root with management, containers and normal radios.
+   Verify installed current layout, units, dependencies, public defaults and
+   console/reset policy from the actual root, not the old images.
+3. Reuse the approved native init and inherited firmware with their original
+   provenance; generate new support/FIT, signatures, fresh records and full image.
+   Run exact-candidate negative/signature/readback/offline gates without importing
+   pending B/C payload. A separately pinned approved C verifier may be used only
+   as a tool with a distinct verifier identity.
+4. Review the concrete evidence and scoped docs, record exact outcomes and
+   remaining hardware rows, then commit locally for L2 integration. D owns global
+   history. One heavy job runs at a time; each detached gate is reported promptly
+   and collected by L2 before continuing. No physical action is authorized.
+
+This is the next artifact phase of the same node, not recovery retry 2. The
+paired task holds the exact private paths, command and gate metadata.
+
+Policy-package milestone collected: six producers passed at exact `9d1218e2`
+on 2026-09-10T20:29:32Z..20:31:34Z, exit 0. Their actual current layout script,
+archive/index hashes and source identity were revalidated. The next serialized
+gate builds only the remaining five ARM64 native producers and checks the
+selected CX archive set. Container-engine binary reuse was validated against
+the approved original package and pinned sources, not relabelled as a new
+upstream compile. Full root/signature/image and physical acceptance remain
+separate following stages; no full two-architecture package matrix is claimed.
+
+Native-package milestone collected: the remaining five selected producers
+passed at exact `9d1218e2` on 2026-09-10T20:48:22Z..20:57:03Z, exit 0.
+All 14 selected archives and their recorded ELF/dependency/ownership evidence
+were checked; three dpkg-shlibdeps warnings remain explicitly recorded. Proceed
+with the unchanged CX dev root recipe and mandatory smoke gate, then inspect
+actual root semantics before signed composition. No policy/native/kernel
+rebuild or new source synchronization is needed. The pending exact C.D4 verifier
+handoff gates its later candidate scan, not this root build.
+
+Subsequent root acquisition failed at 2026-09-10T21:21:41Z, exit 2: the pinned
+`adduser_3.152_all.deb` download reached the original 600s ceiling before root
+installation. L2 authorized recovery retry 2 (maximum 2). The current lock's
+172 runtime archives and bootstrap helper were then verified from exact existing
+caches and staged privately; the unchanged offline cache verifier passed.
+This demonstrated input change permits one recovery root gate, with new logs
+and preserved failed evidence. No product edit, timeout relaxation, package or
+kernel rebuild, automatic retry 3, or hardware pass is authorized or claimed.
+
+Recovery retry 2 terminated on 2026-09-10T21:48:19Z, exit 2. Cache verification
+succeeded with zero downloads; compose/pack emitted the new current-layout root
+within its 254 MB / 400 MB installed-size budget. Mandatory smoke failed before
+execution because the task's load-copy tar editor damaged a layer boundary.
+The original seven-member OCI is readable and all three blob hashes/sizes match;
+its SHA-256 is `d23db6942e49b002aee615d60027a962eaf4752097d09755a7eae55529365f5f`.
+The emitted verity image, geometry, actual layout/public-meta/ELF hashes and
+retained warnings are recorded in the paired task. They do not establish root
+runtime, signatures, a complete image or hardware qualification.
+
+The read-only diagnosis locates one missing 512-byte layer block in the edited
+copy and the shifted config header, not a proven internal GNU tar root cause.
+Proposed recovery is confined to constructing and validating a fresh load-only
+archive before the unchanged smoke, preserving original bytes and content IDs;
+it needs actual-boundary RED/GREEN and L1's concrete decision via L2. No adapter
+fix, new copy, load, smoke, gate or composition advance is authorized by terminal
+collection. Retries 2 of 2 are exhausted. Passed packages/kernel and emitted
+root are preserved, not rebuilt. Heavy usage is zero; the persistent shell is
+idle. The completed PMA status still covers only the earlier collector/kernel
+outcome; no status/index operation is made for this blocked content update.
