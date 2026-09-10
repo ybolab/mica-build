@@ -1,8 +1,59 @@
 # Changelog
 
+## Unlimited system, user and container data (2026-09-10)
+
+The [quota correction](task/20260910-0726-unlimited-application-data.md) removes byte and inode limits
+from /mos, /srv and container storage while retaining independent directories
+and project accounting. Only the variable-data project remains bounded. There
+is no aggregate quota-backed DATA reserve. Focused layout and real ext4 writes
+verify the new policy; previously delivered flash images retain their old limits.
+
+## Independent container storage and CX3576 presentation (2026-09-10)
+
+The [approved continuation](task/20260910-0616-cx3576-storage-display-cleanup.md)
+gives container images, layers, volumes and download temporary files a dedicated
+DATA directory, bind and project quota. Three bounded byte/inode budgets preserve
+the system reserve without double-counting capacity. Private mount propagation
+keeps protected state/container mounts out of physical reset paths. The HDMI
+bitmap now shows centered YBO - Hub OS with a surrounding gradient; Alt+F2 selects
+an authenticated tty2 while tty1 stays idle. Source-proven camera/TEE/Mali/IRQ,
+autofs and FIT metadata fixes are included, retaining upstream matched regdb.
+Two signed boots per x64/ARM64, all three interrupted reset tiers and 125 CX3576
+offline checks pass. Physical display, radio and accelerator qualification remains
+open; returning from the console does not yet redraw the kernel logo.
+
+## Writable var and matching regulatory database (2026-09-10)
+
+The [approved storage and regdb repair](task/20260910-0517-writable-var-regdb.md)
+binds all of /var to DATA/var, replacing per-systemd-state and var-tmp mounts.
+General variable data shares a project budget of one eighth of DATA, capped at
+256 MiB and 16384 inodes, with minimum limits of 32 MiB and 2048 inodes.
+Identity, management credentials and native metadata retain protected storage.
+The BSP exports its built-in regulatory certificates, and support packaging
+verifies the pinned upstream database/signature pair against them before
+publication. Unknown-signer and tampered-database checks refuse output.
+
+Two signed boots each on x64 and ARM64 pass new StateDirectory creation, var
+persistence, real quota exhaustion, protected reserve writes and complete exitrd
+teardown. ARM64 full-system crun execution closes the qemu-user smoke limitation.
+Build/verifier suites pass 389/645 tests; 22 Rust storage tests, fmt/clippy and
+documentation checks pass. The timestamped 1,299 MiB CX3576 image passes all 124
+offline checks, required FIT signature negatives and flash geometry. The task
+records the exact artifacts; physical board rfkill/regdb acceptance remains open.
+
 Campaign-level record, one entry per plan, newest first. Details live in the
 plan file and the task records it names; this file holds the one-paragraph
 history a reader can scan without opening either.
+
+## Latest CX3576 boot-log assessment (2026-09-10)
+
+The [new serial-log assessment](task/20260910-0350-cx3576-latest-boot-review.md) binds `_out/tio.log` to
+generation 8 of the integrated image and observes management/API startup and
+health completion. It identifies missing rfkill state storage and a confirmed
+regulatory-database signer mismatch; the matching upstream pair passes offline
+trust validation. GPU IRQ lookup and NPU/IOMMU overlap are distinguished from
+unproven hardware failures. Existing board cleanup, radio/accelerator workloads
+and reboot/watchdog qualification remain open. This is analysis only.
 
 ## Minimal BusyBox boot and shutdown feasibility (2026-09-10)
 

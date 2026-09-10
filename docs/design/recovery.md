@@ -26,7 +26,7 @@ is `pkgs/mosd/mosd/src/reset.rs`.
 | Tier | Removed or reseeded | Preserved |
 |---|---|---|
 | `configuration` | `/mos/config`; modeled settings return through first-boot provisioning | Device identity and secrets, management credential/claim/API tokens, applications and operator data |
-| `application-data` | `/mos/apps`, `/mos/containers`, `/srv`, DATA/state Quadlet and local-unit enrollments | Settings, identity, credentials, custom UI, update workspace and other system namespaces |
+| `application-data` | `/mos/apps`, the independent DATA/containers backing directory, `/srv`, DATA/state Quadlet and local-unit enrollments | Settings, identity, credentials, custom UI, update workspace and other system namespaces |
 | `full-factory` | Managed `/mos` contents, `/srv`, application enrollments and management settings/credentials | Device identity and per-device secrets; persistent service files outside the removal allowlist |
 
 Every tier preserves SYSTEM, boot records and DATA/meta lifecycle/deployment

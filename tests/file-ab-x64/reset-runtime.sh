@@ -26,6 +26,7 @@ if [ ! -e "$proof/staged" ]; then
     mkdir -p /srv/reset-content
     printf 'preserved or removed by the selected tier\n' > /srv/reset-content/file
     printf 'application\n' > /mos/apps/reset-content
+    printf 'container\n' > /mos/containers/reset-content
     printf 'custom UI\n' > /mos/ui/reset-content
     printf 'unmodeled configuration\n' > /mos/config/reset-content
     printf 'application enrollment\n' > /mnt/data/state/systemd-units/reset-content
@@ -46,13 +47,13 @@ else
     grep -F 'settings path not found: `reset`' /run/reset-intent >/dev/null || fail 'reset status unavailable'
     case "$tier" in
         configuration)
-            [ -f /srv/reset-content/file ] && [ -f /mos/apps/reset-content ] || fail 'configuration reset removed application data'
+            [ -f /srv/reset-content/file ] && [ -f /mos/apps/reset-content ] && [ -f /mos/containers/reset-content ] || fail 'configuration reset removed application data'
             [ -f /mnt/data/state/systemd-units/reset-content ] || fail 'configuration reset removed enrollment'
             [ ! -e /mos/config/reset-content ] || fail 'configuration not cleared'
             [ "$(hostname)" != reset-proof ] || fail 'hostname not reseeded'
             ;;
         application-data|full-factory)
-            [ ! -e /srv/reset-content ] && [ ! -e /mos/apps/reset-content ] || fail 'application data not cleared'
+            [ ! -e /srv/reset-content ] && [ ! -e /mos/apps/reset-content ] && [ ! -e /mos/containers/reset-content ] || fail 'application data not cleared'
             [ ! -e /mnt/data/state/systemd-units/reset-content ] || fail 'enrollment not cleared'
             if [ "$tier" = application-data ]; then
                 [ -f /mos/ui/reset-content ] && [ -f /mos/config/reset-content ] || fail 'application reset removed unrelated data'
@@ -64,7 +65,7 @@ else
             ;;
         *) fail 'unknown reset tier';;
     esac
-    for path in /mnt/data /mos /srv /var/lib/mos /var/tmp; do
+    for path in /mnt/data /mos /mos/containers /srv /var /var/lib/mos; do
         findmnt -rn -M "$path" || fail "missing reset mount $path"
     done
     [ "$(stat -c %a /mnt/data/state/mos)" = 711 ] || fail 'state parent mode changed'

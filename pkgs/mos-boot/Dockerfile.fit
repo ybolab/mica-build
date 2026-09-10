@@ -9,7 +9,8 @@ RUN set -eu; . /regdb.env; \
     curl --fail --location --retry 3 --max-time 120 "$REGDB_URL" -o /regdb.deb; \
     echo "$REGDB_SHA256  /regdb.deb" | sha256sum -c -; \
     dpkg-deb -x /regdb.deb /regdb; rm /regdb.deb; \
-    test -s /regdb/usr/lib/firmware/regulatory.db-debian; \
-    test -s /regdb/usr/lib/firmware/regulatory.db.p7s-debian
+    test -s /regdb/usr/lib/firmware/regulatory.db-upstream; \
+    test -s /regdb/usr/lib/firmware/regulatory.db.p7s-upstream
 COPY --from=fit-tools mkimage fit_check_sign fdt_add_pubkey dumpimage /usr/local/bin/
 COPY fit.sh /tools/fit.sh
+COPY regdb.sh /tools/regdb.sh

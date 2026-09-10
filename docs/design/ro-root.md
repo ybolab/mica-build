@@ -33,17 +33,17 @@ root through a newly signed deployment association.
 
 ## Writable paths
 
-See [storage](storage.md) for physical ownership, selected service binds, quotas
-and reset semantics. `/var` parents stay on read-only SquashFS; writes to an
-unlisted path fail with EROFS. `/run` and `/tmp` are volatile. `/var/tmp` uses the
-bounded DATA disposable namespace. No writable whole-var overlay exists.
+See [storage](storage.md) for physical ownership, service binds, quotas and reset
+semantics. DATA/var is bound over the whole `/var` tree and accepts new service
+directories under a byte/inode project limit. `/var/tmp` shares that budget.
+The remaining root stays on read-only SquashFS; `/run` and `/tmp` are volatile.
 
 Machine identity is durably established under DATA/state before systemd and
 bound read-only at `/etc/machine-id`; D-Bus resolves the same identity. Invalid
 or symbolic identity files are refused rather than silently regenerated. The
-random seed uses a fixed symlink to DATA/state/random-seed because systemd's
-parent-directory fsync cannot succeed through a file bind on a SquashFS parent.
-Seeding and unit dependencies ensure the target exists before random-seed IO.
+random seed uses a fixed symlink to DATA/state/random-seed, outside the general
+var quota. Seeding and unit dependencies ensure var and the protected target
+exist before random-seed IO.
 
 ## Shutdown
 

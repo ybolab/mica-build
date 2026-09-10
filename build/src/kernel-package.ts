@@ -76,10 +76,11 @@ export async function packKernel(inputs: KernelInputs, tb: Toolbox): Promise<Ker
         artifactFile(source)
         copyFileSync(source, join(firmware, name))
       }
-      for (const name of ['regulatory.db', 'regulatory.db.p7s']) {
-        docker(['run', '--rm', '--label', 'ai-agent=true', '--network', 'traefik', '-v', `${resolve(firmware)}:/output`,
-          FIT_TOOLS, 'cp', `/regdb/usr/lib/firmware/${name}-debian`, `/output/${name}`])
-      }
+      const regulatoryTrust = join(kernelDirectory, 'regdb-certs.pem')
+      artifactFile(regulatoryTrust)
+      docker(['run', '--rm', '--label', 'ai-agent=true', '--network', 'traefik',
+        '-v', `${resolve(firmware)}:/output`, '-v', `${resolve(regulatoryTrust)}:/regdb-certs.pem:ro`,
+        FIT_TOOLS, 'sh', '/tools/regdb.sh', '/regdb-certs.pem', '/output'])
       copyFileSync(join(REPO_ROOT, 'boards/cx3576/bsp/component-copyright'), join(firmware, 'mos-component-copyright'))
     }
     const support = await packSupport(join(kernelDirectory, 'modules.tar'), release, firmware, join(work, 'support'), contentSigning, tb)

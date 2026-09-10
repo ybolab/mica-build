@@ -5,7 +5,7 @@ import { verdict } from './verdict.ts'
 
 const required = ['/usr/lib/systemd/systemd', '/usr/bin/mosd', '/usr/bin/apid', '/usr/bin/mos-deploy',
   '/usr/lib/mos/mos-health', '/usr/lib/mos/mos-boot-failure', '/usr/lib/mos/mos-data-layout',
-  '/usr/lib/mos/mos-seed-state', '/usr/share/mos/manifest.tsv', '/usr/share/mos/release-identity.env']
+  '/usr/lib/mos/mos-seed-state', '/usr/lib/mos/mos-seed-var', '/usr/share/mos/manifest.tsv', '/usr/share/mos/release-identity.env']
 
 export const ROOT_CHECKS: readonly CheckCase[] = [
   ...required.map(path => ({ id: `file-root-required:${path}`, shell: { pass: `required ${path}` },
@@ -23,17 +23,47 @@ export const ROOT_CHECKS: readonly CheckCase[] = [
     },
   },
   {
-    id: 'file-root-data-policy', shell: { pass: 'DATA owns selected persistent leaves' },
+    id: 'file-root-data-policy', shell: { pass: 'DATA owns bounded writable var and protected state' },
     run: async ctx => {
       const root = await packedRoot(ctx), read = (p: string) => readFileSync(pathInRoot(root, p), 'utf8')
       const lines = read('/etc/fstab').split('\n').filter(l => l.trim() && !l.startsWith('#')).map(l => l.trim().split(/\s+/))
-      const broad = ['var', 'var-lib', 'var-cache', 'var-log'].some(name => entry(root, `/etc/systemd/system/${name}.mount`) !== undefined)
-      const binds = ['var-lib-mos', 'etc-ssh', 'usr-local-lib-systemd-system', 'etc-containers-systemd',
-        'var-lib-systemd-timesync', 'var-lib-systemd-network', 'var-lib-systemd-timers', 'var-lib-systemd-linger']
+      const obsolete = ['var-lib', 'var-cache', 'var-log', 'var-tmp', 'var-lib-systemd-timesync',
+        'var-lib-systemd-network', 'var-lib-systemd-timers', 'var-lib-systemd-linger']
+        .some(name => entry(root, `/etc/systemd/system/${name}.mount`) !== undefined)
+      const binds = ['var-lib-mos', 'etc-ssh', 'usr-local-lib-systemd-system', 'etc-containers-systemd']
+      const varUnit = entry(root, '/etc/systemd/system/var.mount')?.isFile()
+        ? read('/etc/systemd/system/var.mount') : ''
       const ok = lines.length === 2 && lines.some(l => l.join(' ') === `PARTUUID=${ctx.board.get('DATA_GUID')?.toLowerCase()} /mnt/data ext4 noatime,prjquota,x-systemd.growfs 0 2`)
         && lines.some(l => l[0] === 'tmpfs' && l[1] === '/tmp' && l[3]?.includes('size=128M') && l[3]?.includes('nr_inodes=32768'))
-        && !broad && binds.every(name => /^What=\/mnt\/data\/state\//m.test(read(`/etc/systemd/system/${name}.mount`)))
-      return [verdict('file-root-data-policy', ok, 'DATA owns selected persistent leaves')]
+        && !obsolete && /^What=\/mnt\/data\/var$/m.test(varUnit) && /^Where=\/var$/m.test(varUnit)
+        && /^Options=bind,private,nosuid,nodev$/m.test(varUnit)
+        && regularFileInRoot(root, '/etc/systemd/system/mos-seed-var.service')
+        && binds.every(name => /^What=\/mnt\/data\/state\//m.test(read(`/etc/systemd/system/${name}.mount`)))
+      return [verdict('file-root-data-policy', ok, 'DATA owns bounded writable var and protected state')]
+    },
+  },
+  {
+    id: 'file-root-container-policy', shell: { pass: 'container storage uses an independent DATA bind' },
+    run: async ctx => {
+      const root = await packedRoot(ctx)
+      const read = (p: string) => regularFileInRoot(root, p) ? readFileSync(pathInRoot(root, p), 'utf8') : ''
+      const unit = read('/etc/systemd/system/mos-containers.mount')
+      const parent = read('/etc/systemd/system/mos.mount')
+      const storage = read('/etc/containers/storage.conf')
+      const network = read('/etc/containers/containers.conf')
+      const quadlet = read('/etc/systemd/system/etc-containers-systemd.mount')
+      const ok = /^What=\/mnt\/data\/containers$/m.test(unit) && /^Where=\/mos\/containers$/m.test(unit)
+        && /^Options=bind,private,nosuid,nodev$/m.test(unit)
+        && /^Options=bind,private$/m.test(parent)
+        && /^Requires=.*\bmos-data-layout\.service\b.*\bmos\.mount$/m.test(unit)
+        && /^After=.*\bmos-data-layout\.service\b.*\bmos\.mount$/m.test(unit)
+        && wantsLink(root, ANY_UNITS, 'mos-containers.mount') !== undefined
+        && /^RequiresMountsFor=.*\/mos\/containers(?: |$)/m.test(quadlet)
+        && /^graphroot = "\/mos\/containers\/storage"$/m.test(storage)
+        && /^runroot = "\/run\/containers\/storage"$/m.test(storage)
+        && /^image_copy_tmp_dir = "\/mos\/containers\/tmp"$/m.test(network)
+        && /^network_config_dir = "\/mos\/containers\/networks"$/m.test(network)
+      return [verdict('file-root-container-policy', ok, 'container storage uses an independent DATA bind')]
     },
   },
   {

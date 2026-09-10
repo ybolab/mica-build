@@ -93,8 +93,11 @@ binds modules and firmware before systemd. Native trial records are decremented
 before launch and confirmed only by the health path. Shutdown uses a bounded
 exitramfs to release loops/mappings before their backing filesystem.
 
-Selected DATA leaves are bound into service paths. The var parent skeleton
-remains immutable; project byte/inode quotas contain bulk and disposable writers.
+DATA/var provides the writable `/var` tree under a byte/inode project limit.
+Protected identity and management state use separate DATA/state binds; project
+accounting separates container and system/user usage without limiting either.
+Only general variable data has a project quota limit.
+DATA/containers is a separate bind at `/mos/containers`.
 See [storage](design/storage.md) and [read-only root](design/ro-root.md).
 
 ## 4. Trust chain

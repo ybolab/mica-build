@@ -45,31 +45,80 @@ install_deployment() {
 for unit in systemd-repart.service systemd-growfs@mnt-data.service mos-data-layout.service mos-seed-state.service systemd-random-seed.service systemd-tmpfiles-setup.service mosd.service apid.service; do
     systemctl is-active --quiet "$unit" || fail "$unit is not active"
 done
-for path in /mnt/data /mos /srv /var/lib/mos /var/lib/systemd/timesync /var/lib/systemd/network /var/lib/systemd/timers /var/tmp; do
+for path in /mnt/data /mos /mos/containers /srv /var /var/lib/mos; do
     findmnt -rn -M "$path" -o TARGET,SOURCE,FSTYPE,OPTIONS || fail "missing mount $path"
 done
+# Logical child mounts must never appear in the raw reset backing tree.
+awk '$5 ~ /^\/mnt\/data\// { bad=1; print } END { exit bad }' /proc/self/mountinfo \
+    || fail 'logical mounts propagated into reset backing storage'
+mkdir /mos/containers/mount-proof
+mount -t tmpfs -o size=1M tmpfs /mos/containers/mount-proof || fail 'container child mount'
+awk '$5 ~ /^\/mnt\/data\// { bad=1; print } END { exit bad }' /proc/self/mountinfo \
+    || fail 'container child mount propagated into reset backing storage'
+umount /mos/containers/mount-proof
+rmdir /mos/containers/mount-proof
+echo FILE_AB_MOUNT_ISOLATION_PASS
 set -- $(stat -f -c '%b %S' /mnt/data)
 [ $(( $1 * $2 )) -gt 1073741824 ] || fail 'DATA did not grow with the medium'
-for path in /var/unlisted /var/lib/unlisted /var/cache/unlisted /var/log/unlisted; do
+for path in /usr/unlisted /etc/unlisted; do
     if touch "$path" 2>/run/immutable-error; then fail "unexpected writable parent $path"; fi
     grep -c 'Read-only file system' /run/immutable-error >/dev/null || fail "wrong error for $path"
 done
+for path in /var/unlisted /var/lib/unlisted /var/cache/unlisted /var/log/unlisted; do
+    printf 'persistent var\n' >"$path" || fail "var path is not writable: $path"
+done
+[ -f /var/lib/systemd/var-probe/ready ] || fail 'early StateDirectory service did not run'
+if [ -f /var/lib/var-persistence-proof ]; then
+    [ "$(cat /var/lib/var-persistence-proof)" = retained ] || fail 'var persistence differs'
+    echo FILE_AB_VAR_PERSISTENCE_PASS
+else
+    printf 'retained\n' >/var/lib/var-persistence-proof
+fi
+echo FILE_AB_WRITABLE_VAR_PASS
 # The service runs as root with the production bounding set.
 cap=$(awk '/^CapBnd:/ {print $2}' /proc/self/status)
 [ $((0x$cap & (1 << 24))) -eq 0 ] || fail 'CAP_SYS_RESOURCE can bypass quotas'
-if dd if=/dev/zero of=/var/tmp/quota-bytes bs=1M count=40 2>/run/quota-error; then
+set -- $(repquota -P -n -O csv /mnt/data | awk -F, '$1 == "#101" {print $6, $10}')
+[ "$#" = 2 ] || fail 'variable project quota missing'
+variable_kib=$1
+variable_inodes=$2
+[ "$variable_kib" -ge 32768 ] && [ "$variable_kib" -le 262144 ] || fail 'variable byte quota outside bounds'
+[ "$variable_inodes" -ge 2048 ] && [ "$variable_inodes" -le 16384 ] || fail 'variable inode quota outside bounds'
+if dd if=/dev/zero of=/var/tmp/quota-bytes bs=1M count=$((variable_kib / 1024 + 1)) 2>/run/quota-error; then
     fail 'root service bypassed disposable byte quota'
 fi
 grep -c 'Disk quota exceeded' /run/quota-error >/dev/null || fail 'expected project quota failure'
 printf 'state reserve\n' >/mnt/data/state/reserve-proof
 printf 'meta reserve\n' >/mnt/data/meta/reserve-proof
 rm /var/tmp/quota-bytes
-for n in $(seq 1 2200); do
-    if ! touch "/var/tmp/quota-inode-$n" 2>/run/quota-error; then break; fi
-done
+if seq 1 $((variable_inodes + 32)) | sed 's|^|/var/tmp/quota-inode-|' | xargs -n 256 touch 2>/run/quota-error; then
+    fail 'root service bypassed variable inode quota'
+fi
 grep -c 'Disk quota exceeded' /run/quota-error >/dev/null || fail 'root service bypassed inode quota'
 printf 'state inode reserve\n' >/mnt/data/state/inode-reserve-proof
-find /mnt/data/tmp -maxdepth 1 -type f -name 'quota-inode-*' -delete
+find /var/tmp -maxdepth 1 -type f -name 'quota-inode-*' -delete
+echo FILE_AB_VAR_QUOTA_PASS
+[ "$(stat -c '%d:%i' /mos/containers)" = "$(stat -c '%d:%i' /mnt/data/containers)" ] || fail 'container bind uses the wrong source'
+[ "$(podman info --format '{{.Store.GraphRoot}}')" = /mos/containers/storage ] || fail 'Podman graph root differs'
+[ "$(podman info --format '{{.Store.ImageCopyTmpDir}}')" = /mos/containers/tmp ] || fail 'Podman image downloads escaped the container namespace'
+[ "$(podman info --format '{{.Store.RunRoot}}')" = /run/containers/storage ] || fail 'Podman runtime root differs'
+podman volume create quota-proof >/dev/null || fail 'Podman named volume create'
+volume_path=$(podman volume inspect quota-proof --format '{{.Mountpoint}}')
+case "$volume_path" in /mos/containers/storage/volumes/*/_data) ;; *) fail 'named volume escaped container namespace';; esac
+printf 'named volume write\n' >"$volume_path/proof" || fail 'named volume write'
+podman volume rm quota-proof >/dev/null || fail 'Podman named volume cleanup'
+for project in 100 102; do
+    set -- $(repquota -P -n -O csv /mnt/data | awk -F, -v project="#$project" '$1 == project {print $5, $6, $9, $10}')
+    [ "$*" = '0 0 0 0' ] || fail "project $project must have unlimited bytes and inodes"
+done
+if [ -f /mos/containers/persistence-proof ]; then
+    [ "$(cat /mos/containers/persistence-proof)" = retained ] || fail 'container persistence differs'
+    echo FILE_AB_CONTAINER_PERSISTENCE_PASS
+else
+    printf 'retained\n' >/mos/containers/persistence-proof
+fi
+echo FILE_AB_UNLIMITED_DATA_PASS
+
 [ -e /run/mos/persistent-unit-ran ] || fail 'persistent extension was not loaded at startup'
 seed_inode=$(stat -c %i /mnt/data/state/random-seed)
 systemctl stop systemd-random-seed.service || fail 'random seed shutdown save'

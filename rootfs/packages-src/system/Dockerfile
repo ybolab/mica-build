@@ -154,7 +154,7 @@ ARG SOURCE_DATE_EPOCH
 RUN set -eu; \
     R=/stage/mos-system; \
     for f in mos-boot-failure mos-data-layout mos-grow-data mos-health mos-provisioning-import mos-seed-home \
-             mos-seed-root mos-seed-state mos-shadow-reconcile; do \
+             mos-seed-root mos-seed-state mos-seed-var mos-shadow-reconcile; do \
         install -D -m 0755 "/in/overlay/usr/lib/mos/${f}" "${R}/usr/lib/mos/${f}"; \
     done; \
     for f in mos-health.service; do \
@@ -163,10 +163,8 @@ RUN set -eu; \
     done; \
     for f in mos-load-extensions.service mos-boot-failure.service mos-apply-hostname.service mos-data-layout.service mos-provisioning-import.service \
              mos-seed-home.service mos-seed-root.service \
-             mos-seed-state.service mos-shadow-reconcile.service \
-             mos.mount srv.mount var-lib-mos.mount var-lib-systemd-timesync.mount \
-             var-lib-systemd-timers.mount \
-             var-lib-systemd-linger.mount var-lib-systemd-network.mount var-tmp.mount \
+             mos-seed-state.service mos-seed-var.service mos-shadow-reconcile.service \
+             mos.mount mos-containers.mount srv.mount var-lib-mos.mount var.mount \
              etc-hostname.mount etc-ssh.mount home.mount root.mount \
              usr-local-lib-systemd-system.mount; do \
         install -D -m 0644 "/in/overlay/etc/systemd/system/${f}" \
@@ -227,10 +225,9 @@ RUN set -eu; \
         "${R}/etc/systemd/system/network-online.target.wants" \
         "${R}/etc/systemd/system/sysinit.target.wants"; \
     install -d -m 0700 "${R}/root"; \
-    for u in mos-data-layout.service mos.mount srv.mount mos-seed-state.service \
+    for u in mos-data-layout.service mos.mount mos-containers.mount srv.mount mos-seed-state.service \
              mos-seed-home.service mos-seed-root.service var-lib-mos.mount \
-             var-lib-systemd-timesync.mount var-lib-systemd-timers.mount \
-             var-lib-systemd-linger.mount var-lib-systemd-network.mount var-tmp.mount etc-ssh.mount etc-hostname.mount \
+             var.mount etc-ssh.mount etc-hostname.mount \
              home.mount root.mount usr-local-lib-systemd-system.mount \
              mos-apply-hostname.service; do \
         ln -s "/etc/systemd/system/${u}" \

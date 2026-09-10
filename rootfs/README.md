@@ -321,15 +321,18 @@ separate ESP and cx3576 a fixed firmware partition. Physical DATA namespaces
 include state, meta, system/user application data and bounded disposable paths.
 The native loader establishes machine identity on DATA before starting PID 1.
 
-The root and `/var` parent tree remain read-only. Explicit mount units bind only
-allowed leaves, including service state, network state, random seed and temporary
-data. `mos-data-layout` establishes directories and project quotas before writers;
-`mos-seed-state` supplies current seeds and ownership. It creates no earlier-layout
-migration. Persistent extension units are separate from the immutable boot chain.
+The root remains read-only; DATA/var is bound over the whole `/var` tree.
+`mos-data-layout` establishes directories and byte/inode project limits before
+`mos-seed-var` copies the initial template and `var.mount` exposes it. Protected
+identity and management credentials remain on DATA/state, outside the general
+var quota. New services can use `StateDirectory=` without another bind mount.
+Persistent extension units are separate from the immutable boot chain.
 
-Bulk and disposable writers have byte and inode project limits. Service bounding
+DATA/containers is independently mounted at `/mos/containers`. Container and
+system/user projects retain separate accounting without byte/inode limits; only
+variable data has a bounded project limit. Service bounding
 sets remove CAP_SYS_RESOURCE so ordinary root services cannot bypass those quotas.
-Essential state and lifecycle metadata retain measured free space. Directory reset
+Unbounded writers can fill DATA, including space needed by state/meta. Directory reset
 uses allowlisted physical DATA paths and preserves identity and deployment records;
 it does not restore arbitrary application writes during OS rollback.
 

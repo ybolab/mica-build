@@ -123,22 +123,22 @@ that declines it should state those explicitly rather than lose them silently.
 
 ## 5. State and data
 
-The [storage policy](storage.md) defines the physical backing and approved
-writable leaves. An application must use a declared leaf or DATA namespace;
-`StateDirectory=` cannot make the immutable `/var/lib` parent writable.
+The [storage policy](storage.md) defines the physical backing and quota budgets.
+`StateDirectory=` can create persistent service state under the writable `/var`
+bind. Large application data belongs in the bulk namespaces.
 
 | Where | Purpose | Lifecycle |
 |---|---|---|
 | Approved DATA/state-backed service leaf | Small persistent service state | Survives reboot and OS updates; reset scope is explicit |
-| `/mos/apps` | Managed application data | DATA bulk quota and application reset scope |
-| `/srv` | Integrator data and volumes | DATA bulk quota; application/full-factory reset clears it |
+| `/mos/apps` | Managed application data | Unlimited DATA usage and application reset scope |
+| `/srv` | Integrator data and volumes | Unlimited DATA usage; application/full-factory reset clears it |
 | `/run` and volatile journal | Runtime files and logs | Recreated each boot |
-| Arbitrary `/var` path | No writable allocation | Writes fail unless the image declares an approved leaf |
+| `/var`, including `StateDirectory=` | Bounded persistent service data | Survives reboot and OS updates; shares project 101 with caches and temporary files |
 
-Declare the backing directory, ownership, mount dependency and verifier check
-with the package. `StateDirectory=` may initialize a subdirectory only after its
-writable backing exists. Set private state modes explicitly and avoid granting
-an application access to another service's state.
+Use `StateDirectory=` and explicit private modes for service-owned state.
+systemd adds the required mount dependency. Services using other early `/var`
+paths must likewise wait for `var.mount`. No new per-directory bind is required.
+Avoid granting an application access to another service's state.
 
 ## 6. Health and logs
 

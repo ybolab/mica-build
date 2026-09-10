@@ -1,6 +1,7 @@
 [Unit]
 Description=mosd persistent state from DATA/state
-# The immutable /var/lib parent exposes only this persistent DATA leaf.
+# Keep management state outside the bounded general var project.
+Requires=mos-seed-state.service
 After=mos-seed-state.service
 RequiresMountsFor=/mnt/data/state
 Before=mosd.service apid.service

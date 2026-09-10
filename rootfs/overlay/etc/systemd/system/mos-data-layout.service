@@ -5,7 +5,7 @@ DefaultDependencies=no
 RequiresMountsFor=/mnt/data
 Requires=systemd-growfs@mnt-data.service
 After=systemd-growfs@mnt-data.service
-Before=mos.mount srv.mount mos-seed-home.service mos-seed-root.service local-fs.target shutdown.target
+Before=mos.mount mos-containers.mount srv.mount mos-seed-home.service mos-seed-root.service local-fs.target shutdown.target
 Conflicts=shutdown.target
 
 [Service]

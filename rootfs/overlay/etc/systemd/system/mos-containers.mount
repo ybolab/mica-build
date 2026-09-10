@@ -1,0 +1,17 @@
+[Unit]
+Description=Container data with independent DATA project accounting
+DefaultDependencies=no
+Requires=mos-data-layout.service mos.mount
+After=mos-data-layout.service mos.mount
+Before=local-fs.target shutdown.target
+Conflicts=shutdown.target
+
+[Mount]
+What=/mnt/data/containers
+Where=/mos/containers
+Type=none
+# Container mounts must not propagate into the physical reset backing tree.
+Options=bind,private,nosuid,nodev
+
+[Install]
+WantedBy=local-fs.target

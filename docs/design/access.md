@@ -65,6 +65,7 @@ preferences or history rather than a mechanism.
 |---|---|---|---|
 | Network wizard (tty2 TUI; AP captive portal; HDMI local wizard via kiosk) | whitelisted network resources only; no secrets, no exec, no raw logs | per-device PIN | **not implemented** |
 | SSH (**OpenSSH**, driven by mosd) | root (see §4.1: `mos` is not a lesser privilege level) | SSH public key, persistent; optionally a **transient** root password | **prod and dev** — **shipped**, and **off by default on both** |
+| Local HDMI console (tty2) | root | Transient root password set through the management API/UI; cleared at reboot | **cx3576, prod and dev** — Alt+F2 or Ctrl+Alt+F2 starts an authenticated getty. The logo VT stays idle until selected. See [display policy](display.md). |
 | Console shell (tty3) | root | same as SSH | **not implemented.** `access.console.shellEnabled` exists in the schema with **no reconciler consuming it**, so a managed tty3 shell is unsupported and setting the flag changes nothing on the device. Use SSH explicitly enabled with an enrolled key, or a boot-time provisioning document for initial setup |
 | Serial console (`serial-getty@ttyFIQ0`) | login prompt only | `/etc/shadow`, i.e. nothing by default | **present** — spawned by systemd's getty-generator from the kernel `console=` parameter on both profiles. It has no account that will accept a credential; see §9 |
 | Rescue (all-slots-failed FIT entry) | chroot repair environment | physical access (cmdline / boot failure) | **not implemented.** There is no rescue boot entry and no offline repair environment; the emergency BusyBox binary lives in the same root that would be damaged and is deliberately not one (`docs/design/recovery.md` §6.3). An unbootable device needs an external service host or a whole-disk reflash, which replaces its data and its identity |
@@ -926,7 +927,8 @@ under `/srv`. They survive both a reboot and an A/B update, because normal compo
 |---|---|---|
 | Public configuration and settings | Preserved on DATA | Configuration/full-factory reseed; documented identity and credential survivors remain |
 | `/home`, `/root`, `/srv` | Preserved on DATA | Application-data clears `/srv`; full-factory also clears managed homes |
-| Arbitrary `/etc` or `/var` parent writes | Refused by the immutable root | No writable overlay to preserve |
+| Arbitrary `/etc` parent writes | Refused by the immutable root | No writable overlay to preserve |
+| `/var` writes | Writable DATA bind with byte/inode quotas | Retained across boots and signed root updates |
 | Approved persistent service leaves | Preserved on DATA/state | Only the selected tier's allowlist is changed |
 | `/run` and volatile journal | Lost on reboot | Not persistent state |
 | Transient root password | Cleared by the next boot's shadow reconciler | Not a persistent credential |

@@ -15,16 +15,16 @@ cat > boot.its <<'ITS'
     description = "MOS authenticated kernel package";
     #address-cells = <1>;
     images {
-        kernel { data = /incbin/("/input/kernel"); type = "kernel"; arch = "arm64"; os = "linux"; compression = "none";
+        kernel { description = "YBO - Hub OS Linux kernel"; data = /incbin/("/input/kernel"); type = "kernel"; arch = "arm64"; os = "linux"; compression = "none";
             load = <0x42000000>; entry = <0x42000000>; hash { algo = "sha256"; }; };
-        fdt { data = /incbin/("/input/board.dtb"); type = "flat_dt"; arch = "arm64"; compression = "none";
+        fdt { description = "CX3576-Z device tree"; data = /incbin/("/input/board.dtb"); type = "flat_dt"; arch = "arm64"; compression = "none";
             load = <0x52000000>; hash { algo = "sha256"; }; };
-        ramdisk { data = /incbin/("initramfs.cpio"); type = "ramdisk"; arch = "arm64"; os = "linux"; compression = "none";
+        ramdisk { description = "MOS authenticated boot and shutdown environment"; data = /incbin/("initramfs.cpio"); type = "ramdisk"; arch = "arm64"; os = "linux"; compression = "none";
             load = <0x54000000>; hash { algo = "sha256"; }; };
     };
     configurations {
         default = "conf";
-        conf { kernel = "kernel"; fdt = "fdt"; ramdisk = "ramdisk";
+        conf { description = "YBO - Hub OS signed boot"; kernel = "kernel"; fdt = "fdt"; ramdisk = "ramdisk";
             signature { algo = "sha256,rsa2048"; key-name-hint = "mos"; sign-images = "kernel", "fdt", "ramdisk"; }; };
     };
 };

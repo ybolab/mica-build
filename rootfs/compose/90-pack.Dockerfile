@@ -318,14 +318,12 @@ RUN --mount=type=bind,source=rootfs/scripts,target=/mos-scripts \
 #  - /etc/machine-id must exist and be empty: systemd cannot write it on a
 #    read-only /etc. mos-init binds the persistent DATA identity over it
 #    before executing systemd.
-#  - /var remains an immutable skeleton. Required writable leaf mountpoints
-#    exist before systemd creates service mount namespaces.
+#  - /var supplies the initial template for the persistent DATA bind. Protected
+#    state mountpoints exist before systemd creates service mount namespaces.
 RUN --mount=type=bind,source=rootfs/scripts,target=/mos-scripts \
     sh /mos-scripts/pack-tree-surgery.sh
 
-# Assert the immutable parent skeleton and every explicitly writable leaf.
-# Persistent sources live under DATA/state; disposable leaves use DATA/cache
-# or DATA/tmp under project quotas.
+# Assert the whole-var bind and protected DATA/state credential mounts.
 RUN --mount=type=bind,source=rootfs/scripts,target=/mos-scripts \
     sh /mos-scripts/pack-assert-var-disposable.sh
 

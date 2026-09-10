@@ -1,5 +1,5 @@
 #!/bin/sh
-# Keep the immutable var skeleton; only explicit runtime leaves become writable.
+# Prepare the initial var template copied to bounded DATA before its bind mount.
 set -eu
 mkdir -p /out
 mv /rootfs/rootfs-report.txt /out/rootfs-report.txt

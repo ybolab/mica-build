@@ -10,7 +10,8 @@ Conflicts=shutdown.target
 What=/mnt/data/mos
 Where=/mos
 Type=none
-Options=bind
+# Keep logical child mounts out of the physical reset backing tree.
+Options=bind,private
 
 [Install]
 WantedBy=local-fs.target

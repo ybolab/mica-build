@@ -179,6 +179,7 @@ jobs:
           SUDO=""
           [ "$(id -u)" -eq 0 ] || SUDO="sudo"
           $SUDO bash tests/mos-data-layout-test.sh
+          $SUDO bash tests/mos-seed-var-test.sh
 
       - name: The transient /etc/shadow reconciler
         run: make os-shadow-test

@@ -1,0 +1,12 @@
+[Unit]
+Description=Initialize persistent var on DATA
+DefaultDependencies=no
+Requires=mos-data-layout.service
+After=mos-data-layout.service
+Before=var.mount local-fs.target shutdown.target
+Conflicts=shutdown.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/lib/mos/mos-seed-var

@@ -12,16 +12,24 @@ available medium. Firmware and SYSTEM ranges remain fixed.
 | SYSTEM | `/mnt/system` and verified root/support mappings | At most two signed deployments, descriptors and shared component objects |
 | DATA/state | Selected service binds, `/etc/machine-id`, random seed | Device identity, credentials and persistent service state |
 | DATA/meta | `/mnt/data/meta` | Native transaction state, catalog checkpoints, firmware receipt and appliance lifecycle records |
-| DATA/mos | `/mos`, `/home`, `/root` | Managed applications, configuration, containers and user homes |
+| DATA/mos | `/mos`, `/home`, `/root` | Managed applications, configuration, update workspace and user homes |
+| DATA/containers | `/mos/containers` | Container images, writable layers, named volumes and network definitions |
 | DATA/srv | `/srv` | Operator data |
-| DATA/cache, DATA/tmp | Approved cache paths and `/var/tmp` | Bounded disposable disk-backed data |
+| DATA/var | `/var` | Persistent service state, caches, logs and temporary files under a shared project limit |
+| DATA/cache, DATA/tmp | Internal disposable paths | Share the bounded variable-data project with DATA/var |
 | Memory | `/run`, `/tmp`, volatile journal | Per-boot runtime state |
 
-The root and var parent skeleton are read-only. There is no whole `/var`,
-`/var/lib`, `/var/cache` or `/var/log` bind or overlay. Known service leaves
-include `/var/lib/mos`, timesync, networkd, timers and linger. Unit and Quadlet
-sources are bound to their existing search paths, then reloaded after DATA is
-ready. Netavark definitions use `/mos/containers/networks`.
+The root remains read-only. DATA/var is bound over all of `/var`; services can
+create new state directories without a separate mount per service. On first
+boot `mos-seed-var` copies the packaged var template after quota setup, preserving
+ownership, modes and symlinks. Later boots retain its content. The protected
+`/var/lib/mos` and Bluetooth credential binds remain outside the general var
+quota. Unit and Quadlet sources are bound to their existing search paths, then
+reloaded after DATA is ready. Netavark definitions use `/mos/containers/networks`.
+
+The `/mos`, `/var` and `/mos/containers` binds use private mount propagation.
+Protected state and container child mounts stay at their logical paths; they
+must not appear inside the physical DATA tree traversed by reset.
 
 State/meta are private physical directories. The bound mos state root permits
 traversal to networkd's group-readable WireGuard key directory; credential
@@ -46,17 +54,21 @@ partition size alone is not a payload limit. Content IDs share unchanged objects
 between deployments. The cx3576 SYSTEM partition remains 1 GiB.
 
 Bind mounts share one filesystem and do not create separate capacity totals.
-Ext4 project quotas bound bulk and disposable data by both bytes and inodes.
-The current initializer reserves 128 MiB and 2048 inodes for state/meta and
-filesystem overhead, limits disposable project 101 to 32 MiB/2048 inodes, and
-assigns the remaining bounded bulk budget to project 100. Images must include
-ext4 quota/project features and matching built-in kernel support.
+Project 100 accounts for DATA/mos and DATA/srv; project 102 accounts for
+DATA/containers independently. Both projects have zero soft/hard byte and inode
+limits, meaning unlimited usage within DATA's available capacity. They retain
+project inheritance and usage reporting, with no proportional capacity split.
 
-Service bounding sets remove `CAP_SYS_RESOURCE`, so root services cannot bypass
-hard quota limits. The fixed growfs helper retains the capability required by
-ext4 resize. Tests exercise production writer privileges and prove state/meta
-writes still succeed after bulk/disposable limits are reached. A reserve is
-measured containment, not protection against privileged manual changes.
+Project 101 covers DATA/var, cache and tmp together. Its byte limit is one eighth
+of DATA capacity, clamped to 32–256 MiB; its inode limit is one eighth of DATA
+inodes, clamped to 2048–16384. This bounded variable-data limit is recomputed
+after DATA growth. Images include ext4 quota/project features and matching
+built-in kernel support. The API reports zero limits for unlimited projects.
+
+Service bounding sets remove `CAP_SYS_RESOURCE`, so ordinary root services
+cannot bypass the variable-data limit. The fixed growfs helper retains the
+capability needed by ext4 resize. Unbounded system/user/container writers can
+fill DATA; project quotas no longer guarantee a free-space reserve for state/meta.
 
 ## Startup and failure
 

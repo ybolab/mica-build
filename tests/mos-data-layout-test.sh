@@ -35,14 +35,21 @@ fail() { echo "FAIL $*" >&2; exit 1; }
 
 new_case fresh
 run_layout
-for name in state meta cache tmp; do
+for name in state meta cache tmp var containers; do
     [ -d "$DATA/$name" ] && [ ! -L "$DATA/$name" ] || fail "$name namespace"
 done
 [ "$(stat -c %a "$DATA/state")" = 700 ] || fail "state namespace mode"
 [ "$(stat -c %a "$DATA/meta")" = 700 ] || fail "metadata namespace mode"
 [ "$(stat -c %a "$DATA/tmp")" = 1777 ] || fail "temporary namespace mode"
-grep -Fx -- "-P 100 0 98304 0 12288 $DATA" "$MOS_QUOTA_CALLS" >/dev/null || fail "bulk reserve budget"
+grep -Fx -- "-P 100 0 0 0 0 $DATA" "$MOS_QUOTA_CALLS" >/dev/null || fail "system/user data must be unlimited"
 grep -Fx -- "-P 101 0 32768 0 2048 $DATA" "$MOS_QUOTA_CALLS" >/dev/null || fail "disposable budget"
+grep -Fx -- "-p 101 +P $DATA/cache $DATA/tmp $DATA/var" "$MOS_QUOTA_CALLS" >/dev/null || fail "var quota inheritance"
+
+grep -Fx -- "-P 102 0 0 0 0 $DATA" "$MOS_QUOTA_CALLS" >/dev/null || fail "container data must be unlimited"
+grep -Fx -- "-p 102 +P $DATA/containers" "$MOS_QUOTA_CALLS" >/dev/null || fail "container quota inheritance"
+[ -d "$DATA/containers/networks" ] || fail "container networks namespace"
+[ "$(stat -c %a "$DATA/containers/tmp")" = 700 ] || fail "container download namespace"
+[ ! -e "$DATA/mos/containers/networks" ] || fail "container payload under system namespace"
 
 for name in ui config containers home root diagnostics; do
     [ -d "$DATA/mos/$name" ] || fail "$name canonical directory"
@@ -57,7 +64,7 @@ done
 [ "$(stat -c %a "$DATA/mos")" = 755 ] || fail "system root mode"
 [ "$(stat -c %a "$DATA/srv")" = 755 ] || fail "user root mode"
 [ "$(stat -c %a "$DATA/mos/ui")" = 755 ] || fail "UI root mode"
-[ "$(stat -c %a "$DATA/mos/containers")" = 711 ] || fail "container root mode"
+[ "$(stat -c %a "$DATA/containers")" = 711 ] || fail "container root mode"
 [ "$(stat -c %a "$DATA/mos/home")" = 755 ] || fail "home backing mode"
 [ "$(stat -c %a "$DATA/mos/root")" = 700 ] || fail "root backing mode"
 # The configuration namespace is credential material (PLAN-070 section 5.2.4):
@@ -95,7 +102,7 @@ if run_layout >/dev/null 2>&1; then
 fi
 [ "$(readlink "$DATA/srv")" = "$CASE/outside" ] || fail "symbolic user root was replaced"
 
-for name in state meta cache tmp; do
+for name in state meta cache tmp var containers; do
     new_case "foreign-$name-link"
     mkdir -p "$CASE/outside"
     ln -s "$CASE/outside" "$DATA/$name"
@@ -104,13 +111,16 @@ for name in state meta cache tmp; do
 done
 
 
-# Capacity failure occurs before any unbounded writer can start.
-new_case undersized
+# Large media retain a bounded system-variable budget.
+new_case large
 cat >"$WORK/bin/stat" <<'SH'
 #!/bin/sh
-if [ "$1" = -f ]; then printf '32768 4096 8192\n'; else /usr/bin/stat "$@"; fi
+if [ "$1" = -f ]; then printf '4194304 4096 1048576\n'; else /usr/bin/stat "$@"; fi
 SH
-if run_layout >"$WORK/undersized.log" 2>&1; then fail 'undersized DATA accepted'; fi
-grep -c 'too small' "$WORK/undersized.log" >/dev/null || fail 'missing capacity diagnosis'
+run_layout
+grep -Fx -- "-P 101 0 262144 0 16384 $DATA" "$MOS_QUOTA_CALLS" >/dev/null || fail "var quota cap"
+grep -Fx -- "-P 100 0 0 0 0 $DATA" "$MOS_QUOTA_CALLS" >/dev/null || fail "large system/user limit"
+
+grep -Fx -- "-P 102 0 0 0 0 $DATA" "$MOS_QUOTA_CALLS" >/dev/null || fail "large container limit"
 
 echo "PASS direct mos data layout"

@@ -53,6 +53,23 @@ test('identity accepts the shipped relative D-Bus link and refuses a baked machi
   expect(await f.check('file-root-identity')).toBe('fail')
 })
 
+test('DATA policy requires a whole var bind and rejects per-systemd-leaf mounts', async () => {
+  const f = fixture()
+  const board = loadBoard(boardEnvPath('x64'))
+  f.file('/etc/fstab', `PARTUUID=${board.get('DATA_GUID')!.toLowerCase()} /mnt/data ext4 noatime,prjquota,x-systemd.growfs 0 2\ntmpfs /tmp tmpfs size=128M,nr_inodes=32768 0 0\n`)
+  for (const name of ['var-lib-mos', 'etc-ssh', 'usr-local-lib-systemd-system', 'etc-containers-systemd']) {
+    f.file(`/etc/systemd/system/${name}.mount`, '[Mount]\nWhat=/mnt/data/state/example\n')
+  }
+  f.file('/etc/systemd/system/var.mount', '[Mount]\nWhat=/mnt/data/var\nWhere=/var\nOptions=bind,private,nosuid,nodev\n')
+  f.file('/etc/systemd/system/mos-seed-var.service', '[Service]\nExecStart=/usr/lib/mos/mos-seed-var\n')
+  expect(await f.check('file-root-data-policy')).toBe('pass')
+  f.file('/etc/systemd/system/var-lib-systemd-timesync.mount', '[Mount]\nWhat=/mnt/data/state/timesync\n')
+  expect(await f.check('file-root-data-policy')).toBe('fail')
+  rmSync(join(f.root, 'etc/systemd/system/var-lib-systemd-timesync.mount'))
+  f.file('/etc/systemd/system/var.mount', '[Mount]\nWhat=/mnt/system/var\nWhere=/var\nOptions=bind\n')
+  expect(await f.check('file-root-data-policy')).toBe('fail')
+})
+
 test('image symlinks resolve inside the image, including absolute and parent links', () => {
   const f = fixture()
   f.file('/usr/share/value', 'image')
@@ -64,4 +81,25 @@ test('image symlinks resolve inside the image, including absolute and parent lin
   expect(regularFileInRoot(f.root, '/etc/host')).toBe(false)
   symlinkSync('/etc/cycle', join(f.root, 'etc/cycle'))
   expect(regularFileInRoot(f.root, '/etc/cycle')).toBe(false)
+})
+
+test('container storage requires its own enabled bind outside var', async () => {
+  const f = fixture()
+  expect(await f.check('file-root-container-policy')).toBe('fail')
+  f.file('/etc/systemd/system/mos-containers.mount', '[Unit]\nRequires=mos-data-layout.service mos.mount\nAfter=mos-data-layout.service mos.mount\n[Mount]\nWhat=/mnt/data/containers\nWhere=/mos/containers\nOptions=bind,private,nosuid,nodev\n')
+  f.file('/etc/systemd/system/mos.mount', '[Mount]\nOptions=bind,private\n')
+  f.file('/etc/systemd/system/etc-containers-systemd.mount', '[Unit]\nRequiresMountsFor=/mnt/data/state /mos/containers\n')
+  f.file('/etc/containers/storage.conf', '[storage]\ngraphroot = "/mos/containers/storage"\nrunroot = "/run/containers/storage"\n')
+  f.file('/etc/containers/containers.conf', '[engine]\nimage_copy_tmp_dir = "/mos/containers/tmp"\n[network]\nnetwork_config_dir = "/mos/containers/networks"\n')
+  mkdirSync(join(f.root, 'etc/systemd/system/local-fs.target.wants'), { recursive: true })
+  symlinkSync('/etc/systemd/system/mos-containers.mount', join(f.root, 'etc/systemd/system/local-fs.target.wants/mos-containers.mount'))
+  expect(await f.check('file-root-container-policy')).toBe('pass')
+  f.file('/etc/systemd/system/mos.mount', '[Mount]\nOptions=bind\n')
+  expect(await f.check('file-root-container-policy')).toBe('fail')
+  f.file('/etc/systemd/system/mos.mount', '[Mount]\nOptions=bind,private\n')
+  f.file('/etc/systemd/system/etc-containers-systemd.mount', '[Unit]\nRequiresMountsFor=/mnt/data/state\n')
+  expect(await f.check('file-root-container-policy')).toBe('fail')
+  f.file('/etc/systemd/system/etc-containers-systemd.mount', '[Unit]\nRequiresMountsFor=/mnt/data/state /mos/containers\n')
+  f.file('/etc/systemd/system/mos-containers.mount', '[Mount]\nWhat=/mnt/data/var/containers\nWhere=/mos/containers\nOptions=bind,private,nosuid,nodev\n')
+  expect(await f.check('file-root-container-policy')).toBe('fail')
 })

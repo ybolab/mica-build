@@ -57,61 +57,38 @@ the screen at an application UI (served by an app container) instead of apid.
 
 ## 4. Boot experience & tty policy
 
-Implemented on cx3576 by PLAN-088. This section was rewritten against what the
-pinned sources actually do; three of its earlier claims were measured wrong and
-are corrected below rather than deleted, because each is the reading a person
-arrives at from the outside.
+The current CX3576 image shows **YBO - Hub OS**, centered in white over a soft
+blue/teal gradient that fades to black around the text. The authoritative bitmap
+is `boards/cx3576/bsp/rootfs/assets/splash.png`. The kernel build converts it to
+a deterministic 720×405 CLUT224 logo, fitting modes from 800×600 upward. Its
+black edges blend into the framebuffer around the centered image.
 
-- **The logo is the KERNEL's, not U-Boot's.** `CONFIG_LOGO` +
-  `CONFIG_LOGO_LINUX_CLUT224`, with the board's own 224-colour PPM derived at
-  build time from `boards/cx3576/bsp/rootfs/assets/splash.png` — which is no
-  longer a source asset with no consumer. **U-Boot shows nothing**, and this is
-  not a scheduling decision: the pinned tree is upstream u-boot at `ece349ade`,
-  whose Rockchip video drivers are the VOP1-era RK3288/RK3328/RK3399 set. There
-  is no VOP2 driver and no RK3576 display support anywhere in it, so
-  `SPLASH_SCREEN` there would build a video core nothing can bind. HDMI is
-  therefore **dark from reset until DRM probes**, and a seamless power-on splash
-  is blocked on the U-Boot fork question. PLAN-088 §1 carries the evidence and
-  prices the alternative.
-- **`quiet` is NOT used, and must not be.** fbcon draws the logo only when
-  `console_loglevel` exceeds `CONFIG_CONSOLE_LOGLEVEL_QUIET`, which this kernel
-  sets to 4 (`fbcon.c:1009-1010`) — so `quiet`, which sets exactly 4, keeps text
-  off the screen by keeping the **logo** off it too. The board boots
-  `loglevel=5`: the floor that shows a logo, quiet enough that a healthy boot
-  prints only warnings and worse, and non-zero so `console_verbose()` still
-  raises the level on an oops. `loglevel=0` would make a panic invisible on
-  every console including serial, and is refused by the image contract.
-- **HDMI stays on the console list, deliberately.** The command line is
-  `console=tty1 console=ttyFIQ0,1500000`, and **the order is the design**:
-  every `console=` receives printk but `/dev/console` is the last one, so
-  userspace output stays on the cable while a kernel panic still takes the
-  screen. On a unit with no serial cable attached that is the only diagnostic
-  path there is.
-- **`getty@tty1` is disabled by a preset**, `50-mos-getty.preset` in
-  `mos-board-cx3576`, not by an absent symlink — an unmatched unit presets to
-  ENABLE, and `90-systemd.preset` says `enable getty@.service`. It remains
-  startable: `systemctl start getty@tty1` turns the display into a login
-  terminal at runtime, with no second boot path and no rebuild.
-- **There is a THIRD state, and it is not "logo or console".** Bench dmesg shows
-  `[drm] Cannot find any crtc or sizes` when no EDID-readable sink is present at
-  probe: that returns `-EAGAIN`, the fbdev setup is **deferred**, and **no fbdev
-  is created at all** — so the screen is dark and `console=tty1` renders nothing
-  either, because VT output goes to `dummy_con`. HDMI is a diagnostic path *when
-  a sink is attached and its EDID reads*, and not otherwise.
-  - **Hotplug recovers it without a reboot.** `rockchip_drm_output_poll_changed`
-    (`rockchip_drm_fb.c:363`) calls `drm_fb_helper_hotplug_event`, which takes
-    the `deferred_setup` branch and creates the fbdev then; fbcon binds and the
-    logo is drawn at that moment. A device that boots headless and gets a
-    monitor later shows the logo, not a blank screen.
-  - A panic is **not** recoverable by plugging in afterwards — a panicked kernel
-    does not run the hotplug work item. An oops is, because the VT buffer still
-    holds the text and fbcon redraws it on bind.
-- **No plymouth and no userspace splash.** The kiosk takes DRM master when
-  `mos-gui` starts; nothing else paints.
-- Console channels (access.md): wizard tty2 / debug shell tty3 live on
-  **serial**; VT switching from the kiosk is disabled in prod images.
-- Kiosk crash policy: restart with backoff; after N failures fall back to a
-  static "service unavailable + support URL" DRM splash rather than a console.
+U-Boot does not initialize RK3576 HDMI. Linux DRM/fbcon displays one centered
+logo using `fbcon=logo-pos:center,logo-count:1`; `vt.global_cursor_default=0`
+hides the idle cursor. The forced signed command line routes kernel and service
+output to `ttyFIQ0` at 1500000 baud. It has neither `quiet` nor `console=tty1`;
+the latter would let kernel messages overwrite the HDMI artwork.
+
+Connect a USB keyboard and press **Alt+F2** (Ctrl+Alt+F2 also works) to select
+`tty2`. The board's logind policy sets `NAutoVTs=0` and `ReserveVT=2`, reserving
+only this VT for an on-demand getty. The ordinary getty/login/PAM path still
+requires authentication. Set a transient root password in the management UI's
+access controls, then log in as `root`; the browser administrator password is a
+different credential. The default root account is locked, and the transient
+password is cleared at the next boot, as described in the [access policy](access.md).
+No auto-login or shell bypass is introduced. The disabled getty preset keeps `tty1` idle during normal startup,
+but does not prevent logind from starting the reserved console. Bare F2 keeps
+its normal terminal meaning.
+
+Alt+F1 selects tty1 again, but the kernel does not retain the boot logo for
+redrawing after a VT switch: fbcon clears its logo state, and logo memory is
+freed after initialization. Late HDMI attachment can create the framebuffer,
+but cannot reliably recover this init-only bitmap either. Restoring the logo
+on VT return or late attachment remains task 20260910-0117-cx3576-late-hdmi-logo.
+The image does not ship a userspace splash renderer or a kiosk service.
+
+The console policy is covered by signed QEMU acceptance; actual CX3576 USB
+keyboard, EDID negotiation and visual output require testing the flashed image.
 
 ## 5. Board requirements (extends boards.md §4)
 

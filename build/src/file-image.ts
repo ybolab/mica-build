@@ -78,7 +78,7 @@ export async function assembleFileImage(layout: FileLayout, deployments: Factory
       writeFileSync(join(system, 'deployments', `${record.id}.json`), record.envelope)
       if (!fit) writeFileSync(join(esp, 'loader/entries', `mos-${record.id}+3.conf`), entryText(d))
     }
-    for (const directory of ['state', 'meta', 'cache', 'tmp', 'mos', 'srv']) mkdirSync(join(data, directory), { mode: directory === 'state' || directory === 'meta' ? 0o700 : 0o755 })
+    for (const directory of ['state', 'meta', 'cache', 'tmp', 'var', 'mos', 'srv']) mkdirSync(join(data, directory), { mode: directory === 'state' || directory === 'meta' ? 0o700 : 0o755 })
     writeFileSync(join(data, 'meta/firmware.json'), firmwareEnvelope)
     await tb.must(['find', system, ...(!fit ? [esp] : []), data, '-exec', 'touch', '-h', '-d', '@1577836800', '{}', '+'])
     for (const partition of layout.partitions) {

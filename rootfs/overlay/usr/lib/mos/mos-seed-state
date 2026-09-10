@@ -12,12 +12,10 @@ ensure_dir() {
 # Private credential subdirectories and documents retain their own 0700/0600 modes.
 ensure_dir mos 0711
 for name in ssh bluetooth wpa_supplicant hostapd; do ensure_dir "$name" 0700; done
-for name in systemd-units quadlet timesync network timers linger; do ensure_dir "$name" 0755; done
+for name in systemd-units quadlet; do ensure_dir "$name" 0755; done
 for name in ssh wpa_supplicant hostapd; do
     if [ -d "/etc/$name" ]; then cp -an "/etc/$name/." "$state/$name/"; fi
 done
-chown systemd-timesync:systemd-timesync "$state/timesync"
-chown systemd-network:systemd-network "$state/network"
 for name in hostname random-seed; do
     [ ! -L "$state/$name" ] || { echo "mos-seed-state: symbolic state file $name" >&2; exit 1; }
     if [ ! -e "$state/$name" ]; then

@@ -110,3 +110,9 @@ disobeys on sight teaches a reader the wrong thing about the tree.
 - [x] [**20260910-0159-cx3576-uboot-console Restore the standard CX3576 U-Boot console entry**](20260910-0159-cx3576-uboot-console.md) `2026-09-10`
 
 - [ ] [**20260910-0341-minimal-boot-shutdown Minimize boot and shutdown userspace with BusyBox**](20260910-0341-minimal-boot-shutdown.md) `2026-09-10`
+
+- [x] [**20260910-0517-writable-var-regdb Writable var with bounded DATA storage and matching regdb**](20260910-0517-writable-var-regdb.md) `2026-09-10`
+
+- [x] [**20260910-0616-cx3576-storage-display-cleanup Container storage and CX3576 boot presentation**](20260910-0616-cx3576-storage-display-cleanup.md) `2026-09-10`
+
+- [x] [**20260910-0726-unlimited-application-data Unlimited application data with bounded var**](20260910-0726-unlimited-application-data.md) `2026-09-10`

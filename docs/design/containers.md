@@ -79,8 +79,8 @@ and no container unit exists.
 
 ## 3. Where files go
 
-`/etc/containers/systemd` — a bind of `/mnt/data/state/quadlet`, on the STATE
-partition, so what you put there survives a reboot **and an A/B update**.
+`/etc/containers/systemd` — a bind of `/mnt/data/state/quadlet` in protected DATA
+state, so what you put there survives a reboot **and an A/B update**.
 
 That path is not a choice; it is where Quadlet looks. Its search list, printed
 by `quadlet --dryrun` itself:
@@ -201,15 +201,22 @@ VolumeName=pgdata
 ```
 
 A named volume lives under the graph root, which on this device is
-`/mos/containers/storage` — the MOS-owned namespace on the DATA partition.
+`/mos/containers/storage`. The `/mos/containers` mount binds DATA/containers,
+with independent project 102 accounting and no byte/inode limit. Images, writable
+layers, named volumes and Netavark definitions stay inside this namespace;
+`/mos/containers/tmp` holds image download temporary files in the same namespace;
+`/run/containers/storage` holds volatile engine state. Container storage does
+not consume the `/var` budget. The Quadlet source mount requires container
+storage before exposing application units, preventing startup on an unmounted
+container backing directory. [Storage policy](storage.md#capacity) defines the
+shared capacity and the bounded variable-data project.
 
 Two consequences worth stating plainly:
 
-- **DATA is shared.** UI bundles and application data consume the bulk quota.
-  Filling that quota limits the writer while preserving the measured state/meta
-  reserve; it does not create physical filesystem isolation.
-- **`/var` parents are immutable.** Container storage belongs under the approved
-  DATA namespace, not an arbitrary `/var` path. See [storage](storage.md).
+- **Container, system and user data are unlimited.** They share DATA capacity
+  with independent project accounting; filling DATA can affect other writers.
+- **`/var` has its own bounded budget.** Container storage stays in
+  `/mos/containers` and does not consume that quota. See [storage](storage.md).
 
 For a bind mount of a host path, use one under `/srv`:
 

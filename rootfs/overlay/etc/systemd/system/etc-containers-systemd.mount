@@ -26,7 +26,7 @@ Description=Quadlet unit directory on DATA/state
 # immutable, units the operator installs are theirs.
 Requires=mos-seed-state.service
 After=mos-seed-state.service
-RequiresMountsFor=/mnt/data/state
+RequiresMountsFor=/mnt/data/state /mos/containers
 
 [Mount]
 # Named for what it holds rather than mirroring the target path, on the same

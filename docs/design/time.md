@@ -21,9 +21,8 @@
   configuration, and **a read-only status observer** (`time_status.rs`)
   served as `GetTimeStatus` on the bus and `GET /api/v1/time/status` over
   HTTPS.
-- **A STATE-backed saved clock**: `var-lib-systemd-timesync.mount` binds
-  `/mnt/data/state/timesync` onto `/var/lib/systemd/timesync`, seeded by
-  `mos-seed-state`.
+- **A DATA-backed saved clock**: timesyncd owns `/var/lib/systemd/timesync`
+  beneath the persistent whole-var bind.
 
 ## 2. UTC everywhere; the timezone is presentation
 
@@ -62,13 +61,11 @@ that validates certificate or metadata expiry runs:
    clock from the RTC where the board has one. cx3576 declares an
    AT8563/HYM8563 RTC; driver and backup-power validation are
    hardware-dependent (see RFCT-280's completion note).
-2. **Saved floor.** `mos-seed-state` creates `/mnt/data/state/timesync` (owned by
-   `systemd-timesync`); `var-lib-systemd-timesync.mount` binds it onto
-   `/var/lib/systemd/timesync` — ordered `After=mos-seed-state.service`,
-   `Before=systemd-timesyncd.service`. timesyncd touches `…/clock` every 60 s
+2. **Saved floor.** timesyncd starts after `var.mount` and creates its owned
+   state directory at `/var/lib/systemd/timesync`. It touches `…/clock` every 60 s
    (`SaveIntervalSec`, pinned) and at startup **advances a clock that is
-   behind that file's mtime**. DATA/state survives reboots and component updates,
-   independently of the immutable var parent, so a device with no RTC or a dead RTC battery still
+   behind that file's mtime**. DATA/var survives reboots and component updates,
+   so a device with no RTC or a dead RTC battery still
    boots no earlier than the last minute it was known to be running.
 3. **Network time.** timesyncd (in `sysinit.target`) polls the managed or
    fallback servers on the pinned adaptive policy and disciplines the clock.

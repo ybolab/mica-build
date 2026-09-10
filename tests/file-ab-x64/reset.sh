@@ -11,6 +11,11 @@ board=${6:?board required}
 case "$board" in x64) compiler=gcc;; virt-arm64) compiler=aarch64-linux-gnu-gcc;; *) exit 1;; esac
 work=$(mktemp -d "$PWD/_out/reset-runtime.XXXXXX")
 printf 'Evidence: %s\n' "$work"
+# The Bun orchestrator mounts this project; keep explicit signing inputs inside it.
+install -m 0644 "$cert" "$work/content.cert.pem"
+install -m 0600 "$key" "$work/content.key.pem"
+cert="$work/content.cert.pem"
+key="$work/content.key.pem"
 # The Rust builder supplies the pinned native and cross C linkers.
 builder=$(bash build-env/from.sh --arch=amd64 --ref LOCAL_MOS_BUILD_RUST)
 timeout -k 15 180 docker run --rm --platform linux/amd64 --label ai-agent=true --network traefik \
@@ -31,6 +36,8 @@ for tier in configuration application-data full-factory; do
     cat > "$out/tree/etc/systemd/system/mosd.service.d/90-reset-acceptance.conf" <<'UNIT'
 [Service]
 Environment=LD_PRELOAD=/usr/lib/mos/reset-fault.so
+StandardOutput=journal+console
+StandardError=journal+console
 UNIT
     cat > "$out/tree/etc/systemd/system/reset-acceptance.service" <<'UNIT'
 [Unit]
@@ -44,7 +51,7 @@ RuntimeMaxSec=240
 WantedBy=multi-user.target
 UNIT
     ln -s /etc/systemd/system/reset-acceptance.service "$out/tree/etc/systemd/system/multi-user.target.wants/reset-acceptance.service"
-    timeout -k 20 900 bun tests/file-ab-x64/build.ts "$out/boot" "$board" "$kernel" "$cert" "$key" "$init" "$out/tree" > "$out/build.log" 2>&1
+    timeout -k 20 900 bash tests/file-ab-x64/bun.sh tests/file-ab-x64/build.ts "$out/boot" "$board" "$kernel" "$cert" "$key" "$init" "$out/tree" > "$out/build.log" 2>&1
     truncate -s 4G "$out/boot/image/disk.img"
     for boot in 1 2 3; do
         timeout -k 15 600 docker run --rm --label ai-agent=true --network traefik \
