@@ -21,6 +21,14 @@ clean isolated branch `bkd/bvjc311u`. That commit contains reviewed C2
 `5d0dca577a782aa707d9530779c4b23f2a7eda31`. File paths below refer to those
 immutable bytes, not another worktree's uncommitted implementation.
 
+Repair 1 separately synchronized reviewed local L2
+`f30e2492a4f4a0d29f91f13d02abbcc2f92c093a` (tree
+`64c7c9be5ea9fd470de79ac4b658374d696488a2`) into clean `ea4a8dca` as merge
+`e0c43478f84cb2d43ddda197d7c59b063655da99`. Only mechanical index append
+conflicts required resolution; all existing rows/statuses were preserved.
+This sync includes D2, D1 and C.D3, but still no FLEET-CONFIG implementation.
+It does not replace the original evidence baseline in the following table.
+
 | Evidence at that commit | Consequence |
 |---|---|
 | [C2 brief](20260910-1012-c-fleet-app-trust-obligations.md), [PLAN-072](PLAN-072.md) sections 3, 7a, 8; [PLAN-076](PLAN-076.md) sections 2, 5–9 | Off/null, outbound only, TOFU, registration and report allowlists, autonomy and separate reporting consent remain binding. The historical 65-row audit is not reopened. |
@@ -90,13 +98,35 @@ matching Host; HTTP/2 authority/scheme must match the configured origin. No
 cookies, bearer Authorization, redirects, content negotiation or ambient proxy
 credentials. HTTP/1.1 chunked requests/responses are outside this profile.
 
+`$defs.headers` describes **all allowed ordinary request headers**, using
+canonical display names after case-insensitive duplicate refusal and name
+normalization. It is not a subset that drops transport headers. Host is
+required for HTTP/1.1 and equals the normalized origin's authority (including
+a non-default port); User-Agent and Connection are optional, never null.
+Connection is permitted only in HTTP/1.1 requests/responses. HTTP/2 uses
+exactly one each of `:method`, `:scheme`, `:authority`, `:path`, before ordinary
+fields; method/path equal the signed values, scheme is `https`, and authority
+equals the configured origin's authority. This profile omits Host in HTTP/2;
+that is a profile restriction, not an RFC prohibition of matching Host.
+HTTP/2 names are lowercase; Connection is forbidden by HTTP/2 itself.
+
+The fixture `httpVersion` is transport metadata, not an HTTP/2 wire field or
+a negotiated fleet version. `requestShape` checks the complete decoded request
+envelope: all ordinary fields against `$defs.headers`, HTTP/1.1 Host or the
+four HTTP/2 `pseudoHeaders` pairs, bounds and N3/N4 bindings. Pseudo-headers
+are separate control data, not unknown ordinary headers. A real decoder must
+reject duplicates and invalid pseudo-header order before producing this
+representation; it must never coalesce singleton fields first. The LF fixture
+adapter tests decoded pairs only, not real CRLF/framing, HPACK, stream ordering
+or TLS. Those remain explicit N9 runtime/interop gates.
+
 JSON is UTF-8 without BOM, maximum depth 12, with no trailing bytes except JSON
 whitespace. Reject duplicate decoded member names at **every object depth**
 (including escaped spelling aliases), unknown members, non-finite numbers,
 unpaired surrogates, invalid UTF-8 and wrong types **before** authorization or
 state changes. Schema validation is not authentication. Schema validates the
 closed shape; N3–N8 add crypto, role, binding, cross-field and state checks.
-Every property is required except `update.lastFailureCode`; only explicit
+Every JSON body property is required except `update.lastFailureCode`; only explicit
 schema null unions permit null. Unknown telemetry remains null/unknown as
 specified, never invented healthy zeroes. Protocol counters are unsigned
 64-bit values represented as canonical decimal **strings** `0` or `[1-9][0-9]*`,
@@ -115,11 +145,17 @@ Bounds, including UTF-8 bytes rather than character estimates:
 | Report acknowledgement | 4,096 bytes; exactly one receipt per submitted counter |
 | Request duration | 20 seconds total including DNS/TCP/TLS/body, connection setup at most 10 seconds |
 
+For HTTP/1.1 the header byte bound counts field-name/value bytes, `: ` and CRLF
+per field plus the final CRLF. For HTTP/2 it counts the decoded field section,
+name/value bytes plus 32 bytes per field, including pseudo-headers; the same
+32-field and 512-byte value caps include pseudo-headers. Future transports
+must enforce these while reading/decoding, not after unbounded buffering.
+
 Unknown headers, duplicates and malformed values fail closed. Besides the
 N3 headers, requests allow only Host (HTTP/1.1), User-Agent (`mos-fleet/1`),
-Connection (`keep-alive` or `close`), Content-Type, Accept and Content-Length.
+Connection (HTTP/1.1 `keep-alive` or `close`), Content-Type, Accept and Content-Length.
 Responses allow only Fleet-Schema, Content-Type, Content-Length, Cache-Control,
-Date, Retry-After, Connection, Server and WWW-Authenticate. Server is bounded
+Date, Retry-After, Connection (HTTP/1.1), Server and WWW-Authenticate. Server is bounded
 opaque transport metadata, never reflected into status. A 401 additionally
 requires `WWW-Authenticate: FleetEd25519 realm="mos/fleet/v1"`; no other
 authentication scheme is supported. `Location`, `Set-Cookie`, any command/config
@@ -671,7 +707,7 @@ before implementing its endpoints, not before finishing this specification.
 | Future separate `fleetd` client entrypoint and lifecycle mode → allowed read-only bus report/registration projection → **same executable owns credential, counter reservation, queue and retry** → status.json and outbound requests | Approval for new executable/unit/package/reset hooks and narrowly authorized read-only bus method(s). Do not claim a crate/unit already exists. Identity projection must expose exactly N2 registration fields to this UID; no GetSettings fallback. Bus negative tests prohibit GetSettings, ReportHealth, InstallUpdate, Reboot and credential APIs. Validate filesystem modes/symlink refusal, atomic rename/fsync failpoints, restart reservation/renewal, bounded overflow, no off-state DNS/socket/timer across boot. |
 | Future plane enrollment/report route handlers → schema + Ed25519 verifier + explicit registry authorization → plane owns D rows, lifecycle receipts, H and durable report store → exact N4 receipts/conflicts | Select repository/owner/storage engine; implement single-D serializable transactions with no partially accepted batch. Cross-device and wrong-role negatives, expired keys, stale releases, two simultaneous enrollments, release reservation, current/old renewal races and crash-before/after-commit tests. Admission/retention restore tests are required. No standalone generic queue/CA first. |
 | Future APID fleet status/preview local routes → desired config plus bounded status and mosd producer → read-only local projection → authenticated off/conflict/queue/expiry status | Existing LAN auth/CSRF/presence stays separate. Never read credential.json through API. Preview requires local admin authorization; unauthorized access and exact redaction tests. Any console addition is separately approved. |
-| Future two-sided interoperability/autonomy gate → real isolated client + actual server with test TLS authority and virtual clocks → each side's own persistence → reproducible exchange/crash traces | Test every N4 endpoint, canonical bytes in both languages, mutated method/path/origin/body/key, malformed/duplicate/unknown responses, retry forms, no redirects, rate/queue bounds, key expiry/overlap, offline reset and URL rebound. QEMU/offline local update/reboot/recovery proof requires a later resource grant. Physical power-cut/board/boot evidence is separate. |
+| Future two-sided interoperability/autonomy gate → real isolated client + actual server with test TLS authority and virtual clocks → each side's own persistence → reproducible exchange/crash traces | Test every N4 endpoint, canonical bytes in both languages, mutated method/path/origin/body/key, raw CRLF and duplicate singleton fields, HTTP/2 pseudo-header order/lowercase/authority and streamed HPACK/decoded-byte bounds, malformed/duplicate/unknown responses, retry forms, no redirects, rate/queue bounds, key expiry/overlap, offline reset and URL rebound. QEMU/offline local update/reboot/recovery proof requires a later resource grant. Physical power-cut/board/boot evidence is separate. |
 
 Plane operations remain external choices: hosting, TLS issuance/custody,
 operator registry onboarding/review, tenant inventory UI, residency, SLO,
@@ -692,6 +728,16 @@ The schema evaluator intentionally supports only the keywords used here and
 refuses unknown schema keywords; it is not a production JSON Schema library.
 
 The model accepts explicit test principals and is **not** a crypto/auth service.
+Repair 1 adds receipt-recovery refusal for wrong device/role, mismatched
+generation/epoch/key, changed request ID/new key/raw-body digest, terminal state
+and expiry, alongside successful old-key recovery after overlap ends. The
+renewal model's digest argument represents the exact raw body; its default
+uses the worked compact body. Origin/method/path and both possession signatures
+remain independently covered by the signed-byte controls, not invented model
+crypto. Complete HTTP/1.1 examples and HTTP/2 decoded-envelope controls cover
+allowed headers, authority, duplicates, unsupported fields and byte/count caps.
+The original 46-check run did not cover these missing cases; repair RED/GREEN
+identities and results are recorded separately in the task.
 The independent in-memory crypto test verifies byte binding, not a deployed
 credential, certificate or durable transaction. Schema/model checks cannot
 prove strict Ed25519 point rejection in a future Rust/server library, disk fsync/power loss, real network behavior, TLS configuration, server
@@ -708,6 +754,7 @@ this protocol's decisions, not invented quotations from these documents):
 
 - [RFC 8032 sections 5.1.5–5.1.7](https://www.rfc-editor.org/rfc/rfc8032.html#section-5.1.5): Ed25519 key/signature encodings and verification.
 - [RFC 9110 sections 5.6.7 and 10.2.3](https://www.rfc-editor.org/rfc/rfc9110.html#section-10.2.3): HTTP dates and Retry-After forms.
+- [RFC 9113 sections 6.5.2, 8.2.2 and 8.3.1](https://www.rfc-editor.org/rfc/rfc9113.html#section-8.3.1): decoded field-section accounting, connection-field prohibition and request pseudo-header authority; consulted for Repair 1 on 2026-09-10 UTC.
 - [RFC 8446 sections 2.3 and 8](https://www.rfc-editor.org/rfc/rfc8446.html#section-8): early-data replay limits; this protocol disables early data.
 - [RFC 8259 sections 4 and 8](https://www.rfc-editor.org/rfc/rfc8259.html#section-8): duplicate-name interoperability and UTF-8; this profile rejects duplicates and malformed Unicode strictly.
 

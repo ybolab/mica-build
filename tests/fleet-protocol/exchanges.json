@@ -20,7 +20,10 @@
         "Fleet-Signature": "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
         "Content-Type": "application/json",
         "Accept": "application/json",
-        "Content-Length": "147"
+        "Content-Length": "147",
+        "Host": "plane.example",
+        "User-Agent": "mos-fleet/1",
+        "Connection": "keep-alive"
       },
       "requestSchema": "register",
       "requestBody": {
@@ -50,7 +53,8 @@
         "publicKey": "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",
         "issuedAt": 1789066800,
         "expiresAt": 1791658800
-      }
+      },
+      "httpVersion": "1.1"
     },
     {
       "name": "renew",
@@ -71,7 +75,10 @@
         "Content-Type": "application/json",
         "Accept": "application/json",
         "Fleet-Next-Signature": "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
-        "Content-Length": "84"
+        "Content-Length": "84",
+        "Host": "plane.example",
+        "User-Agent": "mos-fleet/1",
+        "Connection": "keep-alive"
       },
       "requestSchema": "renew",
       "requestBody": {
@@ -95,7 +102,8 @@
         "issuedAt": 1791054000,
         "expiresAt": 1793646000,
         "previousValidUntil": 1791054600
-      }
+      },
+      "httpVersion": "1.1"
     },
     {
       "name": "unregister",
@@ -115,7 +123,10 @@
         "Fleet-Signature": "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
         "Content-Type": "application/json",
         "Accept": "application/json",
-        "Content-Length": "2"
+        "Content-Length": "2",
+        "Host": "plane.example",
+        "User-Agent": "mos-fleet/1",
+        "Connection": "keep-alive"
       },
       "requestSchema": "empty",
       "requestBody": {},
@@ -133,7 +144,8 @@
         "deviceId": "0123456789abcdef0123456789abcdef",
         "generation": "1",
         "epoch": "11111111111111111111111111111111"
-      }
+      },
+      "httpVersion": "1.1"
     },
     {
       "name": "device-revoke",
@@ -153,7 +165,10 @@
         "Fleet-Signature": "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
         "Content-Type": "application/json",
         "Accept": "application/json",
-        "Content-Length": "2"
+        "Content-Length": "2",
+        "Host": "plane.example",
+        "User-Agent": "mos-fleet/1",
+        "Connection": "keep-alive"
       },
       "requestSchema": "empty",
       "requestBody": {},
@@ -171,7 +186,8 @@
         "deviceId": "0123456789abcdef0123456789abcdef",
         "generation": "1",
         "epoch": "11111111111111111111111111111111"
-      }
+      },
+      "httpVersion": "1.1"
     },
     {
       "name": "reports",
@@ -191,7 +207,10 @@
         "Fleet-Signature": "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
         "Content-Type": "application/json",
         "Accept": "application/json",
-        "Content-Length": "2669"
+        "Content-Length": "2669",
+        "Host": "plane.example",
+        "User-Agent": "mos-fleet/1",
+        "Connection": "keep-alive"
       },
       "requestSchema": "reports",
       "requestBody": [
@@ -447,7 +466,8 @@
             "digest": "087372b6c657f7d4502d3167bfad9c39a346fb276b220e693b60a1c593720c54"
           }
         ]
-      }
+      },
+      "httpVersion": "1.1"
     },
     {
       "name": "ownership",
@@ -467,7 +487,10 @@
         "Fleet-Signature": "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
         "Content-Type": "application/json",
         "Accept": "application/json",
-        "Content-Length": "2"
+        "Content-Length": "2",
+        "Host": "plane.example",
+        "User-Agent": "mos-fleet/1",
+        "Connection": "keep-alive"
       },
       "requestSchema": "empty",
       "requestBody": {},
@@ -487,7 +510,8 @@
         "state": "active",
         "epoch": "11111111111111111111111111111111",
         "publicKey": "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a"
-      }
+      },
+      "httpVersion": "1.1"
     },
     {
       "name": "release",
@@ -507,7 +531,10 @@
         "Fleet-Signature": "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
         "Content-Type": "application/json",
         "Accept": "application/json",
-        "Content-Length": "201"
+        "Content-Length": "201",
+        "Host": "plane.example",
+        "User-Agent": "mos-fleet/1",
+        "Connection": "keep-alive"
       },
       "requestSchema": "release",
       "requestBody": {
@@ -531,7 +558,8 @@
         "generation": "2",
         "epoch": "44444444444444444444444444444444",
         "releaseId": "33333333333333333333333333333333"
-      }
+      },
+      "httpVersion": "1.1"
     },
     {
       "name": "operator-revoke",
@@ -551,7 +579,10 @@
         "Fleet-Signature": "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
         "Content-Type": "application/json",
         "Accept": "application/json",
-        "Content-Length": "2"
+        "Content-Length": "2",
+        "Host": "plane.example",
+        "User-Agent": "mos-fleet/1",
+        "Connection": "keep-alive"
       },
       "requestSchema": "empty",
       "requestBody": {},
@@ -569,7 +600,8 @@
         "deviceId": "0123456789abcdef0123456789abcdef",
         "generation": "1",
         "epoch": "11111111111111111111111111111111"
-      }
+      },
+      "httpVersion": "1.1"
     }
   ]
 }

@@ -16,11 +16,19 @@ The workspace here is under `/srv`, identical on host/container. Translate
 `/work` or `/root` before using the command from another checkout.
 
 `exchanges.json` provides eight separate successful HTTP exchanges, not a
-single chronological session. Body bytes use the plan's compact sorted-key
+single chronological session. Each has an explicit HTTP/1.1 envelope with
+origin-matching Host, optional User-Agent and Connection. Body bytes use the plan's compact sorted-key
 encoding; header values and Content-Length are explicit. Signatures consisting
 of zeroes are intentionally invalid shape placeholders. Stored raw header
 fixtures use repository LF endings; their check covers duplicate/unknown header
-names, not a production HTTP framing parser. Public keys are public
+names, not a production HTTP framing parser. The complete bounded envelope
+check uses the same decoded-pair normalization as the raw duplicate fixture;
+it rejects duplicates before building the canonical-name `$defs.headers` map.
+That schema includes all allowed ordinary request headers. HTTP/2 controls
+pass lowercase ordinary fields plus the four ordered `pseudoHeaders` pairs;
+`httpVersion` is fixture metadata. This checks decoded values, singleton/count/
+byte limits and origin/method/path consistency. It cannot prove raw HTTP/2
+pseudo-header ordering, HPACK bounds or real HTTP framing. Public keys are public
 example bytes, never a registry entry or evidence of authorization. The example
 origin is a placeholder and no HTTP connection is made. The in-memory Ed25519
 controls generate fresh ephemeral keys, verify mutation refusal and write no
@@ -44,5 +52,14 @@ fixed clocks and deterministic jitter inputs. The later runtime, interop,
 restored-server and board acceptance matrix is in N9 of the plan.
 
 The runner prints per-file SHA-256 identities after successful verification.
+An optional single check-name substring argument selects a focused run, for
+example `bun tests/fleet-protocol/validate.mjs 'repair1 P1'`; zero matching checks
+fail. Omit it for the complete gate. Repair 1 first ran wrong-device and
+wrong-role receipt controls and the permitted HTTP/1.1 envelope against the
+unfixed model/schema; their actual failures and subsequent GREEN are recorded
+separately from the original 46-check history. Receipt recovery keeps its
+special old-key permission after report overlap expires, but requires the
+same device role/ID, current generation/epoch, old key, request ID, next key
+and exact body digest; rejection must not mutate the modeled row.
 The task records actual command logs and source identity. Malformed fixtures
 are intentional and are never sent to a live service.

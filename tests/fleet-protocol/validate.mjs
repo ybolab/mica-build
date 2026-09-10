@@ -23,7 +23,10 @@ const stableDigest = report => {
 };
 const load = name => JSON.parse(readFileSync(resolve(here, name), 'utf8'));
 let checks = 0;
+assert(process.argv.length <= 3, 'usage: validate.mjs [check-name-substring]');
+const filter = process.argv[2];
 function check(name, fn) {
+  if (filter !== undefined && !name.includes(filter)) return;
   fn(); checks++;
   console.log(`PASS ${name}`);
 }
@@ -159,15 +162,71 @@ function bodyFromWire(name, bytes) {
   const limit = name === 'reports' ? 65536 : name === 'report' ? 16384 : 4096;
   const body = strictJSON(bytes, limit); valid(name, body); return body;
 }
+// Decoded field-list evidence only; no HTTP framing, HPACK or network parser.
+function headerBounds(fields, version) {
+  assert(fields.length <= 32, 'header field count');
+  let bytes = version === '1.1' ? 2 : 0;
+  for (const [name, value] of fields) {
+    assert(/^:?[a-zA-Z0-9-]+$/.test(name), 'header name');
+    assert(typeof value === 'string' && /^[\x21-\x7e](?:[\x20-\x7e]*[\x21-\x7e])?$/.test(value), 'header value');
+    assert(Buffer.byteLength(value) <= 512, 'header value bytes');
+    if (version === '2') assert.equal(name, name.toLowerCase(), 'HTTP/2 lowercase field');
+    bytes += Buffer.byteLength(name) + Buffer.byteLength(value) + (version === '1.1' ? 4 : 32);
+  }
+  assert(bytes <= 8192, 'header block bytes');
+}
+function normalizedHeaders(fields) {
+  const names = new Map(Object.keys(schema.$defs.headers.properties).map(name => [name.toLowerCase(), name]));
+  const result = Object.create(null);
+  for (const [name, value] of fields) {
+    const canonicalName = names.get(name.toLowerCase()); assert(canonicalName, 'unknown header');
+    assert(!Object.hasOwn(result, canonicalName), 'duplicate header'); result[canonicalName] = value;
+  }
+  return result;
+}
+function requestHeaders(x, fields) {
+  assert(['1.1', '2'].includes(x.httpVersion), 'HTTP version');
+  const origin = new URL(x.origin);
+  assert(origin.protocol === 'https:' && origin.origin === x.origin && origin.pathname === '/' &&
+    !origin.username && !origin.password && !origin.search && !origin.hash && !origin.hostname.endsWith('.'), 'normalized origin');
+  const pseudo = x.httpVersion === '2' ? x.pseudoHeaders : [];
+  assert(Array.isArray(pseudo), 'HTTP/2 pseudo headers required');
+  headerBounds([...pseudo, ...fields], x.httpVersion);
+  const h = normalizedHeaders(fields); valid('headers', h);
+  if (x.httpVersion === '1.1') {
+    assert(!Object.hasOwn(x, 'pseudoHeaders'), 'HTTP/1.1 pseudo headers forbidden');
+    assert(Object.hasOwn(h, 'Host'), 'required Host');
+    assert.equal(h.Host, origin.host, 'authority binding');
+  } else {
+    assert(!Object.hasOwn(h, 'Host') && !Object.hasOwn(h, 'Connection'), 'HTTP/2 forbidden transport header');
+    const p = Object.create(null);
+    for (const [name, value] of pseudo) {
+      assert([':method', ':scheme', ':authority', ':path'].includes(name), 'unknown pseudo header');
+      assert(!Object.hasOwn(p, name), 'duplicate pseudo header'); p[name] = value;
+    }
+    assert.equal(pseudo.length, 4, 'required pseudo headers');
+    assert.equal(p[':authority'], origin.host, 'authority binding');
+    assert.equal(p[':scheme'], 'https', 'scheme binding');
+    assert.equal(p[':method'], x.method, 'method binding');
+    assert.equal(p[':path'], x.path, 'path binding');
+  }
+  return h;
+}
+function rawHeaderEntries(raw) {
+  // LF repository fixture convention; real CRLF/message boundaries are a later runtime gate.
+  return raw.replace(/\r?\n$/, '').split(/\r?\n/).map(line => {
+    const match = /^([a-zA-Z0-9-]+): ([\x20-\x7e]*)$/.exec(line); assert(match, 'header syntax');
+    return [match[1], match[2]];
+  });
+}
 function signedBytes(x) {
-  const h = x.headers;
+  const h = normalizedHeaders(Object.entries(x.headers));
   return Buffer.from(['mos-fleet-request/1', x.method, x.origin, x.path, h['Content-Type'],
     h['Fleet-Role'], h['Fleet-Device'], h['Fleet-Epoch'], h['Fleet-Generation'], h['Fleet-Key'],
     h['Fleet-Request'], h['Fleet-Time'], hash(x.rawBody)].join('\n') + '\n');
 }
-function requestShape(x) {
-  valid('headers', x.headers);
-  const h = x.headers;
+function requestShape(x, fields = Object.entries(x.headers)) {
+  const h = requestHeaders(x, fields);
   assert.equal(x.method, 'POST', 'method');
   assert.equal(Number(h['Content-Length']), x.rawBody.length, 'content length');
   const body = bodyFromWire(x.requestSchema, x.rawBody);
@@ -274,6 +333,86 @@ check('N2 raw body byte and batch cardinality bounds', () => {
   reject(() => valid('reports', []), 'array bound');
 });
 const reportExchange = exchanges.exchanges.find(x => x.name === 'reports');
+check('repair1 P2 N2 permitted HTTP/1.1 envelope and authority refusal', () => {
+  const x = structuredClone(exchanges.exchanges[0]);
+  x.httpVersion = '1.1';
+  Object.assign(x.headers, { Host: 'plane.example', 'User-Agent': 'mos-fleet/1', Connection: 'keep-alive' });
+  requestShape(x);
+  x.headers.Connection = 'close'; requestShape(x);
+  delete x.headers.Connection; delete x.headers['User-Agent']; requestShape(x);
+  x.headers.Host = 'other.example'; reject(() => requestShape(x), 'authority');
+  x.headers.Host = 'plane.example'; x.headers['Fleet-Command'] = 'reboot';
+  reject(() => requestShape(x), 'unknown'); delete x.headers['Fleet-Command'];
+  delete x.headers.Host; reject(() => requestShape(x), 'Host');
+});
+check('repair1 P2 N2 complete raw envelope, singleton, value and version controls', () => {
+  const x = structuredClone(exchanges.exchanges[0]);
+  const raw = Object.entries(x.headers).map(([k, v]) => `${k}: ${v}`).join('\n') + '\n';
+  requestShape(x, rawHeaderEntries(raw));
+  requestShape(x, rawHeaderEntries(raw.replaceAll('\n', '\r\n')));
+  requestShape(x, Object.entries(x.headers).map(([k, v]) => [k.toLowerCase(), v]));
+  const lower = structuredClone(x); lower.headers = Object.fromEntries(Object.entries(x.headers).map(([k, v]) => [k.toLowerCase(), v]));
+  assert.deepEqual(signedBytes(lower), signedBytes(x));
+  for (const name of ['Host', 'Content-Length', 'Fleet-Role', 'User-Agent', 'Connection']) {
+    reject(() => requestShape(x, rawHeaderEntries(raw + `${name.toLowerCase()}: ${x.headers[name]}\n`)), 'duplicate');
+  }
+  for (const [name, value, error] of [['Cookie', 'a=b', 'unknown'], ['Transfer-Encoding', 'chunked', 'unknown'],
+    ['Connection', 'upgrade', 'enum'], ['User-Agent', 'other', 'const'], ['Host', null, 'value'],
+    ['Content-Length', '1', 'content length'], ['Host', 'x'.repeat(513), 'value bytes'],
+    ['Host', 'plane.example\r\nFleet-Command: reboot', 'value']]) {
+    const bad = structuredClone(x); bad.headers[name] = value; reject(() => requestShape(bad), error);
+  }
+  for (const version of ['1.0', '3', undefined]) {
+    const bad = structuredClone(x); bad.httpVersion = version; reject(() => requestShape(bad), 'HTTP version');
+  }
+  for (const origin of ['http://plane.example', 'https://plane.example/', 'https://plane.example/path']) {
+    const bad = structuredClone(x); bad.origin = origin; reject(() => requestShape(bad), 'origin');
+  }
+  const port = structuredClone(x); port.origin = 'https://plane.example:8443'; port.headers.Host = 'plane.example:8443';
+  requestShape(port); port.headers.Host = 'plane.example'; reject(() => requestShape(port), 'authority');
+  const ipv6 = structuredClone(x); ipv6.origin = 'https://[2001:db8::1]'; ipv6.headers.Host = '[2001:db8::1]'; requestShape(ipv6);
+});
+check('repair1 P2 N2 HTTP/2 authority, pseudo-header and connection boundaries', () => {
+  const x = structuredClone(exchanges.exchanges[0]); x.httpVersion = '2';
+  delete x.headers.Host; delete x.headers.Connection;
+  x.headers = Object.fromEntries(Object.entries(x.headers).map(([k, v]) => [k.toLowerCase(), v]));
+  x.pseudoHeaders = [[':method', x.method], [':scheme', 'https'], [':authority', 'plane.example'], [':path', x.path]];
+  requestShape(x);
+  for (const [name, value, reason] of [[':authority', 'other.example', 'authority'], [':scheme', 'http', 'scheme'],
+    [':method', 'GET', 'method'], [':path', '/wrong', 'path']]) {
+    const bad = structuredClone(x); bad.pseudoHeaders.find(([k]) => k === name)[1] = value;
+    reject(() => requestShape(bad), reason);
+  }
+  for (const field of x.pseudoHeaders) {
+    const bad = structuredClone(x); bad.pseudoHeaders.push(field); reject(() => requestShape(bad), 'duplicate pseudo');
+    bad.pseudoHeaders = x.pseudoHeaders.filter(([k]) => k !== field[0]); reject(() => requestShape(bad), 'required pseudo');
+  }
+  const unknown = structuredClone(x); unknown.pseudoHeaders.push([':command', 'reboot']);
+  reject(() => requestShape(unknown), 'unknown pseudo');
+  for (const [name, value] of [['host', 'plane.example'], ['connection', 'close'], ['Connection', 'close']]) {
+    const bad = structuredClone(x); bad.headers[name] = value; reject(() => requestShape(bad), 'HTTP/2');
+  }
+  const missing = structuredClone(x); delete missing.pseudoHeaders; reject(() => requestShape(missing), 'required');
+});
+check('repair1 P2 N2 decoded field count and byte limit edges', () => {
+  // Bounds in isolation use synthetic fields; endpoint allowlisting is checked separately above.
+  headerBounds(Array.from({ length: 32 }, (_, i) => [`x-${i}`, 'v']), '1.1');
+  reject(() => headerBounds(Array.from({ length: 33 }, (_, i) => [`x-${i}`, 'v']), '1.1'), 'field count');
+  headerBounds([['x', 'v'.repeat(512)]], '1.1');
+  reject(() => headerBounds([['x', 'v'.repeat(513)]], '1.1'), 'value bytes');
+  for (const version of ['1.1', '2']) {
+    const fields = Array.from({ length: 16 }, (_, i) => [`x-${i}`, 'v'.repeat(460)]);
+    const current = fields.reduce((n, [k, v]) => n + k.length + v.length + (version === '1.1' ? 4 : 32), version === '1.1' ? 2 : 0);
+    // Allocate the remaining bytes across values while retaining the 512-byte cap.
+    let delta = 8192 - current;
+    for (const field of fields) {
+      const add = Math.min(delta, 512 - field[1].length); field[1] += 'v'.repeat(Math.max(0, add)); delta -= Math.max(0, add);
+    }
+    assert.equal(delta, 0); headerBounds(fields, version);
+    const room = fields.find(field => field[1].length < 512); assert(room); room[1] += 'v';
+    reject(() => headerBounds(fields, version), 'block bytes');
+  }
+});
 check('N3 role, device, method, version and path shape negatives', () => {
   for (const [field, value, reason] of [['Fleet-Role', 'operator', 'role'], ['Fleet-Device', 'f'.repeat(32), 'binding'], ['Fleet-Schema', 'mos/fleet/v2', 'const'], ['Fleet-Generation', '0', 'generation']]) {
     const x = structuredClone(reportExchange); x.headers[field] = value;
@@ -433,18 +572,47 @@ check('MODEL N5 deterministic report/revoke ordering', () => {
     assert.equal(r.high, reportFirst ? 66n : 0n);
   }
 });
-function renew(r, p, id, nextKey, now) {
+function renew(r, p, id, nextKey, now, bodyDigest = hash(canonical({ nextPublicKey: nextKey }))) {
   if (r.renewal?.id === id) {
-    assert(r.state === 'active' && p.generation === r.generation && p.epoch === r.epoch &&
-      p.key === r.renewal.oldKey && nextKey === r.key && now < r.expiry, 'renewal replay refused');
+    assert(p.role === 'device' && p.device === r.device && r.state === 'active' &&
+      p.generation === r.generation && p.epoch === r.epoch && p.key === r.renewal.oldKey &&
+      nextKey === r.key && bodyDigest === r.renewal.bodyDigest && now < r.expiry, 'renewal replay refused');
     return r.renewal.issued;
   }
   deviceAuth(r, p, now, 'renew'); assert(now >= r.issued + 86400, 'renewal too early');
   assert(nextKey !== r.key && nextKey !== r.previous?.key, 'key reuse');
   r.previous = { key: r.key, until: Math.min(r.expiry, now + 600) };
-  r.key = nextKey; r.issued = now; r.expiry = now + 2592000; r.renewal = { id, oldKey: p.key, issued: now };
+  r.key = nextKey; r.issued = now; r.expiry = now + 2592000;
+  r.renewal = { id, oldKey: p.key, bodyDigest, issued: now };
   return now;
 }
+for (const [field, value] of [['device', 'other-device'], ['role', 'operator']]) {
+  check(`repair1 P1 N3/N5 receipt recovery rejects wrong ${field}`, () => {
+    const r = row(), old = principal(r); renew(r, old, 'renew-A', 'key-B', 100000);
+    const before = structuredClone(r);
+    reject(() => renew(r, { ...old, [field]: value }, 'renew-A', 'key-B', 100700), 'refused');
+    assert.deepEqual(r, before);
+    assert.equal(renew(r, old, 'renew-A', 'key-B', 100700), 100000);
+    assert.deepEqual(r, before);
+  });
+}
+check('repair1 P1 N5 exact pending renewal and current ownership fences', () => {
+  const r = row(), old = principal(r); renew(r, old, 'renew-A', 'key-B', 100000);
+  const before = structuredClone(r);
+  for (const change of [{ generation: 2n }, { epoch: 'local-B' }, { key: 'key-X' }]) {
+    reject(() => renew(r, { ...old, ...change }, 'renew-A', 'key-B', 100700), 'refused');
+  }
+  reject(() => renew(r, old, 'renew-A', 'key-X', 100700), 'refused');
+  const changedBytes = hash(canonical({ nextPublicKey: 'key-B' }) + ' ');
+  reject(() => renew(r, old, 'renew-A', 'key-B', 100700, changedBytes), 'refused');
+  reject(() => renew(r, old, 'renew-other', 'key-B', 100700), 'expired');
+  reject(() => renew(r, old, 'renew-A', 'key-B', r.expiry), 'refused');
+  assert.deepEqual(r, before);
+  assert.equal(renew(r, old, 'renew-A', 'key-B', 100700), 100000);
+  r.generation++; reject(() => renew(r, old, 'renew-A', 'key-B', 100700), 'refused');
+  r.generation--; r.epoch = 'local-B'; reject(() => renew(r, old, 'renew-A', 'key-B', 100700), 'refused');
+  r.epoch = old.epoch; r.state = 'revoked'; reject(() => renew(r, old, 'renew-A', 'key-B', 100700), 'refused');
+});
 check('MODEL N5 renewal lost response, old overlap, receipt recovery and revocation', () => {
   const r = row(), old = principal(r); renew(r, old, 'renew-A', 'key-B', 100000);
   accept(r, old, load('reports.json'), 100599);
@@ -513,19 +681,10 @@ check('N8 delta/date retry forms, invalid dates, clamping, floor and cap', () =>
 });
 
 check('N2 raw duplicate and unknown HTTP header refusal with positive control', () => {
-  const allowed = new Set(['fleet-role', 'fleet-schema', 'content-length']);
-  function parseHeaders(raw) {
-    const result = new Map();
-    for (const line of raw.split(/\r?\n/).filter(Boolean)) {
-      const match = /^([a-zA-Z-]+): ([\x20-\x7e]*)$/.exec(line); assert(match, 'header syntax');
-      const name = match[1].toLowerCase(); assert(allowed.has(name), 'unknown header');
-      assert(!result.has(name), 'duplicate header'); result.set(name, match[2]);
-    }
-    return result;
-  }
+  const parseHeaders = raw => normalizedHeaders(rawHeaderEntries(raw));
   reject(() => parseHeaders(readFileSync(resolve(here, 'duplicate-header.http'), 'utf8')), 'duplicate');
   reject(() => parseHeaders('Fleet-Command: reboot\r\n'), 'unknown');
-  assert.equal(parseHeaders('Fleet-Role: device\r\n').get('fleet-role'), 'device');
+  assert.equal(parseHeaders('Fleet-Role: device\r\n')['Fleet-Role'], 'device');
 });
 check('N4 positive closed error taxonomy and unsupported response schema', () => {
   const base = { schema: 'mos/fleet/v1', requestId: '2'.repeat(32), deviceId: load('register.json').deviceId };
@@ -594,6 +753,7 @@ check('N10 plan links, own tracking rows and one current protocol tag', () => {
   assert.deepEqual(Object.keys(schema.$defs.register.properties), ['deviceId','board','profile','version','product']);
   assert.deepEqual(Object.keys(schema.$defs.report.properties), ['schemaVersion','deviceId','counter','capturedAt','cadenceSeconds','bufferedSeconds','gapReports','version','update','health','storage','thermal','reset','watchdog','pstore','time','failures','interfaces']);
 });
+assert(checks > 0, 'no checks matched');
 console.log(`Design validation: ${checks} checks passed; static/schema, ephemeral crypto and MODEL checks only.`);
 for (const name of readdirSync(here).sort()) {
   const bytes = readFileSync(resolve(here, name));

@@ -75,3 +75,129 @@ design fixtures and source-linked future acceptance slices; production
 implementation and deployment remain separately unapproved.
 
 - complete: Completed the authorized implementation-ready DESIGN and 46 focused checks; documentation gates and design review passed. Production implementation/deployment remain future.
+
+## Repair 1 history
+
+- Same completed task and owner `worker-c/bvjc311u`; the explicit repair dispatch
+  authorizes the two design-validation corrections. No serializer reopen or
+  additional task is introduced. The original 46-check result is historical
+  coverage and did not cover the newly reported receipt-principal/header cases.
+- Verified the isolated tree clean at `ea4a8dca18a4ec81ee54ee75fe4c1d6cc9f74605`.
+  Merged exact reviewed local L2 `f30e2492a4f4a0d29f91f13d02abbcc2f92c093a`
+  (tree `64c7c9be5ea9fd470de79ac4b658374d696488a2`) with noninteractive
+  `git merge --no-edit`; merge commit `e0c43478f84cb2d43ddda197d7c59b063655da99`.
+  Only append conflicts in the two indexes occurred; both parents' unique rows
+  and statuses were preserved. Original evidence baseline `e03686e0` remains
+  unchanged; FLEET-CONFIG is still unmerged on the new source.
+- Initial execution completed normally at `2026-09-10T19:53:55.619Z`.
+  Recovered stalls at `19:22:08.405` and `19:32:08.415` remain historical
+  evidence; cancellation after L2 released the verified idle process was not
+  an implementation failure.
+
+### Repair 1 validation and design review
+
+The three RED runs used the new negative/success controls with the original
+renewal function and header schema. Wrong device and wrong role each failed
+with `AssertionError: Missing expected exception.`; the permitted complete
+HTTP/1.1 envelope failed with `AssertionError: unknown member Host`.
+No prior log was replaced. Every phase below has separate
+`/tmp/repair1-bvjc311u-<phase>.log` and `.meta.json` files; metadata includes
+exact command, start/finish, wrapper/command PID, source commit, dirty diff
+SHA-256 and every owned source/fixture SHA-256.
+
+| Phase | Actual outcome | PID | Started UTC | Exit |
+|---|---|---|---|---|
+| `red-device` | RED: missing expected exception | `1430939` | `2026-09-10T20:11:27.731534+00:00` | 1 |
+| `red-role` | RED: missing expected exception | `1431006` | `2026-09-10T20:11:28.692371+00:00` | 1 |
+| `red-headers` | RED: unknown member Host | `1431026` | `2026-09-10T20:11:29.268899+00:00` | 1 |
+| `green-p1` | GREEN: 3 checks | `1434524` | `2026-09-10T20:15:58.053685+00:00` | 0 |
+| `green-p2` | GREEN: 4 checks | `1434543` | `2026-09-10T20:15:58.531361+00:00` | 0 |
+| `green-full` | GREEN: 53 checks | `1434562` | `2026-09-10T20:15:59.011811+00:00` | 0 |
+| `docs` | PASS: 195/509/724/249/131 checks | `1434580` | `2026-09-10T20:15:59.496884+00:00` | 0 |
+| `diff` | PASS: whitespace | `1436783` | `2026-09-10T20:16:01.310253+00:00` | 0 |
+
+- All phases ran from `e0c43478f84cb2d43ddda197d7c59b063655da99` in persistent-shell
+  tmux `bvjc311u-f69a91`. Fixture commands used existing pinned `IMAGE_BUN_1`,
+  `--pull=never`, `--label ai-agent=true`, `--network none`, and only this
+  worktree mounted read-only; documentation/diff checks ran in the local shell.
+- RED dirty diff SHA-256:
+  `fd61897dc31e1a77f5830f6dd989391556e54d1a9925aeda342a2f3812bc8c80`.
+- First GREEN dirty diff SHA-256:
+  `259416cae7820147964d4592c813e094e5d60107a049f2eb2b298b327edcfc6e`;
+  fixture manifest SHA-256:
+  `98d1e7009295bd12ca94fcf6c43342b62524dd3628ec05d7b9eeb00432080e52`.
+- Commands: `bun tests/fleet-protocol/validate.mjs` within the pinned Docker
+  command already recorded above; focused arguments select `receipt recovery
+  rejects wrong device`, `receipt recovery rejects wrong role`, `permitted
+  HTTP/1.1 envelope`, `repair1 P1`, or `repair1 P2` respectively. The focused
+  selector fails when no check matches. The full 53-check gate retains the
+  original 46 groups and adds seven repair groups, with multiple positive and
+  negative assertions per group. This is not a runtime integration count.
+- `make docs-verify` still reports index 195/195, links 509/509, status 724/724,
+  translation coverage 249/249 and BSP 131/131. Own PMA links/unique completed
+  rows are additionally asserted by the full fixture runner.
+- Actual scope inspection via `/tmp/repair1-bvjc311u-scope.py` passed: precisely
+  six repair paths, both parents' index rows/statuses preserved, unchanged C2
+  and configuration bytes, unchanged JSON body schemas and eight body/result
+  examples, placeholder-only signatures/origin. No FLEET-CONFIG source arrived.
+- After that first GREEN, self-review added a positive control omitting optional
+  User-Agent/Connection and named exact later transport gates in N9. The final
+  snapshot checks use separate `final-full`, `final-docs`, `final-scope` and
+  `final-diff` phase logs/metadata under the same repair prefix; all four passed with exit 0.
+  Final fixture validation again passed 53 checks; documentation totals are
+  unchanged. No fixture is edited
+  during a running gate.
+
+Actual pma-cr local DESIGN review used the core and backend fixture policies.
+The review read the entire changed functions and callers, complete N1–N10
+contract and existing device/server sequence checks. It verified:
+
+- Receipt recovery checks device role/ID before return, keeps current G/epoch,
+  old key, next key, request ID and exact body digest fences, and remains a
+  read-only exception after report-key overlap. Ordinary fresh renewal still
+  requires the current unexpired key and the issuance-relative 24-hour floor.
+- Complete ordinary-header allowlisting and case-insensitive duplicate refusal
+  precede schema/auth; HTTP/1.1 authority and HTTP/2 pseudo-fields are bound to
+  configured origin/method/path. Optional headers survive schema validation.
+  Cookie/command/transfer headers, invalid version, null/malformed values,
+  wrong authority, duplicate singleton fields and excessive sizes are refused.
+- Existing first-writer/CAS, release/revocation ordering, atomic report receipt,
+  counter/queue crash model and bounded retry behavior remain intact. Report
+  acknowledgements still require authenticated exact bindings before retirement.
+  Body allowlists, off/reset autonomy and separate OS/application trust are unchanged.
+
+| Severity | Repair 1 remaining findings |
+|---|---|
+| CRITICAL | 0 |
+| HIGH | 0 |
+| MEDIUM | 0 |
+| LOW | 0 |
+
+**Repair 1 verdict: PASS for DESIGN.** These are schema/decoded-envelope,
+ephemeral signature-byte and symbolic state-model checks. No deployed-service
+vulnerability, real transport/HPACK decoder, filesystem durability, TLS interop
+or physical power-cut proof is claimed. Future production implementation,
+external repository/operations decisions, deployment and OCI remain unapproved.
+The completed task/plan status and existing serializer claim are retained.
+
+English history note for workstream D: Repaired special renewal receipt
+principal binding and aligned the strict request header schema with permitted
+HTTP/1.1 envelopes and explicit HTTP/2 authority checks. Recorded independent
+RED evidence, expanded the design gate to 53 checks, and preserved the original
+46-check history and implementation/deployment boundaries.
+
+Final snapshot source: `e0c43478f84cb2d43ddda197d7c59b063655da99`, dirty diff
+SHA-256 `522cbd5eea6ecfd86a63a98b77f09efe9c66ed8c68d6f70deba8edc471e73b47`.
+The final fixture gate ran at `2026-09-10T20:19:07.262450+00:00`, PID
+`1439982`, ended `2026-09-10T20:19:07.762623+00:00`, exit 0.
+Fixture manifest SHA-256:
+`8e592147677b1663ae225293f743a00ec5a234f00c8eb8caa0855da980d915f4`.
+
+- `protocol.schema.json` SHA-256: `97026ec21bbc8c1b012197dd85286a9d2c61bb1780bbb2fc9d8d65ab891be3c4`.
+- `exchanges.json` SHA-256: `ff035cb66173a4aca99d88fce3a75ec2106374c8f77e7f9b1932bb42ba07bf06`.
+- `validate.mjs` SHA-256: `7f5d9007a266270fe26a746fa3d4b3390033f787d071e03d31ad1f2442166c40`.
+
+Only this task's result notes were refreshed after the final snapshot gate;
+protocol and fixture bytes are unchanged. Staged whitespace/scope and own
+tracking links are checked again before the scoped local commit. Final HEAD
+and parent identities are supplied through the single L2 review handoff.
