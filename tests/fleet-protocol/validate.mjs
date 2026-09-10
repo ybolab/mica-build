@@ -328,14 +328,14 @@ check('N7 report response injection cannot advance acknowledgement', () => {
 // Explicit symbolic verified principals: this is a sequence model, not cryptographic authentication.
 function row() {
   return { device: load('report.json').deviceId, generation: 1n, epoch: 'local-A', key: 'key-A', previous: null,
-    expiry: 3000000, state: 'active', high: 0n, receipts: new Map(), renewal: null, release: null };
+    issued: 0, expiry: 2592000, state: 'active', high: 0n, receipts: new Map(), renewal: null, release: null };
 }
 function deviceAuth(r, p, now, operation = 'reports') {
   assert.equal(p.role, 'device', 'role forbidden');
   assert.equal(p.device, r.device, 'device forbidden');
   assert.equal(p.generation, r.generation, 'generation conflict');
   assert.equal(p.epoch, r.epoch, 'epoch conflict'); assert.equal(r.state, 'active', 'credential revoked');
-  const current = p.key === r.key && now < r.expiry;
+  const current = p.key === r.key && r.issued <= now && now < r.expiry;
   const overlap = operation === 'reports' && r.previous?.key === p.key && now < r.previous.until;
   assert(current || overlap, 'credential expired or wrong key');
 }
@@ -439,10 +439,10 @@ function renew(r, p, id, nextKey, now) {
       p.key === r.renewal.oldKey && nextKey === r.key && now < r.expiry, 'renewal replay refused');
     return r.renewal.issued;
   }
-  deviceAuth(r, p, now, 'renew'); assert(now >= 86400, 'renewal too early');
+  deviceAuth(r, p, now, 'renew'); assert(now >= r.issued + 86400, 'renewal too early');
   assert(nextKey !== r.key && nextKey !== r.previous?.key, 'key reuse');
   r.previous = { key: r.key, until: Math.min(r.expiry, now + 600) };
-  r.key = nextKey; r.expiry = now + 2592000; r.renewal = { id, oldKey: p.key, issued: now };
+  r.key = nextKey; r.issued = now; r.expiry = now + 2592000; r.renewal = { id, oldKey: p.key, issued: now };
   return now;
 }
 check('MODEL N5 renewal lost response, old overlap, receipt recovery and revocation', () => {
@@ -451,7 +451,9 @@ check('MODEL N5 renewal lost response, old overlap, receipt recovery and revocat
   reject(() => accept(r, old, load('reports.json'), 100600), 'expired');
   assert.equal(renew(r, old, 'renew-A', 'key-B', 100700), 100000);
   reject(() => renew(r, old, 'renew-B', 'key-C', 100700), 'expired');
-  const current = principal(r); accept(r, current, load('reports.json'), 100701);
+  const current = principal(r);
+  reject(() => renew(r, current, 'renew-too-early', 'key-C', 100700), 'too early');
+  accept(r, current, load('reports.json'), 100701);
   r.state = 'revoked'; reject(() => renew(r, old, 'renew-A', 'key-B', 100702), 'refused');
 });
 check('MODEL N6 counter reserve/restart and local epoch response fence', () => {
