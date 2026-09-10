@@ -45,5 +45,33 @@ Projecting offline fleet desired configuration through provisioning status.
   baked, updates, and fleet files.
 - `make os-apid-api-spec-pins`, `make docs-verify`, and scoped
   `git diff --check` passed before the implementation checkpoint.
-- PMA-CR scoped Rust review: PASS, with no high-, medium-, or low-severity
-  findings.
+- Initial PMA-CR scoped Rust review before repair 1: PASS, with no high-,
+  medium-, or low-severity findings.
+- The original full Rust acceptance is preserved at
+  `/tmp/r3suq4rc-os-rust-gate-1c87a8be.log`: the command `timeout 1800 make os-rust-gate`
+  ran from clean source commit
+  `1c87a8bedf740b52d1f2c4d576427a52f6a62ffa`, tree
+  `de0bf6e59ef321d8f9481f526841477b2e7f49c5`, PID `1402455`, from
+  `2026-09-10T19:47:01Z` to `2026-09-10T19:50:50Z`; both `mosd` and
+  `mos-deploy` passed and the wrapper recorded exit 0.
+- Repair 1 synchronized reviewed local L2 commit
+  `f30e2492a4f4a0d29f91f13d02abbcc2f92c093a` at clean merge checkpoint
+  `ec1c7bcb4116782f7218464ae0220439a8a42d8c`. The only conflicts were
+  mechanical task and plan index appends, and both owners' rows were retained.
+- Repair 1 route RED is preserved at `/tmp/r3suq4rc-repair1-red.log`:
+  source commit `ec1c7bcb4116782f7218464ae0220439a8a42d8c`, tree
+  `7c2e3ee22446585ee2e5e3d2b3077c1e53685c0a`, started
+  `2026-09-10T20:10:28Z`, PID `1430716`, finished
+  `2026-09-10T20:10:43Z`, exit 101, 1 passed, 4 failed, and 342 filtered.
+  Both explicit-null booleans and both malformed hosts returned HTTP 200;
+  the userinfo control was already rejected. Test-diff identity
+  `50187eeed70f3d6c9b2a8795bf59b5d7e5742d6c` is the SHA-1 Git blob object
+  ID of the binary diff bytes for the route test file, produced by
+  `git hash-object --stdin`.
+- Finding F1 is repaired: present booleans deserialize strictly while omitted
+  booleans remain absent. The focused settings test passed 1/1 and the two
+  authenticated null-boolean route tests passed 2/2.
+- Finding F2 remains intentionally RED. No existing source caller exposes a
+  complete URL validator to `mosd-settings`; the workspace already declares
+  `url = "2"` and locks `url` 2.5.8, but adding the `mosd-settings` dependency
+  edge and its lockfile member edge awaits the explicit two-path handoff.

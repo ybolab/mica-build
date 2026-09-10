@@ -64,4 +64,8 @@ index rows may change.
   implementation in this slice.
 - L2 D owns global changelog and reconciliation updates.
 - The authenticated-route RED and focused GREEN are recorded in the related
-  task. The scoped PMA-CR Rust review passed without findings.
+  task. The initial scoped PMA-CR Rust review passed without findings.
+- Repair 1 adds strict null-boolean and complete HTTPS URL contract evidence.
+  The null-boolean finding is resolved; malformed-host tests remain RED until
+  the explicitly requested `mosd-settings` dependency and lockfile path
+  handoff permits the existing workspace `url` crate to be used.
