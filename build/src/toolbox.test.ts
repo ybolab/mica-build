@@ -9,7 +9,7 @@
 // check wearing a policy's message, and this one has to fire anyway.
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
-import { existsSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { $ } from 'bun'
 import { makeWorkDir, REPO_ROOT } from './paths.ts'
@@ -113,6 +113,39 @@ describe('a tool that runs, runs the same way in every toolbox', () => {
       expect(`${name}: ${r.stdout}`).toBe(`${name}: 1577836800`)
     }
   })
+})
+
+describe('read-only identity mounts', () => {
+  test.each([false, true])('read-only protection survives overlapping and duplicate declarations, reversed=%s', async (reversed) => {
+    const fixture = join(work, `mounts-${reversed}`)
+    const metadata = join(fixture, '.git')
+    const nested = join(metadata, 'worktrees', 'linked')
+    mkdirSync(nested, { recursive: true, mode: 0o777 })
+    const alias = join(fixture, 'metadata-alias')
+    symlinkSync(metadata, alias)
+    const files = [join(metadata, 'config'), join(nested, 'HEAD')]
+    for (const file of files) writeFileSync(file, 'fixture metadata\n', { mode: 0o666 })
+    const writable = [fixture, metadata, `${metadata}/.`, nested, alias]
+    const protectedPaths = [metadata, nested, `${metadata}/.`, metadata]
+    if (reversed) { writable.reverse(); protectedPaths.reverse() }
+    const tb = await Toolbox.open({ key: 'mount-fixture', imageKey: 'IMAGE_ALPINE_3_21', manager: 'apk', packages: [], tools: ['sh', 'cat', 'id'] }, {
+      mounts: writable,
+      readOnlyMounts: protectedPaths,
+    })
+    try {
+      expect((await tb.must(['id', '-u'])).stdout.trim()).toBe('0')
+      for (const file of [...files, join(alias, 'config')]) {
+        expect((await tb.must(['cat', file])).stdout).toBe('fixture metadata\n')
+        const write = await tb.run(['sh', '-c', 'printf changed > "$1"', 'sh', file])
+        expect(write.exitCode, `${write.stdout}${write.stderr}`).not.toBe(0)
+        expect(write.stderr).toMatch(/Read-only file system/i)
+        expect(readFileSync(file, 'utf8')).toBe('fixture metadata\n')
+      }
+      const ordinary = join(fixture, '.git-other')
+      await tb.must(['sh', '-c', 'printf writable > "$1"', 'sh', ordinary])
+      expect(readFileSync(ordinary, 'utf8')).toBe('writable')
+    } finally { await tb.close() }
+  }, OPEN_TIMEOUT_MS)
 })
 
 describe('a failing tool is reported, never swallowed', () => {
