@@ -27,10 +27,10 @@ Three artifacts, all required:
 2. **A run directory copied off the device**, holding one capture file per
    probe: the raw output, command line, UTC time and exit status. Device-local
    evidence alone is insufficient for reboot, reset and power-cut rows.
-3. **A markdown table**, printed by `cx3576-bench-collect.sh report`, whose
-   rows are exactly the dossier's — `| Row | Result | Date | Evidence /
-   reason |`. It is a legacy thirteen-row summary; the operator must separately
-   reconcile the finer obligations in the live acceptance matrix.
+3. **A markdown report**, printed by `cx3576-bench-collect.sh report`, with the
+   legacy thirteen dossier rows and a separate 39-row current-acceptance table.
+   The latter retains 38 mandatory rows and optional historical D5 so aggregate
+   dossier results cannot hide an unobserved current obligation.
 
 The collector enforces [qualification.md](qualification.md) §2's row grammar on
 its own output: a result cell is exactly `pass`, `fail`, `N/A` or `not tested`,
@@ -44,12 +44,29 @@ gave it.
 
 [qualification.md](qualification.md) §1 binds results to one combination. The
 concrete storage part, actual system block device and RTC are unrecorded in this
-workspace. The collector assumes `/sys/block/mmcblk0`; that path is not device
-discovery. Before copying or running it, the operator must identify the system
-medium from the authorized bench unit and record the mapping. If the path is not
-`/sys/block/mmcblk0`, the collector cannot produce an admissible binding without
-a scoped follow-up. **A run with an inferred or incomplete binding is not a
-qualification run.**
+workspace. Before copying or running the collector, the operator must identify
+the system medium from the authorized bench unit and create a public binding
+file with exactly one value for every key below:
+
+```text
+SOURCE_COMMIT=<40 lowercase hex>
+SOURCE_TREE=<40 lowercase hex>
+IMAGE_NAME=<verified complete-image filename>
+IMAGE_SHA256=<64 lowercase hex>
+VERIFICATION_RECORD=<operator-visible verification record path or ID>
+PROFILE=<dev or prod>
+BOARD_REVISION=CX3576-Z
+RADIO_SKU=AIC8800D80
+SYSTEM_BLOCK=<explicit /dev node>
+```
+
+The file contains public identities, never tokens or signing keys. The
+collector parses it as data and records a canonical `exact-image.env`, including
+the explicit API URL and dry-run mode. Repeat the same API and mode on every
+stage; changing image, target, API or mode requires a separate run directory.
+It derives sysfs only from `SYSTEM_BLOCK` and refuses a real stage when that
+node is not a block device. **A run with an inferred or incomplete binding is
+not a qualification run.**
 
 ## 2. The bench, and what is missing from it
 
@@ -60,7 +77,7 @@ qualification run.**
 | Serial console on `ttyFIQ0`, 1500000 baud | all | the assumed interface; the network is a measurement, not a given |
 | Host with `rkdeveloptool` and USB to the OTG port | 13, 12 | the flash and the last-resort recovery path |
 | A switched power feed the operator can cut | 4 | see §5 |
-| Explicitly confirmed local API route and test credential/token | power, update, reset, offline | do not use the collector's loopback default as discovery |
+| Explicitly confirmed local API route and test credential/token | power, update, reset, offline | the collector has no default endpoint; pass `--api` only after confirmation |
 | Ethernet with a DHCPv4 server, on both ports | 6 | `eth0` and `eth1` are separately measured |
 | A 2.4/5 GHz AP with known credentials | 6 | |
 | A controlled Bluetooth peer and named profile | current row N3 | controller enumeration alone is insufficient |
@@ -104,8 +121,8 @@ not run**, and the collector refuses it rather than producing a row.
 | 8 | `update` | 3 | stage 7's reset was absorbed: native state and the preceding reset are recorded |
 | 9 | `powercut` | 4 | stage 8 left the device on a named confirmed deployment with a usable retained fallback |
 | 10 | `storagefill` | 5 (fill) | stage 9 completed, and the run directory has been copied off |
-| 11 | display (manual) | D1-D4; historical D5 is optional | stage 10 completed; the named sink, USB keyboard and visual recorder are attached for D1-D4; D5 adds no pass gate or independent destructive run |
-| 12 | accelerators (manual) | A1-A3 | stage 11's mandatory D1-D4 observations completed; accepted fixtures and expected outputs are named before execution |
+| 11 | `display` | D1-D4; historical D5 is optional | stage 10 completed; the named sink, USB keyboard and visual recorder are attached for D1-D4; D5 adds no pass gate or independent destructive run |
+| 12 | `accelerators` | A1-A3 | stage 11's mandatory D1-D4 observations completed; accepted fixtures and expected outputs are named before execution |
 | 13 | `recovery` | 12, R1-R2 | all required preceding evidence and any optional evidence actually captured are copied off the device; this stage destroys |
 
 ### Why that order and not another
@@ -138,7 +155,7 @@ not run**, and the collector refuses it rather than producing a row.
 - **10 late, because the fill test fills the filesystem the run directory lives
   on.** The collector reserves headroom and stops short, but the copy-off is
   the real protection.
-- **11 last, and irreversible.** Row 12 walks
+- **13 last, and irreversible.** Row 12 walks
   [../user/recovery.md](../user/recovery.md)'s ordering: read-only diagnosis,
   guarded rollback, configuration reset, application-data reset, then the two
   rungs this board **refuses** — credential recovery and the full factory reset,
@@ -188,9 +205,15 @@ For every cold start, begin the stability window only after the named required
 health set and authenticated deployment confirmation succeed. Keep serial and
 service observation running for at least 180 seconds, then capture the required
 members, optional failed-unit list, deployment state, uptime and boot ID again.
-The collector's current `health_verdict` requires zero failed units and has no
-180-second window, so its automated verdict cannot close B2 without this manual
-evidence.
+Collector v3 evaluates `boot-settled`, `mosd` and `apid` from the shipped
+required-health log, retains optional failed-unit names without treating them
+as required failures, and probes live `mosd.GetState("")` and the confirmed
+API's `/healthz` both before and after 180 seconds. Missing live-probe inputs
+prevent counting a cycle; a failed probe records failure. These two snapshots
+do not replace uninterrupted external serial/service observation throughout
+the window. Repeat invocations preserve distinct capture directories and do
+not count the same boot ID twice.
+Five distinct cold-cycle entries are still required before B2 can pass.
 
 ### Stage 2 — `inventory` (the Gate D measurements; rows 8 and 10 readouts)
 
@@ -429,9 +452,9 @@ U-Boot-to-Linux hang method. Capture one uninterrupted trace showing U-Boot
 arming before eMMC access, Linux driver takeover, PID 1 ownership and configured
 timeouts; then run the early expiry and post-PID-1 expiry as separate cases.
 
-Under L1's 2026-09-10 ruling, the inherited
-[PLAN-088](../plan/PLAN-088.md) D5 HDMI-panic requirement is superseded by the
-current console policy and is not a campaign pass criterion. The existing
+Under L1's 2026-09-10 ruling, current row D5, inherited from the historical
+[PLAN-088](../plan/PLAN-088.md) section 2.2 panic obligation (old bench D4), is
+superseded by the current console policy and is not a campaign pass criterion. The existing
 watchdog/crash tests still require authoritative serial diagnostics, reset
 cause and their independent watchdog/recovery results. If the operator elects
 to capture the optional HDMI state at the same time, connect the named sink
@@ -480,11 +503,11 @@ unbounded namespaces. Remove only fixture files and verify accounting recovers.
 Do not fill the entire DATA filesystem merely to prove that it is finite.
 Record eMMC health as unsupported with a reason when the part has no surface.
 
-The collector's `storagefill` prompt still expects `/mos` and `/srv` quota
-refusal and rejects unlisted `/var` writes. That prompt is stale and must not be
-used for a current pass until a scoped collector follow-up corrects it.
+Collector v3 captures quota and namespace state and asks for this current
+contract explicitly. Its prompts and report structure do not replace the raw
+mount, quota, write, exhaustion and reset-isolation evidence required for S2.
 
-### Stage 11 — display (manual rows D1-D4; historical D5 is optional)
+### Stage 11 — `display` (rows D1-D4; historical D5 is optional)
 
 Run D1-D4 independently and bind each state to the exact sink,
 cable/connector, image and boot ID. D5 is not a prerequisite for this or any
@@ -497,13 +520,14 @@ following stage; handle it only as the optional review in step 5:
 2. With a USB keyboard, use Alt+F2 and Ctrl+Alt+F2 in separate attempts. tty2
    must start an ordinary getty, accept a test credential and permit logout;
    tty1 must have no getty and tty2 must not autologin.
-3. Return from tty2 and record the resulting presentation. The current display
-   design names no owner that redraws the kernel logo, so this is a known
-   software gap and cannot pass by procedure wording.
+3. Return from tty2 and record the resulting presentation. Reviewed A3 commit
+   `209982d98f83ef149d2c3850adc63debc42f4c5a` supplies the bounded redraw path
+   and host fixtures; physical behavior remains unqualified until observed on
+   the exact image.
 4. Boot headless, bank connector/fb0 state, attach the named sink after the
    180-second window, and record hotplug, modes, fb0 and the visual result. The
-   current artwork is init-only; the existing late-HDMI task owns the software
-   gap.
+   reviewed A3 path retains the artwork and handles the viewport callback, but
+   host fixtures are not whole-kernel or physical hotplug evidence.
 5. Review any visual state captured during the approved stage 7 watchdog crash
    as `not qualified / optional observation` beside the authoritative serial
    trace. If no sink was connected then, record no D5 observation and do not
@@ -512,7 +536,7 @@ following stage; handle it only as the optional review in step 5:
    screen observation neither passes nor blocks this or any following stage and
    proves neither support nor impossibility.
 
-### Stage 12 — accelerators (manual current rows A1-A3)
+### Stage 12 — `accelerators` (current rows A1-A3)
 
 Do not substitute probe success or device-node presence for functionality.
 Before running, name versioned NPU, encoder and decoder fixtures, exact inputs,
@@ -704,8 +728,8 @@ exchange addresses. No host PC, no USB and no second CAN node.
 `journalctl -b -u systemd-udevd | grep -i "MAC address"`. Recompute both
 addresses from the current implementation's `MD5(CID + "-" + topology)` rule,
 using the CID of the operator-identified system medium and the recorded
-topology. Do not substitute the collector's `mmcblk0` default for that
-identification.
+topology. Use only the `SYSTEM_BLOCK` bound by the operator; the collector has
+no default medium to substitute for that identification.
 
 **Pass:** each port's address is `02:` followed by the first five bytes of that
 md5, `ID_NET_LINK_FILE` names `60-mos-mac-stable.link`, and udevd logged no
@@ -789,14 +813,18 @@ row. Keep the exact evidence in the live matrix and board dossier.
 
 Transfer the collector only through the operator-confirmed local bench route.
 Run it over the serial console one stage at a time with an explicit persistent
-output directory and, where used, an explicitly confirmed API URL. Do not use
-its default loopback URL or `mmcblk0` probes as endpoint/media discovery.
+output directory, the public exact-image binding, and an explicitly confirmed
+API URL for live required-health probes. Keep that URL on every invocation in
+the same run. The collector has no default endpoint or system medium.
 
 ```sh
 bash /root/cx3576-bench-collect.sh --out /operator/confirmed/data/path \
+  --identity /operator/evidence/exact-image.env \
   --api https://operator-confirmed-local-endpoint firstboot
-bash /root/cx3576-bench-collect.sh --out /operator/confirmed/data/path inventory
-# Continue in section 3 order; run manual stages 11 and 12 separately.
+bash /root/cx3576-bench-collect.sh --out /operator/confirmed/data/path \
+  --identity /operator/evidence/exact-image.env \
+  --api https://operator-confirmed-local-endpoint inventory
+# Continue in section 3 order, including display and accelerators.
 bash /root/cx3576-bench-collect.sh --out /operator/confirmed/data/path report \
   > /operator/confirmed/data/path/qualification-rows.md
 ```
@@ -805,13 +833,20 @@ bash /root/cx3576-bench-collect.sh --out /operator/confirmed/data/path report \
   namespace on DATA, which survives a reboot and a power cut. The collector may fall back to `/tmp/mos-bench`, which is volatile and
   cannot retain evidence across a reboot. Copy such evidence to the external
   bench recorder before continuing. It `sync`s after every append for the same reason.
+  Each invocation preserves its captures under
+  `evidence/<stage>/<UTC timestamp>.<unique suffix>/`; the log prints the exact
+  directory and cycle records link it. Historical `evidence/<stage>/file`
+  references now mean that file in the recorded invocation directory.
 - **The API.** `GET /api/v1/update` and the other reads are authenticated.
-  Pass a bearer token with `--token` or `MOS_BENCH_TOKEN`; without one the
-  collector records `not collected: no API token` and falls back to the
+  Pass both the confirmed URL with `--api` and a bearer token with `--token`
+  or `MOS_BENCH_TOKEN`; without either one the collector records which input is
+  absent and falls back to the
   unauthenticated sources (`mos-deploy`, `systemctl`, the bus) for
   everything they cover. It does not log in for you: minting a session on the
   device writes to apid's audit ring and its login-backoff counters, and a test
   harness must not be the thing that locks the operator out.
+  The unauthenticated live `/healthz` probe still requires the confirmed URL;
+  without it, no required-health window can be counted.
 - **`--dry-run`** runs every read-only probe and refuses every mutation,
   reboot, install and power-cut prompt. This is how the script is exercised
   somewhere other than the bench.
@@ -824,14 +859,13 @@ Every probe is guarded by a `command -v` check. **A missing tool produces a
 `not tested` row naming the tool**, never a silent skip and never a pass — the
 same rule the dossier already applies to itself.
 
-The current collector is not sufficient by itself for this run. It hard-codes
-the system medium, uses the obsolete zero-failed-unit health criterion, has no
-180-second first-boot window, describes old storage quota semantics and a rescue
-SD, exercises only the post-PID-1 watchdog case, and has no HDMI/tty2,
-accelerator or Bluetooth-peer rows. The complete gap list and ownership handoff
-are in the [live matrix](../task/20260910-1014-a2-cx3576-acceptance-matrix.md).
-Until those gaps are corrected, its raw captures are inputs to a manually
-reviewed verdict, never an automatic current pass.
+Collector v3 closes the earlier evidence-structure gaps: it refuses missing
+image/media binding, never guesses an API endpoint, applies the required-health
+set over a 180-second window, captures current storage policy, and emits all 39
+logical rows including display, accelerator and Bluetooth operator evidence.
+It intentionally has no supported pre-PID-1 watchdog hang injection point, and
+it cannot turn an operator response into source, whole-image or physical proof.
+Review raw captures before accepting any result.
 
 ### The tool inventory must be measured on the accepted image
 
@@ -858,7 +892,8 @@ the bench run:
 ## 8. Filling the dossier
 
 `cx3576-bench-collect.sh report` prints the thirteen rows in the dossier's own
-column order. Review every cell against the raw evidence and the collector gaps;
+column order followed by the 39 current details. Review every cell against the
+raw evidence;
 then update both the
 [live matrix](../task/20260910-1014-a2-cx3576-acceptance-matrix.md) and
 [cx3576-example.md](cx3576-example.md) in the owning reconciliation change:
@@ -882,11 +917,14 @@ units that shipped under it.
 
 ## 9. Current verification status
 
-The current collector is syntax-checked and its dry-run/refusal paths must be
-checked before bench use. The active file-deployment task records reusable
-software results; earlier collector runs apply only to their dated source. The
-live matrix records the exact current blockers. No current same-image physical
-CX3576 acceptance result has been captured.
+Collector v3 is syntax-checked and its explicit-binding, health-window,
+dry-run/refusal and 39-row report behavior has a focused host test. The active
+file-deployment task records reusable software results; earlier collector runs
+apply only to their dated source. The live matrix records the exact current
+blockers; A4's [integrated acceptance detail](../task/20260910-1014-a4-cx3576-integrated-acceptance.md)
+records subsequent collector/build deltas without rewriting that baseline.
+No current same-image physical CX3576 acceptance result has been
+captured.
 
 journald is volatile. Capture each boot's journal and serial trace before
 rebooting; a later collector invocation cannot recover the previous journal.
@@ -903,12 +941,15 @@ password authentication.
 Record connector status, EDID modes, fb0 presence and the named physical sink
 for every visual result. A historical disconnected-display log cannot decide a
 connected-display row. Stage 11 defines the current D1-D4 observations for
-connected boot, tty2, return from tty2 and late HDMI attachment. The
+connected boot, tty2, return from tty2 and late HDMI attachment. The older
 [display design](../design/display.md) and
-[late-HDMI task](../task/20260910-0117-cx3576-late-hdmi-logo.md) already record
-that current init-only artwork has no redraw owner after VT use or late attach;
-those two rows remain known software gaps plus unobserved hardware rows, not
-new regressions inferred from old evidence.
+[late-HDMI task](../task/20260910-0117-cx3576-late-hdmi-logo.md) record the
+pre-A3 init-only baseline. Reviewed A3 commit
+`209982d98f83ef149d2c3850adc63debc42f4c5a` now provides retained logo data,
+VT-return redraw and Rockchip hotplug redraw with controlled host fixtures.
+That is delivered software evidence, not a coherent ARM64 kernel/object result
+or a physical D3/D4 pass. A4 records the compiled-artifact result separately;
+the exact-image HDMI/VT observations remain unqualified until a bench is named.
 
 D5 retains historical [PLAN-088](../plan/PLAN-088.md) section 2.2 and its
 `console=tty1` reasoning only for chronology. L1 ruled on 2026-09-10 that it is

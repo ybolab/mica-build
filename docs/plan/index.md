@@ -126,3 +126,5 @@ disobeys on sight teaches a reader the wrong thing about the tree.
 - [x] [**20260910-1014-a2-cx3576-acceptance-matrix Current CX3576 acceptance matrix and evidence baseline**](20260910-1014-a2-cx3576-acceptance-matrix.md) `2026-09-10`
 
 - [x] [**20260910-1014-a3-cx3576-late-hdmi-logo CX3576 late HDMI and return-to-logo repair**](20260910-1014-a3-cx3576-late-hdmi-logo.md) `2026-09-10`
+
+- [-] [**20260910-1014-a4-cx3576-integrated-acceptance CX3576 integrated artifact and board acceptance**](20260910-1014-a4-cx3576-integrated-acceptance.md) `2026-09-10`
