@@ -1,9 +1,21 @@
 # 20260910-1050-c-native-endpoint-verification Verify native binaries contain no default update endpoints
 
-- **status**: in_progress
+- **status**: completed
 - **priority**: P1
 - **owner**: worker-c/wja3bzl2
 - **createdAt**: 2026-09-10 10:50
+
+## Final software and sample acceptance
+
+Verifier source: 57312ed80715319f95fb2edd5c6cb64d6008b0b7. The focused gate passes 271/271 tests with 913 assertions; the relevant full verifier suite passes 911/911 tests with 7474 assertions, including typecheck. The committed-source ROOT_CHECKS scan passes on the exact original signed S905X5M development sample: /usr/bin/mosd, /usr/bin/apid, and /usr/bin/mos-deploy; 3 files and 19,824,184 bytes. Each input hash is checked before scanning. This completes the bounded PLAN-070 F8 / RFCT-315 F8 software/sample slice under the L1 amendment. Earlier partial results below remain historical evidence, including the initial sample exit 1.
+
+The supplied dependency-source manifest resolves the previous attribution request. Seven archive hashes match both approved and current reviewed locks; eleven runtime source files match their archive members. Exact runtime diagnostics require the complete source message and, when the URL is concatenated in the binary, the complete observed following text plus equality of the whole extracted token. A known URL prefix, truncated adjacent token, modified suffix, wrong binary, or newly injected endpoint cannot qualify. XML and UI exclusions remain exact and scoped by binary. No asset, section, domain, or localhost family is skipped.
+
+PMA-CR core and TypeScript backend review: PASS, zero remaining high-confidence findings (CRITICAL 0 / HIGH 0 / MEDIUM 0 / LOW 0). Actual scoped diff and immediate registry/path helpers were reviewed. C.D3 public metadata and every pre-existing root check/test remain unchanged. Review found and fixed both UTF-8 truncation and token-only diagnostic-boundary acceptance, each with behavioral RED/GREEN evidence. Tests invoke the production ROOT_CHECKS entry.
+
+No software/sample blocker remains. A4 owns the new CX candidate scan and B7 owns fresh integrated x64/virt-arm64 scans using this verifier. The sample retains 0.1.0+git5c61f7fbb558.dirty-1 and mosd5c61f7fbb558-dirty identities; it is source-content-equivalent to #313 5d0dca577a782aa707d9530779c4b23f2a7eda31, not a current-C build or a clean-commit rebuild. There is no hardware qualification, binary execution, root/kernel/QEMU/full-image build, Docker resource, dependency installation, or change to source/signing artifacts. Gates use the installed Bun 1.4.0 host route of verify/run.sh; the pinned container fallback was not exercised.
+
+English history note for L2 D: Added a packed-root native endpoint check requiring all three current regular ELF binaries with nonzero path, file, and byte evidence. Exact embedded UI and locked runtime diagnostic attribution avoids broad exemptions while retaining endpoint and unsafe-input refusals. Focused and full verifier tests pass, and the original signed S905X5M development sample passes the same check; final candidate and hardware acceptance remain separate.
 
 ## Description
 
@@ -92,3 +104,27 @@ The plan records nine exact APID-only non-endpoint literals, producer hashes, an
 - Read-only sample driver /tmp/wja3bzl2-sample-scan.ts SHA256 a62c6a6f231baf81b2d5a2c9c5bbddbd0b8d33fd833b9631f07ff5caf6a02f97. It rechecks the exact three ELF hashes before invoking the real ROOT_CHECKS entry and reports original source/dirty identity and input hashes.
 
 - English history note for L2 D: Attributed nine exact APID embedded UI literals to immutable compiler assets, added per-binary and neighboring-endpoint controls, and fixed a UTF-8 truncation bypass. The original signed S905X5M development sample was scanned through ROOT_CHECKS; remaining native dependency literals fail closed pending exact locked-source attribution.
+
+## Final diagnostic and sample gate evidence
+
+All checks below ran in persistent-shell tmux wja3bzl2-a69735 with explicit timeouts. The metadata files retain the exact commands, source/diff identities, PIDs, timestamps, logs, and terminal exit codes. No detached gate remains.
+
+- Native diagnostic attribution behavioral RED: 233 pass, 21 fail, 793 assertions; `timeout 240s bash verify/run.sh src/checks-file-root.test.ts`; source 2ef436fecd91054516fa3430a0882fc749e08d37; source/test diff SHA256 93c46848b15652dbe6a5839a4a44451a262b68de0a5b7a8ed2337f3b849af039; startedAt 2026-09-10T21:07:36.306494+00:00; PID 1518381 / runner 1518373; finishedAt 2026-09-10T21:07:38.462607+00:00; exitCode 1; metadata /tmp/wja3bzl2-native-diagnostics-red.json; output /tmp/wja3bzl2-native-diagnostics-red.log.
+
+- Initial native diagnostic GREEN before boundary tightening: 254 pass, 0 fail, 862 assertions; `timeout 240s bash verify/run.sh src/checks-file-root.test.ts`; source 2ef436fecd91054516fa3430a0882fc749e08d37; source/test diff SHA256 925f6a6f44f22dd17e4fe0d03fd450f4ec1e0a8127043612d78c0b16324b7741; startedAt 2026-09-10T21:08:50.476795+00:00; PID 1518875 / runner 1518867; finishedAt 2026-09-10T21:08:52.488845+00:00; exitCode 0; metadata /tmp/wja3bzl2-native-diagnostics-green.json; output /tmp/wja3bzl2-native-diagnostics-green.log.
+
+- Review-discovered truncated-context behavioral RED: 254 pass, 17 fail, 879 assertions; `timeout 240s bash verify/run.sh src/checks-file-root.test.ts`; source 2ef436fecd91054516fa3430a0882fc749e08d37; source/test diff SHA256 03a154d45312aa035f2bf6fcb867127608ad04a1bd3b0f7efe0317598afdde6c; startedAt 2026-09-10T21:10:39.173235+00:00; PID 1521499 / runner 1521491; finishedAt 2026-09-10T21:10:41.095235+00:00; exitCode 1; metadata /tmp/wja3bzl2-diagnostic-context-red.json; output /tmp/wja3bzl2-diagnostic-context-red.log.
+
+- Final focused GREEN: 271 pass, 0 fail, 913 assertions; `timeout 240s bash verify/run.sh src/checks-file-root.test.ts`; source 2ef436fecd91054516fa3430a0882fc749e08d37; source/test diff SHA256 358f5f666b94860250e76b8cf07339a7f915c3e48757cdfc0722e17e09caf0e8; startedAt 2026-09-10T21:15:10.658186+00:00; PID 1525682 / runner 1525672; finishedAt 2026-09-10T21:15:12.762822+00:00; exitCode 0; metadata /tmp/wja3bzl2-diagnostic-context-green.json; output /tmp/wja3bzl2-diagnostic-context-green.log.
+
+- Actual sample GREEN before source commit: 3 files / 19824184 bytes; `timeout 60s bun /tmp/wja3bzl2-sample-scan.ts`; source 2ef436fecd91054516fa3430a0882fc749e08d37; source/test diff SHA256 358f5f666b94860250e76b8cf07339a7f915c3e48757cdfc0722e17e09caf0e8; startedAt 2026-09-10T21:15:29.452966+00:00; PID 1525853 / runner 1525846; finishedAt 2026-09-10T21:15:29.707904+00:00; exitCode 0; metadata /tmp/wja3bzl2-sample-diagnostics-green.json; output /tmp/wja3bzl2-sample-diagnostics-green.log.
+
+- Committed-source verifier suite: 911 pass, 0 fail, 7474 assertions; `timeout 300s make os-verify-test`; source 57312ed80715319f95fb2edd5c6cb64d6008b0b7; source/test diff SHA256 e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855; startedAt 2026-09-10T21:17:11.648559+00:00; PID 1526543 / runner 1526531; finishedAt 2026-09-10T21:17:18.240700+00:00; exitCode 0; metadata /tmp/wja3bzl2-final-verifier-suite.json; output /tmp/wja3bzl2-final-verifier-suite.log.
+
+- Committed-source actual sample: 3 files / 19824184 bytes; `timeout 60s bun /tmp/wja3bzl2-sample-scan.ts`; source 57312ed80715319f95fb2edd5c6cb64d6008b0b7; source/test diff SHA256 e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855; startedAt 2026-09-10T21:17:18.316926+00:00; PID 1526641 / runner 1526634; finishedAt 2026-09-10T21:17:18.573145+00:00; exitCode 0; metadata /tmp/wja3bzl2-final-sample.json; output /tmp/wja3bzl2-final-sample.log.
+
+- complete: Completed the approved C.D4 software and original signed sample slice: verifier 57312ed80715319f95fb2edd5c6cb64d6008b0b7; 271 focused and 911 verifier tests pass; real ROOT_CHECKS scan passes 3 files / 19824184 bytes; future A4/B7 candidates and hardware remain separate.
+
+- Final completed-state documentation gate: all five groups pass (195 index / 509 links / 724 status / 249 translation / 131 board assertions); `timeout 180s make docs-verify`; source 57312ed80715319f95fb2edd5c6cb64d6008b0b7; verifier diff is empty; tested own tracking diff SHA256 7369cf39ecf5b00306b86ff27b19523f80e63c8a0c6fcca6980789a74d33b389; startedAt 2026-09-10T21:19:50.787124+00:00; PID 1527230 / runner 1527223; finishedAt 2026-09-10T21:19:52.531496+00:00; exitCode 0; metadata /tmp/wja3bzl2-final-docs.json; output /tmp/wja3bzl2-final-docs.log.
+
+- Final scoped whitespace check passed without output: `timeout 20s git diff --check 0a8aa6e840bf455fd8cb088ab1e205b9f0e1e6f0 -- verify/src/checks-file-root.ts verify/src/checks-file-root.test.ts docs/task/20260910-1050-c-native-endpoint-verification.md docs/plan/20260910-1050-c-native-endpoint-verification.md docs/task/index.md docs/plan/index.md`; source 57312ed80715319f95fb2edd5c6cb64d6008b0b7; startedAt 2026-09-10T21:20:55.877605+00:00; PID 1529528 / runner 1529519; finishedAt 2026-09-10T21:20:55.884491+00:00; exitCode 0; metadata /tmp/wja3bzl2-final-diff-check.json; output /tmp/wja3bzl2-final-diff-check.log. Only the two verifier files, this task/plan, and their own index rows differ from approved L2 0a8aa6e840bf455fd8cb088ab1e205b9f0e1e6f0.

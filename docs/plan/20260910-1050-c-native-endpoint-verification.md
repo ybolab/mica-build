@@ -1,9 +1,13 @@
 # 20260910-1050-c-native-endpoint-verification Verify native binaries contain no default update endpoints
 
-- **status**: implementing
+- **status**: completed
 - **createdAt**: 2026-09-10 10:50
 - **approvedAt**: 2026-09-10 20:35
 - **relatedTask**: 20260910-1050-c-native-endpoint-verification
+
+## Final result
+
+The bounded software/sample slice is complete at verifier source 57312ed80715319f95fb2edd5c6cb64d6008b0b7: 271 focused tests, 911 verifier tests, and the real ROOT_CHECKS sample scan pass. The exact sample contributes 3 native files / 19,824,184 bytes with rechecked hashes; it retains the original #313 dirty development identities. Initial sample failure remains recorded. A4/B7 own later current-candidate scans and all hardware evidence remains separate. The task records final review and complete gate metadata. Earlier pending-attribution annotations below describe prior stages and are superseded by the exact dependency evidence in this section.
 
 ## Context
 
@@ -70,3 +74,48 @@ Verified producer asset SHA256 identities:
 - `assets/ui-primitives-DIySaKBw.js`: `a08f25b8d387948a282e81a18b4b03a60382b4d0a86812c4a971bdfcc935cbd9`.
 
 The remaining native diagnostic/specification links need exact locked dependency source attribution. Their observed adjacent Rust string bytes are not silently treated as URL suffixes from source, and no domain-level exception is authorized. The two observed APID bare https:// fragments followed by invalid UTF-8 are not complete network authorities; valid endpoint bytes before or after invalid binary bytes must still be detected.
+
+## Exact locked runtime diagnostic attribution
+
+The read-only dependency handoff /tmp/bkd-58sdocnk-D4-dependency-source-evidence.json has SHA256 8d937c8c0f17e626926bb450204586f71ca25105296ef312c2b045cdebe8ca24. Verified the seven exact crate archives against package checksums in Git 5d0dca577a782aa707d9530779c4b23f2a7eda31 and current reviewed L2 0a8aa6e840bf455fd8cb088ab1e205b9f0e1e6f0. Relevant lock blocks are unchanged in their respective workspaces. Compared all eleven selected runtime source files byte-for-byte with archive members. The extracted registry has no .cargo-checksum.json; archive SHA256 plus exact member equality is the evidence. No download, build, cache mutation, private-key read, or third-party executable scan occurred.
+
+The exact registry root is /srv/mos/tmp/s905x5m-current/source/_out/cargo/registry. The manifest records each full archive path, source path/hash, Git lock identity, and line context. Checked archive identities:
+
+| Crate | Archive SHA256 | Runtime source |
+|---|---|---|
+| clap-4.6.6 | `473c7e07f409a8d772161724aa8db6a765a2532a70f9667eeb7b49d3d02fbdca` | Lock/archive identity control; no runtime literal exemption |
+| clap_builder-4.6.6 | `7b48fea5a88e9ae728a2dcbedbfc0e730f7d60da42e1cb049a83c9fb8b789889` | `clap_builder-4.6.6/src/lib.rs:49` |
+| getrandom-0.2.17 | `ff2abc00be7fca6ebc474524697ae276ad847ad0a6b3faa4bcb027e9a4614ad0` | `getrandom-0.2.17/src/error.rs:174` |
+| getrandom-0.4.3 | `300e883d756b2e4ec94e02791f39b04b522276138852cfc41d9fb7e904106099` | Lock/archive identity control; no runtime literal exemption |
+| rustls-0.23.43 | `0283386ce02abc0151e1761d08802dfe86c173b0b494af5cbc086574e453da06` | `rustls-0.23.43/src/conn.rs:303` |
+| zbus-5.19.0 | `5db4be7c075cb421e4b7ee645541604239bd243ba7c357511f4ff3a74b555907` | `zbus-5.19.0/src/address/mod.rs:158`, `zbus-5.19.0/src/object_server/node.rs:174` |
+| zbus_names-4.3.4 | `d8bf88b4a3ff53e883001e0e0115b297a9d53c31b9c1edd2bfdd853e3428624e` | `zbus_names-4.3.4/src/member_name.rs:48`, `zbus_names-4.3.4/src/interface_name.rs:50`, `zbus_names-4.3.4/src/bus_name.rs:549`, `zbus_names-4.3.4/src/error_name.rs:53`, `zbus_names-4.3.4/src/unique_name.rs:47`, `zbus_names-4.3.4/src/well_known_name.rs:48` |
+
+D-Bus links occur in validation error messages or the emitted introspection XML DOCTYPE, not a service connection. Rustls links from its unexpected-EOF error; getrandom 0.2.17 links from NODE_ES_MODULE; clap_builder 4.6.6 links from INTERNAL_ERROR_MSG. Neither clap's docs-only link nor getrandom 0.4.3 is substituted for the compiled runtime producer.
+
+The span proof /tmp/wja3bzl2-native-diagnostic-spans.json (SHA256 e02299afe01129bc4fcbe83c9ed539d6044b25916ce1fc07345ef302ff2508e2) compares every complete source diagnostic with actual sample bytes and separates its URL interval from adjacent Rust string storage. Offsets below are decimal half-open byte intervals in the exact handed-off binaries; they are evidence only, never scanner skip ranges. The implementation keeps whole-token equality and compares complete source/following text. It scans subsequent URLs independently, including URLs occurring within that following text. Unknown layouts fail closed.
+
+| Binary | Source diagnostic | URL byte intervals |
+|---|---|---|
+| `/usr/bin/mosd` | Invalid address. See | 5568377..5568443 |
+| `/usr/bin/mosd` | Invalid member name. See | 5591871..5591957 |
+| `/usr/bin/mosd` | Invalid interface name. See | 5591985..5592074 |
+| `/usr/bin/mosd` | Invalid well-known name. See | 5592103..5592186 |
+| `/usr/bin/mosd` | Invalid error name. See | 5592210..5592295 |
+| `/usr/bin/mosd` | Invalid unique name. See | 5592340..5592423 |
+| `/usr/bin/mosd` | Invalid bus name. See | 5592507..5592590 |
+| `/usr/bin/apid` | peer closed connection without sending TLS close_notify: | 8663701..8663780 |
+| `/usr/bin/apid` | Invalid address. See | 8872345..8872411 |
+| `/usr/bin/apid` | Invalid member name. See | 8894725..8894811 |
+| `/usr/bin/apid` | Invalid interface name. See | 8894839..8894928 |
+| `/usr/bin/apid` | Invalid error name. See | 8894952..8895037 |
+| `/usr/bin/apid` | Invalid unique name. See | 8895082..8895165 |
+| `/usr/bin/apid` | Invalid bus name. See | 8895249..8895332 |
+| `/usr/bin/apid` | Node.js ES modules are not directly supported, see | 8898835..8898885 |
+| `/usr/bin/mos-deploy` | Fatal internal error. Please consider filing a bug report at | 1349722..1349760, 1501900..1501938, 1495384..1495422, 1499941..1499979, 1502473..1502511, 1495573..1495611, 1503297..1503335 |
+| `/usr/bin/mosd` | Exact quoted introspection DTD | 5584592..5584652 |
+| `/usr/bin/apid` | Exact quoted introspection DTD | 8888502..8888562 |
+
+Following text is independently observed data, not URL suffix attribution. It is limited to the exact contexts embedded in the two verifier files: `mid > len`; the next complete D-Bus diagnostic (with the observed `org.freedesktop.DBus` or name-debug labels where present); `internal error: entered unreachable code`; `Errorinternal_codedescriptionunknown_code` followed by NUL; and the exact Display error text with `a` or `falseTryFromIntErrora` prefixes. The signed sample has 22 diagnostic occurrences and 19 distinct binary/message/context fixtures. The URL itself may also be naturally delimited after its complete source diagnostic. No URL-only diagnostic exemption or known-prefix match is used.
+
+Controls cover exact positives, same-family URL mutations, unknown suffixes, truncated adjacent tokens, removal of source diagnostics, wrong binary attribution, and immediately adjacent injected endpoints. XML/UI literals retain exact positives and changed-neighbor negatives. The review-discovered context defect reproduced as 254 pass / 17 fail after successful typechecking; the final focused run passes 271 tests / 913 assertions. Full verifier acceptance is 911 tests / 7474 assertions. The same committed ROOT_CHECKS entry passes the rehashed original sample, and none of this establishes current candidate or physical-board acceptance.

@@ -199,4 +199,4 @@ thing about the tree. Both indexes now say the same thing.
 
 - [x] [**20260910-1221-c-offline-fleet-config Project offline fleet desired configuration**](20260910-1221-c-offline-fleet-config.md) `P1`
 
-- [-] [**20260910-1050-c-native-endpoint-verification Verify native binaries contain no default update endpoints**](20260910-1050-c-native-endpoint-verification.md) `P1`
+- [x] [**20260910-1050-c-native-endpoint-verification Verify native binaries contain no default update endpoints**](20260910-1050-c-native-endpoint-verification.md) `P1`

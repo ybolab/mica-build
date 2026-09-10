@@ -134,4 +134,4 @@ disobeys on sight teaches a reader the wrong thing about the tree.
 
 - [x] [**20260910-1221-c-offline-fleet-config Project offline fleet desired configuration**](20260910-1221-c-offline-fleet-config.md) `2026-09-10`
 
-- [-] [**20260910-1050-c-native-endpoint-verification Verify native binaries contain no default update endpoints**](20260910-1050-c-native-endpoint-verification.md) `2026-09-10`
+- [x] [**20260910-1050-c-native-endpoint-verification Verify native binaries contain no default update endpoints**](20260910-1050-c-native-endpoint-verification.md) `2026-09-10`
