@@ -4,6 +4,19 @@ Campaign-level record, one entry per plan, newest first. Details live in the
 plan file and the task records it names; this file holds the one-paragraph
 history a reader can scan without opening either.
 
+## cx3576 SYSTEM reduced to 1 GiB (2026-09-10)
+
+SYSTEM is now 1024 MiB and DATA starts at 1042 MiB. Firmware layout validation,
+flash preflight/readback and the board package's runtime repart limits use the
+same geometry. The full ARM64 package pool, signed root and firmware are rebuilt;
+the complete image is 1299 MiB, down by 1 GiB. SYSTEM uses 197.0 MiB including
+filesystem overhead and has 827.0 MiB free. All 384 build tests, 123 offline
+checks, signature negatives, flash readback fixtures and real DATA-only growth
+pass. The [completed task](task/20260909-2358-cx3576-system-1g.md)
+records exact artifacts, sources and the initial loop-device test failure; the
+completed plan with the same ID is consolidated there and in current layout docs.
+Physical board acceptance remains pending.
+
 ## cx3576 boot watchdog repair (2026-09-09)
 
 The RK3576 clock driver now enables the watchdog clocks needed by DesignWare

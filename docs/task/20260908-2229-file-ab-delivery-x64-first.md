@@ -965,3 +965,20 @@ records live in `_out/cx3576-watchdog-r2/build-record.json`. Required FIT signat
 negatives, all 123 offline checks, flash geometry and checksums pass. The older
 release directory does not contain this repair. Physical startup, recovery dwell,
 watchdog handoff/reset and power-cut qualification remain pending; P10 is open.
+
+## Current cx3576 1 GiB SYSTEM image (2026-09-10)
+
+The user requested a 1 GiB SYSTEM partition. The [focused task](20260909-2358-cx3576-system-1g.md)
+updates all fixed geometry checks and rebuilds firmware, the full ARM64 package
+pool and the signed root with matching repart limits. Current full image:
+`_out/cx3576/image/mos-cx3576-20260910-001906.img` (1299 MiB), SHA-256
+`fbe52a42a788fbfc26035ee016ceca0eb369c8f7acb72fb385a43556c77988e9`. Firmware/root/assembly source is clean
+`97bb466792ca`; kernel/support retains clean `38f2a37b9a3c`.
+
+SYSTEM uses 197.020 MiB including filesystem overhead and has 826.980 MiB
+free. All 384 build tests, 123 offline checks, signature negatives, flash readback
+fixtures and real DATA growth pass. The growth test verifies every protected
+firmware/counter/SYSTEM byte. Exact source and size records are in
+`_out/cx3576-system-1g/build-record.json`. Root smoke has 11 passes and one crun
+qemu-user limitation. This image supersedes the earlier 2 GiB SYSTEM handover;
+physical cx3576 startup/watchdog/recovery/power-cut acceptance and P10 remain open.

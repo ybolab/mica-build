@@ -156,4 +156,4 @@ thing about the tree. Both indexes now say the same thing.
 
 - [-] [**20260909-2331-cx3576-boot-watchdog Repair the cx3576 firmware watchdog boot blocker**](20260909-2331-cx3576-boot-watchdog.md) `P0`
 
-- [-] [**20260909-2358-cx3576-system-1g Reduce cx3576 SYSTEM to 1 GiB**](20260909-2358-cx3576-system-1g.md) `P1`
+- [x] [**20260909-2358-cx3576-system-1g Reduce cx3576 SYSTEM to 1 GiB**](20260909-2358-cx3576-system-1g.md) `P1`
