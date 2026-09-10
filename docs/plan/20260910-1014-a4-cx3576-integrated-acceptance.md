@@ -130,3 +130,12 @@ recorded here and in the paired task without fabricating a PMA reopen operation.
 
 This is the next artifact phase of the same node, not recovery retry 2. The
 paired task holds the exact private paths, command and gate metadata.
+
+Policy-package milestone collected: six producers passed at exact `9d1218e2`
+on 2026-09-10T20:29:32Z..20:31:34Z, exit 0. Their actual current layout script,
+archive/index hashes and source identity were revalidated. The next serialized
+gate builds only the remaining five ARM64 native producers and checks the
+selected CX archive set. Container-engine binary reuse was validated against
+the approved original package and pinned sources, not relabelled as a new
+upstream compile. Full root/signature/image and physical acceptance remain
+separate following stages; no full two-architecture package matrix is claimed.

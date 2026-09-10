@@ -106,6 +106,89 @@ source/tree, command, script hash and exitCode. Full output is
 metadata, not a claim that the package build has already passed. No old resource
 was deleted; the prior kernel evidence and build image remain preserved.
 
+### Policy package result and native package continuation
+
+The policy gate completed at 2026-09-10T20:31:34Z (started 20:29:32Z), exit 0.
+Its full log is 57,787 bytes / 853 raw newline lines, SHA-256
+`f43bf9eb5c4ac74ea0fdd78899ca42ce69d5799ed2d6d5b19e9482cdc68ac3bc`.
+Metadata and final `GATE_EXIT_CODE=0` agree; PID 1460571 is absent and the
+persistent shell has no unfinished child. A4 revalidated every entry in
+`evidence/policy-package-SHA256SUMS` (manifest SHA-256
+`a521e69191d90bc1899edfb23bcf623634cd851776b1313b92294611f272565c`),
+the clean source/tree, archive metadata and the actual packed layout script.
+The source, logs, eight ARM64-pool archives and seven identical `all` exports in
+the private amd64 pool are preserved. Native-gate preparation saves the old
+indexes separately before adding new archives and regenerating the current
+ARM64 index; no passed producer is rebuilt.
+
+| Policy archive | SHA-256 |
+|---|---|
+| mos-system | `6f4d2a45f4be398de573f0df332d4f163aa3065749a63311dbd828a4118c31cd` |
+| mos-board-cx3576 | `205120d096dcd6481597061195f834fb0e9bf00e119d89c80cbf23907ae517eb` |
+| mos-ca-trust | `95d85a6475d12e6d8102f672cf7759c393de9d634c4c5552c72a54d7e0c1e65d` |
+| mos-profile-dev | `92062c50a4a1dbeafa737c953227c445537bd3aec96ba7c80bb7a3f15e6979f8` |
+| mos-profile-prod (emitted, not selected for the dev root) | `4b1c93bc64563d0858e866d40ae00d901ab1de3ad27b04cabe0f358633b72705` |
+| mos-wifi | `58789c7038191c68cf356dd0b2c415a12fb85b09ce1564b761f9e6c6c36c9d3d` |
+| mos-wifi-ap | `b73154791419f6c628875267e47e3f355d5a71d8d54456adbc90e3d4b98c9f75` |
+| mos-bluetooth | `20c324b2430a9072d77ab723a984e779b22a83807df7d295d326f977e0a256c4` |
+
+All versions are `0.1.0+git9d1218e2689e-1`; only the board package is ARM64,
+the others are `all`. Full fields/Depends/content listings are preserved at
+`evidence/native/policy-archives-fields-and-contents.txt`, SHA-256
+`908f0a4bcfd0b3d93f77db5c4c2de617b9cf5455defa7ee355c715b1d5b4c930`.
+This partial pool is not a complete selected-pool, root or image pass.
+
+The next gate serializes the remaining selected producers `busybox`, `deploy`,
+`mosd`, `mqtt`, `podman`, all at `--arch arm64`, through the unchanged
+`build-env/deb/build.sh`. Rust builds use the existing pinned builder, locked
+dependencies, producer-private targets and four compile jobs; the APID producer
+builds its UI with the pinned Bun image and embeds that actual output. The
+unchanged UI is not a new UI implementation or a new broad UI-policy pass.
+
+The container-engine binaries are reused from the approved #313 snapshot at
+`/srv/mos/tmp/s905x5m-current/source/pkgs/podman/out-arm64`, with no new upstream
+compile. A4 checked all 15 recorded `pkgs/podman/` source hashes against the
+immutable approved source record and current checkout, the seven binary hashes,
+their AArch64 ELF headers, and their byte identity to the original approved
+`mos-podman_5.8.6+git5c61f7fbb558.dirty-1_arm64.deb` (SHA-256
+`eebb5681924737cf46f2028add1b3666e17bc682a8c84db7b28918f481de5e1b`).
+The versions-lock digest is
+`89c2b2b5934ab24205dbbf6f614f36c87ea33666f7cd928ff60bb2111707de98`.
+Only these binary outputs and their original manifests were copied into the
+private output directory; no source or old Debian archive was imported.
+The new package will retain this explicit inherited binary provenance while
+packaging the current configuration at the new exact source stamp.
+
+Input audit: `collect-policy-and-native-inputs.sh`,
+2026-09-10T20:38:19Z..20:38:24Z, exit 0; log
+`evidence/native/input-audit.log`, SHA-256
+`8516b9018828fc13411bbee1f78672f368abd97ef3e19ca9708148ff9cb5ee36`.
+Four generic producer preflights passed, and the selected ARM64 podman hook
+reports 8 examined inputs, 0 missing, 0 warned. No native-init fallback was used.
+
+The prepared next command is `bash /srv/station/work/tmp/mos/1zjiu5h5/composition-20260910-2026-z2Ljld/package-native-gate.sh`.
+Its authoritative metadata/log are `evidence/native/package-native-gate.json`
+and `evidence/native/package-native-gate.log`; the same persistent-shell session
+is reused. The gate checks selected archive stamp, ELF/loader/NEEDED metadata,
+non-directory ownership across all 14 resolved CX dev packages, and unchanged
+source/tool identities. Runtime dependency resolution still belongs to the new
+root build and smoke gate. `tests/deb-package-gate.sh` has no selected-board or
+single-architecture mode: its all-board/two-architecture reproducibility matrix
+is not claimed by this scoped package inspection and is not weakened or edited.
+No root, FIT, signed records, full image or physical result exists yet.
+
+Checkpoint review: pma-cr shared policy, PASS with zero high-confidence findings
+in the three-document delta and task-owned gate orchestration. No product or
+collector behavior changed, so no new RED/GREEN result is claimed. Shell syntax
+checks passed for the native gate, Docker wrapper and input-audit script;
+`make docs-verify` passed at 2026-09-10T20:47:26Z..20:47:28Z, exit 0, log
+`evidence/native/docs-native-checkpoint.log`, SHA-256
+`8a05e614b6a6f3057988dc2ab915a7d38c1dca9b9fb13c021799786872185216`.
+Scoped `git diff --check` passed. Native gate script SHA-256:
+`d8f8210f4be530cc89b6440374785c5cce31338b54565c841c1b40e067d7fd4c`;
+invocation-only wrapper SHA-256:
+`06937c5684ce5609ca80827db639bc1bd7eb5e267f53d6e37b8723ae90bbbfd5`.
+
 ### Original collector/kernel tracking
 
 - Campaign: `mos-open-plans-20260910-100408`; issue: `1zjiu5h5`; coordinator: `6064wf7l`.

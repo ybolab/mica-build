@@ -931,9 +931,14 @@ passed on 2026-09-10 (19:16:56Z..19:31:44Z), including full ARM64 kernel/object
 integration, resolved config, compiled DTB and retained-logo/call evidence.
 Exact hashes and warning limitations are in the integrated acceptance detail.
 This is not a newly signed FIT/support component or complete flashed image.
-The input audit found that both known CX packed roots predate the final zero
-application-quota policy; an admissible current root and source-bound native
-init must be supplied before new composition and candidate-specific gates.
+The earlier input audit rejected both known CX packed roots because they predate
+the final zero application-quota policy. The subsequent exact L1/L2 handoff
+authorizes a new root at `9d1218e2689eb5e3fce99ad1736f3a1fdc8c8801` and
+selects the source-equivalent development native init. The six policy/board
+producers passed on 2026-09-10T20:29:32Z..20:31:34Z, including the actual packed
+current layout script. Remaining native packages and new root/FIT/records/image
+gates are in progress in A4's linked detail. This is not an image ready to flash
+or a physical qualification result; the two old roots remain inadmissible.
 
 journald is volatile. Capture each boot's journal and serial trace before
 rebooting; a later collector invocation cannot recover the previous journal.
