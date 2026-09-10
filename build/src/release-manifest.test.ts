@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, expect, test } from 'bun:test'
+import { afterEach, beforeEach, expect, spyOn, test } from 'bun:test'
 import { createHash, generateKeyPairSync } from 'node:crypto'
 import { spawnSync } from 'node:child_process'
 import { mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
@@ -7,6 +7,9 @@ import { Signer } from '../../shared/update-envelope.ts'
 import { canonicalJson, componentId } from './components.ts'
 import { packArchive } from './component-archive.ts'
 import { assembleRelease, gateRelease, type ReleaseInputs } from './release-manifest.ts'
+import { sourceIdentity } from './release-cli.ts'
+import { Toolbox } from './toolbox.ts'
+import { OPEN_TIMEOUT_MS } from './testing.ts'
 
 const IMAGE = 'mos-x64-20260909-164233.img'
 let work: string
@@ -160,15 +163,71 @@ test('firmware and evidence must match the release board', () => {
   expect(() => assembleRelease({ ...inputs, evidence: join(work, 'evidence.json') })).toThrow('evidence')
 })
 
-test('shipped release CLI and documented verification commands execute', () => {
+test.each(['ordinary', 'linked'])('shipped release CLI and documented verification commands execute (%s checkout)', async (kind) => {
   const repo = new URL('../../', import.meta.url).pathname
+  const ordinary = join(work, 'checkout')
+  const linked = join(work, 'linked')
+  const fixtureGit = await Toolbox.open({ key: 'release-git-fixture', imageKey: 'IMAGE_ALPINE_3_21', manager: 'apk', packages: ['git'], tools: ['git'] }, { mounts: [work] })
+  let commit: string
+  const checkout = kind === 'ordinary' ? ordinary : linked
+  try {
+    const git = async (...args: string[]) => (await fixtureGit.must(['git', '-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', ...args], {
+      env: { GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null' },
+    })).stdout.trim()
+    await git('init', '--initial-branch=fixture', ordinary)
+    writeFileSync(join(ordinary, 'tracked.txt'), 'initial fixture\n')
+    await git('-C', ordinary, 'add', 'tracked.txt')
+    await git('-C', ordinary, 'commit', '--no-gpg-sign', '-m', 'Create isolated source fixture')
+    const commonHead = await git('-C', ordinary, 'rev-parse', 'HEAD')
+    await git('-C', ordinary, 'worktree', 'add', '--detach', linked, 'HEAD')
+    if (kind === 'linked') {
+      writeFileSync(join(linked, 'tracked.txt'), 'linked fixture baseline\n')
+      await git('-C', linked, 'commit', '-am', 'Advance isolated linked fixture', '--no-gpg-sign')
+    }
+    commit = await git('-C', checkout, 'rev-parse', 'HEAD')
+    if (kind === 'linked') expect(commit).not.toBe(commonHead)
+    expect(await sourceIdentity(checkout)).toEqual({ commit, dirty: false })
+    writeFileSync(join(checkout, 'tracked.txt'), 'modified fixture\n')
+    expect(await sourceIdentity(checkout)).toEqual({ commit, dirty: true })
+    if (kind === 'linked') {
+      writeFileSync(join(linked, '.git'), 'gitdir: ../checkout/.git/worktrees/linked\n')
+      expect(await sourceIdentity(checkout)).toEqual({ commit, dirty: true })
+    }
+    console.log(`source identity ${kind} checkout HEAD/clean/dirty control passed`)
+  } finally { await fixtureGit.close() }
+
+  // Observe the real sourceIdentity toolbox, not a stand-in mount declaration.
+  // All attempted writes target this test's Git metadata, never the user's.
+  const open = Toolbox.open.bind(Toolbox)
+  const observed = spyOn(Toolbox, 'open').mockImplementation(async (toolset, options) => {
+    const tb = await open(toolset, options)
+    try {
+      const metadata = join(ordinary, '.git')
+      const paths = kind === 'ordinary' ? [metadata] : [metadata, join(metadata, 'worktrees/linked')]
+      for (const path of paths) {
+        const result = await tb.run(['sh', '-c', 'printf probe > "$1/write-probe"', 'sh', path])
+        expect(result.exitCode, result.stderr).not.toBe(0)
+        expect(result.stderr).toMatch(/Read-only file system/i)
+      }
+      if (kind === 'linked') {
+        const result = await tb.run(['sh', '-c', 'printf probe > "$1/.git"', 'sh', linked])
+        expect(result.exitCode, result.stderr).not.toBe(0)
+        expect(result.stderr).toMatch(/Read-only file system/i)
+      }
+      return tb
+    } catch (error) { await tb.close(); throw error }
+  })
+  try {
+    expect(await sourceIdentity(checkout)).toEqual({ commit, dirty: true })
+  } finally { observed.mockRestore() }
+
   const publicKey = join(work, 'metadata.pub'); writeFileSync(publicKey, keys[0]!)
   const args = ['run', 'src/release-cli.ts', 'assemble', '--board', inputs.board, '--version', inputs.version,
     '--image', inputs.image, '--update', inputs.update, '--firmware', inputs.firmware,
     '--package-manifest', inputs.packages, '--baked-meta', inputs.meta, '--notes', inputs.notes,
     '--out', inputs.out, '--public-key', publicKey]
   const result = spawnSync(process.execPath, args, { cwd: join(repo, 'build'), encoding: 'utf8' })
-  expect(result.status).toBe(0)
+  expect(result.status, `${result.stdout}${result.stderr}`).toBe(0)
   expect(result.stdout).toContain('RELEASE_GATE_PASS')
   const doc = readFileSync(join(repo, 'docs/design/release-artifacts.md'), 'utf8')
   const section = doc.split('<!-- release-verify-test:start -->')[1]!.split('<!-- release-verify-test:end -->')[0]!
@@ -177,11 +236,11 @@ test('shipped release CLI and documented verification commands execute', () => {
   expect(commands).toContain('--release gate')
   const env = { ...process.env, REPO: repo, RELEASE: inputs.out, METADATA_PUBLIC_KEY: publicKey }
   const checked = spawnSync('bash', ['-euo', 'pipefail', '-c', commands], { env, encoding: 'utf8' })
-  expect(checked.status).toBe(0)
+  expect(checked.status, `${checked.stdout}${checked.stderr}`).toBe(0)
   expect(checked.stdout).toContain('RELEASE_GATE_PASS')
   writeFileSync(join(inputs.out, IMAGE), 'tampered')
   expect(spawnSync('bash', ['-euo', 'pipefail', '-c', commands], { env, stdio: 'ignore' }).status).not.toBe(0)
-}, 60000)
+}, OPEN_TIMEOUT_MS)
 
 test('an empty marker file cannot promote development inputs to candidate', () => {
   writeFileSync(join(work, 'meta/GENERATED'), '')
