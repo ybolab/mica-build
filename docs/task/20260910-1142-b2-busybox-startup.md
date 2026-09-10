@@ -1,6 +1,6 @@
 # 20260910-1142-b2-busybox-startup B2 explicit BusyBox startup semantics
 
-- **status**: in_progress
+- **status**: completed
 - **priority**: P1
 - **owner**: b2/js1slhab
 - **createdAt**: 2026-09-10 11:42
@@ -46,3 +46,8 @@ Adapting and verifying explicit BusyBox startup commands.
   retains only the L2-accepted unrelated UI line-82 failure (154/155 clean, exit 2).
 - Evidence: `/tmp/mos-b2-checks.FCEP0k/`, tmux `js1slhab-358534`. Exact commands,
   artifact identities, baseline limitations and B3/B7 pending rows are in the plan.
+
+- Implementation commit `92b6f632a3303040e53a1945b6dc0f12351348ba` passes the final
+  committed-source Rust, actual BusyBox, startup assembly and documentation gates.
+
+- complete: B2 scoped software acceptance complete; accepted shell baseline and pending B3/B7 evidence are documented.

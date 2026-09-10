@@ -1,6 +1,6 @@
 # 20260910-1142-b2-busybox-startup B2 explicit BusyBox startup semantics
 
-- **status**: implementing
+- **status**: completed
 - **createdAt**: 2026-09-10 11:42
 - **approvedAt**: 2026-09-10 11:42 (prior user approval)
 - **relatedTask**: 20260910-1142-b2-busybox-startup
@@ -48,7 +48,9 @@ Evidence directory: `/tmp/mos-b2-checks.FCEP0k/`; persistent shell tmux session
 `js1slhab-358534`. Each gate has a command, log, source patch and JSON metadata
 with source commit, UTC start/end and exit code. The initial source commit is
 `ef28a3ec82ef1a4a0cc027c605fb1fa2c991e114`; precommit runs include this node's
-working changes. A final committed-source run follows the implementation commit.
+working changes. Final committed-source runs verify implementation commit
+`92b6f632a3303040e53a1945b6dc0f12351348ba`: `committed-rust`,
+`committed-tools`, `committed-package` and `committed-docs` all exit 0.
 
 - RED `timeout 120 cargo test --locked --test startup`: exit 101, unresolved
   `mos_deploy::boot::startup`. The tests specify full argv, binding sequence,
@@ -130,3 +132,8 @@ symlink farm. Keeping systemd-shutdown is the agreed staging boundary until B3.
 - Task transitions use task-state.sh; its documented interface supports tasks
   only. Plans use the canonical draft/implementing/completed format, consistent
   with the accepted B0/B1 tracking records.
+
+- 2026-09-10: B2 implementation and bounded verification complete. Final source
+  commit `92b6f632a3303040e53a1945b6dc0f12351348ba` passes committed-source gates.
+  Task completion uses the serializer. B3/B7 acceptance and D reconciliation
+  remain separate work; no campaign or sibling status was changed.
