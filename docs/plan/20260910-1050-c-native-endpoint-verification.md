@@ -36,3 +36,5 @@ No generic scanner helper is authorized. Keep the bounded check in the existing 
 - L2 D owns global history; provide an English history note at handoff without editing changelog.
 
 - Fixture implementation at 197e1e53f92e525f6284dc262698733d21c9f679 passes 109 focused tests and 749 verifier tests including typecheck; documentation verification passes. PMA-CR scoped review is PASS with zero high-confidence findings. No literal exclusion is inferred. This plan remains implementing until L2 supplies immutable current native inputs and exact embedded-source evidence for any required non-endpoint classification.
+
+- Later clean-boundary sync: 0a8aa6e840bf455fd8cb088ab1e205b9f0e1e6f0 was merged as 3d6e55e38db3789b88ec5642bdd593aab8208d10 with only index append conflicts. The current source baseline now includes the approved offline fleet desired projection; original 9f773a9c evidence remains historical and accurate. Native verifier source bytes did not change across this merge.
