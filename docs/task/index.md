@@ -185,3 +185,11 @@ thing about the tree. Both indexes now say the same thing.
 - [x] [**20260910-0726-unlimited-application-data Remove system, user and container data limits**](20260910-0726-unlimited-application-data.md) `P1`
 
 - [x] [**20260910-0836-apid-ui-chunk-split Split the apid console entry bundle**](20260910-0836-apid-ui-chunk-split.md) `P2`
+
+- [x] [**20260910-1013-b0-lifecycle-rootfs-audit Audit lifecycle and rootfs closure**](20260910-1013-b0-lifecycle-rootfs-audit.md) `P1`
+
+- [x] [**20260910-1038-b1-pinned-static-busybox B1 pinned static BusyBox boot package**](20260910-1038-b1-pinned-static-busybox.md) `P1`
+
+- [x] [**20260910-1142-b2-busybox-startup B2 explicit BusyBox startup semantics**](20260910-1142-b2-busybox-startup.md) `P1`
+
+- [x] [**20260910-1206-b3-bounded-exitrd-teardown B3 bounded exitrd teardown**](20260910-1206-b3-bounded-exitrd-teardown.md) `P1`
