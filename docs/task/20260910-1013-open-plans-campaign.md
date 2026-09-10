@@ -117,30 +117,55 @@ graceful reboot/poweroff. `aux-cache` is already absent from current
 pack-tree-surgery; B0/B6 measure current variance rather than repeat old
 build-v2 assumptions. CX bench acceptance remains A-owned.
 
+After that snapshot, L1 reviewed B0 record commit
+`488b8d68b240ae818dc4b763c46ed7b7f9904129`, task
+`docs/task/20260910-1013-b0-lifecycle-rootfs-audit.md`, and plan
+`docs/plan/20260910-1013-b0-lifecycle-rootfs-audit.md`. L1 accepted the
+recovered-stream-stall yellow after verifying the completed session and every
+final gate exit code in `/tmp/mos-b0-gates.NG7mgE/final/metadata.json` (SHA-256
+`279997ad59dea9f0ee99600ef9bf7fe2cfeefe5c4e5c0ca9bc6692c69ff7bbbc`). This
+does not claim B0 is merged into B; only B's integrated HEAD can establish
+that state.
+
 ### External S905X5M evidence
 
-`#313` / `4ay6q72f` subsequently reported implementation and offline
-acceptance complete and was review/completed and idle, with no remaining build
-or edit, releasing implementation ownership for coordinated handoff. No
-approved commit exists: 108 delivery changes remain dirty and unstaged on
-`main` against `5c61f7fbb5589807e931e981b3ef8cb9bdff8b6d`. D3 and every
-dependent source sync remain blocked until L1 supplies the exact approved
-commit/tree. Dirty `main` must never be copied, and the base must not be
-described as containing the port. Independent already-authorized work may
-continue. A may use this evidence only in its existing bounded acceptance
-nodes, while shared-code work still waits for the commit. B1's sole external
-source blocker and D3's integration blocker are that exact committed identity.
+Current source status supersedes the earlier no-commit snapshot. L1 confirms
+that the latest `#313` / `4ay6q72f` completion handoff carried user
+authorization to commit only `#313`-owned changes; no repeat approval is
+needed. The exact approved local source is commit
+`5d0dca577a782aa707d9530779c4b23f2a7eda31`, tree
+`a8b079edc67010b6662b2243a5647950eb7176ef`, parent
+`5c61f7fbb5589807e931e981b3ef8cb9bdff8b6d`, subject
+`feat: integrate s905x5m with signed-file boot and SD images`. `main` was
+verified clean, no push occurred, and `#313` reports no remaining
+implementation, build, cleanup, or source lock.
+
+The 2026-09-10 10:31 UTC entry preserves the preceding chronology: at that
+time the same 108 delivery paths were still dirty and unstaged and no approved
+commit existed. That statement is historical, not the current dependency
+state.
+
+The committed scope contains the original 108 changed paths, 105 after rename
+detection, and is recorded read-only at
+`/tmp/mos-open-plans-20260910-100408/s905-committed-scope.json`.
 
 L1 validated 1,730 source-record entries, including contents, modes, symlinks,
 and deletions. The canonical `sourceSha256` is
-`5eab1647263866e310b98999e9d5df063aa6bbe3248fc8a0bd7ee7a907c75b42`; the
-108-path inventory is
+`5eab1647263866e310b98999e9d5df063aa6bbe3248fc8a0bd7ee7a907c75b42`.
+The historical 108-path inventory remains at
 `/tmp/mos-open-plans-20260910-100408/s905-handoff-scope.json`.
 `/srv/mos/_out/s905x5m-current/source-record.json` has SHA-256
 `cacf0f2b2b2054b0b3227055aa298c33b785eaaec3ef42e80a46b12c2a00cd53`, and
 `SHA256SUMS` has SHA-256
 `98d6b7c5f6041d8339cded9f6faeae46295b1b662e61db29817bfd63cba831f7`, with
-all 56 entries reverified. These are read-only evidence; preserve
+all 56 entries reverified. Immutable mapping
+`/srv/mos/_out/s905x5m-current/committed-source.json` has SHA-256
+`ce4330ed3845acf77e5e7f061d62255761eed80d21172211139ca7dc6180cd7c`
+and proves equivalence of 1,727 committed file/link entries plus three
+deletions to the complete tree. The mapping is separately checksummed and is
+not one of the original 56 entries; the original source record and
+`SHA256SUMS` remain byte-for-byte unchanged. These are read-only evidence;
+preserve
 `/srv/mos/_out/s905x5m-current/`, `/srv/mos/tmp/s905x5m-current/source/`, raw
 exports under `/srv/mos/_out/boards/s905x5m/`, and the original ownership
 records.
@@ -158,7 +183,9 @@ Current dirty-build artifacts are evidence only:
 
 All paths above are under `/srv/mos/_out/s905x5m-current/`. They use
 development signing and dirty identities `0.1.0+git5c61f7fbb558.dirty-1` and
-`5c61f7fbb558-dirty`; they must not be relabeled as later clean-commit builds.
+`5c61f7fbb558-dirty`; source-content equivalence does not make them newly
+rebuilt clean artifacts, and they must not be relabeled as such. Preserve
+`BOARD_RELEASE_TARGET=0` and their hardware-unqualified status.
 
 The reported delivery is SD-first newest signed-file V3 paired with new MOS
 firmware in unique eMMC boot0; it is not a standalone stock-firmware SD image.
@@ -186,10 +213,38 @@ delivery and does not reopen completed UI work.
 `#313` retains ownership of completed dirty-delivery records
 `docs/task/20260910-0554-s905x5m-current-system.md` and
 `docs/plan/20260910-0559-s905x5m-current-system.md`, including its index and
-changelog edits. These paths are absent from this committed base and remain
-code literals. Eventual integration preserves their completed state while
-distinguishing implementation completion, uncommitted integration, and
-unqualified hardware; D never edits their status directly.
+changelog edits. The task Git blob is
+`d42ee0af0fdcaefa0d4f734ed72f95187c1e0227`; the plan Git blob is
+`baaf7fe62b2076da4ec6f44ef0ef7fa43ea11fbe`. Both remain completed / `[x]`,
+and the immutable mapping contains their SHA-256 and both index identities.
+These paths are absent from this D1 base and remain code literals. Eventual
+integration preserves their completed state while distinguishing
+implementation completion, committed source integration, pre-commit artifact
+identity, and unqualified hardware; D never edits their status directly.
+
+At D's next safe boundary, L2 may synchronize only commit
+`5d0dca577a782aa707d9530779c4b23f2a7eda31` into its clean branch; active D1
+does not perform that sync. D2 must subsequently use the exact integrated
+local `bkd/z36xbrtu` HEAD before implementation. The approved identity
+satisfies D3's `#313` source dependency, but D3 still waits for reviewed A/B/C
+handoffs and final ordered reconciliation. Synchronization requires no full
+image rebuild.
+
+### Source evidence limitations
+
+- The final raw staged `git diff --check` for `#313` flagged literal
+  unified-patch context in three new `.patch` files: space-prefixed tabs and
+  blank context lines. Non-patch files and all 177 actual added code lines
+  passed scoped whitespace checks; patch application and actual BSP builds
+  passed. The verified patch bytes must be preserved, and no unqualified
+  whole-staged-diff whitespace pass is claimed.
+- The unrelated UI pipefail failure and the unrun two-architecture package-pool
+  gate remain separate limitations and do not reopen completed UI work or
+  create an aggregate pass claim.
+- The existing `.tmp` producer-discovery collision was bypassed with an
+  isolated source snapshot; it was not fixed.
+- Physical S905X5M acceptance remains unqualified, and the complete eMMC OS
+  installer remains a separate milestone.
 
 Each code L3 owns its unique task/detail notes in its isolated branch and uses
 the PMA serializer there. Workstream D owns this campaign record and the later
@@ -216,8 +271,10 @@ owner's status directly.
 ## Notes
 
 - D1 establishes tracking first. D2 may start only after D1 is merged into
-  `bkd/z36xbrtu`. D3 follows D1 and D2 and waits for L1 to supply exact
-  approved sibling/`#313` commits plus task/plan evidence.
+  `bkd/z36xbrtu`, then must use the L2-integrated HEAD carrying the exact
+  approved `#313` source. D3 follows D1 and D2; its `#313` source dependency
+  is satisfied, while reviewed A/B/C handoffs and final ordered evidence remain
+  pending.
 - Cross-workstream synchronization uses shared local refs only after an L1
   handoff. Unpushed `origin/bkd/*` refs must never be assumed.
 - PLAN-037 remains a non-executable umbrella. PLAN-086 section S5 was rejected

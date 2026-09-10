@@ -1287,3 +1287,37 @@ preservation. Its unused reserved expensive position returned to L1's
 unallocated pool; grants remain A=1 and B/C/D=0 until reassigned. No `main`
 merge, push, compatibility fallback, product implementation, image build, or
 hardware claim was performed by D1.
+
+## 2026-09-10 10:39 [progress]
+
+L1 supplied the user-authorized `#313` S905X5M source handoff, superseding the
+10:31 no-commit state for current dependency decisions while preserving it as
+chronology. Exact local commit
+`5d0dca577a782aa707d9530779c4b23f2a7eda31`, tree
+`a8b079edc67010b6662b2243a5647950eb7176ef`, and parent
+`5c61f7fbb5589807e931e981b3ef8cb9bdff8b6d` carry the subject
+`feat: integrate s905x5m with signed-file boot and SD images`. The approved
+scope has 108 changed paths, 105 after rename detection; L1 verified its 1,730
+source-record entries against canonical `sourceSha256`
+`5eab1647263866e310b98999e9d5df063aa6bbe3248fc8a0bd7ee7a907c75b42`.
+`main` was clean after the local commit, no push occurred, and `#313` reports
+no remaining implementation, build, cleanup, or source lock.
+
+Immutable `committed-source.json` maps 1,727 committed files/links plus three
+deletions to the complete tree and has SHA-256
+`ce4330ed3845acf77e5e7f061d62255761eed80d21172211139ca7dc6180cd7c`.
+The original source record and 56-entry artifact manifest remain byte-for-byte
+unchanged. Existing artifacts remain source-equivalent pre-commit
+dirty-stamped development builds with `BOARD_RELEASE_TARGET=0`, not rebuilt
+clean artifacts or hardware evidence. Physical S905X5M rows and the separate
+complete eMMC installer milestone remain open.
+
+D1 did not synchronize source. At D's next safe boundary, L2 may take only the
+exact approved commit into its clean branch; D2 must then use the integrated
+local `bkd/z36xbrtu` HEAD. D3's `#313` source dependency is satisfied, but D3
+still waits for reviewed A/B/C handoffs and ordered final reconciliation. The
+registry also records reviewed B0 commit
+`488b8d68b240ae818dc4b763c46ed7b7f9904129` without claiming it is integrated
+into B. Grants remain L3 A/B/C/D=2/1/2/1 and expensive A=1, B/C/D=0, with the
+second expensive slot unallocated at L1. No main merge, push, publication, or
+`done` transition is authorized.

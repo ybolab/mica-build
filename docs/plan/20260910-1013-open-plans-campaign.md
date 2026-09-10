@@ -37,12 +37,15 @@ startup/shutdown plan is allowed and does not supersede that rejection.
 | C | `#317` / `58sdocnk` | Current management feature backlog |
 | D | `#318` / `z36xbrtu` | Task/plan reconciliation and global documentation |
 
-External owner `#313` / `4ay6q72f` retains its completed S905X5M dirty-delivery
+External owner `#313` / `4ay6q72f` retains its completed S905X5M delivery
 records at `docs/task/20260910-0554-s905x5m-current-system.md` and
 `docs/plan/20260910-0559-s905x5m-current-system.md`. These paths are absent
-from the committed base, so they remain code literals. Implementation and
-offline acceptance were reported complete, but 108 delivery changes remain
-dirty and unstaged on `main`; no approved commit/tree handoff exists.
+from the D1 base, so they remain code literals. User-authorized handoff commit
+`5d0dca577a782aa707d9530779c4b23f2a7eda31` (tree
+`a8b079edc67010b6662b2243a5647950eb7176ef`, parent
+`5c61f7fbb5589807e931e981b3ef8cb9bdff8b6d`) now supplies the exact approved
+source. No repeat approval or full image rebuild is required; no push occurred
+or is authorized.
 
 Each code L3 owns unique task/detail notes in its isolated branch and performs
 its lifecycle changes with the PMA serializer. D owns the campaign record and
@@ -56,8 +59,8 @@ owner's status directly.
 2. D2 investigates and reconciles stale or dangling historical records only
    after D1 is merged into `bkd/z36xbrtu`.
 3. D3 performs final global index, changelog, and lifecycle reconciliation
-   after D1 and D2, and only after L1 supplies exact approved sibling/`#313`
-   commits and task/plan evidence.
+   after D1 and D2. Its `#313` source dependency is satisfied by the approved
+   identity; reviewed A/B/C handoffs and final ordered evidence remain pending.
 4. Cross-workstream synchronization uses shared local refs only after an L1
    handoff; unpushed `origin/bkd/*` refs are never assumed.
 
@@ -80,11 +83,14 @@ enabled and nondeleted: A `gf4aphxr`, B `nkglvdlt`, C `w8lj5nbz`, and D
 `v2kr5k8p`. Running and todo labels are observations at that timestamp, not
 completion claims.
 
-The same registry records `#313` source and artifact hashes as read-only dirty
-build evidence. D3 and B1 remain blocked on the exact L1-approved committed
-identity; A may use the evidence only in its existing bounded acceptance work.
-Automated/offline passes do not satisfy physical-board rows, and dirty artifacts
-must not be relabeled as clean-commit outputs.
+The same registry records the approved `#313` commit/tree, immutable source
+mapping, PMA blob identities, B0 review evidence, and artifact hashes. The
+earlier dirty/no-commit state remains timestamped chronology, not current
+source status. At D's next safe boundary, L2 may synchronize only the exact
+approved commit into its clean branch; active D1 does not sync it. D2 must use
+the resulting integrated local `bkd/z36xbrtu` HEAD before implementation.
+Automated/offline passes do not satisfy physical-board rows, and pre-commit
+dirty-stamped artifacts must not be relabeled as clean-commit outputs.
 
 D2/D3 obligations, not D1 changes, include investigating the missing indexed
 `cx3576-reproducible-bsp-20260907T1356Z` task and
@@ -109,8 +115,9 @@ reconciling the divergent PLAN-086 task/plan state without reviving S5.
   the handoff and preserve-not-reset rules prevent that loss.
 - Treating remote-tracking refs as local handoffs can consume stale or absent
   commits; only L1-approved shared local refs are admissible.
-- Treating dirty `main` or `#313` artifact hashes as a committed source handoff
-  can contaminate dependent branches; both remain read-only evidence.
+- Treating the earlier dirty-tree snapshot or pre-commit artifact hashes as the
+  approved source can contaminate dependent branches; only the exact approved
+  commit may be synchronized, and artifacts remain read-only evidence.
 - Historical records can accidentally restore unsupported compatibility work
   or imply hardware proof; explicit scope and evidence gates prevent both.
 
@@ -119,7 +126,8 @@ reconciling the divergent PLAN-086 task/plan state without reviving S5.
 D1 changes only the campaign task, plan, their index rows, and the changelog.
 It records coordination state; it does not complete product implementation,
 build an image, claim hardware proof, reconcile the identified historical
-records, merge to `main`, publish remotely, or close the campaign.
+records, synchronize the approved `#313` commit during D1, merge to `main`,
+publish remotely, or close the campaign.
 
 ## Alternatives
 
@@ -136,3 +144,6 @@ records, merge to `main`, publish remotely, or close the campaign.
   `2026-09-10 10:13 UTC` before D1 implementation began.
 - The user's compatibility direction is controlling for this campaign: no
   compatibility guarantee is required unless explicitly requested later.
+- At 2026-09-10 10:39 UTC, L1's authorized `#313` commit identity superseded
+  the earlier no-commit state for current dependency decisions while retaining
+  that prior state as changelog chronology.
