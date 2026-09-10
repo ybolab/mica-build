@@ -1229,3 +1229,32 @@ validity and after expiry; built-in-key revocation returns EACCES. Replacement
 kernel rotation remains P9. Build 1,028, focused contracts/signing 42, Rust 68
 and server 36 tests passed, along with the compiled server, docs and relevant
 shell/trust gates. Record `20260908-2115-p2-descriptor-contracts-x64`; P3 is next.
+
+## 2026-09-10 10:13 [progress]
+
+Campaign `mos-open-plans-20260910-100408` established its task, implementing
+plan, and ownership registry under L1 `#314` / `10nksom6`, with D coordinated
+by `#318` / `z36xbrtu` and the campaign task serialized to stable owner
+`bkd/z36xbrtu`. A (`#315` / `6064wf7l`), B (`#316` / `8t4ghqi6`), and C
+(`#317` / `58sdocnk`) retain their bounded workstreams; external active owner
+`#313` / `4ay6q72f` retains S905X5M integration. The integration branch is
+`main` and the committed source base is
+`5c61f7fbb5589807e931e981b3ef8cb9bdff8b6d`.
+
+The approved charter covers parallel dispatch, scoped local L3 commits, and
+L3-to-L2 merges, but no L2-to-`main` merge, remote publication, or `done`
+transition. Fresh newest-image flashing is the development target; historical
+compatibility readers, migrations, RAUC restoration, raw-slot paths, and old
+update-package support remain out of scope. D1 records tracking only. D2 waits
+for D1 to merge into `bkd/z36xbrtu`; D3 waits for D1, D2, and L1's exact
+approved sibling/`#313` commit and lifecycle evidence before global
+reconciliation. PLAN-037 remains a non-executable umbrella, and PLAN-086 S5's
+2026-09-08 rejection remains in force alongside the separate allowed BusyBox
+startup/shutdown plan.
+
+Initial active L3 grants are A=2, B=1, C=2, D=1 (maximum six). Expensive-build
+grants are A=1, B=0, C=0, D=0 (maximum two, with one position reserved while
+`#313` builds); D performs no full image build. Missing indexed CX3576 records,
+removed RAUC/TUF references, and PLAN-086 lifecycle divergence remain explicit
+D2/D3 obligations. No product implementation, image build, hardware proof, or
+historical reconciliation is claimed by this entry.
