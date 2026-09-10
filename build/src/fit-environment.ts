@@ -6,7 +6,7 @@ export interface FitBootRecord { id: string, kernelId: string, generation: numbe
 /** Raw U-Boot redundant-environment encoding; only mos_entries is accepted. */
 export function encodeFitEnvironment(records: FitBootRecord[], flag: number): Buffer<ArrayBuffer> {
   const id = /^[0-9a-f]{64}$/
-  if (!records.length || records.length > 3 || !Number.isInteger(flag) || flag < 0 || flag > 255) throw new Error('Invalid environment bounds')
+  if (!records.length || records.length > 2 || !Number.isInteger(flag) || flag < 0 || flag > 255) throw new Error('Invalid environment bounds')
   for (const [i, record] of records.entries()) {
     if (!id.test(record.id) || !id.test(record.kernelId) || !Number.isSafeInteger(record.generation) || record.generation <= 0
       || (record.tries !== null && (!Number.isInteger(record.tries) || record.tries < 0 || record.tries > 3))

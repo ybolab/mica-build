@@ -8,6 +8,7 @@ work=$(mktemp -d "$PWD/_out/io-faults.XXXXXX")
 mkdir -p _out/rust-gate/mos-deploy _out/cargo/registry _out/cargo/git
 # mos-build-side: container-block -- the pinned compiler builds only the test shim.
 docker run --rm --label ai-agent=true --network traefik \
+    --tmpfs /space:rw,size=132m -e MOS_TEST_SPACE_ROOT=/space \
     -v "$PWD:/src:ro" -v "$work:/evidence" \
     -v "$PWD/_out/rust-gate/mos-deploy:/target" \
     -v "$PWD/_out/cargo/registry:/usr/local/cargo/registry" \

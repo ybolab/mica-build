@@ -42,6 +42,8 @@ int main(void)
     assert(mos_boot_parse(text, &records));
     snprintf(text, sizeof(text), "v1|%s,%s,2,3;", a, c);
     assert(mos_boot_parse(text, &records));
+    snprintf(text, sizeof(text), "v1|%s,%s,3,3;%s,%s,2,-;%s,%s,1,-", a, c, b, c, c, c);
+    assert(mos_boot_parse(text, &records));
     assert(mos_boot_parse("v1|", &records));
     memset(text, 'a', 512); text[512] = 0;
     assert(mos_boot_parse(text, &records));

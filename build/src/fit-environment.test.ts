@@ -15,7 +15,7 @@ test('factory environment matches native firmware and the independent CRC fixtur
   expect(bytes.length).toBe(65536)
   expect(bytes.readUInt32LE(0)).toBe(0x11c9ba95)
   expect(createHash('sha256').update(bytes).digest('hex')).toBe('d838abdadeb95278a750625f26e8f018df50123da48b0e2970bd36453a689565')
-  for (const bad of [[], [...records, ...records], records.toReversed(),
+  for (const bad of [[], [{ ...records[0]!, id: 'd'.repeat(64), generation: 3 }, ...records], [...records, ...records], records.toReversed(),
     [{ ...records[0]!, tries: 4 }], [{ ...records[0]!, generation: 0 }],
     [{ ...records[0]!, id: 'A'.repeat(64) }], [{ ...records[0]!, generation: Number.MAX_SAFE_INTEGER + 1 }]]) {
     expect(() => encodeFitEnvironment(bad, 0)).toThrow()

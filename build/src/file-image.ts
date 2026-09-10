@@ -2,12 +2,12 @@ import { copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, 
 import { dirname, join } from 'node:path'
 import { artifactFile } from './component-build.ts'
 import { componentId, verifyDeployment, type BootIdentity, type Deployment } from './components.ts'
-import { checkCapacity, type FileLayout } from './file-layout.ts'
+import { checkCapacity, checkSystemFilesystemCapacity, type FileLayout } from './file-layout.ts'
 import { writeFirmwareRegion } from './fit-environment.ts'
 import { authenticateFirmware } from './firmware.ts'
 import { pinSeededTimes } from './pin-seeded-times.ts'
 import { type Toolset, Toolbox } from './toolbox.ts'
-import { mke2fs } from './tools/e2fsprogs.ts'
+import { mke2fs, dumpe2fsHeader } from './tools/e2fsprogs.ts'
 import { verifyGpt, writeGpt } from './tools/sgdisk.ts'
 
 export const FILE_IMAGE_TOOLS: Toolset = {
@@ -40,8 +40,10 @@ export async function assembleFileImage(layout: FileLayout, deployments: Factory
     return { ...input, descriptor, id: componentId(descriptor) }
   })
   if (new Set(records.map(r => r.id)).size !== 2 || new Set(records.map(r => r.descriptor.generation)).size !== 2) throw new Error('Factory deployment IDs and generations must differ')
-  checkCapacity(layout, Math.max(...records.map(r => r.descriptor.rootfs.content.image.bytes + r.descriptor.kernel.support.image.bytes)),
-    Math.max(...records.map(r => r.descriptor.kernel.boot.artifact.bytes)) + (fit ? 0 : artifactFile(firmware).bytes))
+  const systemBytes = Math.max(...records.map(r => r.descriptor.rootfs.content.image.bytes + r.descriptor.kernel.support.image.bytes
+    + r.descriptor.rootfs.content.signature.bytes + r.descriptor.kernel.support.signature.bytes + 128 + Buffer.byteLength(r.envelope)))
+  const bootBytes = Math.max(...records.map(r => r.descriptor.kernel.boot.artifact.bytes))
+  checkCapacity(layout, systemBytes, bootBytes + (fit ? 0 : artifactFile(firmware).bytes))
   mkdirSync(dirname(output), { recursive: true })
   const work = `${output}.building`
   mkdirSync(work)
@@ -49,7 +51,7 @@ export async function assembleFileImage(layout: FileLayout, deployments: Factory
     const system = join(work, 'system-tree')
     const esp = join(work, 'esp-tree')
     const data = join(work, 'data-tree')
-    for (const path of [join(system, 'deployments'), join(system, 'staging'), data]) mkdirSync(path, { recursive: true })
+    for (const path of [join(system, 'deployments'), data]) mkdirSync(path, { recursive: true })
     if (!fit) {
     for (const path of [join(esp, 'EFI/BOOT'), join(esp, 'EFI/mos/kernels'), join(esp, 'loader/entries')]) mkdirSync(path, { recursive: true })
     copyFileSync(firmware, join(esp, 'EFI/BOOT', layout.board === 'x64' ? 'BOOTX64.EFI' : 'BOOTAA64.EFI'))
@@ -100,6 +102,9 @@ export async function assembleFileImage(layout: FileLayout, deployments: Factory
         if (partition.name === 'DATA') {
           const checked = await tb.run(['env', 'E2FSPROGS_FAKE_TIME=1577836800', 'e2fsck', '-fy', path])
           if (![0, 1].includes(checked.exitCode)) throw new Error(`Factory quota initialization failed: ${checked.stderr}`)
+        }
+        if (partition.name === 'SYSTEM') {
+          checkSystemFilesystemCapacity(await dumpe2fsHeader(tb, path), systemBytes + (fit ? bootBytes : 0))
         }
         await pinSeededTimes(tb, path, '@1577836800')
         await tb.must(['e2fsck', '-fn', path])

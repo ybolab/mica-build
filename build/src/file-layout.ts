@@ -1,4 +1,5 @@
 import { parseBoardEnv } from './verify-package.ts'
+import type { Ext4Header } from './tools/e2fsprogs.ts'
 
 export interface FilePartition {
   name: string, number: number, startSector: number, sizeSectors: number, guid: string, type: string, fsUuid?: string
@@ -61,15 +62,33 @@ export function parseFileLayout(source: string): FileLayout {
 
 }
 
-/** Reserve space for three full generations plus measured filesystem headroom. */
+/** Preflight two full deployments; installation also checks filesystem availability. */
 export function checkCapacity(layout: FileLayout, systemBytes: number, bootBytes: number): void {
   const fit = layout.backend === 'uboot-fit'
   const requirements = fit ? [['SYSTEM', systemBytes + bootBytes, 128] as const]
     : [['SYSTEM', systemBytes, 128] as const, ['ESP', bootBytes, 64] as const]
   for (const [name, bytes, reserve] of requirements) {
     const partition = layout.partitions.find(p => p.name === name)
-    if (!Number.isSafeInteger(bytes) || bytes <= 0 || !partition || 3 * bytes + reserve * 1048576 > partition.sizeSectors * 512) {
-      throw new Error(`${name} cannot retain current, fallback and candidate with reserve`)
+    if (!Number.isSafeInteger(bytes) || bytes <= 0 || !partition || 2 * bytes + reserve * 1048576 > partition.sizeSectors * 512) {
+      throw new Error(`${name} cannot retain the running deployment and its replacement with reserve`)
     }
+  }
+}
+
+/** Account for ext4 metadata and both reserves before publishing a factory disk. */
+export function checkSystemFilesystemCapacity(header: Ext4Header, deploymentBytes: number): void {
+  const count = (name: string) => {
+    const value = header.fields.get(name)
+    if (value === undefined || !/^[0-9]+$/.test(value)) throw new Error(`Invalid SYSTEM filesystem field ${name}`)
+    return BigInt(value)
+  }
+  if (header.blockSize !== 4096n || header.fields.get('Filesystem features')?.split(/\s+/).includes('bigalloc')
+    || !Number.isSafeInteger(deploymentBytes) || deploymentBytes <= 0) throw new Error('Invalid SYSTEM filesystem capacity inputs')
+  // ext4 reserves min(2%, 4096) clusters in addition to the superblock reserve.
+  // https://www.kernel.org/doc/html/latest/admin-guide/ext4.html#sysfs-entries
+  const internalReserve = header.blockCount / 50n < 4096n ? header.blockCount / 50n : 4096n
+  const usable = (header.blockCount - count('Overhead clusters') - count('Reserved block count') - internalReserve) * header.blockSize
+  if (2n * BigInt(deploymentBytes) + 128n * 1048576n > usable) {
+    throw new Error('SYSTEM filesystem cannot retain two full deployments with installation reserve')
   }
 }

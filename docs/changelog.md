@@ -4,6 +4,17 @@ Campaign-level record, one entry per plan, newest first. Details live in the
 plan file and the task records it names; this file holds the one-paragraph
 history a reader can scan without opening either.
 
+## Strict two-deployment file A/B replacement (2026-09-10)
+
+The [approved replacement task](task/20260910-0040-strict-file-ab.md) replaces old
+inactive B only after authenticating the new inputs and confirming running A.
+Native records retire B before collection; shared components survive, and new B
+is activated only after durable publication. Both FIT environment copies forget
+retired objects. Factory and runtime capacity checks budget two deployments,
+including measured ext4 overhead. Native tests cover 549 interrupted/error cases,
+transaction restart and replacement-only space availability. Virtual boot/update
+acceptance and clean image rebuilding follow the implementation commit.
+
 ## cx3576 SYSTEM reduced to 1 GiB (2026-09-10)
 
 SYSTEM is now 1024 MiB and DATA starts at 1042 MiB. Firmware layout validation,

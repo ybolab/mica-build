@@ -31,7 +31,7 @@ its 32768-byte start. The complete reserved region is a GPT partition so DATA
 expansion cannot discard loader or record bytes.
 
 The assembler writes two independently authenticated factory deployments.
-Current records are strict and bounded to three entries. Each binds deployment
+Current records are strict and bounded to two entries. Each binds deployment
 ID, kernel ID, generation and confirmed/trial state. CRC and redundant-copy
 sequence handling select a complete copy; malformed fields, duplicate identities
 and invalid counters are rejected. Counters are not reconstructed from defaults

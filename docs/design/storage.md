@@ -9,7 +9,7 @@ available medium. Firmware and SYSTEM ranges remain fixed.
 
 | Physical namespace | Exposed paths | Owner and purpose |
 |---|---|---|
-| SYSTEM | `/mnt/system` and verified root/support mappings | Immutable signed deployments and shared component objects |
+| SYSTEM | `/mnt/system` and verified root/support mappings | At most two signed deployments, descriptors and shared component objects |
 | DATA/state | Selected service binds, `/etc/machine-id`, random seed | Device identity, credentials and persistent service state |
 | DATA/meta | `/mnt/data/meta` | Native transaction state, catalog checkpoints, firmware receipt and appliance lifecycle records |
 | DATA/mos | `/mos`, `/home`, `/root` | Managed applications, configuration, containers and user homes |
@@ -29,6 +29,21 @@ subdirectories remain mode 0700 and documents 0600. Binding an approved leaf
 avoids granting a service access to unrelated physical state namespaces.
 
 ## Capacity
+
+SYSTEM has a strict two-deployment budget. It contains `deployments`, `roots`
+and `kernels`, including authenticated descriptors, hash text and signatures.
+Download archives, partial downloads and acquisition state stay in DATA under
+`/mos/updates`; logs, user data and application state also remain outside SYSTEM.
+Short-lived object publication files are removed by interrupted-install cleanup.
+
+Factory preflight budgets two full payloads with 128 MiB SYSTEM headroom (64 MiB
+for UEFI ESP). After formatting SYSTEM, the builder subtracts measured ext4
+metadata overhead, reserved blocks and the kernel's internal cluster reserve
+before accepting that payload budget. Runtime installation checks actual `f_bavail`, inode
+availability and reclaimable allocated blocks, then rechecks free space after
+collection. Filesystem metadata and reserved blocks reduce usable capacity, so
+partition size alone is not a payload limit. Content IDs share unchanged objects
+between deployments. The cx3576 SYSTEM partition remains 1 GiB.
 
 Bind mounts share one filesystem and do not create separate capacity totals.
 Ext4 project quotas bound bulk and disposable data by both bytes and inodes.

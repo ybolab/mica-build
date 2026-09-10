@@ -43,12 +43,26 @@ contents. HTTP ranges resume partial objects; complete bytes and lengths must
 match authenticated metadata. `MOSUPD01` offline imports carry the same signed
 deployment and at most five unique objects, with no archive paths or links.
 
-The installer authenticates the descriptor and current boot policy, computes
-space for missing objects, and preserves current/fallback references. Object
-publication uses temporary files, exact digest checks, file sync and directory
-sync. The boot entry becomes visible last. The DATA state file is reconciled
-against durable native entries after an interruption; confirmation cannot prune
-an already activated candidate merely because a later state write failed.
+Installation requires the authenticated running deployment A to be confirmed
+healthy. It verifies every new or reused object and checks destination capacity,
+including the allocated blocks that retiring the inactive deployment B will free.
+A rejected descriptor, corrupt input or failed capacity preflight leaves both
+installed deployments intact.
+
+The installer durably removes B's boot record before reclaiming its exclusive
+objects and descriptor. On FIT, both redundant environment copies must forget B
+before any collection. Components shared with A or the incoming deployment remain
+in place. The new B is copied from DATA using temporary files, exact digest checks,
+file sync and directory sync; its boot entry becomes visible only after all its
+objects and descriptor are durable. There are at most two deployment records.
+The three-attempt trial counter does not imply a third deployment.
+
+An interruption before activation leaves A bootable. Native entries are the
+commit record: DATA state reconciliation drops a retired fallback and discovers
+an activated candidate even when the corresponding state write did not finish.
+Until new B is complete, A is the sole bootable deployment; its own corruption
+would require recovery. Once B is activated, A is its fallback. Confirmation of B
+makes B current and A the retained fallback for the next replacement.
 
 Root-only updates reuse kernel/support objects. Kernel-only updates reuse the
 root object. Combined updates publish both. Normal OS installation never writes

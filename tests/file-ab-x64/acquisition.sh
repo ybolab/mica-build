@@ -41,7 +41,7 @@ for spec in '3 root' '4 kernel'; do
     boot "$output/install.log"
     grep -F FILE_AB_INSTALL_PASS "$output/install.log"
     if [ "${FILE_AB_INJECT_DATA_WRITE_FAILURE:-0}" = 1 ]; then
-        grep -F FILE_AB_ACTIVATION_RECOVERY_PASS "$output/install.log"
+        grep -F FILE_AB_RETIREMENT_RECOVERY_PASS "$output/install.log"
     fi
     boot "$output/boot.log"
     grep -F FILE_AB_UPDATE_BOOT_PASS "$output/boot.log"

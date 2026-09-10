@@ -31,12 +31,16 @@ install_deployment() {
             fail 'immutable metadata accepted a state write'
         fi
         chattr -i /mnt/data/meta/deployments.json || fail 'metadata fault removal'
-        mos-deploy status | grep -F "\"candidate\":\"$expected\"" || fail 'committed candidate was hidden after DATA write failure'
-        mos-deploy confirm | grep -F "\"candidate\":\"$expected\"" || fail 'reconfirmation discarded the committed candidate'
-        echo FILE_AB_ACTIVATION_RECOVERY_PASS
+        mos-deploy status | grep -F '"candidate":null' || fail 'incomplete candidate was activated'
+        mos-deploy confirm | grep -F "\"current\":\"$booted\"" || fail 'retirement lost the confirmed running deployment'
+        mos-deploy install "$descriptor" --objects "$objects" || fail 'replacement retry after DATA repair'
+        echo FILE_AB_RETIREMENT_RECOVERY_PASS
     else
         mos-deploy install "$descriptor" --objects "$objects" || fail 'component installation'
     fi
+    [ "$(find /mnt/system/deployments -maxdepth 1 -name '*.json' | wc -l)" -eq 2 ] || fail 'SYSTEM must contain exactly two deployment descriptors after installation'
+    [ "$(find /boot/loader/entries -maxdepth 1 -name 'mos-*.conf' | wc -l)" -eq 2 ] || fail 'boot entry count exceeds the A/B budget'
+    echo FILE_AB_TWO_DEPLOYMENTS_PASS
 }
 for unit in systemd-repart.service systemd-growfs@mnt-data.service mos-data-layout.service mos-seed-state.service systemd-random-seed.service systemd-tmpfiles-setup.service mosd.service apid.service; do
     systemctl is-active --quiet "$unit" || fail "$unit is not active"
