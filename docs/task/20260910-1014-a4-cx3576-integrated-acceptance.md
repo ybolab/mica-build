@@ -15,7 +15,7 @@ without relabelling its dirty-stamped build or duplicating implementation.
 
 ## ActiveForm
 
-Completed collector and coherent kernel evidence; the separately authorized composition phase below is in progress. Physical qualification remains blocked.
+Completed collector and coherent kernel evidence; composition is blocked after recovery retry 2, pending L1's concrete recovery decision. Physical qualification remains blocked.
 
 ## Dependencies
 
@@ -26,7 +26,8 @@ Completed collector and coherent kernel evidence; the separately authorized comp
 
 ### Authorized composition continuation — 2026-09-10
 
-Phase state: in progress, owned by `bkd/1zjiu5h5`. The completed task/index
+Phase state: blocked pending L1's concrete recovery decision, owned by
+`bkd/1zjiu5h5`. Recovery retries 2 of 2 are exhausted. The completed task/index
 status above preserves the earlier collector/kernel delivery; it does not claim
 that this new candidate exists or passes. The PMA serializer has no reopen
 operation, so this continuation is a content update under the explicit L1/L2
@@ -364,6 +365,169 @@ scoped `git diff --check` passed. The recovery gate script is SHA-256
 `9a802f299105624a16e5bff70629ec5bfbdca9086ff1b0cc3fefe5f210b0607e`,
 and its invocation wrapper is
 `a1fc7e2561139a0c51839c36a3dc84b6766ed35bc7b52fd970a027798ee57929`.
+
+### Recovery retry 2 terminal collection — composition blocked
+
+The recovery root gate ran at immutable source
+`9d1218e2689eb5e3fce99ad1736f3a1fdc8c8801`, tree
+`0a1c2b4ddd86945961da16cc6d4d268e636f2273`, from
+2026-09-10T21:39:53Z to 21:48:19Z, exit 2. Command:
+`bash /srv/station/work/tmp/mos/1zjiu5h5/composition-20260910-2026-z2Ljld/root-recovery-2-gate.sh`.
+The script hash remains `9a802f299105624a16e5bff70629ec5bfbdca9086ff1b0cc3fefe5f210b0607e`.
+Its metadata and actual final `GATE_EXIT_CODE=2` agree. Under
+`evidence/root-recovery-2/`, `root-gate.log` is 88,886 bytes / 1,357 raw lines,
+SHA-256 `ffaa21625a4b9f65a0a648e8cc71ea67e8f4402c418c197cd731a8a49e2cdb1b`;
+`root-build.log` is 88,530 bytes / 1,351 raw lines,
+SHA-256 `f73c15a4905ece781335abe494d9258fcde8d6a6f64fbc4a4093ce7fed011c44`.
+PID 1651526 is absent. This is a terminal RED, not a successful root gate.
+
+Cache recovery did work: the original recipe reports 172 packages verified,
+zero archives downloaded, 68 bootstrap packages installed, and 14 local packages
+composed into a 186-package root. Both `10-compose` and `90-pack` emitted
+outputs; their stage content hashes are respectively
+`6196ed100a05dae8933fe89f031a12442118ad6bf855620eeac585b20458e335` and
+`c54d255aadd41069f633a9d312abb4cd5b259d18e68c4d6497613cfb28a2f796`.
+The recipe passed its 254 MB installed-size / 400 MB budget check, then the
+mandatory smoke path stopped before executing any packed binary:
+
+```text
+error: docker load -i .../source/_out/cx3576/factory-root.oci exited 2: tar: Skipping to next header
+tar: Exiting with failure status due to previous errors
+make: *** [Makefile:70: os-rootfs-cx3576] Error 1
+```
+
+#### Emitted bytes, not a signed or runtime-qualified root
+
+Read-only terminal evidence is under `evidence/root-terminal-collection/` in
+the same private composition directory. The eight-file
+`emitted-artifact-SHA256SUMS` has SHA-256
+`591ab92e2308b1d2c9dc070c96dcd73a505405d19fc2625c787aa4a7c2071b5d`.
+The original archive, failed copy, scripts and full logs were rehashed before
+and after inspection; no failed evidence, cache, pool or source was overwritten.
+The source remains tracked-clean; its post-collection tracked-file manifest is
+byte-identical to `source-files-before.txt` (`79f1af52...d8b33`).
+
+| Emitted artifact / member | Bytes | SHA-256 |
+|---|---:|---|
+| `source/_out/cx3576/factory-root.oci` | 87,746,048 | `d23db6942e49b002aee615d60027a962eaf4752097d09755a7eae55529365f5f` |
+| `source/_out/cx3576/rootfs-verity.img` | 76,947,456 | `1ff6626307d43294aa6c01777ce1e2a8c0478e06d9630e9f890a87545f662569` |
+| Squashfs prefix of that image (not a separately emitted file) | 76,337,152 | `00f9ef0994a2249c65f353e040f0e4de5abaae46842a47949b8006f4efad1f0a` |
+| OCI manifest blob | 566 | `1cfe2b6af1505f84fca72a956407de0ede9ea451a687e88abdabfe6277934e5c` |
+| OCI config blob | 519 | `e792668a72fda93591ea7391175b88e2d9cfcc00e6d175a3d8af02f622de380d` |
+| OCI gzip layer blob | 87,738,135 | `b81521445d696de35197f123a526fc98d7a716911ae7efad16f93de61a1e95f1` |
+
+All three original blob hashes and descriptor sizes match. The layer's observed
+uncompressed digest `30f90114a0d5c02b03a9ef4c9b770358ad29752f3057b76bd4b2a03f3521fa71`
+matches the OCI config; its labels bind ARM64/Linux content to source `9d1218e2`.
+The verity record reports SHA-256, 4,096-byte data/hash blocks, 18,637 data blocks,
+hash start block 18,637, 149,096 data sectors and fixed salt ending `0001`.
+Recorded root hash:
+`1282f27ad8be31cc941b43baccb180602a53827443f88a3ae623422ce06e28df`.
+This is emitted geometry/root-hash evidence, not a content signature, fresh
+deployment record, runtime verity test or complete SYSTEM image.
+
+The completed pack log records CJK, build-residue, disposable-var,
+extension-directory, shadow-chain and privileged-file assertions, boot export,
+debug splitting and verity generation. Twelve of 1,050 ELF files were stripped
+and their debug files exported. Retained diagnostics include mksquashfs
+`Unrecognised xattr prefix system.posix_acl_access` and
+`system.posix_acl_default`, plus Docker `InvalidDefaultArgInFrom` warnings;
+these are not a zero-warning pass. The earlier three dpkg-shlibdeps warnings
+also remain open for actual root loader/runtime assessment.
+
+Selective extraction from the original OCI, without executing its files,
+confirmed the current `mos-data-layout` hash
+`683ce0839962ae2cf8f016e05f7d6fcde27bc6ffe39dda58b42bdbd676ae3414`.
+Its project 100/102 byte and inode limits are zero; project 101 bounds variable
+data to 32..256 MiB and 2,048..16,384 inodes. Installed `var.mount` binds the
+whole `/var` privately from DATA. The separate private container bind uses
+DATA/containers, graph storage `/mos/containers/storage` and image-copy tmp
+`/mos/containers/tmp`. These installed settings support the intended isolation;
+actual mounts, quota enforcement and reset isolation are not runtime-verified.
+The actual public manifest matches input hash `a30e535b...74ce00`. Installed
+logind reserves tty2 with `NAutoVTs=0`; the extracted getty template invokes
+agetty/login without autologin. No login or VT switch was executed.
+
+The 16 extracted files have checksum manifest `packed-file-SHA256SUMS`, SHA-256
+`7b6cf661942693499dc49ccf77bbc4b850d963a653850c5cce1a0ae73f34d0e1`.
+Actual packed ELF hashes are: mosd
+`c51f63b2cfcd3ea385ed454d457eb3bfae2c43ba0bd7cccbfc5bf310fec570c5`, apid
+`8ebf33df0f439ebcb384c2cd3f560825084e2330d1a9504b8e326fb7118d29ef`, and mos-mqttd
+`44961a4f53b1d702e7450cc6cb4c3c3a010343ff46f0ac361cc38e06566e23f0`.
+Readelf identifies all three as ELF64 AArch64 with interpreter
+`/lib/ld-linux-aarch64.so.1` and NEEDED libc, libm and libgcc_s. Reading those
+fields is not loader resolution, execution or the pending C.D4 endpoint scan.
+
+#### Adapter failure boundary and proposed recovery (not implemented)
+
+The original OCI lists all seven members with exit 0 and valid header checksums.
+It contains only two directories and five regular files, including the three
+content-addressed blobs; there are no outer links or sparse members. The failed
+load-only copy is 87,746,560 bytes, SHA-256
+`83e4c61d449047d3b01e40707ce6cff680f4755155ca6ea293eabd4340fafa27`.
+Its `tar -tf` exits 2. Read-only byte comparison proves:
+
+- The first difference is byte 87,735,808 (512-byte block 171359), inside the
+  gzip layer, before the requested index edit. That original block is absent
+  from the copy; the following bytes through the config move 512 bytes earlier.
+- The unchanged layer header still declares 87,738,135 bytes. Reading that
+  declared payload from the copy hashes to
+  `98c375c82c2618eddb81c34ddbeeb5b41136578ecbd34923cb9b741b7b1aae81`, not its
+  content-addressed name. The config header moves from block 171370 to 171369,
+  inside the preceding member's declared span, so tar misses it as a member.
+  The config bytes at their shifted position still hash to the correct digest.
+- The original index was removed and the 651-byte replacement is present at
+  block 171374. No `members-*` or final checksum file was produced. With the
+  wrapper's `set -e`, this places failure in the edit/append path before its
+  final validation and real `/usr/bin/docker load` at line 62.
+
+The implicated owned adapter is `bin-root-recovery-2/docker:48-50`: copy,
+`tar --delete`, then `tar --append`. GNU tar is 1.34. The original archive has
+171,379 blocks (19 modulo 20), while the failed copy has 171,380. These measured
+boundaries locate the corruption; they do not establish the internal tar
+implementation cause or prove product-root corruption. The previous small
+namespace fixture did not cover this emitted archive boundary and did not
+protect against this failure. Full raw headers and slice-equality results are
+in `tar-boundary.json` and `tar-relations.json`; the latter has SHA-256
+`54e34f9093311c5d31d3e26d144f6d2a6b67f20bf0f023558d767fcd511a00e4`.
+
+Minimal proposal for L1 through L2: replace only the task adapter's in-place
+edits with a fresh load-only archive reconstructed from this readable original,
+preserving every original member's content and metadata except the two approved
+index tag annotations. Before any load, compare member sets, header validity,
+descriptor sizes, all blob hashes, unchanged annotation fields and original
+archive hash. Use the actual large-member/tail boundary as the RED fixture,
+then prove reconstruction GREEN; a tiny regular-tar fixture is insufficient.
+This is structurally suitable for the observed simple seven-member OCI, but
+Docker acceptance remains untested. If approved, run the unchanged smoke entry
+against the original root record with content-digest identity and task-only tag
+isolation; refuse tag-only identity as exact evidence. No package, kernel or
+root rebuild is justified by this adapter defect. No correction, new archive,
+Docker load, smoke run or retry was performed during terminal collection.
+
+Composition is BLOCKED: retries 2 of 2 are exhausted, and L1's concrete recovery
+decision must arrive through L2 before further execution. Root smoke, actual
+loader/service/device closure, signed root/support/FIT, fresh records, full-image
+layout/signature/negative/readback gates and the exact C.D4 candidate scan remain
+open. All mandatory CX/S905/original-device hardware rows remain unqualified;
+A coordinates, A4 integrates, and physical operator/bench/current-image inputs
+are still missing. NPU ownership is OPEN; historical optional D5 is nonblocking.
+Heavy jobs: zero. The idle persistent shell 1460561 / `1zjiu5h5-a3c184` and all
+source, package, cache, build, archive and failed evidence resources are preserved.
+No running labeled container was observed; nothing was deleted or retagged.
+D's history note is this partial packed-root milestone and adapter blocker,
+not completed composition or a hardware qualification.
+
+Terminal review: pma-cr shared-policy review of the actual three-document delta
+is PASS, with zero new documentation findings. The separate owned adapter has
+one confirmed HIGH data-integrity finding at `bin-root-recovery-2/docker:49-50`
+(WARNING); it remains explicitly unfixed pending L1, and the earlier fixture
+PASS is not an actual-archive acceptance. No new executable change or GREEN
+recovery is claimed. `timeout 30 make docs-verify` passed on
+2026-09-10T22:14:20Z..22:14:22Z, exit 0; terminal evidence log
+`docs-terminal.log` SHA-256
+`8a05e614b6a6f3057988dc2ab915a7d38c1dca9b9fb13c021799786872185216`.
+Scoped `git diff --check` passed. This review/gate qualifies documentation only.
 
 ### Original collector/kernel tracking
 

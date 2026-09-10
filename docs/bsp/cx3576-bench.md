@@ -941,9 +941,21 @@ current layout script. The five native producers then passed at
 with dependency warnings preserved. The first root gate failed before
 installation when a pinned archive download reached its 600s ceiling. All 173
 required upstream cache inputs were subsequently verified for authorized
-recovery retry 2; new root/FIT/records/image gates remain in progress in A4's
-linked detail. This is not an image ready to flash
-or a physical qualification result; the two old roots remain inadmissible.
+recovery retry 2. That gate emitted a new current-layout root (254 MB against
+the 400 MB installed-size budget), then terminated at 2026-09-10T21:48:19Z,
+exit 2, before mandatory smoke execution: the task-owned OCI load-copy editor
+corrupted its copy. The original OCI remains readable, SHA-256
+`d23db6942e49b002aee615d60027a962eaf4752097d09755a7eae55529365f5f`;
+the emitted verity image is
+`1ff6626307d43294aa6c01777ce1e2a8c0478e06d9630e9f890a87545f662569`.
+Read-only extraction confirms the current layout/public defaults, private
+container paths and no-autologin getty template; it is not runtime enforcement,
+login or workload evidence. A4's linked detail records exact artifact and
+failure identities, warnings and an unimplemented adapter recovery proposal.
+Both retries are exhausted: composition is blocked pending L1's concrete
+decision through L2. Smoke, signed root/support/FIT, fresh records, full image
+and candidate-specific verifier checks remain open. This is not an image ready
+to flash or a physical qualification result; the two old roots remain inadmissible.
 
 journald is volatile. Capture each boot's journal and serial trace before
 rebooting; a later collector invocation cannot recover the previous journal.

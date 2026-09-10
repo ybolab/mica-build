@@ -101,7 +101,7 @@ image, firmware, x64/virt-arm64 matrix or the passed kernel was rebuilt merely
 for documentation. This completes the bounded software/evidence deliverable,
 not exact-image composition or any of the mandatory physical rows.
 
-## Authorized composition phase — in progress
+## Authorized composition phase — blocked pending L1 decision
 
 The subsequent exact L1/L2 source/input handoff resolves the earlier current-root
 and native-init dependency. It authorizes read-only execution of the existing
@@ -157,3 +157,24 @@ caches and staged privately; the unchanged offline cache verifier passed.
 This demonstrated input change permits one recovery root gate, with new logs
 and preserved failed evidence. No product edit, timeout relaxation, package or
 kernel rebuild, automatic retry 3, or hardware pass is authorized or claimed.
+
+Recovery retry 2 terminated on 2026-09-10T21:48:19Z, exit 2. Cache verification
+succeeded with zero downloads; compose/pack emitted the new current-layout root
+within its 254 MB / 400 MB installed-size budget. Mandatory smoke failed before
+execution because the task's load-copy tar editor damaged a layer boundary.
+The original seven-member OCI is readable and all three blob hashes/sizes match;
+its SHA-256 is `d23db6942e49b002aee615d60027a962eaf4752097d09755a7eae55529365f5f`.
+The emitted verity image, geometry, actual layout/public-meta/ELF hashes and
+retained warnings are recorded in the paired task. They do not establish root
+runtime, signatures, a complete image or hardware qualification.
+
+The read-only diagnosis locates one missing 512-byte layer block in the edited
+copy and the shifted config header, not a proven internal GNU tar root cause.
+Proposed recovery is confined to constructing and validating a fresh load-only
+archive before the unchanged smoke, preserving original bytes and content IDs;
+it needs actual-boundary RED/GREEN and L1's concrete decision via L2. No adapter
+fix, new copy, load, smoke, gate or composition advance is authorized by terminal
+collection. Retries 2 of 2 are exhausted. Passed packages/kernel and emitted
+root are preserved, not rebuilt. Heavy usage is zero; the persistent shell is
+idle. The completed PMA status still covers only the earlier collector/kernel
+outcome; no status/index operation is made for this blocked content update.
