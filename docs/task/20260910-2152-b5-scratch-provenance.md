@@ -15,7 +15,7 @@ boot/support/debug identities. No compatibility work or heavy builds.
 
 ## ActiveForm
 
-Collecting corrective build gates while awaiting the two reviewed C handoffs.
+Awaiting the two reviewed C handoffs after independent corrective acceptance passed.
 
 ## Dependencies
 
@@ -153,6 +153,29 @@ reject installed/closed/transformed root substitution, inherited roots, extra
 overlays, comments or later-stage decoys, verification of the wrong root/report,
 removed or ignored verification, and an unchecked artifact. These are source
 contract tests, not OCI/SquashFS or runtime proof. Production files are unchanged.
+
+Corrective implementation commit is
+`e07aac23913cc4c162e4de1a5af934d0c2e5ec3d`, tree
+`a8698f346f93d175e570f42c2fcb2d2a7b720b94`. Its clean-source final run finished at
+`2026-09-10T22:40:47.085049+00:00`, aggregate exitCode 0:
+
+| Command | Result |
+| --- | --- |
+| `timeout 900 make os-build-test` | Exit 0; 412 tests, 1206 assertions, 26 files, no skips. Run once after correction. |
+| `timeout 120 make docs-verify` | Exit 0; all five documentation checks passed. |
+| `timeout 30 git diff --check 75b77f3bb2b4c968a3f73a89610c5e3a7f1eae0e HEAD` | Exit 0. |
+
+Final metadata: `/tmp/mos-b5-r1-614v4f9m/final/metadata.json`, SHA256
+`65575758523bce1da13084bccce6b7e9609907116cf0c340ff86293f6f32bded`.
+All three final log hashes match. The full build log SHA256 is
+`517fb4c6533a3ac19a989b98d20d6be724592abc599b47bee6f31c3f9e6b8bd6`.
+The subsequent evidence commit changes only this task and its plan; final docs
+and diff checks are recorded under `/tmp/mos-b5-r1-614v4f9m/record/` without
+rerunning unchanged build tests. The original nine-gate aggregate remains 1;
+the accepted UI failure is not reclassified by this corrective aggregate.
+
+Independent correction is complete. Overall B5 status is partial, blocked by the
+two handoffs below. There is no remaining detached build gate or new heavy grant.
 
 ## Local review
 

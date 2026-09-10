@@ -131,6 +131,16 @@ suite, with exact source/log/exit metadata; retain the original RED and accepted
 UI baseline. The existing task claim and plan status do not change. No production
 or reserved C file is part of this correction.
 
+That independent correction is delivered in
+`e07aac23913cc4c162e4de1a5af934d0c2e5ec3d`: focused stages passed 104 tests and
+13 negative controls; the single full build run passed 412 tests and 1206
+assertions. Clean-source docs and diff checks passed. Exact results and original
+RED are in the related task and `/tmp/mos-b5-r1-614v4f9m/`; final run metadata
+SHA256 is `65575758523bce1da13084bccce6b7e9609907116cf0c340ff86293f6f32bded`.
+Shared/TypeScript backend review passed with zero findings. Only the task/plan
+evidence changes after the tested implementation commit. The two C handoffs and
+grant-dependent B7 rows below remain open; the plan remains implementing.
+
 After L2 supplies the reviewed public-meta source and the precise release-fixture
 boundary, complete the missing declarations/report join and rerun focused
 composition plus affected release tests. No C or main branch may be imported
