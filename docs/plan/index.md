@@ -128,3 +128,5 @@ disobeys on sight teaches a reader the wrong thing about the tree.
 - [x] [**20260910-1142-b2-busybox-startup B2 explicit BusyBox startup semantics**](20260910-1142-b2-busybox-startup.md) `2026-09-10`
 
 - [x] [**20260910-1206-b3-bounded-exitrd-teardown B3 bounded exitrd teardown**](20260910-1206-b3-bounded-exitrd-teardown.md) `2026-09-10`
+
+- [x] [**20260910-2100-b4-runtime-selection Select explicit runtime payloads**](20260910-2100-b4-runtime-selection.md) `2026-09-10`
