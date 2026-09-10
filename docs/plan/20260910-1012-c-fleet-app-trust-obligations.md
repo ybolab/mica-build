@@ -12,6 +12,14 @@ against the committed tree at
 `5c61f7fbb5589807e931e981b3ef8cb9bdff8b6d`. It does not implement production
 code or broaden historical designs.
 
+The first review amendment preserves that evidence baseline and the completed
+classification. For its scheduling conclusions only, it synchronizes local
+workstream C through `fa51970ca32c2a7d16f809134e78d249c0a1f897` (including
+approved source `5d0dca577a782aa707d9530779c4b23f2a7eda31`) in merge commit
+`0f81c0ce5d501dec41b2a3170ad6b6f9f6b99c52`, then refreshes only the existing
+local configuration/status call chain. It does not relabel the original matrix
+as evidence collected at the synchronized HEAD.
+
 ## Proposal
 
 Record an obligation-level classification with current file-and-line evidence,
@@ -23,10 +31,12 @@ and bounded product choices for the parent workstream.
 The classifications below are obligation classifications, not status-field
 translations. `already delivered` may mean an approved design decision rather
 than a shipped mechanism; the evidence column says which. `valid
-implementation work` means a current obligation with a bounded slice below.
-For a design-only delivered decision or a superseded product clause, the
-available repository gate is `make docs-verify`; there is no software behavior
-to test unless the row names a current mechanism and its stronger gate.
+implementation work` means the historical contract remains valid, not that it
+is authorized or dispatchable in this campaign; the amendment below applies
+that separate test. For a design-only delivered decision or a superseded
+product clause, the available repository gate is `make docs-verify`; there is
+no software behavior to test unless the row names a current mechanism and its
+stronger gate.
 
 ### PLAN-054: product and fleet boundary
 
@@ -164,145 +174,340 @@ superseded, 20 valid implementation work, and 15 unresolved product
 decisions**. Design approvals, mechanisms, software tests and board/power-cut
 proof are intentionally counted separately.
 
-## Dependency Slices
+## Campaign Disposition Amendment (2026-09-10)
 
-Only the following slices are valid implementation work. They are intentionally
-smaller than a complete application manager or fleet service. Every future code
-task must first merge the shared local `bkd/58sdocnk` into a clean branch and
-must use TDD plus `pma-cr` review before claiming completion.
+The matrix above classifies **historical contract validity**. It does not grant
+twenty implementation tasks. The campaign needs a second property:
+**dispatchability now**, which requires an approved consumer, a complete input
+and output contract, an integrated call chain, owned paths and the applicable
+dependency already merged. On that test, this amendment finds **zero presently
+dispatchable application/fleet slices**. This is a scheduling conclusion, not a
+change to any of the 65 classifications.
 
-### Managed applications
+The 20 delivered rows also have different proof grades: eight are delivered
+design approvals (`PLAN-054/COND-product`, Q1, Q4–Q7, registration architecture
+and selected-registration security), ten are delivered software mechanisms or
+software-test acceptances (`PLAN-076/B4`; PLAN-077 G1, G3, publication G4 and
+G5; RFCT-305 G1, G3, publication G4, G5 and software gates), and two are
+delivered documentation outcomes (PLAN-077/G6 and RFCT-305/G6). None of those
+categories implies physical board, power-cut or production-key-custody proof.
 
-`APP-INVENTORY` is a prerequisite from the current stage ordering, not a new
-PLAN-069 promise. Write a minimal new
-`pkgs/mosd/mos-appd/{Cargo.toml,src/lib.rs,src/registry.rs}` and add the member
-to `pkgs/mosd/Cargo.toml`; read the shipped package manifest, discovered units
-and `/mnt/data/state/mos/apps/`. It only classifies `System`, managed and
-`External/unmanaged`, persists the stable registry, and exposes no activation.
-Existing command: `make os-rust-gate`. Smallest RED: a discovered handwritten
-unit remains observe-only and has no allowed mutation. Default: current schema
-only, no migration and no network. No shared-path handoff is needed until
-packaging the new binary/unit.
+### Historical candidates and this campaign
 
-| Slice | Obligations and exact paths | Behavior, smallest RED and default | Existing gate / grant |
+The table maps every one of the 20 historically valid implementation rows. A
+candidate named here is not a new obligation or authorization.
+
+| Candidate | Historical obligation IDs | Campaign disposition | Reason or next dependency |
 |---|---|---|---|
-| `APP-TRUST` | `PLAN-069/SW container trust policy`; write `pkgs/mosd/mos-appd/src/{manifest.rs,trust.rs,oci.rs}` and their unit tests; read normalized catalog input, staged OCI content and `rootfs/overlay/etc/containers/policy.json`. | Verify the exact signed manifest/digest before staging and again before activation; generate a `Pull=never` runtime and never weaken the global unmanaged-container policy. RED: flip one staged byte after preflight and prove activation refuses it. Default: curated OCI only, one current schema, local input interface, no native/local-import/cloud transport. The signature-envelope and app-anchor choice below must land first. | `make os-rust-gate`. A build/signing handoff is required before adding an application anchor or changing `build/`, `rootfs/`, `verify/` or release publication. |
-| `APP-ADMIT` | `PLAN-069/SW resource/device admission`; write `mos-appd/src/{admission.rs,runtime.rs}`; read the normalized manifest plus current storage, device, D-Bus, MQTT, port and unit ownership facts. | Reject missing CPU/memory/PID/I/O ceilings, undeclared capabilities/devices/paths and conflicts before runtime publication. RED: omit `MemoryMax` and prove no unit is published. Default: generate one namespaced systemd/Quadlet definition; `/mos`, `/srv` and `/mos/containers` remain byte/inode-unlimited, so storage uses capacity preflight/reservation accounting, never new project quotas. | `make os-rust-gate`; later packed-root coverage uses `make os-verify-test`. Packaging/rootfs edits require a path handoff. |
-| `APP-SECRETS` | `PLAN-069/SW protected secret store`; write `mos-appd/src/secrets.rs` and later `apid/src/apps_api.rs`; read/write only `/mnt/data/state/mos/apps/<app-id>/secrets/` and generated systemd credential files. | API writes replace a named declared secret and return configured/missing status only; mode 0700 directory/0600 files; no value in reads, logs, tasks, audit or diagnostics. RED: plant the value in every output path and assert no returned/stored projection contains it. Default: no secret read endpoint, export, escrow or migration. | `make os-rust-gate`; API contract also `make os-apid-api-spec-pins`. No expensive grant; packaging handoff only when shipping the unit. |
-| `APP-AUDIT` | `PLAN-069/SW audit projection`; write `mos-appd/src/{tasks.rs,activity.rs}` and the application route projection in `apid/src/apps_api.rs`; store a bounded append-only ring under `/mnt/data/state/mos/apps/activity/`. | Record stable task ID, operation, source, app/revision IDs, timestamps and structured outcome for install/update/activation/removal; never arguments, credentials or free text from untrusted bundles. RED: disconnect after `202` and prove the same task reaches one terminal recorded result. Default: local-only bounded projection, no upload. | `make os-rust-gate` and `make os-apid-api-spec-pins`. No expensive grant. |
-| `APP-ROLLBACK` | `PLAN-069/SW health-gated rollback`; write `mos-appd/src/{health.rs,rollback.rs,gc.rs}`; read the active revision, retained last-known-good artifact and bounded health result; write only manager registry pointers and generated definitions. | Retain one last-known-good code artifact until the candidate health window closes; failure atomically restores it or leaves a stable `blocked` result. RED: candidate fails at the health deadline and active digest returns to the retained digest. Default: code rollback only; no data rollback or compatibility migration is claimed. | `make os-rust-gate`; a later runtime image test needs an explicit QEMU grant. No signing-path edit in this slice. |
+| `APP-INVENTORY` | prerequisite only; not one of the 20 | deferred | No approved inventory caller, mutation consumer or persistent registry owner exists. Do not create a new crate or registry merely to classify hypothetical records. |
+| `APP-TRUST` | `PLAN-069/SW container trust policy` | decision proposal only | Decision brief B must first approve the local catalog bytes, independent publisher anchor and actual verifier/activation callers. It also needs a new shared signing/rootfs handoff. |
+| `APP-ADMIT` | `PLAN-069/SW resource/device admission` | deferred | It has no approved activation consumer. Dispatch only after `APP-TRUST` and a concrete managed-OCI activation entry point; do not create an admission library in isolation. |
+| `APP-SECRETS` | `PLAN-069/SW protected secret store` | deferred | No managed runtime or authenticated application mutation consumes a secret. A store or API without that consumer would be a new credential surface, not a bounded slice. |
+| `APP-AUDIT` | `PLAN-069/SW audit projection` | deferred | There are no application operations producing durable tasks. Do not create a consumerless ring, route or daemon. |
+| `APP-ROLLBACK` | `PLAN-069/SW health-gated rollback` | deferred | It depends on an admitted activation, retained artifact and real health gate; runtime image proof would later need an expensive QEMU grant. |
+| `FLEET-CONFIG` | `PLAN-072/C1 local config and off transition`; `PLAN-076/B8` | conditional backend proposal; not dispatchable now | The only concrete consumer is the existing provisioning-status projection described below. Any revision of its route, handler or projection waits for C.D5 (`g4if0wrb`) to be reviewed and merged into local `bkd/58sdocnk`, then needs a fresh scoped approval. |
+| `FLEET-REPORT` | `PLAN-076/B1`, `PLAN-076/B2` | deferred | The field allowlist is historically approved, but there is no existing report caller, preview or sender. A new `GetFleetReport` library/bus member by itself is consumerless. |
+| `FLEET-THERMAL` | `PLAN-076/B3` | deferred | Window aggregation has no report consumer until `FLEET-REPORT` has an approved integrated caller. |
+| `FLEET-SCHEDULE` | `PLAN-076/B6` | deferred | There is no approved client or sender to schedule; do not create `fleetd` or a timer first. |
+| `FLEET-BUFFER` | `PLAN-076/B7` | deferred | `/mos/fleet` persistence is justified only by failed sends, but no sender, accepted-counter envelope or retry contract exists. Do not create a buffer first. |
+| `FLEET-STATUS` | `PLAN-076/B9` | deferred | Real registration/report activity sources do not exist. Desired `enabled=true` must never be projected as registered, connected or reporting. |
+| `FLEET-CLIENT-SAFETY` | `PLAN-076/B10`, `PLAN-076/B11` | decision-dependent and deferred | It needs decision brief A's user-specified existing plane, credentials, wire envelopes and retry semantics plus separate network/runtime/packaging authorization. |
+| `FLEET-CONSOLE` | `PLAN-072/C6`, `PLAN-076/B12` | campaign-excluded | Both rows remain historically valid, but this campaign excludes UI work. They are removed from the executable chain, not reclassified. |
+| `FLEET-AUTONOMY` | `PLAN-072/C4` | deferred proof | There is no fleet runtime to disconnect. A later end-to-end runtime proof needs a separately approved QEMU grant and remains distinct from board/power-cut proof. |
+| `FLEET-DOC` | `PLAN-072/C7`, `PLAN-076/B13` | deferred | Current docs correctly say the features are absent. Update them only after a mechanism ships. |
 
-The first dispatchable application order is `APP-INVENTORY`, then the local
-parts of `APP-ADMIT`, `APP-SECRETS` and `APP-AUDIT`. `APP-TRUST` waits for the
-small application-signing contract, and `APP-ROLLBACK` waits for admitted
-activation. Optional integrator enrollment and native admission are not hidden
-inside any of these slices.
+Selected managed application work remains the local vendor-curated OCI case.
+Optional integrator enrollment remains a later off-by-default capability;
+managed native admission remains later pending its non-root identity and sandbox;
+external catalog/cloud/plane contracts are outside this repository. No entry in
+the table turns those later scopes into implementation work.
 
-### Fleet device work
+### Conditional `FLEET-CONFIG` integrated chain
 
-| Slice | Obligations and exact paths | Behavior, smallest RED and default | Existing gate / grant |
-|---|---|---|---|
-| `FLEET-CONFIG` | `PLAN-072/C1 local`, `PLAN-076/B8`; write `pkgs/mosd/mosd-settings/src/configuration.rs` plus tests, then `pkgs/mosd/apid/src/fleet_api.rs`, `routes.rs`, `main.rs` and generated `apid/openapi.json`; read baked `/usr/share/mos/meta/updates/manifest.json` and `/mos/config/fleet.json`. | One strict `mos/fleet-config/v1` document with `enabled`, `reporting`, `url`; resolve through the existing configuration library; authenticated/CSRF mutation; malformed/anchor-shaped keys fail closed. RED: an override URL is effective, then disable immediately reports off without opening a client. Default: fleet off, URL null, reporting meaningful only under enabled; no backward reader. Credential erasure is added only after its wire contract names the credential. | `make os-rust-gate`, `make os-apid-api-spec-pins`; no expensive grant. Rootfs namespace/unit packaging later needs a handoff. |
-| `FLEET-REPORT` | `PLAN-076/B1/B2`; write `pkgs/mosd/mosd/src/fleet_report.rs`, register exactly `GetFleetReport` in `mosd/src/bus.rs`, and narrow the grant in `pkgs/mosd/dist/com.mos.mosd.conf`; read current system/update/health/storage/telemetry/time/network observations. | Produce the approved fixed-key, maximum-16-KiB report and exclude all site values, hardware IDs, names and free text. RED pair: every planted secret/excluded diagnostics leaf is absent, and every benign approved leaf survives; a new dynamic health component changes only `unknownComponents`. Default: current schema only; no serialization negotiation or outbound action. | `make os-rust-gate` and `make os-dbus-policy-test`. No expensive grant. The D-Bus policy path is not a build/signing path but should stay one reviewed slice. |
-| `FLEET-THERMAL` | `PLAN-076/B3`; write aggregation beside the current source in `pkgs/mosd/mosd/src/telemetry.rs` or a focused `fleet_thermal.rs`, read the existing bounded thermal observations, and feed `fleet_report.rs`. | Track min/max/last between report captures without changing the telemetry API. RED: a spike between two cadence boundaries appears as max even when first/last are lower. Default: reset the accumulator only after a report snapshot is committed. | `make os-rust-gate`; no expensive grant. |
-| `FLEET-SCHEDULE` | `PLAN-076/B6`; after the wire interface exists, write `pkgs/mosd/fleetd/{Cargo.toml,src/schedule.rs}` and add the workspace member. | 900-second baked cadence, 60-second minimum, one coalesced early-send path for the approved transitions, jitter only on recovery. RED: a flapping health source schedules at most one send per 60 seconds. Default: deterministic injected clock/RNG in tests; the plane cannot set cadence. | `make os-rust-gate`; no expensive grant. Packaging `fleetd.service` requires a shared rootfs/build path handoff. |
-| `FLEET-BUFFER` | `PLAN-076/B7`; write `pkgs/mosd/fleetd/src/{buffer.rs,counter.rs}`, read/write `/mos/fleet/{reports.log,counter,status.json}` only. | Buffer only after failed sends, cap at 128 records or 1 MiB, drop oldest with `gapReports`, reserve counters in windows of 64, and make steady-state success perform no flash write. RED: drive each cap independently and crash between reservation and send without reusing a counter. Default: mode 0700, one append-only rotated file, no configurable bounds; DATA/mos stays quota-unlimited. | `make os-rust-gate`; no expensive grant. |
-| `FLEET-STATUS` | `PLAN-076/B9`; write `pkgs/mosd/apid/src/fleet_api.rs`, route/OpenAPI wiring and tests; read resolved config, `GetFleetReport` and `/mos/fleet/status.json`. | Authenticated status works while `fleetd` is stopped and reports baked/effective URLs separately; preview returns the same serializer output the client would send. RED: re-pointed/off device reports the new effective URL, default URL and zero activity; preview bytes equal the bus payload. | `make os-rust-gate` and `make os-apid-api-spec-pins`; no expensive grant. |
-| `FLEET-CLIENT-SAFETY` | `PLAN-076/B10/B11`; after the missing wire contract, write `pkgs/mosd/fleetd/src/{client.rs,tls.rs}` and tests, plus `pkgs/mosd/dist/fleetd.service`. | Parse only HTTP outcome class and accepted counter; ignore/refuse every response instruction. Classify certificate-not-yet-valid against the trusted-clock floor separately from network failures; start after `sysinit.target`. RED: adversarial response carrying command/config/cadence/bundle URL changes nothing except an accepted counter; stale clock produces `clock` not `network`. Default: outbound HTTPS only and no connection when disabled. | `make os-rust-gate`; packed unit coverage later uses `make os-verify-test`. Service packaging needs a shared rootfs/build handoff. |
-| `FLEET-CONSOLE` | `PLAN-072/C6`, `PLAN-076/B12`; after `FLEET-STATUS`, write `pkgs/mosd/apid/ui/src/features/fleet/` and add only the route/navigation wiring required by the existing SPA. | Display enabled/reporting, claim/registration state, effective and baked URLs, buffer, last send and structured error; do not enable cloud activity on render. RED: status says off with an override and the page renders off plus both distinct URLs. Default: no navigation until the API capability exists. | `(cd pkgs/mosd/apid/ui && bun run test)` and `make os-apid-ui-build-contract-test`; use `pma-web` for implementation. No QEMU grant for component tests. |
-| `FLEET-AUTONOMY` | `PLAN-072/C4` and B8's off-state proof; add a focused phase under `pkgs/mosd/tests/apid-api/src/phases/` after all runtime slices. | With a configured hostname and fleet off, span boot plus more than one cadence: `fleetd` inactive, no DNS lookup/socket, and local authenticated API, update import/install policy, recovery and watchdog/health behavior remain available. Repeat with enabled plane unreachable and prove only reporting degrades. RED: fake resolver records one lookup of the configured host while off. Default: no lease or time-since-contact local consequence. | `make os-apid-api-test`; **requires a separately approved expensive QEMU grant** and clean shared harness. It is software/VM proof, not board power-cut proof. |
-| `FLEET-DOC` | `PLAN-072/C7`, `PLAN-076/B13`; update only the current fleet sections after their mechanisms ship: `docs/design/{remote-management,security-model,security-lifecycle,diagnostics}.md`, user docs and governed Chinese mirrors. | Mark only the delivered subset, document destination/cadence/disclosure and preserve no-command/no-update-trigger/no-snapshot-upload rules. RED is not needed for docs; the implementation task records its code RED/GREEN separately. | `make docs-verify`. No expensive grant. |
+This is the only bounded next proposal because it reuses a current caller. It
+is **not dispatchable at this amendment's HEAD** and it does not implement
+registration or enable network activity.
 
-No current fleet slice may be dispatched as an outbound client until the
-registration/report wire choice exists. `FLEET-CONFIG`, `FLEET-REPORT`,
-`FLEET-THERMAL` and `FLEET-BUFFER` are independently testable local work;
-nevertheless the feature remains off and no daemon is packaged or started by
-those library-only slices.
+1. **Entry and input.** The established offline pour lets an integrator write
+   `/mos/config/*.json` while the device is stopped; mosd validates those files
+   on the next boot (`docs/design/provisioning.md:301-346`). The candidate input
+   is exactly `/mos/config/fleet.json`, mode `0600` inside the existing `0700`
+   namespace, with this current-only strict schema:
 
-### Product and external-contract choices for L1
+   ```json
+   {
+     "schema": "mos/fleet-config/v1",
+     "enabled": true,
+     "reporting": false,
+     "url": "https://fleet.example.invalid"
+   }
+   ```
 
-Each choice is intentionally bounded; none authorizes a new service by
-implication.
+   The object requires `schema`, which must equal the shown tag; `enabled`,
+   `reporting` and `url` are optional overlay keys; `enabled`/`reporting` are
+   booleans and `url` is HTTPS or `null`; additional properties and any
+   anchor-shaped key are load errors. No compatibility reader or migration
+   exists. The historical three values are `enabled`, `reporting` and `url`;
+   `schema` is the namespace's existing per-document framing rule
+   (`PLAN-070.md:1324-1359`). Absent or `null` URL selects the baked default;
+   absent `enabled` selects the baked default; absent `reporting` defaults on
+   only when effective `enabled` is on. Reporting is always effectively off
+   when fleet is off, and the operator projection includes only overlay keys
+   actually present.
+2. **Read and resolution.** The baked defaults come from
+   `/usr/share/mos/meta/updates/manifest.json`; synchronized source still has
+   code defaults `enabled=false`, `url=null`
+   (`pkgs/mosd/mosd-settings/src/configuration.rs:223-267`). The conditional
+   change extends the one existing resolver in that file to read
+   `/mos/config/fleet.json`; it must not introduce a second configuration
+   reader. The document is unique because fleet desired configuration must
+   survive reboot and A/B, remain separate from `updates.json` and from a future
+   STATE credential, and inherit the existing reset discipline. The only write
+   in this slice is the already-approved offline pour; there is no new runtime
+   writer, route or credential file.
+3. **Existing caller and observable behavior.** The authenticated
+   `GET /api/v1/provisioning/status` route is mounted in
+   `pkgs/mosd/apid/src/routes.rs:711-716`; its handler calls
+   `configuration::provisioning_status_at` and returns its `operator` and
+   `effective` values (`pkgs/mosd/apid/src/provisioning_api.rs:199-288`). The
+   current resolver says the fleet document does not exist and emits only baked
+   values (`pkgs/mosd/mosd-settings/src/configuration.rs:1187-1270`). The
+   proposal ends that chain with the exact desired operator/effective fleet
+   projection. It must expose no `registered`, `connected`, `lastReport` or
+   other activity member and must open no socket; `enabled=true` is desired
+   configuration, not evidence of registration.
+4. **RED, GREEN and ownership.** The smallest RED is a resolver/status test with
+   baked off/null plus the shown poured document: it must return the raw
+   operator values and effective URL/switches, then reject a trust-anchor key,
+   while the response contains no activity state. The GREEN commands are
+   `make os-rust-gate` and `make os-apid-api-spec-pins`. Expected write paths
+   are limited to `pkgs/mosd/mosd-settings/src/configuration.rs` and its tests,
+   plus the existing provisioning handler/test/OpenAPI projection only if the
+   merged C.D5 interface requires them. There is no new crate, daemon, buffer,
+   UI, rootfs/build/signing path or expensive resource. C.D5 must be reviewed
+   and merged into local `bkd/58sdocnk` before the implementing L3 is created;
+   that L3 must first merge the resulting shared local commit into a clean
+   branch and revalidate the call signature.
 
-1. **Fleet registration wire (`PLAN-072/C1/C2`).** Supply an external service
-   owner/repository and fix: relative register/deregister paths; exact JSON
-   envelope; HTTP status taxonomy; TOFU first-writer/release behavior; issued
-   credential type, header/mTLS use, storage name, renewal, revocation and URL
-   rebinding; and the read-only D-Bus method through which non-root `fleetd`
-   obtains registration identity. Default if absent: keep C2/B5 blocked and
-   fleet off; implement no mock cloud.
-2. **Fleet report ingest (`PLAN-076/B5/B10`).** The payload fields are already
-   fixed by PLAN-076. Still supply the relative batch path, maximum batch bytes,
-   accepted-counter response, 4xx permanent-refusal codes and 429/5xx
-   `Retry-After` treatment, bound to the registration credential. Default if
-   absent: local report/preview tests only, no network client.
-3. **External plane obligations.** Name the vendor-plane repository/operator,
-   tenancy, retention, residency, capacity/SLO, incident/disaster-recovery
-   owner, wrongly-claimed-ID release journey and open-source delivery. An
-   integrator-hosted plane owns the same decisions for itself. Default: no
-   plane work in this repository and no availability promise beyond device
-   autonomy.
-4. **NAT support/control channel.** Choose either to defer it and keep the
-   product at outbound registration/reporting, or open a separate plan for a
-   mutually authenticated persistent channel with a closed command vocabulary,
-   authorization, audit, expiry and break-glass policy. Default: defer; never
-   accrete commands onto reporting.
-5. **Curated application signing.** Fix one current signed-application envelope,
-   a distinct application-publisher public-anchor source, overlap/removal and
-   revocation statement, and exact catalog input handed to `mos-appd`. The
-   recommended default is a distinct Ed25519 application trust domain baked by
-   authenticated system policy, not the OS metadata key, with no mutable
-   operator anchor and no old schema reader. This touches shared signing/build
-   paths and needs an L1 handoff before edit.
-6. **Optional integrator enrollment.** Either defer stage 4 (recommended) or
-   separately define who may enroll/remove/revoke an integrator key, its
-   physical/authenticated ceremony and UI distinction from vendor catalog
-   trust. It remains disabled by default; do not treat a writable key file as
-   enrollment.
-7. **Managed native admission.** Keep stage 3 deferred (recommended) until a
-   non-root application identity and exact systemd sandbox profile are selected.
-   During development only the current OS contract must be admitted; no
-   backward OS/data migration reader is required. Do not turn current
-   image-integrated native applications into independently managed bundles.
-8. **Production key ceremony.** Current software accepts explicit production
-   inputs but absence of `GENERATED` does not prove custody. Name the release
-   owner and witness, file-media versus HSM/KMS holder, n-of-m policy, recorded
-   public fingerprints, recovery material, minutes location and release-host
-   hardening. Until selected, claims remain development/software evidence.
-9. **Conditional device-time trust rotation.** The current bounded choice is
-   immutable authenticated-kernel anchors with overlap/removal and complete
-   reflash recovery. The historical G8 mutable STATE channel is not needed now.
-   Reopen it only if product explicitly requires remote re-anchoring after all
-   accepted signer associations are lost and physical reflash is unavailable.
+### Decision brief A — fleet
 
-### Shared-path and dependency handoff
+**Decision requested:** name the user-specified existing plane to integrate, or
+defer the client for this campaign. The recommendation in the absence of that
+input is defer. This brief does not choose or implement a service, endpoint,
+credential, mock plane or outbound connection.
 
-- Application or fleet library/API work under `pkgs/mosd/` is independent of
-  issue #313 until it changes packaging, images or release evidence.
-- Adding app/fleet packages or units to `rootfs/`, build producers, `build/` or
-  `verify/` requires an exact L1 path handoff first. Application signing also
-  requires handoff for `pkgs/mos-boot/`, `pkgs/mos-deploy/`, release-signing and
-  publication paths. Issue #313 currently owns changes across `build/`,
-  `verify/`, `pkgs/mos-deploy/` and boards; future work must use approved commits
-  rather than copying its uncommitted files.
-- `FLEET-AUTONOMY` and app runtime/rollback image proof need a later expensive
-  QEMU grant. Physical cx3576 watchdog, USB and storage power-cut evidence is a
-  separate board gate and cannot be claimed by those runs.
-- PLAN-070/071 and RFCT-315 matrices remain C1-owned. This classification uses
-  only their current seam: anchors are not operator-writable and update policy
-  stays independent of fleet. It does not duplicate or reopen those rows.
+Established approvals are not questions: vendor-operated by default,
+integrator-operated open-source deployment optional, with an effective
+per-device URL (`PLAN-072.md:335-346`); the plane assists and never gates local
+execution (`PLAN-072.md:348-355`); zero-touch TOFU uses `deviceId`, with visible
+refusal and an operator release path for a wrongly claimed ID
+(`PLAN-072.md:357-379`); serial and MAC are excluded
+(`PLAN-072.md:381-385`). Registration sends only `deviceId`, board, profile,
+version and baked product labels over outbound HTTPS, with no inbound port
+(`PLAN-072.md:146-163`). Reports carry the fixed envelope and allowlisted state
+at `PLAN-076.md:141-173`, batch as an array, deduplicate by
+`(deviceId,counter)`, accept 2xx, retry 429/5xx and permanently refuse selected
+4xx (`PLAN-076.md:585-618`). Responses are one-way and may change no local
+state except acknowledgement of an accepted counter
+(`PLAN-076.md:623-655`). Fleet remains off/null by default.
+
+The minimum missing contract is:
+
+- owner and repository of the existing plane;
+- exact relative register, deregister and batch-report paths, plus request and
+  response JSON envelopes;
+- issued credential type, presentation, STATE filename and modes, renewal,
+  revocation and URL-rebind deletion behavior, plus first-writer TOFU conflict
+  and the concrete operator release response;
+- the accepted-counter field/type, permanent-4xx code mapping, maximum batch,
+  and exact `Retry-After` parsing/clamping behavior for 429/5xx.
+
+Until all four are supplied and separately approved, registration, reporting,
+buffering, scheduling, status activity and every network client stay deferred;
+local configuration must not fabricate connection state. NAT-safe support and
+any bidirectional control channel require a separate plan. Plane tenancy,
+retention, residency, SLO and operations remain external-owner contracts, not
+device blockers.
+
+### Decision brief B — curated OCI
+
+**Decision requested:** approve a pure local catalog input plus an independent
+application-publisher trust contract, or defer managed activation. The
+recommended proposal below uses a baked Ed25519 application trust domain,
+never an OS metadata key and never a mutable operator anchor. Every path,
+caller and format in this subsection is **proposed, absent and unauthorized**;
+it is a reviewable contract example, not implementation.
+
+Candidate paths keep acquisition outside the 1-GiB SYSTEM deployment store:
+
+```text
+/usr/share/mos/app-trust/trust.json
+/mos/apps/catalog/inbox/<catalog-sha256>/catalog.json
+/mos/apps/catalog/inbox/<catalog-sha256>/catalog.sig.json
+/mos/apps/catalog/inbox/<catalog-sha256>/artifacts/sha256/<artifact-sha256>.oci
+```
+
+`trust.json` is immutable authenticated-image policy. Its proposed current
+document is:
+
+```json
+{
+  "schema": "mos/app-trust/v1",
+  "keys": [{
+    "keyId": "vendor-apps-2026-01",
+    "algorithm": "Ed25519",
+    "publicKey": "base64:<32-byte-ed25519-public-key>"
+  }],
+  "revokedKeyIds": [],
+  "revokedReleaseDigests": []
+}
+```
+
+The catalog is local DATA input and names only exact local artifact digests; it
+implies no registry or cloud fetch. DATA remains quota-unlimited for `/mos`,
+with bounded preflight and garbage collection required before any future
+staging work.
+
+A minimal candidate `catalog.json` document is:
+
+```json
+{
+  "schema": "mos/app-catalog/v1",
+  "catalogVersion": 1,
+  "releases": [{
+    "appId": "com.example.sensor",
+    "displayName": "Example Sensor",
+    "vendor": "Example",
+    "version": "1.0.0",
+    "releaseNotes": "Initial local release",
+    "artifact": {
+      "kind": "oci",
+      "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "sizeBytes": 1048576
+    },
+    "compatibility": {
+      "architecture": "amd64",
+      "boards": ["x64"],
+      "profiles": ["dev"],
+      "mosApi": "1"
+    },
+    "interfaces": {"ports": [], "devices": [], "mounts": []},
+    "storage": {"volumes": [], "reservedBytes": 0, "dataSchema": "1"},
+    "secrets": [],
+    "resources": {
+      "cpuQuotaPercent": 50,
+      "memoryMaxBytes": 134217728,
+      "pidsMax": 64,
+      "capabilities": []
+    },
+    "runtime": {
+      "entrypoint": ["/app/sensor"],
+      "restart": "on-failure",
+      "healthcheck": ["/app/sensor", "--health"]
+    },
+    "update": {
+      "codeRollback": true,
+      "dataRollback": false,
+      "lastKnownGood": true
+    },
+    "supplyChain": {
+      "license": "Apache-2.0",
+      "sbomDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "revocationId": "com.example.sensor/1.0.0"
+    }
+  }]
+}
+```
+
+`catalog.sig.json` has exactly `schema`, `keyId`, `algorithm`,
+`catalogDigest` and `signature`. Its example is:
+
+```json
+{
+  "schema": "mos/app-catalog-signature/v1",
+  "keyId": "vendor-apps-2026-01",
+  "algorithm": "Ed25519",
+  "catalogDigest": "sha256:89644a4a1ffc987944b529493b45691797fe151757b96ab4540ffeeb5b70c39e",
+  "signature": "base64:<64-byte-ed25519-signature>"
+}
+```
+
+The verifier computes SHA-256 over the exact raw `catalog.json` bytes and
+requires `catalogDigest` to match; `algorithm` must be exactly `Ed25519`.
+Ed25519 signs these exact UTF-8 bytes, including the final newline:
+
+```text
+mos-app-catalog-signature/v1
+keyId=vendor-apps-2026-01
+catalogDigest=sha256:89644a4a1ffc987944b529493b45691797fe151757b96ab4540ffeeb5b70c39e
+```
+
+The domain line, key ID and raw-file digest are therefore covered directly;
+every catalog field and exact OCI digest is covered transitively by the raw
+file digest. Unknown schema, duplicate release identity, unknown/revoked key,
+revoked release digest, malformed signature, digest/size mismatch, mutable OCI
+reference or missing required admission field fails closed with no bypass.
+
+Key rotation is image-owned: image N contains old and new application keys and
+new catalogs use the new key; image N+1 removes the old key only after no
+supported current catalog depends on it. Revocation is a new authenticated
+image containing `revokedKeyIds` or `revokedReleaseDigests`. Every future
+preflight and activation must reverify against the current image policy; a
+revoked or removed association blocks activation and leaves data untouched,
+with no unsigned fallback. Development recovery remains flashing the newest
+image; there is no old-schema reader or mutable rotation channel.
+
+The required consumers do not exist. The existing design names proposed
+`mos-appd` as lifecycle owner (`docs/design/applications.md:124-154`), so a
+separately approved `mos-appd` local-import/preflight caller must verify before
+content enters managed staging, and its separately approved privileged
+activation caller must reverify the catalog, signature, trust policy and staged
+OCI bytes before publishing runtime state. Both callers and the local input
+producer are absent; no HTTP route is implied. Adding the baked anchor or any
+signing/publication tooling needs a new exact L1 handoff for shared
+rootfs/build/verify/release-signing paths; C.D2/C.D3/C.D4 do not grant it.
+Optional integrator enrollment remains off and separately designed, native
+admission remains later, and public catalog/fleet rollout remain outside this
+choice.
+
+### Shared-path and conditional boundaries
+
+- No new application/fleet signing, rootfs, build, verify, packaging or release
+  publication edit is authorized. Issue #313's approved artifacts remain
+  precommit dirty-stamped, source-equivalent and hardware-unqualified with
+  `BOARD_RELEASE_TARGET=0`; this amendment adds no image or board evidence.
+- Current storage stays unchanged: `/mos`, `/srv` and `/mos/containers` have
+  zero byte/inode limits, `/var` is bounded, and container storage/tmp remains
+  inside its independent private bind so reset traversal does not acquire child
+  mounts (`docs/design/storage.md:30-32,56-71`;
+  `docs/design/containers.md:203-219`).
+- Development recovery is fresh newest-image flashing. No compatibility reader,
+  migration, old update package/raw-slot path, RAUC/TUF restoration or lode OS
+  updater is introduced. PLAN-037 is not an executable task, and PLAN-086 S5's
+  general tool reduction remains rejected.
+- Production key custody ceremony remains an operational decision, not a
+  blocker for the shipped development/software mechanisms. The historical
+  mutable device-time trust rotation remains conditional only if product later
+  requires remote re-anchoring after all accepted associations are lost and
+  physical reflash is unavailable.
+- `FLEET-AUTONOMY` and application runtime/rollback image proof require a later
+  expensive QEMU grant. Physical watchdog, USB and storage power-cut evidence
+  remains a separate board gate.
+- PLAN-070/071 and RFCT-315 matrices remain C1-owned. This amendment refers only
+  to their merged configuration seam and does not duplicate their matrix.
 
 ## Evidence Limits
 
-- Baseline and classification HEAD were both
-  `5c61f7fbb5589807e931e981b3ef8cb9bdff8b6d`. Local `main` advanced during
-  final verification to `5d0dca577a782aa707d9530779c4b23f2a7eda31`, the S905X5M
-  integration owned outside this unit. It was not merged. It changes shared
-  build, verify, `mos-deploy` and board paths, so evidence about those delivery
-  seams is stale relative to `main` and L2 must refresh it before dependent
-  dispatch. The application/fleet absence and core `pkgs/mosd/` evidence remain
-  classifications at the explicitly recorded HEAD, not claims about the newer
-  commit.
+- Baseline and original classification HEAD were both
+  `5c61f7fbb5589807e931e981b3ef8cb9bdff8b6d`. The first amendment merged local
+  workstream C through `fa51970ca32c2a7d16f809134e78d249c0a1f897`, which
+  contains approved S905X5M source
+  `5d0dca577a782aa707d9530779c4b23f2a7eda31`, as merge commit
+  `0f81c0ce5d501dec41b2a3170ad6b6f9f6b99c52`. Only the local
+  configuration/provisioning-status chain and scheduling dependencies were
+  refreshed at that synchronized HEAD. The remaining 65-row file evidence is
+  still explicitly baseline-specific and is not represented as a full current
+  source re-audit.
 - `jq -r '.paths | keys[]' pkgs/mosd/apid/openapi.json` contained no
   `/api/v1/apps`, `/api/v1/app-catalog` or `/api/v1/fleet` path. Focused `rg`
   found no `mos-appd` or `fleetd` crate/unit. These are absence observations,
