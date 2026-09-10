@@ -329,6 +329,13 @@ and it does not implement registration or enable network activity.
 
 ### Decision brief A — fleet
 
+**Decision-status amendment (2026-09-10):** The user has now authorized protocol
+DESIGN, including selection of the missing wire/auth/state contract, in
+[the fleet device-to-plane protocol plan](20260910-1910-fleet-device-plane-protocol.md).
+The earlier request to supply a plane contract/repository is superseded for
+design only. Client/server implementation, deployment and activation remain
+future and unapproved; the historical matrix and OCI brief are unchanged.
+
 **Decision requested:** name the user-specified existing plane to integrate, or
 defer the client for this campaign. The recommendation in the absence of that
 input is defer. This brief does not choose or implement a service, endpoint,
