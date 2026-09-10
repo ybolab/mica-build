@@ -164,6 +164,8 @@ thing about the tree. Both indexes now say the same thing.
 
 - [ ] [**20260910-0117-cx3576-late-hdmi-logo Restore the CX3576 boot logo after late HDMI attachment**](20260910-0117-cx3576-late-hdmi-logo.md) `P2`
 
+- [x] [**20260910-0159-cx3576-uboot-console Restore the standard CX3576 U-Boot console entry**](20260910-0159-cx3576-uboot-console.md) `P1`
+
 - [x] [**20260910-0254-cx3576-integrated-image Build the current integrated cx3576 image and reassess boot-log cleanup**](20260910-0254-cx3576-integrated-image.md) `P1`
 
 - [x] [**20260910-0338-minimal-boot-shutdown Assess minimal BusyBox boot and shutdown environments**](20260910-0338-minimal-boot-shutdown.md) `P1`

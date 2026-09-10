@@ -7,6 +7,28 @@ the watchdog before storage discovery, persists a trial decrement, and loads a
 required-signature FIT. It does not import commands, boot scripts, raw-slot
 variables or an editable root command line.
 
+## Development console policy
+
+During system development, preserve the standard U-Boot serial interaction:
+`Hit any key to stop autoboot: 1` waits one second, any key enters the native
+command prompt, and timeout executes `bootcmd=mosboot`. At the prompt, `boot`,
+`run bootcmd`, or `mosboot` resumes the same signed deployment policy. Disabling
+this entry requires an explicit user request; a signed-boot or startup cleanup
+change must not silently remove it.
+
+The file-deployment migration previously set `BOOTDELAY=-2` and called the
+nonreturning policy before `cli_init()`, bypassing the native countdown and CLI.
+The policy is now a registered command in the unmodified native main loop.
+Restoring only the delay would not repair the earlier bypass.
+
+The countdown and CLI precede deployment selection, so entering the console
+does not consume a trial. Once `mosboot` starts, it disables Control-C, requires
+FIT verification, checks the recovery key, arms the watchdog, and performs the
+bounded deployment transaction. Hold the recovery key through the countdown to
+enter RockUSB. Native console input waits service the cyclic watchdog scheduler.
+Persistent environment commands remain disabled; interactive commands are local
+development access and are not a locked production console.
+
 The mandatory RK3576 watchdog uses enabled PCLK_WDT0 and TCLK_WDT0 gates.
 A probe or start failure reports its error and enters recovery before media
 access or attempt consumption. RockUSB recovery runs the cyclic scheduler while

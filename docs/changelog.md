@@ -27,6 +27,20 @@ items and updates the initramfs measurement; accelerator and physical acceptance
 remain separate. The pre-existing `embed-trust.sh:15` shell-lint failure remains
 explicit. Other owners' changes and the draft cleanup plan are preserved.
 
+## Restore the standard CX3576 U-Boot console (2026-09-10)
+
+The [approved console repair](plan/20260910-0159-cx3576-uboot-console.md) restores
+the native one-second any-key countdown in the MOS firmware. Timeout and `boot`
+execute the registered `mosboot` signed deployment command; entering the console
+does not consume a trial. The early pre-CLI bypass is removed, with native
+countdown/command and firmware I/O regressions. The
+[development console policy](design/uboot-ab-handshake.md#development-console-policy)
+requires an explicit user request before removing this standard entry.
+The rebuilt loader and a candidate retaining the HDMI repair pass required FIT
+signature checks, all 123 offline image checks, flash geometry and checksum.
+The [delivery record](task/20260910-0159-cx3576-uboot-console.md) identifies the
+artifacts; physical UART/HDMI acceptance remains untested.
+
 ## Strict two-deployment file A/B replacement (2026-09-10)
 
 The [approved replacement task](task/20260910-0040-strict-file-ab.md) replaces old

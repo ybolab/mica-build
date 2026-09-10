@@ -105,4 +105,6 @@ disobeys on sight teaches a reader the wrong thing about the tree.
 
 - [x] [**20260910-0047-cx3576-hdmi-fullscreen-logo Show one centered CX3576 HDMI logo without a cursor**](20260910-0047-cx3576-hdmi-fullscreen-logo.md) `2026-09-10`
 
+- [x] [**20260910-0159-cx3576-uboot-console Restore the standard CX3576 U-Boot console entry**](20260910-0159-cx3576-uboot-console.md) `2026-09-10`
+
 - [ ] [**20260910-0341-minimal-boot-shutdown Minimize boot and shutdown userspace with BusyBox**](20260910-0341-minimal-boot-shutdown.md) `2026-09-10`

@@ -17,6 +17,15 @@ typedef long long loff_t;
 struct blk_desc { unsigned int blksz; int uclass_id, devnum; };
 struct mmc { int unused; };
 struct udevice { int unused; };
+struct cmd_tbl {
+    const char *name;
+    int maxargs, repeatable;
+    int (*cmd)(struct cmd_tbl *, int, int, char *const []);
+};
+static struct cmd_tbl registered_command;
+#define U_BOOT_CMD(name, maxargs, repeatable, command, usage, help) \
+    static void __attribute__((constructor)) register_command(void) \
+    { registered_command = (struct cmd_tbl){#name, maxargs, repeatable, command}; }
 struct disk_partition { unsigned long start, size; unsigned char name[16]; };
 static struct blk_desc disk = {512, UCLASS_MMC, 0};
 static struct mmc mmc;
@@ -26,6 +35,7 @@ static jmp_buf stopped;
 static int fault, reads, writes, flushes, invalidations, loads, launches, armed;
 static int fail_copy = -1;
 static int watchdog_probe_error, watchdog_start_error;
+static int recovery_key, recovery_calls;
 static unsigned long system_sectors = 2097152, data_sectors = 524288;
 static uint32_t crc32(uint32_t crc, const unsigned char *p, size_t size)
 {
@@ -78,8 +88,8 @@ static void disable_ctrlc(int disable) { assert(disable == 1); }
 static int env_set(const char *key, const char *value)
 { assert(!strcmp(key, "verify") && !strcmp(value, "yes")); return 0; }
 static int button_get_by_label(const char *label, struct udevice **out)
-{ (void)label; (void)out; return -1; }
-static int button_get_state(struct udevice *d) { (void)d; return 0; }
+{ assert(!strcmp(label, "recovery")); *out = &device; return 0; }
+static int button_get_state(struct udevice *d) { assert(d == &device); return recovery_key; }
 static int uclass_get_device(int kind, int number, struct udevice **out)
 { assert(kind == UCLASS_WDT && number == 0); *out = &device; return watchdog_probe_error; }
 static int wdt_start(struct udevice *d, unsigned long timeout, int flags)
@@ -107,11 +117,20 @@ static loff_t fdt_totalsize(const void *p) { (void)p; return 4096; }
 static void bootm_boot_start(unsigned long address, const char *args)
 { assert(address == 0x60000000UL && strstr(args, "dm_verity.require_signatures=1")); launches++; longjmp(stopped, 1); }
 static int run_command(const char *command, int flag)
-{ assert(!strcmp(command, "rockusb 0 mmc 0") && flag == 0); return 0; }
+{ assert(!strcmp(command, "rockusb 0 mmc 0") && flag == 0); recovery_calls++; return 0; }
 static void __noreturn hang(void) { longjmp(stopped, 2); }
 static void do_reset(void *command, int flag, int argc, void *argv)
 { (void)command; (void)flag; (void)argc; (void)argv; longjmp(stopped, 3); }
 #include "../../boards/cx3576/bsp/uboot/mos-file-boot.c"
+
+static void boot_command(void)
+{
+    char *argv[] = {"mosboot", NULL};
+    assert(registered_command.cmd && !strcmp(registered_command.name, "mosboot"));
+    assert(registered_command.maxargs == 1 && registered_command.repeatable == 0);
+    registered_command.cmd(&registered_command, 0, 1, argv);
+    abort();
+}
 
 static void prepare(void)
 {
@@ -129,6 +148,7 @@ static void prepare(void)
     reads = writes = flushes = invalidations = loads = launches = armed = 0;
     fail_copy = -1;
     watchdog_probe_error = watchdog_start_error = 0;
+    recovery_key = recovery_calls = 0;
     system_sectors = 2097152; data_sectors = 524288;
 }
 int main(void)
@@ -137,7 +157,7 @@ int main(void)
     for (fault = 0; fault <= 4; fault++) {
         prepare(); memcpy(original, medium[0], sizeof(original));
         int outcome = setjmp(stopped);
-        if (!outcome) mos_file_boot();
+        if (!outcome) boot_command();
         assert(!memcmp(original, medium[0], sizeof(original)));
         assert(armed && writes == 1);
         if (!fault) {
@@ -155,7 +175,7 @@ int main(void)
         if (phase == 0) watchdog_probe_error = -38;
         else watchdog_start_error = -5;
         int outcome = setjmp(stopped);
-        if (!outcome) mos_file_boot();
+        if (!outcome) boot_command();
         assert(outcome == 2 && armed == 0 && writes == 0 && reads == 0 && loads == 0 && launches == 0);
     }
     fault = 0;
@@ -166,7 +186,7 @@ int main(void)
         if (invalid == 0) system_sectors = 4194304;
         else data_sectors = 524287;
         int outcome = setjmp(stopped);
-        if (!outcome) mos_file_boot();
+        if (!outcome) boot_command();
         assert(outcome == 2 && writes == 0 && reads == 0 && loads == 0 && launches == 0);
     }
     // One unreadable copy may use the other; two corrupt copies must stop.
@@ -174,8 +194,13 @@ int main(void)
     assert(read_environment(&disk, buffer, &(struct mos_boot_records){0}) == 0);
     prepare(); medium[0][0] ^= 1; medium[1][0] ^= 1;
     int outcome = setjmp(stopped);
-    if (!outcome) mos_file_boot();
+    if (!outcome) boot_command();
     assert(outcome == 2 && writes == 0 && loads == 0 && launches == 0);
+    prepare(); recovery_key = BUTTON_ON;
+    outcome = setjmp(stopped);
+    if (!outcome) boot_command();
+    assert(outcome == 2 && recovery_calls == 1 && armed == 0);
+    assert(writes == 0 && reads == 0 && loads == 0 && launches == 0);
     puts("FIT_FIRMWARE_IO_PASS: actual C policy refuses write, flush and readback failures before FIT load");
     return 0;
 }
