@@ -217,6 +217,22 @@ function inspectPublicMeta(root: string): MetaProblem | MetaEvidence {
   return { files: paths, bytes: byteCount }
 }
 
+// Exact embedded-source attribution is recorded in the native endpoint plan.
+// These UI namespaces, local URL construction, and diagnostic links belong to apid only.
+const NATIVE_NON_ENDPOINTS: Readonly<Record<string, ReadonlySet<string>>> = {
+  '/usr/bin/apid': new Set([
+    'https://react.i18next.com/latest/usetranslation-hook',
+    'https://tailwindcss.com',
+    'http://www.w3.org/2000/svg',
+    'https://react.dev/errors/',
+    'http://www.w3.org/1998/Math/MathML',
+    'http://www.w3.org/1999/xlink',
+    'http://www.w3.org/XML/1998/namespace',
+    'http://localhost',
+    'https://base-ui.com/production-error',
+  ]),
+}
+
 export const ROOT_CHECKS: readonly CheckCase[] = [
   ...required.map(path => ({ id: `file-root-required:${path}`, shell: { pass: `required ${path}` },
     run: async ctx => [verdict(`file-root-required:${path}`, regularFileInRoot(await packedRoot(ctx), path), `required ${path}`)] } satisfies CheckCase)),
@@ -347,9 +363,15 @@ export const ROOT_CHECKS: readonly CheckCase[] = [
         }
         examined.push(path)
         byteCount += bytes.byteLength
-        // Inspect raw bytes, including non-UTF-8 sections. A scheme fragment without
-        // an authority is not an endpoint; no host or domain is implicitly exempt.
-        if (/(?:https?|wss?|mqtts?):\/\/[^\x00-\x20\x7f"'<>`{}\\/]+/i.test(bytes.toString('latin1'))) endpoints.push(path)
+        // Invalid UTF-8 cannot start an authority. Keep later replacement characters
+        // in the candidate so a suffix cannot be truncated into an exact exemption.
+        const literals = bytes.toString('utf8').matchAll(/(?:https?|wss?|mqtts?):\/\/[^\x00-\x20\x7f"'<>`{}\\/\ufffd][^\x00-\x20\x7f"'<>`{}\\]*/gi)
+        for (const literal of literals) {
+          if (!NATIVE_NON_ENDPOINTS[path]?.has(literal[0])) {
+            endpoints.push(path)
+            break
+          }
+        }
       }
       if (endpoints.length !== 0) return result(false, `${endpoints.join(',')}: contains a compiled network endpoint literal`)
       return result(true, 'native binaries contain no default update or fleet endpoints')

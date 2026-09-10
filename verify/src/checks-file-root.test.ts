@@ -575,3 +575,54 @@ test('native endpoint check accepts a complete ELF32 executable', async () => {
   expect(result.verdict, result.message).toBe('pass')
   expect(result.message).toContain('scannedFiles=3')
 })
+
+
+const EMBEDDED_UI_NON_ENDPOINTS = [
+  'https://react.i18next.com/latest/usetranslation-hook',
+  'https://tailwindcss.com',
+  'http://www.w3.org/2000/svg',
+  'https://react.dev/errors/',
+  'http://www.w3.org/1998/Math/MathML',
+  'http://www.w3.org/1999/xlink',
+  'http://www.w3.org/XML/1998/namespace',
+  'http://localhost',
+  'https://base-ui.com/production-error',
+]
+
+test.each(EMBEDDED_UI_NON_ENDPOINTS)('exact embedded UI literal %s is not an update or fleet endpoint', async (literal) => {
+  const f = fixture(); nativeFiles(f)
+  f.file('/usr/bin/apid', nativeElf(literal))
+  expect(await f.check(NATIVE_ENDPOINT_CHECK)).toBe('pass')
+})
+
+test.each(EMBEDDED_UI_NON_ENDPOINTS)('an endpoint beside the exact UI literal %s is still refused', async (literal) => {
+  const f = fixture(); nativeFiles(f)
+  const neighbor = `${literal}${literal.endsWith('/') ? '' : '/'}updates`
+  f.file('/usr/bin/apid', nativeElf(`${literal}\0${neighbor}`))
+  await expectNativeRefusal(f, '/usr/bin/apid', 'endpoint')
+})
+
+test.each(EMBEDDED_UI_NON_ENDPOINTS)('the exact UI literal %s is not exempt in mosd or mos-deploy', async (literal) => {
+  for (const path of ['/usr/bin/mosd', '/usr/bin/mos-deploy']) {
+    const f = fixture(); nativeFiles(f)
+    f.file(path, nativeElf(literal))
+    await expectNativeRefusal(f, path, 'endpoint')
+  }
+})
+
+test('invalid UTF-8 after a bare scheme is not a network authority', async () => {
+  const f = fixture(); nativeFiles(f)
+  f.file('/usr/bin/apid', Buffer.concat([nativeElf(), Buffer.from('https://'), Buffer.from([0xc0, 0xc0, 0])]))
+  expect(await f.check(NATIVE_ENDPOINT_CHECK)).toBe('pass')
+  f.file('/usr/bin/apid', Buffer.concat([nativeElf(), Buffer.from('https://updates.example/v1/manifest.json'), Buffer.from([0xc0, 0])]))
+  await expectNativeRefusal(f, '/usr/bin/apid', 'endpoint')
+})
+
+
+test('replacement characters cannot truncate an endpoint into an exact UI exemption', async () => {
+  const f = fixture(); nativeFiles(f)
+  f.file('/usr/bin/apid', nativeElf('https://react.dev/errors/\ufffdupdates'))
+  await expectNativeRefusal(f, '/usr/bin/apid', 'endpoint')
+  f.file('/usr/bin/apid', Buffer.concat([nativeElf('http://localhost'), Buffer.from('http://localhost'), Buffer.from([0xff]), Buffer.from('/updates')]))
+  await expectNativeRefusal(f, '/usr/bin/apid', 'endpoint')
+})
