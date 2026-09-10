@@ -4,6 +4,17 @@ Campaign-level record, one entry per plan, newest first. Details live in the
 plan file and the task records it names; this file holds the one-paragraph
 history a reader can scan without opening either.
 
+## Minimal BusyBox boot and shutdown feasibility (2026-09-10)
+
+The [feasibility assessment](task/20260910-0338-minimal-boot-shutdown.md) records a
+[draft replacement](plan/20260910-0341-minimal-boot-shutdown.md) for generic startup tools and the
+retained shutdown environment. Signed Rust boot policy remains necessary, and
+BusyBox does not supply the device-mapper helpers. The current ARM64 shutdown
+payload is 16.45 MiB; the existing dmsetup closure alone is 4,765,416 bytes.
+Command differences and boot/shutdown acceptance are recorded before any code
+change. Implementation approval is pending; concurrent board repairs remain
+unchanged.
+
 ## Integrated cx3576 image and boot-log review (2026-09-10)
 
 The [integrated image task](task/20260910-0254-cx3576-integrated-image.md) combines

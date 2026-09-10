@@ -101,3 +101,5 @@ disobeys on sight teaches a reader the wrong thing about the tree.
 - [x] [**20260908-1702-pma-project-injection Wire the repository into the PMA workflow**](20260908-1702-pma-project-injection.md) `2026-09-08`
 
 - [-] [**20260909-2331-cx3576-boot-watchdog Restore mandatory cx3576 boot watchdog availability**](20260909-2331-cx3576-boot-watchdog.md) `2026-09-09`
+
+- [ ] [**20260910-0341-minimal-boot-shutdown Minimize boot and shutdown userspace with BusyBox**](20260910-0341-minimal-boot-shutdown.md) `2026-09-10`
