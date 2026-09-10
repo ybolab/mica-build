@@ -1,12 +1,18 @@
 # PLAN-912 Validate s905x5m Bluetooth peer interaction
 
 - **status**: draft
-- **owner**: hardware/bluetooth-peer-validation-20260831
+- **owner**: (unassigned)
 - **createdAt**: 2026-08-31 07:17 UTC
 - **approvedAt**: (pending)
 - **relatedTask**: RFCT-922
 
 ## Context
+
+This hardware obligation remains real, but the historical execution owner is no
+longer active. A new owner must begin from a fresh complete current S905X5M image
+and supply a controlled BLE GATT peer; the 2026-08-31 board/image observations
+below cannot qualify the current image. The campaign record carries this exact
+ownership decision as unresolved.
 
 RFCT-913 established the s905x5m Bluetooth transport and controller path but
 did not find a discoverable peer during a ten-second scan. The deployed board

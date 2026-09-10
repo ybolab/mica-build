@@ -1,6 +1,6 @@
 # RFCT-915 Register SSH logins with logind and audit omitted recommends
 
-- **status**: in_progress
+- **status**: completed
 - **priority**: P1
 - **owner**: implementation/plan-911-m3-m3a-20260831
 - **createdAt**: 2026-08-31 04:00 UTC
@@ -32,8 +32,7 @@ that carry a demonstrated mos function.
 
 ## ActiveForm
 
-Registering SSH sessions with logind and recording every omitted base-package
-recommendation decision.
+Completed; PLAN-911 records the passing logind, SSH and hardware-smoke evidence.
 
 ## Dependencies
 
@@ -258,3 +257,9 @@ the multiarch directory from each board rather than hard-coding arm64.
   two-halves causal claim: that compile-time flag was the sole cause of the
   crun error, while M3 independently repairs SSH logind registration. Final M3
   hardware acceptance remains pending M5's coordinated report.
+
+- 2026-09-10 reconciliation: PLAN-911's later M4 result supplies the missing
+  logind session and SSH evidence. Current signed-file image qualification is a
+  separate campaign hardware obligation and does not reopen this old deployment.
+
+- complete: PLAN-911 records passing logind, SSH, and hardware-smoke evidence; current-image qualification is tracked separately.

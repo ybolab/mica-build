@@ -1,12 +1,17 @@
 # PLAN-911 Close four runtime gaps found by exercising containers on hardware
 
-- **status**: implementing
+- **status**: completed
 - **createdAt**: 2026-08-31
 - **approvedAt**: 2026-08-31
-- **completedAt**: -
+- **completedAt**: 2026-08-31 08:43 UTC
 - **relatedTask**: RFCT-914 (M1; later milestones create their own task on dispatch)
 
 ## Context
+
+The four historical runtime repairs and PLAN-911 hardware smoke acceptance are
+complete. This record does not authorize reuse of its old SD/RAUC deployment
+steps for current acceptance; current S905X5M qualification starts from the
+newest complete signed-file image and is tracked separately by the campaign.
 
 PLAN-910's MS milestone booted a mos image from SD on the s905x5m and recorded
 `--verify` at 360/371 with the eleven failures attributed to the absent
