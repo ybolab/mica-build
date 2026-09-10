@@ -406,6 +406,12 @@ os-bare-host-gate:
 # WAS. No docker and no pool: this reads manifests and runs producers.sh.
 os-rootfs-manifest-test:
 	bash tests/rootfs-manifest-test.sh
+
+# Explicit runtime closure and metadata preservation on small offline roots.
+.PHONY: os-rootfs-runtime-test
+os-rootfs-runtime-test:
+	bash tests/rootfs-runtime-test.sh
+
 # Negative and positive tests for the pre-flight above. Its value is a count and
 # a list, and both fail silently: a run that looked at nothing prints the same
 # shape of green line as one that looked at everything. So each case perturbs

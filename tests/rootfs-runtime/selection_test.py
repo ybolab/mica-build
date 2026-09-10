@@ -1,0 +1,460 @@
+"""Exercise actual ELF files, filesystem objects and the selector CLI offline."""
+import json
+import os
+from pathlib import Path
+import shutil
+import struct
+import subprocess
+import sys
+import tempfile
+import unittest
+
+SELECTOR = Path(__file__).resolve().parents[2] / 'rootfs/runtime/select.py'
+CAP = struct.pack('<IIIII', 0x02000001, 0x2000, 0, 0, 0).hex()
+
+
+def elf(machine=62, needed=(), interp=None, runpath=None, rpath=None):
+    """A sectionless ELF64 with PT_LOAD/PT_DYNAMIC, just as stripped inputs may be."""
+    strings = bytearray(b'\0')
+    tags = []
+    for tag, values in [(1, needed), (29, [runpath] if runpath is not None else []),
+                        (15, [rpath] if rpath is not None else [])]:
+        for value in values:
+            tags.append((tag, len(strings)))
+            strings.extend(value.encode() + b'\0')
+    dynamic = b''.join(struct.pack('<QQ', t, v) for t, v in
+                       [(5, 0x400400), (10, len(strings)), *tags, (0, 0)])
+    data = bytearray(2048)
+    ident = b'\x7fELF\x02\x01\x01' + bytes(9)
+    data[:64] = struct.pack('<16sHHIQQQIHHHHHH', ident, 3, machine, 1,
+                           0, 64, 0, 0, 64, 56, 3 if interp else 2, 0, 0, 0)
+    headers = [(1, 5, 0, 0x400000, 0x400000, len(data), len(data), 4096),
+               (2, 4, 512, 0x400200, 0x400200, len(dynamic), len(dynamic), 8)]
+    if interp:
+        raw = interp.encode() + b'\0'
+        data[256:256 + len(raw)] = raw
+        headers.append((3, 4, 256, 0x400100, 0x400100, len(raw), len(raw), 1))
+    for i, header in enumerate(headers):
+        data[64 + i * 56:120 + i * 56] = struct.pack('<IIQQQQQQ', *header)
+    data[512:512 + len(dynamic)] = dynamic
+    data[1024:1024 + len(strings)] = strings
+    return bytes(data)
+
+
+def loader_cache(entries):
+    strings = bytearray()
+    records = bytearray()
+    start = 48 + 24 * len(entries)
+    for name, path in entries:
+        key = start + len(strings); strings.extend(name.encode() + b'\0')
+        value = start + len(strings); strings.extend(path.encode() + b'\0')
+        records.extend(struct.pack('<iIIIQ', 0x303, key, value, 0, 0))
+    return b'glibc-ld.so.cache1.1' + struct.pack('<IIB3xIIII', len(entries), len(strings), 2, 0, 0, 0, 0) + records + strings
+
+
+class SelectionTest(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory(prefix='mos-b4-fixture-')
+        self.addCleanup(self.tmp.cleanup)
+        self.base = Path(self.tmp.name)
+        self.root = self.base / 'installed'
+        self.root.mkdir()
+        self.out = self.base / 'runtime'
+        self.db = self.base / 'dpkg-info'
+        self.db.mkdir()
+        self.manifest = self.base / 'manifest.tsv'
+        self.manifest.write_text('#package\tversion\tarchitecture\nmos-system\t1\tall\nlibfixture\t1\tamd64\nunused\t1\tall\n')
+        self.packages = self.base / 'selected.pkgs'
+        self.packages.write_text('mos-system\n')
+        self.report = self.base / 'rootfs-report.runtime.json'
+        self.rules_path = self.base / 'rules.json'
+        self.write('/usr/bin/app', elf(needed=['libfirst.so'], interp='/lib/loader.so'), 0o755)
+        self.write('/usr/lib/libfirst.so', elf(needed=['libsecond.so']))
+        self.write('/usr/lib/libsecond.so', elf())
+        self.write('/usr/lib/loader.so', elf(), 0o755)
+        self.link('/lib', 'usr/lib')
+        self.write('/usr/bin/sh', elf(), 0o755)
+        self.write('/usr/bin/helper', b'#!/usr/bin/sh\nexit 0\n', 0o755)
+        self.write('/usr/bin/entry', b'#!/usr/bin/sh\nhelper\n', 0o755)
+        self.write('/usr/lib/security/pam_fixture.so', elf())
+        self.write('/usr/lib/libnss_fixture.so.2', elf())
+        self.write('/etc/pam.d/login', b'auth required pam_fixture.so\n')
+        self.write('/etc/nsswitch.conf', b'passwd: fixture\n')
+        self.write('/etc/generated.conf', b'generated\n', 0o640)
+        self.write('/etc/license', b'license\n')
+        self.write('/usr/share/doc/mos-system/copyright', b'system license\n')
+        self.write('/usr/share/doc/libfixture/copyright', b'library license\n')
+        self.write('/var/lib/seed', b'seed\n', 0o640)
+        os.chown(self.root / 'var/lib/seed', 123, 456)
+        self.write('/usr/bin/captool', elf(), 0o4755)
+        os.setxattr(self.root / 'usr/bin/captool', 'security.capability', bytes.fromhex(CAP))
+        os.setxattr(self.root / 'var/lib/seed', 'user.fixture', b'value')
+        os.link(self.root / 'var/lib/seed', self.root / 'var/lib/seed-alias')
+        self.link('/etc/absolute', '/var/lib/seed')
+        self.link('/etc/relative', '../var/lib/seed-alias')
+        self.write('/usr/bin/unselected', elf(), 0o755)
+        self.write('/usr/lib/debug/app.debug', b'matching debug input')
+        self.write('/usr/lib/udev/hwdb.bin', b'static hwdb')
+        self.write('/usr/lib/modules/modules.dep', b'support index input')
+        self.write('/etc/systemd/system-generators/systemd-ssh-generator', b'placeholder')
+        self.root.joinpath('etc/systemd/system-generators/systemd-ssh-generator').unlink()
+        self.link('/etc/systemd/system-generators/systemd-ssh-generator', '/dev/null')
+        self.write('/usr/lib/systemd/systemd-tmpfiles', elf(), 0o755)
+        self.write('/etc/tmpfiles.d/mos-var.conf', b'f /run/mos/wtmp 0664 root utmp -\n')
+        self.link('/var/log/wtmp', '/run/mos/wtmp')
+        self.write('/etc/systemd/system/systemd-tmpfiles-setup.service', b'[Service]\n')
+        self.root.joinpath('mnt/data').mkdir(parents=True)
+        self.rules = {'library_dirs': ['/usr/lib'], 'path': ['/usr/bin'], 'consumers': {'mos-system': {
+            'roots': [
+                {'paths': ['/usr/bin/app', '/usr/bin/entry', '/usr/bin/helper', '/usr/bin/captool'], 'kind': 'executable', 'reason': 'entrypoints and invoked helper'},
+                {'paths': ['/usr/lib/security/pam_fixture.so', '/usr/lib/libnss_fixture.so.2', '/etc/pam.d/login', '/etc/nsswitch.conf', '/etc/license', '/etc/absolute', '/etc/relative', '/etc/systemd/system-generators/systemd-ssh-generator'], 'kind': 'resource', 'reason': 'authentication and policy'},
+                {'paths': ['/var/lib/seed', '/var/lib/seed-alias', '/etc/generated.conf'], 'kind': 'resource', 'reason': 'generated state', 'generated': 'fixture-configure'},
+                {'paths': ['/mnt/data'], 'kind': 'directory', 'reason': 'DATA mountpoint'},
+                {'paths': ['/usr/bin/captool'], 'kind': 'executable', 'reason': 'required capability', 'expect': {'xattrs': {'security.capability': CAP}}},
+                {'paths': ['/var/log/wtmp'], 'kind': 'resource', 'reason': 'bounded login accounting'},
+            ],
+            'runtime_links': [
+                {'path': '/etc/systemd/system-generators/systemd-ssh-generator', 'target': '/dev/null', 'generator': 'kernel devtmpfs', 'ordering': 'before systemd generators', 'test': 'B7 SSH listen and image-only keys', 'requires': []},
+                {'path': '/var/log/wtmp', 'target': '/run/mos/wtmp', 'generator': 'systemd-tmpfiles', 'ordering': 'systemd-tmpfiles-setup before login', 'test': 'B7 repeated login bounds', 'requires': ['/usr/lib/systemd/systemd-tmpfiles', '/etc/tmpfiles.d/mos-var.conf', '/etc/systemd/system/systemd-tmpfiles-setup.service']},
+            ],
+        }}}
+        self.capture_ownership()
+
+    def write(self, path, data, mode=0o644):
+        at = self.root / path.lstrip('/')
+        at.parent.mkdir(parents=True, exist_ok=True)
+        at.write_bytes(data)
+        at.chmod(mode)
+
+    def link(self, path, target):
+        at = self.root / path.lstrip('/')
+        at.parent.mkdir(parents=True, exist_ok=True)
+        at.symlink_to(target)
+
+    def capture_ownership(self):
+        paths = ['/.']
+        for parent, dirs, files in os.walk(self.root, followlinks=False):
+            paths.extend('/' + str((Path(parent) / p).relative_to(self.root)) for p in dirs + files)
+        paths = [p for p in paths if p not in ['/etc/generated.conf', '/var/lib/seed', '/var/lib/seed-alias']]
+        (self.db / 'mos-system.list').write_text('\n'.join(sorted(set(paths))) + '\n')
+        (self.db / 'libfixture:amd64.list').write_text('/usr/lib/libsecond.so\n/usr/share/doc/libfixture/copyright\n')
+        text = (self.db / 'mos-system.list').read_text().replace('/usr/lib/libsecond.so\n', '').replace('/usr/share/doc/libfixture/copyright\n', '')
+        (self.db / 'mos-system.list').write_text(text)
+        (self.db / 'unused.list').write_text('/usr/bin/unselected\n')
+        (self.db / 'mos-system.list').write_text(text.replace('/usr/bin/unselected\n', ''))
+
+    def command(self, command='select', **overrides):
+        self.rules_path.write_text(json.dumps(self.rules))
+        options = dict(root=self.root, output=self.out, packages=self.packages, inventory=self.manifest,
+                       ownership=self.db, rules=self.rules_path, arch='amd64', report=self.report)
+        options.update(overrides)
+        if command == 'verify':
+            options = {'root': self.out, 'report': self.report, **overrides}
+        argv = [sys.executable, str(SELECTOR), command]
+        for k, v in options.items():
+            argv.extend(['--' + k, str(v)])
+        return subprocess.run(argv, capture_output=True, text=True, timeout=10)
+
+    def selected(self):
+        result = self.command()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        return json.loads(self.report.read_text())
+
+    def refuse(self, fragment, **kwargs):
+        result = self.command(**kwargs)
+        self.assertNotEqual(result.returncode, 0, result.stdout)
+        self.assertIn(fragment, result.stderr)
+        self.assertFalse(self.report.exists(), 'failed selection must not publish a success report')
+
+    def test_positive_offline_metadata_and_provenance(self):
+        report = self.selected()
+        rows = {r['path']: r for r in report['files']}
+        for path in ['/usr/lib/libsecond.so', '/usr/lib/loader.so', '/usr/bin/sh', '/usr/bin/helper', '/etc/generated.conf']:
+            self.assertIn(path, rows)
+            self.assertTrue(rows[path]['reasons'])
+            self.assertTrue(rows[path]['origins'])
+        for path in ['/usr/bin/unselected', '/usr/lib/debug/app.debug', '/usr/lib/udev/hwdb.bin', '/usr/lib/modules/modules.dep']:
+            self.assertNotIn(path, rows)
+            self.assertTrue((self.root / path[1:]).exists())
+        self.assertIn('/usr/lib/debug/app.debug', {r['path'] for r in report['external_inputs']})
+        self.assertIn('/usr/lib/modules/modules.dep', {r['path'] for r in report['external_inputs']})
+        seed = self.out / 'var/lib/seed'
+        alias = self.out / 'var/lib/seed-alias'
+        self.assertEqual(seed.stat().st_ino, alias.stat().st_ino)
+        self.assertEqual((seed.stat().st_uid, seed.stat().st_gid, seed.stat().st_mode & 0o7777), (123, 456, 0o640))
+        self.assertEqual(os.getxattr(seed, 'user.fixture'), b'value')
+        self.assertEqual(os.getxattr(self.out / 'usr/bin/captool', 'security.capability').hex(), CAP)
+        self.assertEqual(os.readlink(self.out / 'etc/absolute'), '/var/lib/seed')
+        self.assertEqual(os.readlink(self.out / 'etc/systemd/system-generators/systemd-ssh-generator'), '/dev/null')
+        self.assertEqual(self.command('verify').returncode, 0)
+
+    def test_arm64_offline(self):
+        for p in self.root.rglob('*'):
+            if not p.is_symlink() and p.is_file() and p.read_bytes().startswith(b'\x7fELF'):
+                data = bytearray(p.read_bytes()); struct.pack_into('<H', data, 18, 183); p.write_bytes(data)
+        os.setxattr(self.root / 'usr/bin/captool', 'security.capability', bytes.fromhex(CAP))
+        self.manifest.write_text(self.manifest.read_text().replace('amd64', 'arm64'))
+        (self.db / 'libfixture:amd64.list').rename(self.db / 'libfixture:arm64.list')
+        r = self.command(arch='arm64'); self.assertEqual(r.returncode, 0, r.stderr)
+
+    def test_missing_elf_interpreter(self):
+        (self.root / 'usr/lib/loader.so').unlink(); self.refuse('ELF interpreter')
+
+    def test_missing_recursive_library(self):
+        (self.root / 'usr/lib/libsecond.so').unlink(); self.refuse('shared library libsecond.so')
+
+    def test_missing_script_interpreter(self):
+        (self.root / 'usr/bin/sh').unlink(); self.refuse('script interpreter')
+
+    def test_missing_invoked_helper(self):
+        (self.root / 'usr/bin/helper').unlink(); self.refuse('/usr/bin/helper')
+
+    def test_missing_generated_state(self):
+        (self.root / 'etc/generated.conf').unlink(); self.refuse('/etc/generated.conf')
+
+    def test_missing_pam_nss_config_license_mountpoint(self):
+        for path in ['usr/lib/security/pam_fixture.so', 'usr/lib/libnss_fixture.so.2', 'etc/pam.d/login', 'etc/license', 'mnt/data']:
+            with self.subTest(path=path):
+                at = self.root / path; saved = self.base / 'saved'; at.rename(saved)
+                self.refuse('/' + path); saved.rename(at)
+
+    def test_symlink_escape(self):
+        p = self.root / 'etc/relative'; p.unlink(); p.symlink_to('../../outside')
+        self.refuse('path escape')
+
+    def test_broken_link(self):
+        p = self.root / 'etc/relative'; p.unlink(); p.symlink_to('/missing-target')
+        self.refuse('broken link')
+
+    def test_symlink_cycle(self):
+        p = self.root / 'etc/relative'; p.unlink(); p.symlink_to('relative')
+        self.refuse('symlink cycle')
+
+    def test_interpreter_cycle(self):
+        self.write('/usr/bin/sh', b'#!/usr/bin/entry\n', 0o755)
+        self.refuse('interpreter cycle')
+
+    def test_lost_capability_before_selection(self):
+        os.removexattr(self.root / 'usr/bin/captool', 'security.capability')
+        self.refuse('security.capability')
+
+    def test_verify_detects_metadata_and_payload_losses(self):
+        mutations = [('capability', lambda: os.removexattr(self.out / 'usr/bin/captool', 'security.capability')),
+                     ('mode', lambda: (self.out / 'usr/bin/helper').chmod(0o644)),
+                     ('uid', lambda: os.chown(self.out / 'var/lib/seed', 0, 456)),
+                     ('digest', lambda: (self.out / 'etc/generated.conf').write_bytes(b'bad')),
+                     ('target', lambda: ((self.out / 'etc/relative').unlink(), (self.out / 'etc/relative').symlink_to('/etc/license'))),
+                     ('hardlink', lambda: ((self.out / 'var/lib/seed-alias').unlink(), shutil.copy2(self.out / 'var/lib/seed', self.out / 'var/lib/seed-alias')))]
+        for label, mutate in mutations:
+            with self.subTest(label=label):
+                report = self.selected(); mutate()
+                if label == 'hardlink':
+                    os.chown(self.out / 'var/lib/seed-alias', 123, 456)
+                for row in report['files']:
+                    if row['type'] == 'directory':
+                        os.utime(self.out / row['path'][1:], ns=(row['mtime_ns'], row['mtime_ns']))
+                result = self.command('verify')
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn('hardlink changed' if label == 'hardlink' else 'changed', result.stderr)
+                shutil.rmtree(self.out); self.report.unlink()
+
+    def test_ambiguous_ownership(self):
+        (self.db / 'unused.list').write_text('/usr/bin/app\n')
+        self.refuse('ambiguous ownership')
+
+    def test_unowned_selected_path(self):
+        p = self.db / 'mos-system.list'; p.write_text(p.read_text().replace('/usr/bin/app\n', ''))
+        self.refuse('no origin')
+
+    def test_ambiguous_inventory(self):
+        with self.manifest.open('a') as f: f.write('mos-system\t2\tall\n')
+        self.refuse('duplicate package')
+
+    def test_wrong_architecture(self):
+        self.write('/usr/lib/libsecond.so', elf(machine=183)); self.refuse('ELF architecture')
+
+    def test_lost_executable_bit(self):
+        (self.root / 'usr/bin/helper').chmod(0o644); self.refuse('not executable')
+
+    def test_missing_feature_declaration(self):
+        self.packages.write_text('mos-system\nnew-feature\n'); self.refuse('no runtime declaration')
+
+    def test_runtime_link_requires_generator(self):
+        (self.root / 'etc/tmpfiles.d/mos-var.conf').unlink(); self.refuse('/etc/tmpfiles.d/mos-var.conf')
+
+    def test_undeclared_runtime_link(self):
+        self.rules['consumers']['mos-system']['runtime_links'].pop(); self.refuse('broken link')
+
+    def test_output_overlap_or_symlink(self):
+        self.refuse('overlap', output=self.root / 'output')
+        self.out.symlink_to(self.base / 'elsewhere'); self.refuse('symlink')
+
+    def test_output_not_empty(self):
+        self.out.mkdir(); (self.out / 'sentinel').write_text('preserve')
+        self.refuse('empty'); self.assertEqual((self.out / 'sentinel').read_text(), 'preserve')
+
+    def test_env_shebang_and_missing_command(self):
+        self.write('/usr/bin/env', elf(), 0o755)
+        self.write('/usr/bin/entry', b'#!/usr/bin/env sh\nhelper\n', 0o755)
+        self.capture_ownership(); self.selected()
+        shutil.rmtree(self.out); self.report.unlink()
+        self.write('/usr/bin/entry', b'#!/usr/bin/env -S sh -e\n', 0o755)
+        self.refuse('unsupported env shebang')
+
+    def test_rpath_inherited_but_runpath_not_inherited(self):
+        for tag in ['rpath', 'runpath']:
+            with self.subTest(tag=tag):
+                self.write('/usr/bin/app', elf(needed=['libprivate.so'], **{tag: '$ORIGIN/../private'}), 0o755)
+                self.write('/usr/private/libprivate.so', elf(needed=['libchild.so']))
+                self.write('/usr/private/libchild.so', elf())
+                self.capture_ownership()
+                if tag == 'rpath':
+                    self.selected(); shutil.rmtree(self.out); self.report.unlink()
+                else:
+                    self.refuse('shared library libchild.so')
+
+    def test_ambiguous_library_context(self):
+        self.write('/usr/bin/app', elf(needed=['libfirst.so'], runpath='/usr/private'), 0o755)
+        self.write('/usr/private/libfirst.so', elf())
+        self.write('/usr/bin/helper', elf(needed=['libfirst.so']), 0o755)
+        self.capture_ownership(); self.refuse('ambiguous library')
+
+    def test_excluded_payload_cannot_be_a_root(self):
+        for p in ['/usr/lib/udev/hwdb.bin', '/usr/lib/debug/app.debug', '/usr/lib/modules/modules.dep']:
+            with self.subTest(path=p):
+                r = {'paths': [p], 'kind': 'resource', 'reason': 'bad accidental selection'}
+                self.rules['consumers']['mos-system']['roots'].append(r)
+                self.refuse('excluded runtime payload')
+                self.rules['consumers']['mos-system']['roots'].pop()
+
+    def test_no_recursive_directory_copy(self):
+        self.rules['consumers']['mos-system']['roots'].append({'paths': ['/usr'], 'kind': 'directory', 'reason': 'parent only'})
+        self.selected(); self.assertFalse((self.out / 'usr/bin/unselected').exists())
+
+    def test_loader_cache_precedes_default_directories(self):
+        self.write('/usr/private/libfirst.so', elf())
+        self.write('/etc/ld.so.cache', loader_cache([('libfirst.so', '/usr/private/libfirst.so')]))
+        self.capture_ownership()
+        report = self.selected()
+        paths = [r['path'] for r in report['files']]
+        self.assertIn('/usr/private/libfirst.so', paths)
+        self.assertNotIn('/usr/lib/libfirst.so', paths)
+        self.assertIn('/etc/ld.so.cache', paths)
+
+    def test_missing_library_in_merged_usr_search_directory_falls_through(self):
+        self.root.joinpath('usr/lib/x86_64-linux-gnu').mkdir()
+        self.capture_ownership()
+        self.rules['library_dirs'] = ['/lib/x86_64-linux-gnu', '/usr/lib']
+        self.selected()
+
+    def test_invalid_or_ambiguous_loader_cache(self):
+        for data, expected in [(b'broken cache', 'loader cache'),
+                               (loader_cache([('libfirst.so', '/usr/lib/libfirst.so'), ('libfirst.so', '/usr/lib/libsecond.so')]), 'ambiguous cache')]:
+            with self.subTest(expected=expected):
+                self.write('/etc/ld.so.cache', data); self.capture_ownership(); self.refuse(expected)
+
+    def test_symlink_parent_dotdot_uses_target_directory(self):
+        self.root.joinpath('var/deep').mkdir()
+        self.link('/etc/dirlink', '/var/deep')
+        self.write('/var/correct', b'correct target')
+        p = self.root / 'etc/relative'; p.unlink(); p.symlink_to('dirlink/../correct')
+        self.capture_ownership(); self.selected()
+        self.assertEqual((self.out / 'var/correct').read_bytes(), b'correct target')
+        self.assertTrue((self.out / 'var/deep').is_dir(), 'intermediate link target must survive even before ..')
+
+    def test_elf_interpreter_cycle(self):
+        self.write('/usr/lib/loader.so', elf(interp='/usr/bin/app'), 0o755)
+        self.refuse('interpreter cycle')
+
+    def test_owned_executable_patterns_are_not_recursive(self):
+        self.write('/usr/bin/nested/not-a-root', elf(), 0o755)
+        self.capture_ownership()
+        self.rules['consumers']['mos-system']['roots'].append({'packages': ['mos-system'], 'paths': ['/usr/bin/*'], 'kind': 'executable', 'reason': 'operator tools'})
+        self.selected()
+        self.assertFalse((self.out / 'usr/bin/nested/not-a-root').exists())
+
+    def test_owned_executable_lost_mode(self):
+        self.rules['consumers']['mos-system']['roots'] = [{'packages': ['mos-system'], 'paths': ['/usr/bin/helper'], 'kind': 'executable', 'reason': 'helper'}]
+        (self.root / 'usr/bin/helper').chmod(0o644)
+        self.refuse('not executable')
+
+    def test_owned_payload_missing_is_not_a_smaller_selection(self):
+        self.rules['consumers']['mos-system']['roots'] = [{'packages': ['mos-system'], 'paths': ['/usr/bin/*'], 'kind': 'executable', 'reason': 'tools'}]
+        (self.root / 'usr/bin/helper').unlink()
+        self.refuse('/usr/bin/helper')
+
+    def test_missing_contributing_package_copyright(self):
+        self.selected(); shutil.rmtree(self.out); self.report.unlink()
+        (self.root / 'usr/share/doc/libfixture/copyright').unlink()
+        self.refuse('/usr/share/doc/libfixture/copyright')
+
+    def test_missing_env_command(self):
+        self.write('/usr/bin/env', elf(), 0o755)
+        self.write('/usr/bin/entry', b'#!/usr/bin/env missingcommand\n', 0o755)
+        self.capture_ownership(); self.refuse('missing env command')
+
+    def test_relative_loader_path_rejected(self):
+        self.write('/usr/bin/app', elf(needed=['libfirst.so'], runpath='relative'), 0o755)
+        self.refuse('invalid absolute path')
+
+    def test_child_runpath_overrides_inherited_rpath(self):
+        self.write('/usr/bin/app', elf(needed=['libprivate.so'], rpath='/usr/private'), 0o755)
+        self.write('/usr/private/libprivate.so', elf(needed=['libchild.so'], runpath='/usr/child'))
+        self.write('/usr/private/libchild.so', elf())
+        self.write('/usr/child/libchild.so', elf())
+        self.capture_ownership(); self.selected()
+        self.assertTrue((self.out / 'usr/child/libchild.so').exists())
+        self.assertFalse((self.out / 'usr/private/libchild.so').exists())
+
+    def test_undeclared_loader_preload_rejected(self):
+        self.write('/etc/ld.so.preload', b'/usr/lib/libfirst.so\n')
+        self.capture_ownership(); self.refuse('loader preload')
+
+    def test_unsupported_node(self):
+        p = self.root / 'usr/bin/helper'; p.unlink(); os.mkfifo(p)
+        self.refuse('unsupported node')
+
+    def test_current_policy_declares_all_selected_consumers(self):
+        repo = SELECTOR.parents[2]
+        policy = json.loads(SELECTOR.with_name('consumers.json').read_text())
+        consumers = {line for line in (repo / 'rootfs/debian/consumers.pkgs').read_text().splitlines() if line and not line.startswith('#')}
+        self.assertEqual(set(policy['consumers']), consumers)
+        for name, consumer in policy['consumers'].items():
+            self.assertTrue(consumer['roots'], name)
+        system = policy['consumers']['mos-system']
+        explicit = {p for r in system['roots'] for p in r['paths']}
+        for p in ['/usr/bin/bash', '/usr/bin/ssh', '/usr/bin/scp', '/usr/bin/systemctl',
+                  '/etc/systemd/system/mos-load-extensions.service', '/etc/tmpfiles.d/mos-var.conf']:
+            self.assertIn(p, explicit)
+        podman = policy['consumers']['mos-podman']
+        self.assertIn('/usr/libexec/podman/quadlet', {p for r in podman['roots'] for p in r['paths']})
+
+    def test_current_extension_ssh_and_accounting_resources(self):
+        repo = SELECTOR.parents[2]
+        anchors = [
+            '/etc/systemd/system/mos-load-extensions.service',
+            '/etc/systemd/system/usr-local-lib-systemd-system.mount',
+            '/etc/systemd/system/etc-containers-systemd.mount',
+            '/etc/ssh/sshd_config.d/05-mos-authorized-keys.conf',
+            '/etc/tmpfiles.d/mos-var.conf',
+        ]
+        for path in anchors:
+            self.write(path, (repo / 'rootfs/overlay' / path[1:]).read_bytes())
+        self.write('/usr/libexec/podman/quadlet', elf(), 0o755)
+        anchors.append('/usr/libexec/podman/quadlet')
+        self.rules['consumers']['mos-system']['roots'].append({'paths': anchors, 'kind': 'resource', 'reason': 'current residual policy resources'})
+        self.capture_ownership(); self.selected()
+        for path in anchors:
+            self.assertEqual((self.root / path[1:]).read_bytes(), (self.out / path[1:]).read_bytes())
+        shutil.rmtree(self.out); self.report.unlink()
+        for path in anchors:
+            with self.subTest(path=path):
+                at = self.root / path[1:]; saved = self.base / 'saved'; at.rename(saved)
+                self.refuse(path); saved.rename(at)
+        mask = self.root / 'etc/systemd/system-generators/systemd-ssh-generator'
+        mask.unlink(); mask.symlink_to('/usr/bin/sh')
+        self.refuse('runtime link target changed')
+
+
+if __name__ == '__main__':
+    unittest.main(verbosity=2)
