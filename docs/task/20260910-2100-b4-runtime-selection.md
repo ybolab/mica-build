@@ -1,6 +1,6 @@
 # 20260910-2100-b4-runtime-selection Select explicit runtime payloads
 
-- **status**: in_progress
+- **status**: completed
 - **priority**: P1
 - **owner**: b4/a7z5l68m
 - **createdAt**: 2026-09-10 21:00
@@ -14,7 +14,7 @@ metadata and explicit non-ELF dependencies. Composition belongs to B5.
 
 ## ActiveForm
 
-Implementing and verifying explicit runtime selection on offline fixtures.
+Completed offline runtime selection and corrective verification; awaiting L2 review.
 
 ## Dependencies
 
@@ -130,3 +130,46 @@ make: *** [Makefile:350: os-shell-pipefail-lint] Error 1
 
 Verdict: PASS for the bounded corrective diff. Original gate aggregate remains
 failed with the accepted shell baseline; this verdict does not turn it green.
+
+## Final corrective gates and handoff
+
+- Corrective implementation commit: `15ef5c7315e9009e581567a7fc96c4f80e070bd4`,
+  clean source tree `0bee95afc9ea1134ae9877b777af377577dfffe1`. Original
+  implementation `87b2c833be8a514b4e8eff7fa622dc0ef767c897` and approved merge
+  `2af3a576219e051c7ad30f93746ec6aec370f161` remain in history.
+- All corrective gates finished at `2026-09-10T21:43:07.931090+00:00` in
+  persistent-shell tmux `a7z5l68m-ec5237`. Exact commands, source, timestamps,
+  individual exit codes and verified log hashes are in
+  `/tmp/mos-b4-r1-eg4pye25/gates-metadata.json`, SHA-256
+  `3958d7a20df108a1a865336ab4e125db403bbd41401ef81638836baf363c19ea`.
+  This corrective run exited 0; the previous aggregate exit 1 is retained above.
+
+| Command | Result |
+| --- | --- |
+| `timeout 120 bash tests/rootfs-runtime-test.sh` | Exit 0; 53 tests, no skips |
+| `timeout 120 make os-rootfs-manifest-test` | Exit 0; 46 checks, 22 reachable packages, 257 resolutions, 6 refusals |
+| `timeout 120 make os-debian-test` | Exit 0; 54 checks plus both-architecture lock/selection checks |
+| `timeout 120 make os-host-toolchain-lint` | Exit 0; 414/414 files clean |
+| `timeout 120 make docs-verify` | Exit 0 |
+| `timeout 30 git diff --check 87b2c833be8a514b4e8eff7fa622dc0ef767c897 HEAD` | Exit 0 |
+
+- Shell lint was not rerun, as directed by L2. Its exact existing failure,
+  source, 158/159 count and aggregate failure remain recorded above.
+- Only this task/plan and their own index rows change during tracking closure.
+  Final tracking-commit docs/diff checks and source-identity verification are
+  retained at `/tmp/mos-b4-r1-eg4pye25/final-metadata.json` in the final handoff.
+- The three historical task blobs are unchanged from approved L2 source:
+  `state-units-never-load`: `4d72058e18c38be9ef3dc37ca4159dbe8c01f021`;
+  `ssh-generator-vs-image-policy`: `28197e2b1c37e3efcd1910addd8b526cdc5af346`;
+  `wtmp-unbounded-append`: `7ffe6f2aad5810571caf9fba45c8d323de53ba68`.
+  Integrity metadata is `/tmp/mos-b4-r1-eg4pye25/historical-integrity.json`.
+- B4 has no remaining implementation row. B5 owns composition, exact generated
+  output and capture completion, metadata-preserving transfers and report joins.
+  B7 owns distinct fresh first-boot system-unit/Quadlet, SSH port/key and
+  effective accounting-bound proofs, plus dual-architecture runtime acceptance.
+  L2 B retains coordination and D3 retains historical/global reconciliation.
+- No expensive job, container, guest or physical-board check was run. Those
+  remaining runtime checks require an explicit L1 job grant. No new grant is
+  needed for this completed bounded correction; no detached gate remains.
+
+- complete: Corrective R1/R2 RED/GREEN, 53 runtime tests and all six rerun gates passed on 15ef5c7315e9009e581567a7fc96c4f80e070bd4; accepted original shell-lint failure and B5/B7 remaining proof are preserved.

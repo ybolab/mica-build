@@ -1,6 +1,6 @@
 # 20260910-2100-b4-runtime-selection Select explicit runtime payloads
 
-- **status**: implementing
+- **status**: completed
 - **createdAt**: 2026-09-10 21:00
 - **approvedAt**: 2026-09-10 21:00
 - **relatedTask**: 20260910-2100-b4-runtime-selection
@@ -234,3 +234,8 @@ native ownership captures for every package referenced by its selected rules;
 its SSH-mask and accounting-link transfers must pass the strengthened node-type
 and canonical-path controls. These are selector guarantees only, not proof of
 first-boot system units, Quadlets, SSH authentication/listening or login bounds.
+
+Corrective implementation `15ef5c7315e9009e581567a7fc96c4f80e070bd4` passed all
+six rerun gates on clean source. The task records exact commands, metadata
+identity and the separately retained original shell-lint failure. B4's bounded
+implementation is complete; B5/B7 acceptance rows remain assigned above.
