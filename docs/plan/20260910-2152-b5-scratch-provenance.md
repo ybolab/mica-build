@@ -119,6 +119,18 @@ left unassigned: exact runtime failures go through L2 B to L1 scheduling.
 
 ## Remaining acceptance recipe and grants
 
+Corrective round 1 is approved within the existing B5 scope. The collected
+`75b77f3b` full build gate exposed two stale assembly expectations. Replace the
+four-target list with the exact capture/selection/validation stage sequence and
+assert that factory-root contains only pack's selected /runtime, that its
+candidate is verified against the selection report offline, and that every
+artifact export depends on factory-checked. Mutated Dockerfile fixtures must
+reject disposable roots, alternate COPY sources, missing verification and
+bypassed artifact validation. Use the existing stages runner and one full build
+suite, with exact source/log/exit metadata; retain the original RED and accepted
+UI baseline. The existing task claim and plan status do not change. No production
+or reserved C file is part of this correction.
+
 After L2 supplies the reviewed public-meta source and the precise release-fixture
 boundary, complete the missing declarations/report join and rerun focused
 composition plus affected release tests. No C or main branch may be imported

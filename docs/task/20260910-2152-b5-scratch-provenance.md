@@ -15,7 +15,7 @@ boot/support/debug identities. No compatibility work or heavy builds.
 
 ## ActiveForm
 
-Awaiting full-suite collection and the reviewed C handoff after independent composition delivery.
+Collecting corrective build gates while awaiting the two reviewed C handoffs.
 
 ## Dependencies
 
@@ -101,13 +101,58 @@ RESULT: FAIL (158/159 files clean, 159 scanned)
 make: *** [Makefile:350: os-shell-pipefail-lint] Error 1
 ```
 
-The final committed-source gate run, including the complete existing
-`make os-verify-test` and `make os-build-test` runners, is assigned
-`/tmp/mos-b5-final-gates-F5fkaJ/metadata.json`, tmux `ekh6zunh-e65ae8`.
-Its status and source identity must be collected before any pass claim. These
-runners enforce TypeScript checking and nonzero test execution. No Bun source,
-dependencies or project configuration changed; their manifests expose no
-format/lint/build script to run. No global toolchain was installed.
+The final committed-source gates at
+`75b77f3bb2b4c968a3f73a89610c5e3a7f1eae0e` finished at
+`2026-09-10T22:24:42.737210+00:00`. Metadata:
+`/tmp/mos-b5-final-gates-F5fkaJ/metadata.json`, SHA256
+`83cfce935bdce4159e7c262547ce6dea8f377e1925c93b5c40e611fd4fb631d9`.
+All nine log hashes were reverified during corrective round 1. Runtime (73),
+manifest (46), Debian (54 plus dual-architecture locks), host, docs, verify
+(646 tests, 6565 assertions, 21 files), and diff passed. Shell exited 2 for the
+accepted baseline above. Build exited 2 with 397 passing and two failing tests,
+1158 assertions across 26 files. Aggregate exitCode is 1, not a final gate pass.
+The build failures are preserved in gate-7.log, SHA256
+`b6c20937326cdfd60bc20ace6b1294275bd7e2a1035aeda5bcdc03c2dbbb6baa`:
+
+```text
+(fail) the assembly this tree actually ships > 90-pack defines all four of its internal targets, in the order it explains them
+(fail) the assembly this tree actually ships > the factory-root export is taken from the PACKED tree, not from `closed`
+make: *** [Makefile:222: os-build-test] Error 1
+```
+
+The expected four targets omit capture and factory validation, and the expected
+`COPY --from=pack /rootfs/ /` names the disposable installation tree. L2 approved
+corrective round 1 in this existing issue: update only these acceptance checks,
+their immediate negative fixtures, and these records. No production policy or
+shared C change is authorized. Original RED evidence remains intact.
+
+The serializer-owned claim remains `in_progress`, owner `b5/ekh6zunh`; the plan
+remains `implementing`. No state transition is needed or attempted. Corrective
+evidence is collected under `/tmp/mos-b5-r1-614v4f9m/` in the existing persistent
+shell `ekh6zunh-e65ae8`. Required checks are focused stages, then one complete
+`timeout 900 make os-build-test`, docs and diff. Unchanged verify and the accepted
+shell baseline are not rerun. The pinned repository runner enforces TypeScript
+checking and nonzero tests; package.json has no format/lint/build scripts. No
+dependencies, project configuration or global toolchains change.
+
+Corrective RED: `timeout 300 bash build/run.sh src/stages.test.ts` at the clean
+`75b77f3b` checkpoint exited 1 (89 pass, two fail, 188 assertions). Its metadata
+and log are `red/metadata.json` and `red/gate-0.log` beneath that corrective
+directory. The same command after the assertion correction exited 0 (104 pass,
+zero fail, 236 assertions, no skips), including 13 negative controls. Metadata
+is `focused/metadata.json`; log SHA256 is
+`4f7bdfb947fe838ad93054070f187252cb4a4c36467427d161b3f10fc39d329d`.
+The corrected stages.test.ts SHA256 is
+`cc4a370f510808eeee1603fb287dbcb3a8fefcb0b73600ff1855f5d26dc4bb53`.
+
+Assertions now require the exact eight named targets, scratch factory-root's
+sole COPY from pack's /runtime, the offline verification of the copied candidate
+against the same report, and all eight artifact exports from factory-checked.
+Stage boundaries and comments are handled before comparison. Negative controls
+reject installed/closed/transformed root substitution, inherited roots, extra
+overlays, comments or later-stage decoys, verification of the wrong root/report,
+removed or ignored verification, and an unchecked artifact. These are source
+contract tests, not OCI/SquashFS or runtime proof. Production files are unchanged.
 
 ## Local review
 
@@ -118,6 +163,11 @@ partial because of the explicit source/ownership and artifact-proof rows below.
 No Rust, UI, native lifecycle, C public-meta/verifier or Git identity source was
 changed. Review verdict for the independent diff: PASS (0 critical, 0 high,
 0 medium, 0 low). This does not classify pending image or release work as done.
+
+Corrective round 1 PMA-CR shared/TypeScript backend review covers the focused
+test diff and the existing stage parser/export call chain. Verdict: PASS
+(0 critical, 0 high, 0 medium, 0 low). No additional production defect or scope
+need was demonstrated by these two failures. Python fixtures were not changed.
 
 ## Remaining ownership and handoff
 
