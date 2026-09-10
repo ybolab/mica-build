@@ -7,11 +7,12 @@
 
 ## Context
 
-The current `meta.example/README.md` describes retired RAUC/TUF paths and a
-user-space signing-key list. The reviewed configuration classification assigns
-this slice only the public factory-default guide. The synced source tree does
-not yet contain the separately scheduled D2 public-meta validation or fleet
-projection work, so the guide must describe current code and staging behavior.
+The original `e03686e0a1225c5bb1d4a2a082ced4574d160af8` implementation baseline
+did not contain the separately scheduled D2 public-meta validation or fleet
+projection work. After the original D1 completion, reviewed local upstream
+`31d7c109f983a3b41664104d21568e92783c81c0` delivered D2 validation while the
+fleet projection remained queued. The bounded integration refresh therefore
+updates only the README's staging description to match the merged validator.
 
 ## Proposal
 
@@ -49,3 +50,5 @@ both the source of truth and the bounded documentation scope.
 - Preserve the reviewed current-tree boundary until D2 validation lands.
 - Completed with all focused documentation checks passing and a `PASS` scoped
   review verdict with no high-confidence findings.
+- The D2 boundary refresh preserves the completed plan state and prior evidence;
+  it does not add fleet behavior or claim packed-image or physical qualification.

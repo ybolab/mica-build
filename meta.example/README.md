@@ -44,12 +44,17 @@ updates/manifest.json
 GENERATED                 # optional development-grade marker
 ```
 
-The current root staging step requires a regular, non-symlink manifest, rejects
-private-key marker text, copies the manifest to
-`/usr/share/mos/meta/updates/manifest.json`, and copies a nonempty `GENERATED`
-marker when present. That staging step does not yet run the manifest parser or
-schema validation, so prepare the document from the committed example and do
-not treat staging alone as schema proof.
+Before staging, the root build validates the exact `mos/meta/v1` field set above
+and permits only `updates/manifest.json` plus an optional `GENERATED` marker.
+The supplied directory and its path components must not be symlinks;
+`updates/` must be a non-symlink directory,
+`updates/manifest.json` must be a nonempty regular non-symlink file, and
+`GENERATED`, when present, must be a regular non-symlink file. The validator
+rejects malformed UTF-8 or JSON, duplicate decoded field names, and invalid or
+unexpected schema fields, and scans both permitted files for private material.
+It then installs the manifest with mode 0644 and installs a nonempty `GENERATED`
+marker with mode 0644; an absent or empty marker is not staged. This is
+source-input validation, not packed-image or physical qualification.
 
 No signing directory belongs in this distributed input. The root composer
 receives only the public manifest and optional marker; boot, content, and
