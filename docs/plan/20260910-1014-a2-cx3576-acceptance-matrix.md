@@ -75,3 +75,16 @@ is confirmed.
   accelerators and network/radio evidence.
 - Reported nine collector gaps without changing the collector and translated
   the historical S905X5M obligations into a handoff-gated current inventory.
+
+## Review rework 1 (2026-09-10)
+
+- Recorded the L1-approved #313 source commit and L2 integrated-source commit
+  while preserving `SRC-0` as the original investigation baseline; A4 through
+  L2 owns the exact complete-image handoff.
+- Preserved D5 among the 39 obligations but reclassified the inherited
+  HDMI-panic requirement as an unresolved conflict with the current serial
+  diagnostic policy. An observation during the existing watchdog test is
+  contextual only; L1 must decide the product requirement before implementation
+  or a hard acceptance criterion.
+- No task-state transition was made: the completed documentation deliverable is
+  being corrected in place, and all physical acceptance rows remain unpassed.

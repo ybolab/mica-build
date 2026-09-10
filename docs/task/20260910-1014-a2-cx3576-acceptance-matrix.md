@@ -43,17 +43,35 @@ below never means that the corresponding physical row passed.
 | `HIST-0` | `/srv/mos/_out/tio.log`, 95,919 bytes, SHA-256 `f614fb0c15e5263a2f3262b65cefcd3d6305d2544dcacc0b684c452e73adab8f` | Supplied 2026-09-08 historical startup context only. It predates the current source and acceptance image, contains no complete current-image run, and neither qualifies a row nor proves a current regression. |
 | `HW-0` | No confirmed board endpoint, flashed-image identity, storage-device identity, power rig or current run directory | The common blocker for every same-image hardware row. No endpoint or disk name is inferred. |
 
+### Current source handoff (2026-09-10)
+
+`SRC-0` remains the original investigation baseline and all evidence above keeps
+its original identity and chronology. L1 approved the #313 source at commit
+`5d0dca577a782aa707d9530779c4b23f2a7eda31`; L2 integrated that source and the
+reviewed A1 work at commit
+`4c00a322a7fd7f65ddb11ec59ef24275c868e128`. The former #313 approval blocker
+is therefore resolved, and A4 through L2 now owns the exact complete-image and
+evidence handoff for I1.
+
+This source handoff does not qualify S905X5M hardware or bench behavior. Its
+original artifacts remain dirty-stamped builds with recorded source-content
+equivalence, and the exact artifact evidence is queued to A4. No old CX3576
+artifact is relabelled as current by this handoff.
+
 The acceptance vocabulary is deliberately strict: `software-backed / blocked`
 means that relevant non-hardware gates exist but the physical obligation is
 unobserved; `blocked` means no admissible current result exists; and `known
 software gap / blocked` means source documentation already identifies an unmet
-behavior and hardware evidence is also absent.
+behavior and hardware evidence is also absent. `unresolved requirement /
+current-policy conflict` preserves an inherited requirement that conflicts with
+the current documented policy; it is neither implemented nor an acceptance
+promise until L1 makes the product decision.
 
 ### Identity, startup, power, watchdog and recovery
 
 | ID | Current obligation | Existing evidence | Current result | Exact evidence still required |
 |---|---|---|---|---|
-| I1 | Bind one newest complete image to a clean source commit, signed release/component identities, exact SHA-256, profile, board revision, eMMC part and readback | `SRC-0`, `IMG-OLD`, `IMG-OLD-META`, `IMG-OLD-COMP` | blocked | L2/A1 must hand off one complete image and public verification inputs bound to its clean source. The operator must identify the authorized RockUSB unit and actual target medium, verify the image, flash with explicit `MOS_IMAGE`, compare full readback, then record the device release/boot receipts. |
+| I1 | Bind one newest complete image to a clean source commit, signed release/component identities, exact SHA-256, profile, board revision, eMMC part and readback | `SRC-0`, `IMG-OLD`, `IMG-OLD-META`, `IMG-OLD-COMP` | blocked | A4 through L2 must hand off one complete image and public verification inputs bound to its clean source. The operator must identify the authorized RockUSB unit and actual target medium, verify the image, flash with explicit `MOS_IMAGE`, compare full readback, then record the device release/boot receipts. |
 | B1 | Install onto a blank/erased development unit and reach a claimable first boot | Flash control flow and image geometry are software-tested in `SW-CX` | software-backed / blocked | After I1, retain the host flash/readback transcript and uninterrupted serial from reset through authenticated root/support, DATA growth, provisioning and required-health confirmation. Run separately for every claimed image profile. |
 | B2 | Repeat cold boot and remain healthy for at least 180 seconds | `HIST-0` shows an older startup only | blocked | Five cold cycles on the I1 image; for each, capture required-health members, deployment confirmation, boot ID, failed optional units and an end-of-window snapshot at or after 180 seconds. |
 | B3 | Authenticated reboot reaches a new healthy boot and completes exitrd teardown | x64 dispatch/reboot acceptance is recorded in [the reboot task](20260909-1421-apid-reboot.md) | software-backed / blocked | From the confirmed I1 deployment, issue the authenticated board reboot, record admission, serial teardown, new boot ID, retained identities and the 180-second health snapshot; repeat three times. |
@@ -91,7 +109,7 @@ behavior and hardware evidence is also absent.
 | D2 | Alt+F2 and Ctrl+Alt+F2 select tty2, which presents ordinary authenticated getty with no autologin | QEMU keyboard selection reached the tty2 login prompt but did not submit a password | software-backed / blocked | On a connected HDMI/USB-keyboard bench, use both shortcuts, authenticate with a test credential, log out, and prove tty1 has no getty and tty2 has no autologin. |
 | D3 | Returning from tty2 restores the centered product presentation | [Display design](../design/display.md) records that no redraw owner exists | known software gap / blocked | Do not manufacture a pass. Record current I1 behavior after logout/VT return; implementation belongs to the existing display follow-up before acceptance can pass. |
 | D4 | HDMI attached after a headless boot receives the product presentation without reboot | [Late-HDMI task](20260910-0117-cx3576-late-hdmi-logo.md) records the init-only artwork lifetime gap | known software gap / blocked | Boot I1 without a sink, record absent/present connector and fb0 transitions, attach the named sink, and retain the visual/runtime result. A software owner must resolve any confirmed redraw gap. |
-| D5 | A panic is visible on an already connected HDMI sink while serial remains authoritative | Static display/panic policy only | software-backed / blocked | With a sink connected before the fault, trigger the approved crash as part of the watchdog run and record both the screen and serial trace. |
+| D5 | Reconcile the inherited HDMI panic-visibility requirement with the current serial diagnostic policy | [PLAN-088](../plan/PLAN-088.md) promised HDMI panic visibility, but the current [display design](../design/display.md) routes the forced signed kernel/service output to `ttyFIQ0`, omits `console=tty1` and protects the artwork from console output | unresolved requirement / current-policy conflict | L1 must decide whether HDMI panic visibility remains a current product requirement before any implementation or pass criterion is defined. If HDMI is already connected during the approved watchdog test, record the visual state as non-qualifying context; do not add another destructive test. Serial remains the current guaranteed diagnostic path. |
 | A1 | NPU completes a representative inference with checked output and stable resources | Compiled node/resources and old probe messages exist; no workload pass | blocked | A4/operator must name a versioned model, runner, input and expected output digest. Run repeated inference on I1 while recording driver binding, IOMMU/MMIO ownership, clocks, power and errors. |
 | A2 | Hardware encoder completes a representative encode and exposes required clocks/resets/resources | Compiled resources exist; no functional encode evidence | blocked | A4/operator must name a versioned input, codec/settings and expected output checks. Record hardware-device use, output validity, resource state and repeated operation. |
 | A3 | Hardware decoder completes a representative decode and exposes required clocks/resets/resources | Compiled resources exist; no functional decode evidence | blocked | A4/operator must name a versioned bitstream and expected frame/output checks. Record hardware-device use, output validity, resource state and repeated operation. |
@@ -141,8 +159,9 @@ not exist at `SRC-0`. The current equivalents used here are
 
 This is an inventory only. It does not reuse S905X5M results as CX3576 evidence,
 qualify a current S905X5M image, or authorize work in #313's paths. No S905X5M
-implementation or run may start until L1 supplies an exact, L2-routed commit
-handoff from #313.
+implementation or run is part of this node. The exact #313 source handoff is now
+integrated as recorded above, while its physical hardware and bench obligations
+remain unqualified and require their own authorized run.
 
 | Current concept to retain | Historical source | Current disposition |
 |---|---|---|
@@ -153,7 +172,7 @@ handoff from #313.
 | Boot memory/capacity limits derive per board from final signed payloads | `PLAN-915` | Retain the measurement obligation; do not reuse S905X5M limits or CX3576 values. |
 | A reference MQTT/application package needs signed provenance plus functional publish/subscribe evidence | `PLAN-916`, `RFCT-932` | If still a current product obligation, test the current application artifact and policy. Do not revive old package, slot or card-building flows. |
 | Managed Wi-Fi needs association, addressing, DNS and link-bound application traffic as distinct observations | `RFCT-945` | Retain the split evidence. Successful DNS/HTTPS cannot waive a missing gateway/link-path result. |
-| Recovery and acceptance stop when the actual boot medium or fallback identity is ambiguous | `RFCT-944` | Retain the stop condition. Wait for the exact #313 source/artifact handoff and identify the bench device before any write or reboot. |
+| Recovery and acceptance stop when the actual boot medium or fallback identity is ambiguous | `RFCT-944` | Retain the stop condition. The #313 source handoff is resolved; identify the exact current artifact and bench device before any write or reboot. |
 
 Historical S905X5M hardware results remain historical even when their concept is
 still useful. They cannot establish current signed-file behavior, and no old
@@ -177,6 +196,29 @@ raw slot, RAUC package, update package or migration support is accepted.
 - Reconciliation note for workstream D: the live matrix adds no physical pass;
   I1 and all same-image rows remain blocked, with known D3/D4 redraw gaps and
   the collector gaps above. No global changelog or sibling status was edited.
+
+### Review rework 1 (2026-09-10)
+
+- Merged L2 integration commit
+  `4c00a322a7fd7f65ddb11ec59ef24275c868e128` after confirming that only the
+  task and plan indexes required mechanical conflict resolution.
+- Reclassified D5 as an unresolved inherited requirement/current-policy
+  conflict. Serial diagnostics remain the guaranteed current policy; an HDMI
+  observation during the already-approved watchdog test is contextual and
+  cannot pass D5. L1 owns the product decision before implementation or a hard
+  acceptance criterion.
+- Corrected I1's complete-image handoff owner to A4 through L2 and recorded the
+  approved #313 and integrated-source commits without changing `SRC-0` or any
+  historical artifact identity.
+- Rework validation passes: `make docs-verify` reports 195/195 index, 516/516
+  links, 726/726 truth-status, 249/249 translation coverage and 131/131 board
+  checks; the focused consistency check finds all 39 rows, the D5 conflict,
+  serial policy, A4-through-L2 owner and source handoff; `git diff --check`
+  reports no correction whitespace errors.
+- Documentation-focused `pma-cr` re-review checked evidence classification,
+  stage sequencing, source chronology and write scope; no actionable finding
+  remains. No language-stack review pack applies to these documentation-only
+  changes.
 
 ## Notes
 
