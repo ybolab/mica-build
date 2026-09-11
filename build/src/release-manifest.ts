@@ -246,6 +246,7 @@ function sourceLineage(value: unknown, source: Source, arch: string, capture: Re
     'rootfs/compose/compose-capture.sh', 'rootfs/compose/compose-install.sh',
     'build/src/release-manifest.ts', 'build/src/release-manifest.test.ts',
     'tests/rootfs-runtime/source_lineage_test.py', 'tests/rootfs-runtime/composition_test.py',
+    'rootfs/runtime/select.py', 'tests/rootfs-runtime/selection_test.py',
     'docs/task/20260911-0145-b7-fresh-lifecycle-acceptance.md', 'docs/plan/20260911-0145-b7-fresh-lifecycle-acceptance.md',
   ])
   requireValue(Array.isArray(l.delta), 'runtime lineage delta')

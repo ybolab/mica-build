@@ -409,6 +409,58 @@ class SelectionTest(unittest.TestCase):
         self.write('/usr/bin/helper', elf(needed=['libfirst.so']), 0o755)
         self.capture_ownership(); self.refuse('ambiguous library')
 
+    def test_removed_owned_hwdb_vendor_enablement_is_not_selected(self):
+        unit = '/usr/lib/systemd/system/systemd-hwdb-update.service'
+        link = '/usr/lib/systemd/system/sysinit.target.wants/systemd-hwdb-update.service'
+        keep = '/usr/lib/systemd/system/required-fixture.service'
+        self.write(unit, b'[Service]\n')
+        self.write(keep, b'[Service]\n')
+        self.link(link, '../systemd-hwdb-update.service')
+        self.capture_ownership()
+        self.root.joinpath(unit[1:]).unlink()
+        self.root.joinpath(link[1:]).unlink()
+        self.rules['consumers']['mos-system']['roots'].append({
+            'packages': ['mos-system'],
+            'paths': ['/usr/lib/systemd/system/*.service', '/usr/lib/systemd/system/*.wants/*'],
+            'kind': 'resource', 'reason': 'owned units after the existing exact hwdb removal',
+        })
+        paths = {row['path'] for row in self.selected()['files']}
+        self.assertIn(keep, paths)
+        self.assertNotIn(unit, paths)
+        self.assertNotIn(link, paths)
+
+    def test_unrelated_missing_owned_unit_is_refused(self):
+        path = '/usr/lib/systemd/system/required-fixture.service'
+        self.write(path, b'[Service]\n')
+        self.capture_ownership()
+        self.root.joinpath(path[1:]).unlink()
+        self.rules['consumers']['mos-system']['roots'].append({
+            'packages': ['mos-system'], 'paths': ['/usr/lib/systemd/system/*.service'],
+            'kind': 'resource', 'reason': 'unrelated required unit',
+        })
+        self.refuse('missing path: ' + path)
+
+    def test_unrelated_missing_owned_enablement_is_refused(self):
+        path = '/usr/lib/systemd/system/sysinit.target.wants/required-fixture.service'
+        self.link(path, '/etc/systemd/system/systemd-tmpfiles-setup.service')
+        self.capture_ownership()
+        self.root.joinpath(path[1:]).unlink()
+        self.rules['consumers']['mos-system']['roots'].append({
+            'packages': ['mos-system'], 'paths': ['/usr/lib/systemd/system/*.wants/*'],
+            'kind': 'resource', 'reason': 'unrelated required enablement',
+        })
+        self.refuse('missing path: ' + path)
+
+    def test_removed_hwdb_vendor_enablement_cannot_be_an_explicit_root(self):
+        path = '/usr/lib/systemd/system/sysinit.target.wants/systemd-hwdb-update.service'
+        self.write('/usr/lib/systemd/system/systemd-hwdb-update.service', b'[Service]\n')
+        self.link(path, '../systemd-hwdb-update.service')
+        self.capture_ownership()
+        self.rules['consumers']['mos-system']['roots'].append({
+            'paths': [path], 'kind': 'resource', 'reason': 'accidental explicit selection',
+        })
+        self.refuse('excluded runtime payload: ' + path)
+
     def test_excluded_payload_cannot_be_a_root(self):
         for p in ['/usr/lib/udev/hwdb.bin', '/usr/lib/debug/app.debug', '/usr/lib/modules/modules.dep']:
             with self.subTest(path=p):

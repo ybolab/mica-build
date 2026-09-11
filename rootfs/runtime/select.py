@@ -272,6 +272,7 @@ class Selector:
                 # paths still fail; this is not a missing-path filter.
                 path in ('/usr/bin/systemd-hwdb', '/usr/sbin/pam_getenv',
                          '/usr/lib/udev/hwdb.bin', '/etc/udev/hwdb.bin', '/usr/lib/systemd/system/systemd-hwdb-update.service',
+                         '/usr/lib/systemd/system/sysinit.target.wants/systemd-hwdb-update.service',
                          '/etc/systemd/system/sysinit.target.wants/systemd-hwdb-update.service') or
                 path.startswith(('/usr/lib/udev/hwdb.d/', '/etc/udev/hwdb.d/')))
 

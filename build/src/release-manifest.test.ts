@@ -590,11 +590,11 @@ test('non-publication acceptance retains runtime and repinned artifact tamper re
 }, OPEN_TIMEOUT_MS)
 
 
-test('runtime source lineage preserves package identity and derives composition provenance', () => {
+test.each(['rootfs/runtime/compose.py', 'rootfs/runtime/select.py', 'tests/rootfs-runtime/selection_test.py'])('runtime source lineage preserves package identity for %s and derives composition provenance', path => {
   const r = runtime(), lineage = r.provenance.source_lineage
   lineage.composition_source = { commit: 'b'.repeat(40), tree: 'c'.repeat(40), epoch: 1000000001 }
   lineage.receipt_sha256 = ['d'.repeat(64)]
-  lineage.delta = [{ path: 'rootfs/runtime/compose.py', before: { mode: '100644', blob: 'a'.repeat(40) }, after: { mode: '100644', blob: 'b'.repeat(40) } }]
+  lineage.delta = [{ path, before: { mode: '100644', blob: 'a'.repeat(40) }, after: { mode: '100644', blob: 'b'.repeat(40) } }]
   r.provenance.capture_sha256['source-lineage.json'] = hash(Buffer.from(canonicalJson(lineage) + '\n'))
   inputs.source = { commit: 'b'.repeat(40), dirty: false }; writeRuntime(r)
   assembleRelease(inputs); gateRelease(inputs.out, keys)
