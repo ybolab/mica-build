@@ -73,3 +73,41 @@ Delivering reviewed native lifecycle supervision and measured retained payload f
   physical/power-cut evidence. No expensive job or issue done transition.
 
 - complete: Completed approved B3 software implementation and focused verification for L2 review; B7 caller/guest and A physical evidence remain separate. Campaign mos-open-plans-20260910-100408.
+
+
+## Current user-directed static refinement (2026-09-11)
+
+The completed marker/history above records the delivered HYBRID scope only.
+The same issue now implements the explicitly approved single-static-shutdown
+refinement under L1 decision `01M28Y5AV9CZR3QMH27NAZBX55`; see the existing plan's
+current executable scope/test/input section. Ownership remains b3/8ezwxfy2.
+The approved synchronized base is da65dd92ed4680531e0a065f05da24e59dd94866 via
+merge 31e7d98896541b3e571462a307772b7a4f96a56f. No-Python composition identity,
+prior artifacts, negative evidence and B7 joint acceptance ownership are preserved.
+
+Serializer restart is not supported: `task-state: claim requires pending status,
+found completed`. The exact failure is preserved externally and reported to B;
+no manual status rewrite or new tracking node substitutes for a serialized claim.
+The static refinement is not complete; independent preflight and RED work proceeds
+within the explicit same-owner authorization while this tracking gap is resolved.
+
+- Current schedule (2026-09-11 explicit user amendment): finish the static
+  refinement on x64 only. ARM compilation/fixtures/acceptance are deferred until
+  the actual approved main merge; historical ARM preflight evidence remains
+  separately identified. No task-owned ARM job was active at the boundary.
+  B7 retains combined x64 image/guest ownership. Main merge/push is not authorized.
+
+- Static x64 software delivery: direct rustix/typed DM worker backend, strict
+  single-static executable copy/manifest/kernel validation and actual producer
+  integration implemented. Final binary is 2,047,144 bytes, SHA-256
+  `d2c5c9a6e2473c0125670031c79014c6ee946b834e2e26f32a65f38939e68b35`;
+  retained files 2,047,158 bytes, tmpfs limit 3,866,624, packed fixture 21,293,056.
+  Full 94-test Rust gate passed before the final strict DM length guard; its
+  focused final fmt/clippy/eight parser+descriptor tests passed after RED.
+  Actual x64 static/empty/owned-tmpfs/copy/kernel-input negatives pass. Evidence
+  `/tmp/mos-b3-static.3ttniist`; full results and limitations are in the plan.
+- X64 source is ready for B review/B7 integration. ARM is deferred-by-user until
+  approved main integration; guest RSS/storage/watchdog/signatures and physical
+  power-cut proof remain separate. The unsupported serializer reopen was
+  reported verbatim, so this record's historical completed status was not
+  manually bypassed. Current plan remains implementing pending that disposition.

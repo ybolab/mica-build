@@ -29,18 +29,46 @@ function packageBoot(mode: 'kernel' | 'firmware' | 'fit', input: string, output:
     mode === 'fit' ? FIT_TOOLS : BOOT_TOOLS, 'bash', ...(mode === 'fit' ? ['/tools/fit.sh'] : ['/tools/kernel.sh', mode, efiArch])])
 }
 
+/** Static PIE may have relocations, but never a loader or a needed library. */
+function staticShutdown(bytes: Buffer) {
+  const refuse = () => { throw new Error('Invalid static shutdown ELF') }
+  const bounded = (value: bigint) => { if (value > BigInt(bytes.length)) refuse(); return Number(value) }
+  const start = bounded(bytes.readBigUInt64LE(32)), count = bytes.readUInt16LE(56)
+  if (count < 1 || count > 128 || bytes.readUInt16LE(54) !== 56 || start < 64 || start + count * 56 > bytes.length) refuse()
+  let loads = 0, dynamic = false
+  for (let n = 0; n < count; n++) {
+    const at = start + n * 56, kind = bytes.readUInt32LE(at)
+    const offset = bounded(bytes.readBigUInt64LE(at + 8)), size = bounded(bytes.readBigUInt64LE(at + 32))
+    if (offset + size > bytes.length || kind === 3) refuse()
+    if (kind === 1) loads++
+    if (kind === 2) {
+      if (dynamic || size < 16 || size > 65536 || size % 16 !== 0) refuse()
+      dynamic = true
+      let terminated = false
+      for (let entry = offset; entry < offset + size; entry += 16) {
+        const tag = bytes.readBigUInt64LE(entry)
+        if (tag === 0n) { terminated = true; break }
+        if (tag === 1n || tag === 15n || tag === 29n) refuse()
+      }
+      if (!terminated) refuse()
+    }
+  }
+  if (loads === 0) refuse()
+}
+
 /** Required native executables are part of the authenticated kernel identity. */
 export function kernelExecutables(init: string, shutdown: string, arch: 'amd64' | 'arm64') {
-  const inspect = (path: string) => {
+  const inspect = (path: string, staticOnly = false) => {
     if (typeof path !== 'string' || !path) throw new Error('Missing required native lifecycle input')
     const stat = lstatSync(path)
     if (!stat.isFile() || stat.size < 64 || stat.size > 32 * 1024 * 1024 || (stat.mode & 0o7022) !== 0 || (stat.mode & 0o500) !== 0o500) throw new Error('Invalid native lifecycle file or permissions')
     const bytes = readFileSync(path)
     if (!bytes.subarray(0, 7).equals(Buffer.from([0x7f, 69, 76, 70, 2, 1, 1])) || ![2, 3].includes(bytes.readUInt16LE(16)) || bytes.readUInt32LE(20) !== 1 || bytes.readUInt16LE(52) !== 64) throw new Error('Invalid native lifecycle ELF')
     if (bytes.readUInt16LE(18) !== (arch === 'amd64' ? 62 : 183)) throw new Error('Native lifecycle architecture mismatch')
+    if (staticOnly) staticShutdown(bytes)
     return artifactFile(path)
   }
-  return { init: inspect(init), shutdown: inspect(shutdown) }
+  return { init: inspect(init), shutdown: inspect(shutdown, true) }
 }
 
 export interface KernelInputs {

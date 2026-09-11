@@ -20,7 +20,8 @@ for arch in x64 aa64; do
     for name in blkid veritysetup dmsetup; do test -x "$dest/sbin/$name"; done
     for name in bin/mount sbin/losetup sbin/switch_root bin/sh; do test ! -e "$dest/$name"; done
     test -x "$dest/exitrd/shutdown"
-    test -x "$dest/exitrd/bin/busybox"
+    test "$(cat "$dest/exitrd.files")" = shutdown
+    test ! -e "$dest/exitrd/bin/busybox"
     find "$dest/exitrd" -type f -printf '%P\n' | LC_ALL=C sort > "$WORK/exitrd.files"
     cmp "$WORK/exitrd.files" "$dest/exitrd.files"
     for path in bin/busybox init etc/mos/boot.json exitrd/shutdown; do

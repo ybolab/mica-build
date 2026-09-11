@@ -3,8 +3,38 @@
 # Every storage mount created here is tmpfs; no loop, DM, watchdog or disk is opened.
 set -euo pipefail
 [ "$$" = 1 ] || { echo 'Mount fixture requires disposable container PID1' >&2; exit 1; }
-for tool in python3 cp mkdir cat; do command -v "$tool" >/dev/null; done
-NATIVE=/src/_out/b3-rust/target/x86_64-unknown-linux-gnu/release/mos-shutdown
+for tool in cp mkdir cat; do command -v "$tool" >/dev/null; done
+NATIVE=${1:?explicit same-source native shutdown required}
+if [ "${2:-}" = --empty ]; then
+    # The emulator is fixture machinery only; the target has no loader, tools,
+    # libraries, /proc, /dev or /sys. Never invoke sync or a terminal action.
+    mkdir /empty
+    cp "$NATIVE" /empty/shutdown
+    runner=(/shutdown)
+    if [ -n "${3:-}" ]; then
+        cp "$3" /empty/emulator
+        runner=(/emulator /shutdown)
+    fi
+    status=0
+    chroot /empty "${runner[@]}" reboot > /tmp/empty-public.log 2>&1 || status=$?
+    [ "$status" = 1 ]
+    grep -Fx 'mos-shutdown requires PID 1' /tmp/empty-public.log >/dev/null
+    printf '%s\n' EMPTY_EXEC_LOADER_PASS
+    status=0
+    chroot /empty "${runner[@]}" --lifecycle-worker '"Scan"' > /tmp/empty-scan.log 2>&1 || status=$?
+    [ "$status" = 1 ]
+    grep -F 'required proc filesystem unavailable' /tmp/empty-scan.log >/dev/null
+    status=0
+    chroot /empty "${runner[@]}" --lifecycle-worker '"Private"' > /tmp/empty-private.log 2>&1 || status=$?
+    [ "$status" = 1 ]
+    cat /tmp/empty-private.log
+    # CAP_SYS_ADMIN is absent: a direct mount syscall must report EPERM. The
+    # historical external BusyBox path instead reports a missing executable.
+    grep -F 'Operation not permitted' /tmp/empty-private.log >/dev/null
+    printf '%s\n' STATIC_EMPTY_USERSPACE_PASS
+    exit 0
+fi
+command -v python3 >/dev/null
 cp /busybox-out/x64/busybox /bin/busybox
 BB=/bin/busybox
 mkdir -p /newroot/dev /newroot/proc /newroot/sys /fixture/storage
