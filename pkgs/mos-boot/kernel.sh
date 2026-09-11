@@ -17,9 +17,11 @@ kernel)
         --os-release=@/input/os-release --output=/output/boot.efi \
         --signtool=sbsign --secureboot-private-key=/signing/key.pem --secureboot-certificate=/signing/cert.pem
     sbverify --cert /signing/cert.pem /output/boot.efi
-    objcopy --dump-section .initrd=/output/signed-initrd.zst /output/boot.efi
+    objcopy --dump-section .initrd=/output/signed-initrd.zst /output/boot.efi /output/section-copy.efi
     cmp /output/initramfs.cpio.zst /output/signed-initrd.zst
-    rm /output/signed-initrd.zst
+    rm /output/signed-initrd.zst /output/section-copy.efi
+    # objcopy must never rewrite the signed PE while extracting a section.
+    sbverify --cert /signing/cert.pem /output/boot.efi
     ;;
 firmware)
     sbsign --key /signing/key.pem --cert /signing/cert.pem --output "/output/$BOOT_NAME" \

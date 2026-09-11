@@ -47,7 +47,8 @@ describe('required authenticated native lifecycle input', () => {
   })
 })
 
-test('static shutdown refuses interpreter, dependencies and malformed segment tables', () => {
+test('static lifecycle inputs refuse interpreter, dependencies and malformed segment tables', () => {
+  for (const role of ['startup', 'shutdown']) {
   for (const change of ['interpreter', 'needed', 'rpath', 'truncated', 'overflow', 'unterminated', 'no-load', 'no-headers']) {
     const input = fixture()
     input.bytes.writeUInt16LE(2, 56)
@@ -62,16 +63,19 @@ test('static shutdown refuses interpreter, dependencies and malformed segment ta
     if (change === 'unterminated') { input.bytes.writeBigUInt64LE(30n, 240); input.bytes.writeBigUInt64LE(30n, 256) }
     if (change === 'no-load') input.bytes.writeUInt32LE(0, 64)
     if (change === 'no-headers') input.bytes.writeUInt16LE(0, 56)
-    writeFileSync(input.shutdown, input.bytes)
-    expect(() => kernelExecutables(input.init, input.shutdown, 'amd64')).toThrow('static shutdown')
+    writeFileSync(role === 'startup' ? input.init : input.shutdown, input.bytes)
+    expect(() => kernelExecutables(input.init, input.shutdown, 'amd64')).toThrow(`static ${role}`)
+  }
   }
 })
-test('static PIE relocation table is accepted while init may keep its interpreter', () => {
+test('static PIE relocation table is accepted for both lifecycle binaries', () => {
   const input = fixture()
   input.bytes.writeUInt16LE(2, 56); input.bytes.writeUInt32LE(2, 120)
   input.bytes.writeBigUInt64LE(240n, 128); input.bytes.writeBigUInt64LE(32n, 152)
   input.bytes.writeBigUInt64LE(30n, 240)
   writeFileSync(input.shutdown, input.bytes)
-  input.bytes.writeUInt32LE(3, 120); writeFileSync(input.init, input.bytes)
+  writeFileSync(input.init, input.bytes)
   expect(kernelExecutables(input.init, input.shutdown, 'amd64').shutdown).toBeDefined()
+  input.bytes.writeUInt32LE(3, 120); writeFileSync(input.init, input.bytes)
+  expect(() => kernelExecutables(input.init, input.shutdown, 'amd64')).toThrow('static startup')
 })

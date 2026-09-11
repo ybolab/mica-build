@@ -30,8 +30,8 @@ function packageBoot(mode: 'kernel' | 'firmware' | 'fit', input: string, output:
 }
 
 /** Static PIE may have relocations, but never a loader or a needed library. */
-function staticShutdown(bytes: Buffer) {
-  const refuse = () => { throw new Error('Invalid static shutdown ELF') }
+function staticLifecycle(bytes: Buffer, role: 'startup' | 'shutdown') {
+  const refuse = () => { throw new Error(`Invalid static ${role} ELF`) }
   const bounded = (value: bigint) => { if (value > BigInt(bytes.length)) refuse(); return Number(value) }
   const start = bounded(bytes.readBigUInt64LE(32)), count = bytes.readUInt16LE(56)
   if (count < 1 || count > 128 || bytes.readUInt16LE(54) !== 56 || start < 64 || start + count * 56 > bytes.length) refuse()
@@ -58,17 +58,17 @@ function staticShutdown(bytes: Buffer) {
 
 /** Required native executables are part of the authenticated kernel identity. */
 export function kernelExecutables(init: string, shutdown: string, arch: 'amd64' | 'arm64') {
-  const inspect = (path: string, staticOnly = false) => {
+  const inspect = (path: string, role: 'startup' | 'shutdown') => {
     if (typeof path !== 'string' || !path) throw new Error('Missing required native lifecycle input')
     const stat = lstatSync(path)
     if (!stat.isFile() || stat.size < 64 || stat.size > 32 * 1024 * 1024 || (stat.mode & 0o7022) !== 0 || (stat.mode & 0o500) !== 0o500) throw new Error('Invalid native lifecycle file or permissions')
     const bytes = readFileSync(path)
     if (!bytes.subarray(0, 7).equals(Buffer.from([0x7f, 69, 76, 70, 2, 1, 1])) || ![2, 3].includes(bytes.readUInt16LE(16)) || bytes.readUInt32LE(20) !== 1 || bytes.readUInt16LE(52) !== 64) throw new Error('Invalid native lifecycle ELF')
     if (bytes.readUInt16LE(18) !== (arch === 'amd64' ? 62 : 183)) throw new Error('Native lifecycle architecture mismatch')
-    if (staticOnly) staticShutdown(bytes)
+    staticLifecycle(bytes, role)
     return artifactFile(path)
   }
-  return { init: inspect(init), shutdown: inspect(shutdown, true) }
+  return { init: inspect(init, 'startup'), shutdown: inspect(shutdown, 'shutdown') }
 }
 
 export interface KernelInputs {

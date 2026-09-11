@@ -6,6 +6,8 @@ bash /tools/initramfs.sh /tmp/initramfs aa64
 test "$(stat -c%s /input/kernel)" -le 134217728
 test "$(stat -c%s /output/initramfs.cpio)" -le 67108864
 test "$(stat -c%s /output/initramfs.cpio.zst)" -le 67108864
+source /tools/compression.sh
+compress_payload /input/kernel /output/kernel.zst 134217728
 mkdir -p /tmp/fit-keys
 ln -s /signing/key.pem /tmp/fit-keys/mos.key
 ln -s /signing/cert.pem /tmp/fit-keys/mos.crt
@@ -20,7 +22,7 @@ cat > boot.its <<ITS
     description = "MOS authenticated kernel package";
     #address-cells = <1>;
     images {
-        kernel { description = "YBO - Hub OS Linux kernel"; data = /incbin/("/input/kernel"); type = "kernel"; arch = "arm64"; os = "linux"; compression = "none";
+        kernel { description = "YBO - Hub OS Linux kernel"; data = /incbin/("kernel.zst"); type = "kernel"; arch = "arm64"; os = "linux"; compression = "zstd";
             load = <$kernel_address>; entry = <$kernel_address>; hash { algo = "sha256"; }; };
         fdt { description = "MOS board device tree"; data = /incbin/("/input/board.dtb"); type = "flat_dt"; arch = "arm64"; compression = "none";
             load = <$fdt_address>; hash { algo = "sha256"; }; };
@@ -42,6 +44,11 @@ fit_check_sign -f boot.itb -k control.dtb
 # ramdisk semantics. FDT stays uncompressed.
 test "$(fdtget -t s boot.itb /images/ramdisk compression)" = none
 test "$(fdtget -t s boot.itb /images/fdt compression)" = none
+test "$(fdtget -t s boot.itb /images/kernel compression)" = zstd
+dumpimage -T flat_dt -p 0 -o signed-kernel.zst boot.itb
+cmp kernel.zst signed-kernel.zst
+validate_payload signed-kernel.zst /input/kernel 134217728
+rm signed-kernel.zst
 dumpimage -T flat_dt -p 2 -o signed-initrd.zst boot.itb
 cmp initramfs.cpio.zst signed-initrd.zst
 rm signed-initrd.zst

@@ -2,7 +2,7 @@
 
 - **status**: in_progress
 - **createdAt**: 2026-09-11 19:27
-- **revisedAt**: 2026-09-11 20:10
+- **revisedAt**: 2026-09-11 21:35
 - **approvedAt**: 2026-09-11 (explicit worker #347 dispatch)
 - **relatedTask**: [20260911-1925-boot-artifact-size](../task/20260911-1925-boot-artifact-size.md)
 
@@ -404,10 +404,15 @@ is required. Historical measurements are not current B2/B3 artifact evidence.
   36866b47f2647e778ef33d7183fbba88a81a494e. Integrated at ef5e27c7.
 - [ ] Phase 1: deterministic zstd archive; preserve both expanded 64 MiB and
   compressed/load/component limits; verify malformed/truncated/oversized bytes.
-- [ ] Phase 2: one typed DM/key route; reference differential and signature,
-  read-only, trusted-key and corruption negatives before retiring helpers.
-- [ ] Phase 3: native mount/loop/GPT/switch-root with cleanup and watchdog proof.
-- [ ] Phase 4: measured static GNU or musl mos-init and single startup executable.
+- [x] Phase 2 implementation and x64 kernel fixture: one typed DM/key route;
+  real reference differential, signature/read-only/trusted-key/corruption and
+  guard-removal evidence passed before retiring helpers.
+- [x] Phase 3 implementation and x64 native fixture: mount/loop/GPT/switch-root,
+  partial-creation rollback and old-root reclamation pass; existing supervisor
+  deadlines and B3 teardown remain. Full-image watchdog acceptance is pending.
+- [x] Phase 4 implementation: measured GNU static mos-init, single startup
+  executable manifest and empty-userspace proof. Batched producer/full-image
+  acceptance remains pending; no ARM native build was run.
 - [ ] Phase 5: resolved CX U-Boot zstd, signed FIT kernel bytes and physical boot.
 - Generic iteration and batched final image acceptance use x64. Focused CX
   U-Boot/FIT checks are authorized; broad ARM acceptance remains deferred until
@@ -448,4 +453,27 @@ Source fixtures have passed the current workspace tests (two pre-existing ignore
 runtime cases remain ignored), native mount options/worker/old-root tests and
 verity geometry/readback mutation tests. x64 C UAPI assertions include startup
 DM/loop requests. These results are not kernel, guest, signed-image or hardware
-acceptance. Helpers remain in the package until real differential proof is ready.
+acceptance. Real x64 differential/negative proof subsequently passed, and the legacy
+startup helpers were retired. Build-time veritysetup remains the independent
+reference. Detailed measured artifacts, hashes, original failures and scope
+limits are recorded in the related task.
+
+### Current acceptance boundary
+
+The current source implements all five phases. Phase 1 has deterministic bounded
+archive tests and actual signed UKI payload extraction/tamper refusal; the FIT
+check is next. Phase 5 has an explicit B allocation for a focused CX resolved
+config/build using the original public boot anchor, followed by signed FIT
+packing. The previous builder CONFIG_ZSTD-unset result is preserved as RED.
+No broad ARM native/root/image/guest run is authorized before main integration.
+
+A review finding caught objcopy rewriting the signed UKI when extracting its
+initrd section. Extraction now writes a disposable PE copy, leaves the signed
+original unchanged and verifies that original again; an in-place payload-bit
+mutation preserves the certificate table and fails Authenticode hash checking.
+The first /dev/null-output attempt failed with "objcopy: /dev/null: file truncated"
+and was replaced by an ordinary disposable output file.
+
+Physical CX cold boot and the final batched full-image/producer evidence are
+pending. This record must not be marked completed from source, tiny TCG or
+offline packaging evidence alone.
