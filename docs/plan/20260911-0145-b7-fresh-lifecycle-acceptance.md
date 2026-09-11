@@ -455,3 +455,70 @@ are authoritative for this campaign: explicit full image/public certificate,
 private DATA-seeded disk, no kernel append override. These historical docs were
 not edited. The CI job runs only `os-apid-api-spec-pins`; it is not the live API
 suite. No old published phase timing/result qualifies the future images.
+
+## Joint wave and R1 authorized continuation (2026-09-11)
+
+Campaign `mos-open-plans-20260910-100408`: L2 reviewed caller `64387f20`
+and geometry `5ead2055` as PASS. Review round B7-R1 identified the actual pinned
+outer-wrapper failure: `ENOENT: no such file or directory, lstat
+'/srv/mos/.git/worktrees/75btxdqb'`. Only `tests/file-ab-x64/bun.sh` and a focused
+identity fixture may change for this correction. Resolve checkout/gitdir/commonDir
+outside the container, preserve the writable checkout and existing host route,
+and mount required Git metadata read-only. Production sourceIdentity, Toolbox
+and release policy remain unchanged. Verify the real linked-worktree route,
+ordinary-checkout metadata protection and consumer entry beyond source validation.
+Submit the isolated correction and clean checkpoint to L2 before joint merges.
+
+The user-authorized joint wave replaces the earlier B-only freeze and one-B-job
+serialization. After this source review, synchronize the exact reviewed local B,
+then no-ff merge exact A `e4154126b7e38eb90db210adfb412b19535637a8` (tree
+`04de9264c7eb0d190e13852955789ceea7439a71`) and full C
+`48acef7f1a3683b1f3bb6261911b1a5123197da2` (tree
+`553c1e7af96203315f79e7ea61e862f7a753e3a5`) in this same worktree. J remains
+unformed. Preserve every original ancestor and all reviewed C production inputs,
+including the six offline configuration/API/manifest/lock files. Mechanical
+index/import/test unions must preserve sibling rows, status, ownership and
+behavior. Semantic conflicts require exact evidence; no main access or merge.
+
+The future matrix uses one J and one new image each for x64, virt-arm64 and
+CX3576, with exactly two independent equal-input virt-arm64 cold roots and no
+new S905 image. CX kernel/firmware reuse requires complete input equality;
+previous A artifacts remain historical, never relabeled J. The independent C
+verifier remains pinned to C-final separately from payload J. L2 schedules up
+to two independent heavy jobs only after J/input manifests and the one-time L1
+cross-workstream review. No heavy job is allocated in this source checkpoint.
+
+The explicit ARM64 route is now authorized: preserve both unassisted Docker
+failures; verify A's pinned BuildKit emulator and execute the identified Debian
+ARM64 child once with an explicit read-only emulator, no network/capabilities,
+2 CPUs and 512 MiB. A task-owned BuildKit replica may run one tiny target probe
+using pinned v0.32.2, remote docker-container connection, labels and enforced
+4 CPU / 10 GiB limits. Do not modify shared builders, binfmt or host state.
+Actual package/root/image/guest production still waits for J and named jobs.
+
+### R1 correction evidence
+
+The outer wrapper now resolves canonical Git directories on the host and mounts
+only `.git`/gitdir/commonDir read-only, retaining the existing writable checkout,
+Docker socket and `/work`/`/root` host translations. Common-directory coverage
+avoids duplicate child mounts. The linked gitfile is protected too. No production
+sourceIdentity/Toolbox/release change is included.
+
+Evidence directory: `/tmp/mos-b7-r1.9BVl5b`; per-gate JSON records source/tree,
+working-file hashes, exact timeout command, UTC, exit code and log SHA-256.
+The exact L2 command (`timeout 60 bash tests/file-ab-x64/bun.sh -e` importing
+and calling production sourceIdentity) reproduced exit 1 and the unchanged
+ENOENT at release-cli.ts:29 in `r1-original-red`. The focused wrapper regression
+also failed both tests before the fix: missing linked metadata and writable
+ordinary `.git/HEAD`. It opens existing metadata with `r+` without changing bytes,
+so the RED does not alter Git metadata. Initial GREEN passed 2 tests / 13 assertions.
+The final fixture additionally confines the writable-checkout test to a unique
+owned directory. Original native, geometry, release, offline Cargo and unrelated
+environment/baseline results remain unchanged. The clean committed consumer
+entry check and explicit ARM64 route metadata follow in the continuation record.
+
+PMA-CR reviewed the complete wrapper/fixture diff against `66cc7874`: no introduced
+findings. The new fixture invokes the pinned wrapper, not a mock container or host
+sourceIdentity bypass. Ordinary-checkout scope checks mount protection; the real
+production sourceIdentity call runs on this actual linked worktree. Existing
+release policy and tamper fixtures are preserved. Task/plan remain open.
