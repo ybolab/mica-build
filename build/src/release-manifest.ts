@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto'
+import { spawnSync } from 'node:child_process'
 import { closeSync, copyFileSync, existsSync, lstatSync, mkdirSync, openSync, readFileSync, readdirSync, readSync, writeFileSync } from 'node:fs'
 import { basename, join, posix } from 'node:path'
 import { authenticateDeployment, canonicalJson, componentId, type VerityImage } from './components.ts'
@@ -230,6 +231,11 @@ const JOIN_ORIGINAL = { commit: 'e176876b733d675d1e20b40b42628cd4e18b197d', tree
 const JOIN_REBUILT = { commit: 'fb6c4597bb902f69d528bcdc3c8372f310c322b1', tree: 'cbf2fa8ff2c8fc03534b218c952a511b6a6ba392', epoch: 1789157855, version: '0.1.0+gitfb6c4597bb90-1' }
 const JOIN_RECEIPTS = { original: 'fc79903fcd6dc8bf40191c5f4cdf4979d664dfd0315a53521d57af821f80d166', native: '175f2dbe31b08bde91f8cf5a15680c9ec7fb38d6c2e0bda46edff5f24e558d09', deploy: '267dff5433d4bc2b2a409a06e3019fd0f680f449c4866d60f8b3353b237a4683' }
 const JOIN_NATIVE = { 'mos-init': { bytes: 1673848, sha256: '738391aa650a58fb3819f52831f6affd57ddd17e357c2a161faaf39d800ec642' }, 'mos-shutdown': { bytes: 2047144, sha256: 'd2c5c9a6e2473c0125670031c79014c6ee946b834e2e26f32a65f38939e68b35' } }
+const STARTUP_SOURCE = '438c9551ec751fcb346881541752a7596f10cb15'
+const STARTUP_NATIVE = {
+  'mos-init': { bytes: 2403504, sha256: '57c865ed0b58740faaba642cc417a0b0a3a487f3b6718a1e2fcc7e1355bdea97' },
+  'mos-shutdown': { bytes: 2047144, sha256: '77bf04b463ece3b0aaba03fa0f91fe0939faa87c5b9b81937b24636b3e2ef1ea' },
+}
 const JOIN_CONSUMERS = new Set(['rootfs/runtime/source-lineage.py', 'rootfs/build.sh', 'build/src/release-manifest.ts', 'tests/deb-package-gate.sh', 'tests/rootfs-runtime/source_lineage_test.py', 'tests/rootfs-runtime/composition_test.py', 'build/src/release-manifest.test.ts', 'docs/task/20260911-0145-b7-fresh-lifecycle-acceptance.md', 'docs/plan/20260911-0145-b7-fresh-lifecycle-acceptance.md'])
 const canonicalSha = (value: unknown) => createHash('sha256').update(canonicalJson(value) + '\n').digest('hex')
 function producerJoin(value: unknown, packages: Record<string, unknown>[], source: unknown, arch: string) {
@@ -490,8 +496,100 @@ function derived(dir: string, m: Omit<ReleaseManifest, 'artifacts'>, image: stri
       inputs: [image, 'update.mosupd', 'firmware.json', 'firmware.bin', 'package-manifest.tsv', 'rootfs-report.runtime.json', 'baked-meta.json', 'development-marker.txt', 'board-evidence.json', 'builder-images.json', 'release-notes.md'].map(filename => measure(dir, filename, files[filename]!)) },
   }
 }
+const INITRD_LIMIT = 64 * 1048576
+/** Validate RFC 8878 framing before invoking the pinned Bun runtime's decoder. */
+function decodeStartupFrame(packed: Buffer): Buffer {
+  requireValue(packed.length >= 10 && packed.length <= INITRD_LIMIT && packed.readUInt32LE(0) === 0xfd2fb528, 'joined zstd frame')
+  const descriptor = packed[4]!, single = (descriptor & 32) !== 0, sizeFlag = descriptor >>> 6
+  // The file producer emits a content size, a checksum and no dictionary.
+  requireValue((descriptor & 31) === 4 && (single || sizeFlag !== 0), 'joined zstd canonical descriptor')
+  let at = 5, window = 0
+  if (!single) {
+    const w = packed[at++]!, base = 2 ** (10 + (w >>> 3))
+    window = base + (base / 8) * (w & 7)
+  }
+  const sizeBytes = sizeFlag === 0 ? 1 : 2 ** sizeFlag
+  requireValue(at + sizeBytes <= packed.length, 'joined zstd size bounds')
+  const expanded = sizeBytes === 8 ? packed.readBigUInt64LE(at) : BigInt(packed.readUIntLE(at, sizeBytes) + (sizeBytes === 2 ? 256 : 0))
+  requireValue(expanded > 0n && expanded <= BigInt(INITRD_LIMIT), 'joined zstd expanded bound')
+  if (single) window = Number(expanded)
+  requireValue(window > 0 && window <= INITRD_LIMIT, 'joined zstd window bound')
+  at += sizeBytes
+  let last = false, blocks = 0
+  while (!last) {
+    requireValue(++blocks <= 65536, 'joined zstd block count')
+    requireValue(at + 3 <= packed.length, 'joined zstd truncated block')
+    const header = packed.readUIntLE(at, 3), kind = (header >>> 1) & 3, size = header >>> 3
+    last = (header & 1) !== 0
+    requireValue(kind !== 3 && size <= Math.min(window, 128 * 1024), 'joined zstd block bound')
+    at += 3 + (kind === 1 ? 1 : size)
+    requireValue(at <= packed.length, 'joined zstd truncated payload')
+  }
+  requireValue(at + 4 === packed.length, 'joined zstd single frame/checksum extent')
+  // Use this project's pinned Bun, including its zstd library, in a bounded
+  // child. The decoder enforces output/window caps while decoding; the parent
+  // independently caps its pipe and kills a stuck decoder after ten seconds.
+  const result = spawnSync(process.execPath, ['--eval', `
+    const {zstdDecompressSync, constants} = require('node:zlib');
+    const {readFileSync, writeFileSync} = require('node:fs');
+    writeFileSync(1, zstdDecompressSync(readFileSync(0), {
+      maxOutputLength: ${INITRD_LIMIT},
+      params: {[constants.ZSTD_d_windowLogMax]: 26}
+    }));
+  `], { input: packed, maxBuffer: INITRD_LIMIT, timeout: 10000, killSignal: 'SIGKILL' })
+  requireValue(!result.error && result.status === 0 && result.signal === null && result.stdout.length === Number(expanded), 'joined zstd bounded decode/checksum')
+  return result.stdout
+}
+
+function verifyStartupCpio(cpio: Buffer, expected: Record<string, { bytes: number, sha256: string }>) {
+  const directories = new Set(['.', 'dev', 'etc', 'etc/mos', 'exitrd', 'newroot', 'proc', 'run', 'sbin', 'support', 'sys', 'system'])
+  const native: Record<string, string> = { init: 'mos-init', 'exitrd/shutdown': 'mos-shutdown' }
+  const text: Record<string, string> = { 'startup.files': 'init\n', 'exitrd.files': 'shutdown\n', 'sbin/mos-shutdown': '/exitrd/shutdown' }
+  const allowed = new Set([...directories, ...Object.keys(native), ...Object.keys(text), 'etc/mos/boot.json'])
+  const names = new Set<string>(), align = (n: number, size = 4) => Math.ceil(n / size) * size
+  let at = 0, previous = ''
+  for (let count = 0; count <= allowed.size; count++) {
+    requireValue(at + 110 <= cpio.length && cpio.toString('ascii', at, at + 6) === '070701', 'joined startup cpio header')
+    const field = (i: number) => {
+      const text = cpio.toString('ascii', at + 6 + i * 8, at + 14 + i * 8)
+      requireValue(/^[0-9a-fA-F]{8}$/.test(text), 'joined startup cpio field'); return Number.parseInt(text, 16)
+    }
+    const mode = field(1), uid = field(2), gid = field(3), links = field(4), mtime = field(5), size = field(6), nameSize = field(11)
+    requireValue(nameSize >= 2 && nameSize <= 128 && at + 110 + nameSize <= cpio.length, 'joined startup cpio name bounds')
+    const namedEnd = at + 110 + nameSize, rawName = cpio.subarray(at + 110, namedEnd)
+    requireValue(rawName.at(-1) === 0 && !rawName.subarray(0, -1).includes(0), 'joined startup cpio name terminator')
+    const name = new TextDecoder('utf-8', { fatal: true }).decode(rawName.subarray(0, -1))
+    const data = align(namedEnd), end = data + size, next = align(end)
+    requireValue(next <= cpio.length && cpio.subarray(namedEnd, data).every(b => b === 0)
+      && cpio.subarray(end, next).every(b => b === 0), 'joined startup cpio padding/bounds')
+    requireValue(uid === 0 && gid === 0 && [7, 8, 9, 10, 12].every(i => field(i) === 0), 'joined startup cpio owner/device/check')
+    at = next
+    if (name === 'TRAILER!!!') {
+      requireValue(size === 0 && mode === 0 && links === 1 && mtime === 0 && cpio.length === align(at, 512)
+        && cpio.subarray(at).every(b => b === 0), 'joined startup cpio trailer extent')
+      requireValue(names.size === allowed.size, 'joined startup missing native/manifest/directory')
+      return
+    }
+    requireValue(allowed.has(name) && !names.has(name) && name > previous, 'joined startup unexpected/duplicate/unsafe path')
+    names.add(name); previous = name
+    const directory = directories.has(name), symlink = name === 'sbin/mos-shutdown'
+    const wantedMode = directory ? 0o40755 : symlink ? 0o120777 : Object.hasOwn(native, name) ? 0o100755 : 0o100644
+    requireValue(mode === wantedMode && links === (directory ? 2 : 1) && mtime === 1577836800, 'joined startup cpio mode/link/time')
+    const bytes = cpio.subarray(data, end)
+    if (directory) requireValue(size === 0, 'joined startup directory data')
+    else if (Object.hasOwn(native, name)) {
+      const witness = expected[native[name]!]
+      requireValue(witness && size === witness.bytes && createHash('sha256').update(bytes).digest('hex') === witness.sha256, 'joined authenticated native bytes/mode')
+    } else if (Object.hasOwn(text, name)) requireValue(bytes.equals(Buffer.from(text[name]!)), 'joined startup manifest/observer target')
+    else requireValue(size > 0 && size <= 4096, 'joined startup boot config size')
+  }
+  requireValue(false, 'joined startup missing trailer')
+}
+
 /** Bind the authenticated x64 UKI's actual native bytes to the joined witness. */
-export function verifyJoinedNativePayload(boot: Buffer, expected: Record<string, { bytes: number, sha256: string }>) {
+export function verifyJoinedNativePayload(boot: Buffer, expected: Record<string, { bytes: number, sha256: string }>, source = JOIN_REBUILT.commit) {
+  requireValue(source === JOIN_REBUILT.commit || source === STARTUP_SOURCE, 'joined native source role')
+  const startup = source === STARTUP_SOURCE
   requireValue(boot.length >= 64 && boot.length <= 256 * 1048576 && boot.toString('ascii', 0, 2) === 'MZ', 'joined UKI header')
   const pe = boot.readUInt32LE(60)
   requireValue(pe >= 64 && pe + 24 <= boot.length && boot.toString('ascii', pe, pe + 4) === 'PE\0\0'
@@ -500,16 +598,33 @@ export function verifyJoinedNativePayload(boot: Buffer, expected: Record<string,
   requireValue(count > 0 && count <= 96 && optional >= 2 && start + count * 40 <= boot.length
     && boot.readUInt16LE(pe + 24) === 0x20b, 'joined UKI sections')
   const initrds: Buffer[] = []
+  const ranges: { offset: number, size: number, address: number, bytes: number }[] = []
+  const alignment = optional >= 64 ? boot.readUInt32LE(pe + 24 + 36) : 0
+  const imageSize = optional >= 64 ? boot.readUInt32LE(pe + 24 + 56) : 0
+  if (startup) requireValue(alignment >= 512 && alignment <= 65536 && (alignment & (alignment - 1)) === 0, 'joined PE file alignment')
   for (let i = 0; i < count; i++) {
     const at = start + i * 40, name = boot.toString('ascii', at, at + 8).replace(/\0.*$/, '')
     const bytes = boot.readUInt32LE(at + 8), size = boot.readUInt32LE(at + 16), offset = boot.readUInt32LE(at + 20)
+    if (startup && (size > 0 || bytes > 0)) {
+      const address = boot.readUInt32LE(at + 12)
+      const loaded = Math.max(bytes, size)
+      requireValue((size === 0 || (offset >= start + count * 40 && offset % alignment === 0 && size % alignment === 0 && offset + size <= boot.length))
+        && address + loaded <= imageSize, 'joined PE section bounds')
+      requireValue(ranges.every(r => (size === 0 || r.size === 0 || offset + size <= r.offset || r.offset + r.size <= offset)
+        && (address + loaded <= r.address || r.address + r.bytes <= address)), 'joined PE overlapping section')
+      ranges.push({ offset, size, address, bytes: loaded })
+    }
     if (name === '.initrd') {
       requireValue(bytes > 0 && size >= bytes && offset >= start + count * 40 && offset + size <= boot.length, 'joined initrd bounds')
+      if (startup) requireValue(bytes <= INITRD_LIMIT && size === Math.ceil(bytes / alignment) * alignment
+        && boot.subarray(offset + bytes, offset + size).every(b => b === 0), 'joined compressed initrd load/padding bound')
       initrds.push(boot.subarray(offset, offset + bytes))
     }
   }
   requireValue(initrds.length === 1, 'joined unique initrd')
+  if (startup) return verifyStartupCpio(decodeStartupFrame(initrds[0]!), expected)
   const cpio = initrds[0]!, names = new Set<string>(), matched = new Set<string>()
+  requireValue(cpio.length <= INITRD_LIMIT, 'joined raw initrd bound')
   const wanted: Record<string, string> = { init: 'mos-init', 'sbin/mos-shutdown': 'mos-shutdown', 'exitrd/shutdown': 'mos-shutdown' }
   let at = 0, trailer = false
   const align = (value: number) => Math.ceil(value / 4) * 4
@@ -541,7 +656,8 @@ export function verifyJoinedNativePayload(boot: Buffer, expected: Record<string,
 }
 
 /** Authenticate every MOSUPD01 object using bounded reads, without unpacking it. */
-export function verifyArchive(path: string, keys: readonly string[], joinedNative = false) {
+export function verifyArchive(path: string, keys: readonly string[], joinedNative: boolean | typeof STARTUP_SOURCE = false) {
+  requireValue(joinedNative === false || joinedNative === true || joinedNative === STARTUP_SOURCE, 'joined native source role')
   regular(path)
   const fd = openSync(path, 'r')
   const exact = (length: number) => {
@@ -567,7 +683,8 @@ export function verifyArchive(path: string, keys: readonly string[], joinedNativ
       const chunks: Buffer[] = []
       for (let remaining = bytes; remaining > 0;) { const count = Math.min(65536, remaining), chunk = exact(count); hash.update(chunk); if (nativeBoot) chunks.push(chunk); remaining -= count }
       requireValue(hash.digest('hex') === sha, 'update object digest')
-      if (nativeBoot) verifyJoinedNativePayload(Buffer.concat(chunks), JOIN_NATIVE)
+      if (nativeBoot) verifyJoinedNativePayload(Buffer.concat(chunks), joinedNative === STARTUP_SOURCE ? STARTUP_NATIVE : JOIN_NATIVE,
+        joinedNative === STARTUP_SOURCE ? STARTUP_SOURCE : JOIN_REBUILT.commit)
     }
     requireValue(readSync(fd, Buffer.alloc(1)) === 0, 'trailing update archive bytes')
     return deployment
@@ -589,7 +706,13 @@ export function gateRelease(dir: string, keys: readonly string[]) {
   requireValue(canonicalJson(developmentDomains) === canonicalJson(m.developmentDomains), 'development marker differs')
   requireValue(m.channel === 'development' || developmentDomains.length === 0, 'development keys cannot use customer channels')
   requireValue(evidence(JSON.parse(read(join(dir, 'board-evidence.json'))), m.board) === m.bootAssurance, 'evidence assurance differs')
-  const joined = record(record(readRuntime(join(dir, 'rootfs-report.runtime.json')).provenance).source_lineage).schema === 'mos/source-lineage/join-v1'
+  const runtime = record(readRuntime(join(dir, 'rootfs-report.runtime.json')).provenance)
+  const lineage = record(runtime.source_lineage)
+  let joined: boolean | typeof STARTUP_SOURCE = false
+  if (lineage.schema === 'mos/source-lineage/join-v1') {
+    sourceLineage(lineage, m.source, m.board === 'x64' ? 'amd64' : 'arm64', record(runtime.capture_sha256))
+    joined = record(record(lineage.producer_join).rebuilt_source).commit === STARTUP_SOURCE ? STARTUP_SOURCE : true
+  }
   const deployment = verifyArchive(join(dir, 'update.mosupd'), keys, joined)
   requireValue(deployment.board === m.board && deployment.version === m.version, 'update board or version differs')
   const firmware = authenticateFirmware(read(join(dir, 'firmware.json'), 16384), keys)

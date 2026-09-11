@@ -54,6 +54,17 @@ JOIN_CONSUMERS = frozenset({
     'docs/task/20260911-0145-b7-fresh-lifecycle-acceptance.md',
     'docs/plan/20260911-0145-b7-fresh-lifecycle-acceptance.md',
 })
+STARTUP_REBUILT = dict(commit='438c9551ec751fcb346881541752a7596f10cb15',
+                       tree='775874cfdce2ef40b7f51ae3090c6c6706a5deae', epoch=1789167215,
+                       version='0.1.0+git438c9551ec75-1')
+STARTUP_NATIVE = {
+    'mos-init': dict(bytes=2403504, sha256='57c865ed0b58740faaba642cc417a0b0a3a487f3b6718a1e2fcc7e1355bdea97'),
+    'mos-shutdown': dict(bytes=2047144, sha256='77bf04b463ece3b0aaba03fa0f91fe0939faa87c5b9b81937b24636b3e2ef1ea'),
+}
+STARTUP_NATIVE_RECEIPT = 'e66650563f340e0ce8f722a7812f36bba8012ee98e3e220aa2bbea5d1864afc0'
+STARTUP_NATIVE_DELIVERY_SHA = '259d757fbdaeaa12892631e4ea129cdd433a97876d0f482515463676c811c445'
+STARTUP_NATIVE_INPUTS_SHA = '339d8f39a461d7e7eafe36c503c88cc7a112a2ad90b9ff4ddad444c0757c5563'
+STARTUP_RUST_IMAGE = 'sha256:b13d4a7b877c9d6dd9a2766c4e80f1fd020218715d62877c69ce0dc2abe4fc12'
 
 
 def require(ok: bool, message: str) -> None:
@@ -368,15 +379,54 @@ def join_delta(original_root: Path, rebuilt_root: Path, original: dict, rebuilt:
 def rebuilt_witness(path: Path, kind: str, root: Path, entries: dict) -> dict:
     # The fixed receipt digest identifies the reviewed execution; source, steps,
     # tools, input objects and actual output bytes still have to verify below.
-    require(sha(path) == JOIN_RECEIPTS[kind], 'unreviewed or mutated producer witness')
+    require(kind in ('native', 'deploy', 'startup-native'), 'unreviewed producer witness role')
+    startup = kind == 'startup-native'
+    if startup:
+        kind = 'native'
+    source = STARTUP_REBUILT if startup else JOIN_REBUILT
+    native_exports = STARTUP_NATIVE if startup else JOIN_NATIVE
+    require(sha(path) == (STARTUP_NATIVE_RECEIPT if startup else JOIN_RECEIPTS[kind]), 'unreviewed or mutated producer witness')
     value = load(path)
+    if startup:
+        keys(value, 'schema status exitCode finishedAt activePid activeStep verifiedSource sourceCommit sourceTree sourceEpoch version sourceDirectory environment outputDirectory runner wrapper toolIdentity outputs sourceInputs executionReceipt evidence steps')
+        require(value['schema'] == 'mos/startup-producer-witness/v1', 'startup witness schema')
+        execution = keys(value['executionReceipt'], 'path bytes sha256')
+        require(execution['sha256'] == STARTUP_NATIVE_DELIVERY_SHA and sha(Path(execution['path'])) == execution['sha256'], 'startup original execution receipt')
+        original = load(Path(execution['path']))
+        runtime, production = original['nativeRuntime'], original['production']
+        require(runtime['exit'] == 0 and runtime['removed'] is True and runtime['end'] == value['finishedAt']
+                and production['clean'] is True, 'startup execution terminal')
+        require(production['source'] == source['commit'] and production['tree'] == source['tree'] and production['epoch'] == source['epoch']
+                and production['producer'] == 'boot' and production['architecture'] == 'amd64'
+                and production['target'] == 'x86_64-unknown-linux-gnu' and production['bins'] == ['mos-init', 'mos-shutdown']
+                and production['image'] == value['toolIdentity']['id'] == STARTUP_RUST_IMAGE
+                and production['checkout'] == value['sourceDirectory'] and production['outputs'] == value['outputs']
+                and production['flags'] == ['-C', 'target-feature=+crt-static', '-C', 'strip=symbols'], 'startup execution source/tool/flags/outputs')
+        require(value['evidence'] == original['nativeEvidence'] and value['evidence'], 'startup execution evidence membership')
+        paths = set()
+        for row in [execution, *value['evidence']]:
+            keys(row, 'path bytes sha256')
+            at = Path(row['path']); info = at.lstat()
+            require(row['path'] not in paths and stat.S_ISREG(info.st_mode) and info.st_size == row['bytes']
+                    and sha(at) == hex_id(row['sha256']), 'startup execution evidence bytes/type/set')
+            paths.add(row['path'])
+        inputs = []
+        for row in value['sourceInputs']:
+            keys(row, 'path bytes sha256')
+            relative_path = Path(row['path']).relative_to(value['sourceDirectory']).as_posix()
+            inputs.append(dict(row, path=relative_path))
+            require((root / relative_path).stat().st_size == row['bytes'], 'startup input size')
+        require(hashlib.sha256(canonical(inputs)).hexdigest() == STARTUP_NATIVE_INPUTS_SHA, 'startup complete input membership/bytes')
+        require(len(value['steps']) == 1, 'startup execution step membership')
+        step = value['steps'][0]
+        require(sha(Path(step['stderr'])) == hex_id(step['stderrSha256']), 'startup execution stderr bytes')
     require(value['status'] == 'success' and value['exitCode'] == 0 and value['finishedAt']
             and value['activePid'] is None and value['activeStep'] is None, 'failed/incomplete producer witness')
-    require(value['verifiedSource'] == {k: JOIN_REBUILT[k] for k in ('commit', 'tree', 'epoch')}
-            and value['sourceCommit'] == JOIN_REBUILT['commit'] and value['sourceTree'] == JOIN_REBUILT['tree']
-            and value['version'] == JOIN_REBUILT['version'] and value['sourceEpoch'] == JOIN_REBUILT['epoch'],
+    require(value['verifiedSource'] == {k: source[k] for k in ('commit', 'tree', 'epoch')}
+            and value['sourceCommit'] == source['commit'] and value['sourceTree'] == source['tree']
+            and value['version'] == source['version'] and value['sourceEpoch'] == source['epoch'],
             'producer witness source/version/epoch')
-    require(value['environment']['SOURCE_DATE_EPOCH'] == str(JOIN_REBUILT['epoch']), 'producer epoch input')
+    require(value['environment']['SOURCE_DATE_EPOCH'] == str(source['epoch']), 'producer epoch input')
     expected = (['bash', 'pkgs/mos-deploy/hack/build-deb.sh', '--producer', 'boot', '--bins',
                  'mos-init mos-shutdown', '--arch', 'amd64', '--stage', value['outputDirectory']]
                 if kind == 'native' else ['bash', 'build-env/deb/build.sh', '--producer', 'deploy', '--arch', 'amd64'])
@@ -403,10 +453,10 @@ def rebuilt_witness(path: Path, kind: str, root: Path, entries: dict) -> dict:
         at = Path(row['path']); info = at.lstat()
         require(stat.S_ISREG(info.st_mode) and info.st_size == row['bytes'] and sha(at) == hex_id(row['sha256']), 'producer output bytes')
         if kind == 'native':
-            require(at.name in JOIN_NATIVE and {k: row[k] for k in ('bytes', 'sha256')} == JOIN_NATIVE[at.name]
+            require(at.name in native_exports and {k: row[k] for k in ('bytes', 'sha256')} == native_exports[at.name]
                     and stat.S_IMODE(info.st_mode) == 0o755, 'native output identity/mode')
     if kind == 'native':
-        require({Path(r['path']).name for r in outputs} == set(JOIN_NATIVE), 'missing native output')
+        require({Path(r['path']).name for r in outputs} == set(native_exports), 'missing native output')
     else:
         require(outputs[0]['sha256'] == JOIN_DEPLOY_SHA, 'rebuilt deploy output')
     return value

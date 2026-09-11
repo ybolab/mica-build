@@ -460,3 +460,100 @@ control. Broad ARM acceptance remains deferred until approved main integration.
   The detached production checkout remains clean; the worker branch contains
   only tracking updates for this continuation. B7 and shared resources were
   untouched. Full-system and physical CX acceptance remain pending.
+
+### Approved startup consumer continuation (2026-09-11 23:14 UTC)
+
+- L1 approved the exact 438 source/witness and compressed-native consumer scope;
+  B granted one serial 2 CPU/4 GiB x64 source fixture slot. No generic approval
+  remains. The finished 438 native producer and direct proofs are not replayed.
+- Authorized exact local synchronization: 5d7d8c13303ba385730403921cad4721ab2d2c39,
+  tree a34334fbba80aaa4473cbd4d0d33569a90361867, parents 2d436370 and 438c9551.
+  The merge is clean, preserves both records/indexes, and leaves the separate
+  production checkout and all previous artifacts immutable.
+- Work in progress: fixed 438 producer membership and all 15 producer input
+  maps; bounded single-frame zstd/newc validation, exact static manifests and
+  observer symlink; directly affected negative tests. Existing J/fb6 cases and
+  default mixed-source refusals remain separate. No producer path is treated
+  as a composition-only change.
+- Exact deploy and single-target boot-tools input inventories were submitted
+  to B for successor scheduling. Their output identities remain producer
+  results; no second native, full root, ARM or duplicate B7 candidate is run.
+
+#### Native-format and witness checkpoint
+
+- Implemented the fixed 438 native witness in the existing source-lineage
+  boundary. The normalized consumer receipt is
+  `_out/boot-size/consumer/native-witness.json`, 24067 bytes, SHA256
+  e66650563f340e0ce8f722a7812f36bba8012ee98e3e220aa2bbea5d1864afc0.
+  It references the unchanged original delivery 259d757f..., original argv,
+  stdout/stderr, terminal and tool records from the single completed native
+  invocation. Read-only verification checks 49 source inputs, 27 execution
+  evidence files and both actual output hashes. The old fb6 role refuses it.
+- Added a separate 438 native-format route, leaving the old raw representation
+  scoped to the old role. It bounds unique PE ranges, compressed/load bytes,
+  window and expanded output to 64 MiB; requires one checksummed zstd frame;
+  rejects concatenated/skippable/trailing streams and malformed/truncated
+  payloads. Decoding uses the existing pinned Bun runtime and its bundled zstd
+  through a child with a 10-second kill deadline and independent output cap.
+  No dependency, producer recipe, toolchain, target payload or trust pin changed.
+- The newc validator examines entries without extraction: exact root-owned
+  native files, modes, one-executable manifests and only the canonical observer
+  symlink. It rejects extra/unsafe/duplicate members, hardlinks, wrong ownership,
+  bytes, type, mode, target and noncanonical padding. Source/witness/capture
+  validation now precedes joined native inspection; envelope authentication and
+  signed object digest verification still precede decoding.
+- RED history is immutable under `_out/boot-size/consumer/`: initial canonical
+  positive failed `joined cpio header`; the first signed test exposed a missing
+  fixture support file, then its corrected RED reproduced the same format
+  refusal. New witness-role tests initially raised 22 unrecognized-role errors.
+  The ordering RED returned `joined UKI header` instead of the required producer
+  receipt refusal. A later test run passed six tests but its aggregate exited 2
+  for four TypeScript test assertions; those assertions were corrected.
+- GREEN: nine new TypeScript cases across focused single-file invocations,
+  including actual 438 bytes, missing/corrupt/untrusted envelope signatures,
+  authenticated object mutation, a lying expansion claim, manifests/membership,
+  raw and virtual-only PE overlap, and source/capture ordering. Direct old raw,
+  witness and lineage controls passed. The new Python witness test exercises
+  its positive and 21 negative variants; both directly affected witness tests
+  pass. Final TypeScript typecheck passes. These are consumer/source fixtures,
+  not new native, kernel, guest, root or hardware qualification.
+- Retained signed metadata fixture:
+  `consumer-signed-binding/evidence/signed-startup.mosupd`, 2019798 bytes,
+  SHA256 16db8ef40f246c34d5cf5e2194a8e30d75df672f3d01846226fb8a52ee8cbd1f.
+  Its minimal PE payload is 2004992 bytes, SHA256
+  bb0daac49de5cb8d11c5746e32334089ee68c1a0109908d50143db19b5bb83b0.
+  The retained public-key text is base64 Ed25519 despite its fixture `.pem`
+  filename. No private key is exported. These fixture packing sizes are not
+  production -19 compression measurements or UKI Authenticode acceptance.
+- Full original/fb6/438 input maps and both reviewed Git legs are retained in
+  `input-inspection.json`; fb6-to-438 canonical delta SHA256 is
+  b111da81645b0fd91697e18ef464635a7a5cd7c814ed84ba02cabd3a75efca88.
+  All 15 full map hashes change because Makefile loses exactly the obsolete
+  BusyBox test target. The version script only checks that this file exists.
+  Three ARM-only producer maps also contain the focused U-Boot source changes;
+  none supplies an archive in the original 15-member x64 pool. B received the
+  exact proposed existence-only proof, retaining both full maps and refusing
+  any other shared-input change. No input was excluded or declared equal.
+- The full new join creator/record admission is still pending the exact
+  Makefile disposition, new deploy/tool outputs and B7 immutable consumer
+  handoff. This checkpoint does not admit a self-authorized 438 package pool;
+  existing strict defaults and prior records retain their current meaning.
+- Fresh producer checkout prepared at
+  `_out/boot-size/combined-producers-438c9551ec751fcb346881541752a7596f10cb15/source`:
+  clean exact 438/tree775874cf/epoch1789167215; all 59 deploy and 19 boot-tools
+  input files rechecked. B has the exact deploy and single-target x64 commands
+  and a replacement serial 4 CPU/10 GiB request, including task-owned BuildKit
+  capability/driver details. No producer, builder, ARM or full image was run.
+- PMA-CR checked the implemented format/witness boundary and callers. The
+  source-before-decode ordering and virtual-only PE overlap were corrected and
+  tested. No remaining introduced finding in this checkpoint; complete join
+  admission and combined acceptance are explicitly unfinished. All owned
+  fixture containers are terminal and removed; the 2 CPU/4 GiB source
+  reservation is released at this checkpoint, with the temporary worker slot
+  retained. Full-system, physical CX bench inputs and post-main ARM remain
+  pending. Task and plan stay in progress; handoff is for review, never done.
+- A final PMA-CR check found that the new archive validator allowed boot.json
+  above mos-init actual 4096-byte reader budget. The added 4097-byte case first
+  failed with `Received function did not throw`; the validator now uses the
+  witnessed reader limit. Its focused GREEN and final typecheck are retained
+  separately, without rerunning unchanged suites.

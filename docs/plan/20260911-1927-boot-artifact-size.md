@@ -552,3 +552,24 @@ or a guest/full-system acceptance result. The next exact deploy/boot-tools
 input inventories are prepared read-only; their production and shared-consumer
 binding remain pending. The producer allocation is released and the plan stays
 in progress for full-system and mandatory physical CX acceptance.
+
+L1 subsequently approved the exact 438 joined-consumer/source and native-format
+continuation within this plan. The worker synchronized only the reviewed 438
+commit at a clean boundary (merge 5d7d8c13), preserving its tracking records.
+Implementation now binds fixed producer roles, all 15 input maps and bounded
+canonical zstd/newc with exact native manifests/observer identity. Completed
+438 native production is retained; changed deploy/boot-tools production and
+consumer RED/GREEN remain active obligations. Existing B7 acceptance stays
+independent. Full-system and physical CX acceptance remain pending.
+
+The native-format/witness checkpoint implements bounded single-frame decoding,
+strict archive/observer membership and source/capture-before-decode ordering.
+It validates the actual completed 438 native outputs and preserves old-role
+refusals; focused RED/GREEN, signature negatives and typecheck are recorded in
+task 1925. No producer input has been relabeled. Complete new join admission is
+still pending the fixed Makefile existence-only input disposition and actual
+deploy/boot-tools witnesses; all 15 full input maps and both Git legs are
+retained. Exact producer checkout/commands are ready for B scheduling. Source
+fixture resources are terminal and released; no second native, independent
+root/image or ARM production occurred. This is a review checkpoint within the
+active plan, not completion or full-system/hardware acceptance.

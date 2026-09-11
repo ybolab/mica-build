@@ -248,6 +248,72 @@ class SourceLineageTest(unittest.TestCase):
                         with self.assertRaises(ValueError):
                             h.rebuilt_witness(path, 'native', self.package, {})
 
+    def test_startup_native_witness_preserves_exact_source_inputs_and_membership(self):
+        from unittest.mock import patch
+        spec = importlib.util.spec_from_file_location('startup_witness', HELPER)
+        h = importlib.util.module_from_spec(spec); spec.loader.exec_module(h)
+        digest = lambda value: hashlib.sha256(h.canonical(value)).hexdigest()
+        bind = lambda p: dict(path=str(p), bytes=p.stat().st_size, sha256=hashlib.sha256(p.read_bytes()).hexdigest())
+        source = dict(commit='438c9551ec751fcb346881541752a7596f10cb15', tree='775874cfdce2ef40b7f51ae3090c6c6706a5deae', epoch=1789167215, version='0.1.0+git438c9551ec75-1')
+        for p in (self.native, self.shutdown): p.chmod(0o755)
+        outputs = [bind(p) for p in (self.native, self.shutdown)]
+        native = {Path(p['path']).name: {k: p[k] for k in ('bytes', 'sha256')} for p in outputs}
+        paths = ['build-env/from.sh', 'build-env/images.env', 'pkgs/mosd/Cargo.lock']
+        source_inputs = [bind(self.package / p) for p in paths]
+        relative_inputs = [dict(row, path=p) for row, p in zip(source_inputs, paths)]
+        log = self.work / 'startup.log'; log.write_text('successful fixture execution\n')
+        evidence = [bind(log)]
+        execution = self.work / 'startup-execution.json'
+        execution.write_text(json.dumps(dict(nativeRuntime=dict(exit=0, end='finished', removed=True),
+            production=dict(source=source['commit'], tree=source['tree'], epoch=source['epoch'], clean=True, producer='boot',
+                architecture='amd64', target='x86_64-unknown-linux-gnu', bins=['mos-init', 'mos-shutdown'],
+                image='sha256:' + 'a' * 64, checkout=str(self.package), outputs=outputs,
+                flags=['-C', 'target-feature=+crt-static', '-C', 'strip=symbols']), nativeEvidence=evidence)))
+        witness = dict(schema='mos/startup-producer-witness/v1', status='success', exitCode=0, finishedAt='finished', activePid=None, activeStep=None,
+            verifiedSource={k: source[k] for k in ('commit', 'tree', 'epoch')}, sourceCommit=source['commit'], sourceTree=source['tree'], sourceEpoch=source['epoch'], version=source['version'],
+            sourceDirectory=str(self.package), environment={'SOURCE_DATE_EPOCH': str(source['epoch'])}, outputDirectory=str(self.work),
+            runner=bind(log), wrapper=bind(log), toolIdentity=dict(id='sha256:' + 'a' * 64, architecture='amd64'), outputs=outputs,
+            sourceInputs=source_inputs, executionReceipt=bind(execution), evidence=evidence,
+            steps=[dict(name='native-build', exitCode=0, log=str(log), logSha256=evidence[0]['sha256'], stderr=str(log), stderrSha256=evidence[0]['sha256'],
+                argv=['bash', 'pkgs/mos-deploy/hack/build-deb.sh', '--producer', 'boot', '--bins', 'mos-init mos-shutdown', '--arch', 'amd64', '--stage', str(self.work)])])
+        mutations = {
+            'valid': lambda w: None,
+            'failed': lambda w: w.__setitem__('status', 'failure'),
+            'nonzero': lambda w: w.__setitem__('exitCode', 1),
+            'running': lambda w: w.__setitem__('activePid', 1),
+            'source': lambda w: w.__setitem__('sourceCommit', 'f' * 40),
+            'tree': lambda w: w.__setitem__('sourceTree', 'f' * 40),
+            'epoch': lambda w: w['environment'].__setitem__('SOURCE_DATE_EPOCH', '1'),
+            'version': lambda w: w.__setitem__('version', self.version),
+            'tool': lambda w: w['toolIdentity'].__setitem__('architecture', 'arm64'),
+            'command': lambda w: w['steps'][0]['argv'].__setitem__(6, 'mos-init'),
+            'duplicate-step': lambda w: w['steps'].append(w['steps'][0]),
+            'missing-native': lambda w: w['outputs'].pop(),
+            'extra-native': lambda w: w['outputs'].append(w['outputs'][0]),
+            'duplicate-native': lambda w: w['outputs'].__setitem__(1, w['outputs'][0]),
+            'native-bytes': lambda w: w['outputs'][0].__setitem__('sha256', '9' * 64),
+            'missing-input': lambda w: w['sourceInputs'].pop(),
+            'extra-input': lambda w: w['sourceInputs'].append(w['sourceInputs'][0]),
+            'input-bytes': lambda w: w['sourceInputs'][0].__setitem__('sha256', '9' * 64),
+            'missing-evidence': lambda w: w['evidence'].clear(),
+            'execution': lambda w: w['executionReceipt'].__setitem__('sha256', '9' * 64),
+            'stderr': lambda w: w['steps'][0].__setitem__('stderrSha256', '9' * 64),
+            'unknown': lambda w: w.__setitem__('waiver', True),
+        }
+        entries = h.tree(self.package, self.commit_id)
+        for name, mutate in mutations.items():
+            with self.subTest(name=name):
+                value = json.loads(json.dumps(witness)); mutate(value)
+                at = self.work / (name + '-startup.json'); at.write_text(json.dumps(value))
+                # Only fixed review anchors are replaced; all structure, source,
+                # input/output bytes and terminal checks execute normally.
+                with patch.multiple(h, create=True, STARTUP_NATIVE_RECEIPT=bind(at)['sha256'], STARTUP_NATIVE=native,
+                    STARTUP_NATIVE_INPUTS_SHA=digest(relative_inputs), STARTUP_NATIVE_DELIVERY_SHA=bind(execution)['sha256'], STARTUP_RUST_IMAGE='sha256:' + 'a' * 64), \
+                    patch.dict(os.environ, PATH=self.env['PATH']):
+                    if name == 'valid': self.assertEqual(h.rebuilt_witness(at, 'startup-native', self.package, entries), value)
+                    else:
+                        with self.assertRaises(ValueError): h.rebuilt_witness(at, 'startup-native', self.package, entries)
+
     def test_joined_package_gate_refuses_duplicate_options_before_work(self):
         result = run('bash', str(REPO / 'tests/deb-package-gate.sh'), '--joined-inputs', 'one',
                      '--joined-inputs', 'two', '--receipt', 'three', '--receipt-sha256', 'four',
