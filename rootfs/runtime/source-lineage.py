@@ -34,6 +34,8 @@ JOIN_ORIGINAL = dict(commit='e176876b733d675d1e20b40b42628cd4e18b197d',
 JOIN_REBUILT = dict(commit='fb6c4597bb902f69d528bcdc3c8372f310c322b1',
                     tree='cbf2fa8ff2c8fc03534b218c952a511b6a6ba392', epoch=1789157855,
                     version='0.1.0+gitfb6c4597bb90-1')
+JOIN_LEGACY_COMPOSITION = dict(commit='fdf8a480057b64073c9b9e15e399fca1b38d607d',
+                               tree='7eed91c48aa9a00fc75d8661260aac78a004c00e', epoch=1789162665)
 JOIN_DELTA_SHA = '25a8aa2051a6c6cc968554828a50a875781f9d5076f48127e2d295ab2110cbf1'
 JOIN_POOL_SHA = 'de26c7fd9d4e5b76ae10aa166659e2d047ede56088a79fd46024fb419a5b4087'
 JOIN_PRODUCTION_SHA = '3f1fe46df0aa7d686616288b655119baeccba12589951e121321388aa45f3f58'
@@ -54,6 +56,17 @@ JOIN_CONSUMERS = frozenset({
     'docs/task/20260911-0145-b7-fresh-lifecycle-acceptance.md',
     'docs/plan/20260911-0145-b7-fresh-lifecycle-acceptance.md',
 })
+
+
+# This separately reviewed tool producer is not a composition-only exception.
+BOOT_SOURCE = dict(commit='4716a2b2020737559fa8798c01fb37e3900ec6e6',
+                   tree='cf419477827eb9441ad9c26eb4d18cbd5b303b30', epoch=1789163851)
+BOOT_DELTA_SHA = '7980a20a82e540338b76dbd0eaf6ac99001aec6dc6545a8ac4ea99446a7aaf76'
+BOOT_RECEIPT_SHA = 'af5bc012346a99d360612a1340df58de35265b9a7cc638d2286401b2a3ab7112'
+BOOT_RESULT_SHA = 'd7acc26c71a82faf763e7fa36e564184cb5b95027a2a059af688746f709319b2'
+BOOT_ROLE_SHA = 'a893b517c2a249afed8d34d323e6f5148aa55ec353c9956f5e422766d516b664'
+BOOT_PRODUCER_PATHS = frozenset({'pkgs/mos-boot/build-tools.sh', 'pkgs/mos-boot/Dockerfile'})
+BOOT_DIRECT_TEST = 'tests/boot-busybox-package-test.sh'
 
 
 def require(ok: bool, message: str) -> None:
@@ -425,9 +438,85 @@ def production_identity(root: Path, entries: dict, native: dict, deploy: dict) -
                 shutdown_target_flags=['-C', 'target-feature=+crt-static', '-C', 'strip=symbols'])
 
 
+def validate_boot_role(role: dict) -> dict:
+    keys(role, 'schema source approved_delta inputs unchanged_producers_sha256 source_readiness_sha256 receipt_sha256 production')
+    require(hashlib.sha256(canonical(role)).hexdigest() == BOOT_ROLE_SHA,
+            'boot-tools reviewed producer/source/input/output witness')
+    require(role['receipt_sha256'] == BOOT_RECEIPT_SHA, 'boot-tools receipt')
+    return role
+
+
+def boot_witness(root: Path, rebuilt_root: Path, middle: dict, path: Path) -> tuple[dict, dict]:
+    source, entries = identity(root)
+    require(source == BOOT_SOURCE, 'unreviewed boot-tools source')
+    command(['git', '-C', str(root), 'merge-base', '--is-ancestor', JOIN_REBUILT['commit'], source['commit']])
+    changes = [dict(path=name, before=middle.get(name), after=entries.get(name))
+               for name in sorted(middle.keys() | entries.keys()) if middle.get(name) != entries.get(name)]
+    require(hashlib.sha256(canonical(changes)).hexdigest() == BOOT_DELTA_SHA, 'unreviewed boot-tools producer delta')
+    require(all(row['path'] in JOIN_CONSUMERS | BOOT_PRODUCER_PATHS | {BOOT_DIRECT_TEST} for row in changes),
+            'unexpected boot-tools producer/test attribution')
+    original_inputs = producer_inputs(rebuilt_root, middle)
+    require(original_inputs == producer_inputs(root, entries), 'boot-tools changes native/deploy/PREPARE inputs')
+    require(sha(path) == BOOT_RECEIPT_SHA, 'unreviewed boot-tools output witness')
+    output = keys(load(path), 'schema source target platform manifest config layers provenance payload inspection production producer_command aggregate_status aggregate_error build_exit_code collection_exit_code inputs collector')
+    require(output['schema'] == 'mos/boot-tool-output/v1' and output['source'] == source
+            and output['target'] == 'x64' and output['platform'] == 'linux/amd64'
+            and output['build_exit_code'] == output['collection_exit_code'] == 0, 'boot-tools producer/collection result')
+    for item in [*output['inputs'], output['production'], output['collector']]:
+        keys(item, 'path bytes sha256')
+        at = Path(item['path'])
+        require(at.is_file() and not at.is_symlink() and at.stat().st_size == item['bytes']
+                and sha(at) == hex_id(item['sha256']), 'boot-tools witness bytes')
+    require(output['production']['sha256'] == BOOT_RESULT_SHA, 'boot-tools original production record')
+    produced = load(Path(output['production']['path']))
+    # The exact preserved recorder failed after a successful build and import.
+    # Only this reviewed terminal is accepted; a failed producer is not.
+    require(produced['exitCode'] == 1 and produced['status'] == output['aggregate_status'] == 'failure'
+            and produced['error'] == output['aggregate_error'] == "'containerimage.config.digest'",
+            'boot-tools original recorder disposition')
+    require(produced['verifiedSource'] == source and produced['sourceCommit'] == source['commit']
+            and produced['sourceTree'] == source['tree'] and produced['sourceEpoch'] == source['epoch'], 'boot-tools producer source')
+    steps = {step['name']: step for step in produced['steps']}
+    require(len(steps) == len(produced['steps']) == 10 and steps['boot-tools-build'] == output['producer_command']
+            and steps['boot-tools-build']['argv'] == ['bash', 'pkgs/mos-boot/build-tools.sh', '--target', 'x64']
+            and steps['boot-tools-build']['timeoutSeconds'] == 3600
+            and steps['boot-tools-build']['exitCode'] == steps['actual-image-identity']['exitCode'] == 0,
+            'boot-tools successful command/target/import')
+    for step in produced['steps']:
+        require(step['exitCode'] == step['expectedExit'] and sha(Path(step['log'])) == step['logSha256'], 'boot-tools production log')
+    for name in ('runner', 'wrapper', 'sourceReadiness'):
+        item = produced[name]
+        require(sha(Path(item['path'])) == item['sha256'], 'boot-tools producer invocation/input')
+    readiness = load(Path(produced['sourceReadiness']['path']))
+    names = sorted(set(readiness['bootContext']) | set(readiness['protectedInputs']))
+    inputs = {name: dict(entries[name], sha256=sha(root / name)) for name in names}
+    require(all(inputs[name] == item for name, item in produced['sourceInputs'].items()), 'boot-tools source mode/blob/bytes')
+    actual = json.loads(command(['docker', 'image', 'inspect', output['manifest']]))
+    require(len(actual) == 1 and actual[0]['Id'] == output['manifest'] and actual[0]['Architecture'] == 'amd64'
+            and actual[0]['Os'] == 'linux' and actual[0]['Config']['Labels']['mos.source.commit'] == source['commit']
+            and actual[0]['Config']['Labels']['mos.source.tree'] == source['tree']
+            and actual[0]['Config']['Labels']['mos.boot.target'] == 'x64'
+            and actual[0]['RootFS']['Layers'] == [layer['diff_id'] for layer in output['layers']], 'boot-tools actual immutable image')
+    for name, expected in output['payload'].items():
+        at = path.parent / 'payload' / relative(name)
+        require(at.parent.resolve().is_relative_to((path.parent / 'payload').resolve())
+                and at.is_file() and not at.is_symlink() and at.stat().st_size == expected['bytes']
+                and sha(at) == expected['sha256'], 'boot-tools actual payload bytes')
+    role = dict(schema='mos/boot-tools-producer/v1', source=source, approved_delta=changes, inputs=inputs,
+                unchanged_producers_sha256=hashlib.sha256(canonical(original_inputs)).hexdigest(),
+                source_readiness_sha256=produced['sourceReadiness']['sha256'], receipt_sha256=BOOT_RECEIPT_SHA,
+                production=dict(target='x64', platform='linux/amd64', manifest=output['manifest'], config=output['config'],
+                                layers=output['layers'], provenance=output['provenance'], payload=output['payload'],
+                                daemon_image=produced['resourceBefore']['image']))
+    return validate_boot_role(role), entries
+
+
 def validate_join(join: dict, pool: dict, original: dict, arch: str) -> dict:
-    keys(join, 'schema rebuilt_source approved_delta producer_inputs original_pool witnesses mapping native production')
-    require(join['schema'] == 'mos/producer-join/v1' and arch == 'amd64'
+    boot = join.get('schema') == 'mos/producer-join/boot-tools-v1'
+    keys(join, 'schema rebuilt_source approved_delta producer_inputs original_pool witnesses mapping native production' + (' boot_tools' if boot else ''))
+    if boot:
+        validate_boot_role(join['boot_tools'])
+    require(join['schema'] in ('mos/producer-join/v1', 'mos/producer-join/boot-tools-v1') and arch == 'amd64'
             and original == JOIN_ORIGINAL and join['rebuilt_source'] == JOIN_REBUILT, 'producer join source/architecture')
     require(join['witnesses'] == JOIN_RECEIPTS, 'producer join witnesses')
     require(hashlib.sha256(canonical(join['production'])).hexdigest() == JOIN_PRODUCTION_SHA, 'producer join tool/recipe/target/flags')
@@ -459,14 +548,22 @@ def validate_join(join: dict, pool: dict, original: dict, arch: str) -> dict:
 def create_join(composition_root: Path, original_root: Path, pool: Path, arch: str, epoch: int,
                 receipt: Path | None, receipt_sha: str | None, request: Path, request_sha: str) -> dict:
     require(sha(request) == hex_id(request_sha), 'join input digest')
-    inputs = keys(load(request), 'schema original_pool rebuilt_source native_receipt deploy_receipt pool_files')
-    require(inputs['schema'] == 'mos/producer-join-inputs/v1' and arch == 'amd64' and epoch == 1577836800, 'join input schema/architecture/epoch')
+    inputs = load(request)
+    boot = inputs.get('schema') == 'mos/producer-join-inputs/boot-tools-v1'
+    keys(inputs, 'schema original_pool rebuilt_source native_receipt deploy_receipt pool_files' + (' boot_source boot_receipt' if boot else ''))
+    require(inputs['schema'] in ('mos/producer-join-inputs/v1', 'mos/producer-join-inputs/boot-tools-v1') and arch == 'amd64' and epoch == 1577836800, 'join input schema/architecture/epoch')
     rebuilt_root = Path(inputs['rebuilt_source'])
     c, after = identity(composition_root); p, before = identity(original_root); b, middle = identity(rebuilt_root)
     p['version'] = command(['bash', str(original_root / 'build-env/deb/version.sh')]).decode().strip()
     b['version'] = command(['bash', str(rebuilt_root / 'build-env/deb/version.sh')]).decode().strip()
     approved_delta, proofs = join_delta(original_root, rebuilt_root, p, b, before, middle)
-    changes = delta(rebuilt_root, composition_root, b, c, middle, after)
+    role = None
+    if boot:
+        boot_root = Path(inputs['boot_source'])
+        role, boot_entries = boot_witness(boot_root, rebuilt_root, middle, Path(inputs['boot_receipt']))
+        changes = delta(boot_root, composition_root, BOOT_SOURCE, c, boot_entries, after)
+    else:
+        changes = delta(rebuilt_root, composition_root, b, c, middle, after)
     require(all(row['path'] in JOIN_CONSUMERS for row in changes), 'unapproved joined consumer delta')
     original_pool = pool_identity(Path(inputs['original_pool']), arch, p['version'])
     require(receipt_sha == JOIN_RECEIPTS['original'], 'unreviewed original receipt')
@@ -484,9 +581,11 @@ def create_join(composition_root: Path, original_root: Path, pool: Path, arch: s
                 mapping={name: (b if name == 'mos-deploy' else p)['commit'] for name in versions},
                 native={Path(r['path']).name: {k: r[k] for k in ('bytes', 'sha256')} for r in native['outputs']},
                 production=production_identity(rebuilt_root, middle, native, deploy))
+    if role is not None:
+        join.update(schema='mos/producer-join/boot-tools-v1', boot_tools=role)
     record = dict(schema='mos/source-lineage/join-v1', package_source=p, composition_source=c,
                   architecture=arch, root_epoch=epoch, pool=joined_pool,
-                  receipt_sha256=sorted(JOIN_RECEIPTS.values()), delta=changes, producer_join=join)
+                  receipt_sha256=sorted([*JOIN_RECEIPTS.values(), *([BOOT_RECEIPT_SHA] if boot else [])]), delta=changes, producer_join=join)
     return validate(record, arch, epoch)
 
 
@@ -538,7 +637,11 @@ def validate(record: dict, arch: str, epoch: int) -> dict:
         expected.add(row['archive'])
     require(set(pool['files']) == expected, 'lineage pool membership')
     if joined:
-        require(record['receipt_sha256'] == sorted(JOIN_RECEIPTS.values()) and epoch == 1577836800, 'join receipt/root epoch')
+        boot = record['producer_join'].get('schema') == 'mos/producer-join/boot-tools-v1'
+        if not boot:
+            require(c == JOIN_LEGACY_COMPOSITION, 'boot-tools witness omitted or downgraded')
+        require(record['receipt_sha256'] == sorted([*JOIN_RECEIPTS.values(), *([BOOT_RECEIPT_SHA] if boot else [])])
+                and epoch == 1577836800, 'join receipt/root epoch')
         require(all(path in JOIN_CONSUMERS for path in paths), 'unapproved joined consumer delta')
         validate_join(record['producer_join'], pool, p, arch)
     return record

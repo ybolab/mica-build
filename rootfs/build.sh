@@ -316,6 +316,21 @@ tree_version=$(python3 "$REPO_ROOT/rootfs/runtime/source-lineage.py" \
     --composition-source "$REPO_ROOT" --pool "$POOL_DIR" --arch "$MOS_ARCH" \
     --epoch "$SQUASHFS_TIME" --output "$LINEAGE_STAGE" "${LINEAGE_ARGS[@]}")
 tree_stamp=${tree_version##*+}
+# The explicit named tool witness is verified before any resolver/container.
+# Propagate its immutable manifest identity; a tag/config digest cannot replace it.
+boot_tools_image=$(python3 - "$LINEAGE_STAGE" <<'PY_BOOT_TOOL'
+import json, sys
+record = json.load(open(sys.argv[1]))
+joined = record.get('producer_join', {})
+if joined.get('schema') == 'mos/producer-join/boot-tools-v1':
+    print(joined['boot_tools']['production']['manifest'])
+PY_BOOT_TOOL
+)
+if [ -n "$boot_tools_image" ]; then
+    [ "${MOS_BOOT_TOOLS_IMAGE:-$boot_tools_image}" = "$boot_tools_image" ] ||
+        pool_refusal "boot-tools image differs from the verified producer witness."
+    export MOS_BOOT_TOOLS_IMAGE="$boot_tools_image"
+fi
 [ -n "${MOS_ROOTFS_PRODUCER_JOIN:-}" ] || [ "$pool_stamp" = "$tree_stamp" ] ||
     pool_refusal "the $MOS_ARCH pool was built at stamp '$pool_stamp' and the verified package source is '$tree_stamp'."
 echo "pool: $POOL_DIR, $pool_debs archive(s) at stamp $pool_stamp"

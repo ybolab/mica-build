@@ -155,7 +155,7 @@ class SourceLineageTest(unittest.TestCase):
                       architecture='amd64', root_epoch=1577836800, pool=pool, receipt_sha256=sorted(receipts.values()), delta=[], producer_join=join)
         fixture_policy = patch.multiple(h, JOIN_ORIGINAL=self.source, JOIN_REBUILT=rebuilt,
             JOIN_PRODUCTION_SHA=canonical_sha({'fixture': True}), JOIN_POOL_SHA=canonical_sha(original), JOIN_INPUTS_SHA=canonical_sha(proofs), JOIN_DELTA_SHA=canonical_sha([]),
-            JOIN_RECEIPTS=receipts, JOIN_DEPLOY_SHA=new_deploy['sha256'], JOIN_DEPLOY_CONTROL=new_deploy['control_sha256'], JOIN_NATIVE=native)
+            JOIN_LEGACY_COMPOSITION=record['composition_source'], JOIN_RECEIPTS=receipts, JOIN_DEPLOY_SHA=new_deploy['sha256'], JOIN_DEPLOY_CONTROL=new_deploy['control_sha256'], JOIN_NATIVE=native)
         return h, json.loads(json.dumps(record)), fixture_policy
 
     def test_join_record_keeps_separate_sources_pool_shape_and_native(self):
@@ -166,6 +166,34 @@ class SourceLineageTest(unittest.TestCase):
             self.assertNotEqual(record['package_source'], record['producer_join']['rebuilt_source'])
             self.assertEqual(set(record['producer_join']['native']), {'mos-init', 'mos-shutdown'})
             self.assertNotIn(str(self.work).encode(), h.canonical(record))
+
+    def test_named_boot_tool_join_preserves_independent_source_roles(self):
+        from unittest.mock import patch
+        h, record, policy = self.joined_validation_fixture()
+        role = dict(schema='mos/boot-tools-producer/v1', source=dict(commit='a' * 40, tree='b' * 40, epoch=1577923350),
+                    approved_delta=[], inputs={}, unchanged_producers_sha256='6' * 64,
+                    source_readiness_sha256='7' * 64, receipt_sha256='8' * 64,
+                    production=dict(target='x64', platform='linux/amd64', manifest='sha256:' + '9' * 64))
+        record['composition_source'] = dict(commit='a1' * 20, tree='b1' * 20, epoch=1577923500)
+        record['producer_join'].update(schema='mos/producer-join/boot-tools-v1', boot_tools=role)
+        record['receipt_sha256'].append(role['receipt_sha256']); record['receipt_sha256'].sort()
+        with policy, patch.multiple(h, BOOT_ROLE_SHA=hashlib.sha256(h.canonical(role)).hexdigest(), BOOT_RECEIPT_SHA=role['receipt_sha256'], create=True):
+            self.assertEqual(h.validate(record, 'amd64', 1577836800), record)
+            self.assertNotEqual(role['source']['commit'], record['producer_join']['rebuilt_source']['commit'])
+            self.assertNotIn('pkgs/mos-boot/Dockerfile', h.COMPOSITION_PATHS)
+            self.assertNotIn('tests/boot-busybox-package-test.sh', h.JOIN_CONSUMERS)
+            for path, value in [('source', {}), ('production', {}), ('receipt_sha256', '0' * 64), ('inputs', {'unreviewed': True})]:
+                changed = json.loads(json.dumps(record)); changed['producer_join']['boot_tools'][path] = value
+                with self.subTest(path=path), self.assertRaises(ValueError): h.validate(changed, 'amd64', 1577836800)
+            for name in ('missing-role', 'missing-receipt', 'consumer-waiver', 'downgrade'):
+                changed = json.loads(json.dumps(record))
+                if name == 'missing-role': del changed['producer_join']['boot_tools']
+                elif name == 'missing-receipt': changed['receipt_sha256'].remove(role['receipt_sha256'])
+                elif name == 'downgrade':
+                    changed['producer_join'].pop('boot_tools'); changed['producer_join']['schema'] = 'mos/producer-join/v1'
+                    changed['receipt_sha256'].remove(role['receipt_sha256'])
+                else: changed['delta'] = [dict(path='pkgs/mos-boot/Dockerfile', before=None, after=dict(mode='100644', blob='f' * 40))]
+                with self.subTest(name=name), self.assertRaises((ValueError, KeyError)): h.validate(changed, 'amd64', 1577836800)
 
     def test_join_record_refuses_mapping_witness_source_and_byte_mutations(self):
         mutations = {
