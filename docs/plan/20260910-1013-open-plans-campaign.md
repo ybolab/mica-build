@@ -165,3 +165,78 @@ publish remotely, or close the campaign.
 The full 31-task/21-plan audit, unresolved owner decisions and exact PMA
 serializer rejections are recorded in the related campaign task. This plan and
 task remain implementing; D3 owns their final lifecycle closure.
+
+### D3 Stage A acceptance-wave tracking — 2026-09-11 UTC
+
+Stage A is a bounded documentation-only continuation authorized before B7 and
+the joint freeze are complete. It starts from merged L2 D commit
+`5c0015d136c5c8a2a56c7b7c98798359a363cf34`, tree
+`beafd207e2334482b6556f143efa902fe81d1049`. The task remains
+`in_progress` / `[-]`, owned by `bkd/z36xbrtu`; this plan remains
+`implementing` / `[-]`. No serializer transition occurs in this stage.
+
+Existing B7 issue `#332` / `75btxdqb`, branch `bkd/75btxdqb`, is the sole joint
+acceptance executor under L2 B `8t4ghqi6`; it is not a new node or hierarchy.
+The reviewed inputs are A-final
+`e4154126b7e38eb90db210adfb412b19535637a8` (tree
+`04de9264c7eb0d190e13852955789ceea7439a71`), C-final
+`48acef7f1a3683b1f3bb6261911b1a5123197da2` (tree
+`553c1e7af96203315f79e7ea61e862f7a753e3a5`), and B0-B6
+`ebdd7208f3c026c96e08d003d9d4f383c22f1eb9` (tree
+`4c1e47337dc6e9787864a31dfbcd570aef21e4f5`). A-final and C-final are
+satisfied, and B0-B6 is reviewed. B7 is still implementing caller, geometry,
+provenance, and acceptance work: caller checkpoint `64387f20` is reviewed;
+geometry checkpoint `5ead205523bdeb6a8cf0cb8dc9c35b2c9f47d56d` is observed
+but not final reviewed evidence.
+
+Joint freeze `J` does not yet exist. It must be the real clean commit/tree
+created only after B7 finishes and reviews its source, synchronizes reviewed
+local B, merges the exact local A and C inputs with explicit `--no-ff`, resolves
+only authorized mechanical index/import/test unions, and obtains review for any
+minimal integration correction. A, C, and reviewed B7 source must all be
+ancestors of `J`; no placeholder is permitted.
+
+The one-`J` acceptance wave is fixed: one fresh x64 image with a 1 GiB SYSTEM;
+one final virt-arm64 image using ordinary cold root run 1 plus exactly one
+independent equal-input no-cache cold root run 2; and one joint CX3576 image
+that reuses A kernel/firmware only after complete input equality while
+rebuilding changed dependent root, boot, signature, record, and image phases.
+There is no new S905X5M image or eMMC installer. Every reuse/rebuild decision
+needs board- and architecture-specific input and provenance records.
+
+B7 may use at most two independent expensive jobs when resources permit. This
+replaces the former A1/B1 blanket heavy serialization without creating a new
+L3. Long jobs remain in persistent tmux with source-bound metadata and
+event-driven collection.
+
+Compatibility support remains out of scope. C's reviewed offline
+`FLEET-CONFIG` production inputs are required in `J`, but the delivered fleet
+protocol is DESIGN only. Client/server fleet runtime, cloud deployment,
+credentials/command channel, curated OCI activation, publication, and `main`
+integration are not authorized.
+
+A's prior current-A image stays historical `PASS_WITH_EXECUTOR_LIMITATION` and
+must not be relabeled as `J`. A retains physical CX3576 and S905X5M bench rows,
+including exact-image install/boot, lifecycle, watchdog/recovery, externally
+timed publication/record-boundary power cuts, HDMI/VT, named NPU/VENC/VDEC and
+peripheral fixtures, native crun on capable S905X5M hardware, and the
+original-device authenticated apid reboot. B7 supplies the joint software
+image/provenance inputs. Reviewed A3 commit
+`209982d98f83ef149d2c3850adc63debc42f4c5a`, integrated through A-final,
+delivers visible-logo restoration on real HPD/VT return while preserving
+authenticated tty2 and DRM/blank/suspend boundaries; exact-`J`-image physical
+HDMI/VT/USB-keyboard/visual acceptance remains pending, and no automated
+evidence qualifies these physical rows.
+
+The exact power-cut matrix independently cuts storage power at download/offline
+import, destination object write and file sync, object directory publication,
+candidate activation, attempt decrement, health confirmation and garbage
+collection, and redundant record write. It requires at least ten cuts per
+installation/activation boundary and fifty randomized redundant-record writes,
+with the actual boundary side recorded; an unknown boundary is inconclusive.
+CPU-only or process-only interruption does not qualify.
+
+Final D3 reconciliation remains blocked on a reviewed real `J`, B7 final
+evidence, and formal B-final evidence. L2 D will wake this same issue for the
+original global reconciliation and result append after that exact handoff; the
+campaign task and plan cannot complete during Stage A.

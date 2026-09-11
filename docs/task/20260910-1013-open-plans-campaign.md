@@ -254,9 +254,10 @@ owner's status directly.
 
 ## Dependencies
 
-- **blocked by**: (none)
-- **blocks**: D2 historical-record reconciliation and D3 final global
-  lifecycle reconciliation
+- **blocked by**: final D3 reconciliation waits for reviewed joint freeze `J`,
+  the B7 final acceptance handoff, and formal B-final evidence; the bounded D3
+  tracking stage below is authorized before those dependencies are satisfied
+- **blocks**: D3 final global lifecycle reconciliation
 
 ## Execution Budget
 
@@ -385,3 +386,79 @@ issues are done, but B7 and the reviewed C1 handoff respectively still control
 the truthful next disposition; D2 did not normalize them by hand. C-owned
 approved/proposed plan heads likewise wait for reviewed C handoffs and D3's
 global lifecycle pass.
+
+### D3 acceptance-wave tracking stage — 2026-09-11 UTC
+
+This bounded documentation-only stage began after merging exact L2 D source
+commit `5c0015d136c5c8a2a56c7b7c98798359a363cf34`, tree
+`beafd207e2334482b6556f143efa902fe81d1049`. It does not begin final global
+reconciliation. This task remains `in_progress`, index marker `[-]`, and owned
+by `bkd/z36xbrtu`; the related plan remains `implementing` / `[-]`.
+
+The sole joint acceptance executor is the existing B7 issue `#332` /
+`75btxdqb` on `bkd/75btxdqb`, coordinated by L2 B `8t4ghqi6`. It is the same
+campaign node, not a new hierarchy or L3 allocation. The exact reviewed inputs
+are:
+
+| Input | Commit | Tree | Current handoff state |
+|-------|--------|------|-----------------------|
+| A-final | `e4154126b7e38eb90db210adfb412b19535637a8` | `04de9264c7eb0d190e13852955789ceea7439a71` | Satisfied and reviewed. |
+| C-final | `48acef7f1a3683b1f3bb6261911b1a5123197da2` | `553c1e7af96203315f79e7ea61e862f7a753e3a5` | Satisfied and reviewed. |
+| B0-B6 | `ebdd7208f3c026c96e08d003d9d4f383c22f1eb9` | `4c1e47337dc6e9787864a31dfbcd570aef21e4f5` | Reviewed; B7 remains in progress. |
+
+B7 is implementing the acceptance caller, geometry, provenance, and joint
+acceptance work. Caller checkpoint `64387f20` is reviewed. Geometry checkpoint
+`5ead205523bdeb6a8cf0cb8dc9c35b2c9f47d56d` is observed but is not a final
+reviewed B7 handoff.
+
+The future joint freeze `J` does not exist. B7 must first finish and review its
+existing source, synchronize reviewed local B, merge the exact local A and C
+inputs above with explicit `--no-ff`, resolve only authorized mechanical
+index/import/test unions, and obtain review for any minimal integration
+correction. The resulting real clean commit and tree become `J` only when A,
+C, and the reviewed B7 source are all ancestors. No placeholder identity is
+valid.
+
+One `J` controls the accepted build wave:
+
+- build one fresh x64 image with a 1 GiB SYSTEM;
+- build one final virt-arm64 image whose ordinary root is cold run 1, plus
+  exactly one independent no-cache cold root run 2 from equal inputs;
+- build one joint CX3576 image, reusing A kernel/firmware only after complete
+  input equality is recorded and rebuilding every changed dependent root,
+  boot, signature, record, and image phase; and
+- build no new S905X5M image or eMMC installer.
+
+Every reuse or rebuild decision requires a board- and architecture-specific
+input/provenance record. B7 may use at most two independent expensive jobs when
+resources permit. This replaces the former A1/B1 blanket heavy serialization,
+creates no new L3, and leaves long jobs in persistent tmux sessions with
+source-bound metadata and event-driven collection.
+
+The remaining acceptance and decision boundaries are unchanged:
+
+| Boundary | Owner | Exact missing input or decision |
+|----------|-------|---------------------------------|
+| B7 software acceptance | B7 `75btxdqb`, coordinated by B `8t4ghqi6` | Reviewed final caller/geometry/provenance source, real `J`, named bounded jobs, fresh x64/virt-arm64/CX3576 artifacts, complete guest/image gates, and the equal-input virt-arm64 cold comparison. |
+| CX3576 install, lifecycle, watchdog, recovery, HDMI/VT, peripherals, storage, and power cuts | A, with joint-image inputs from B7 | Exact `J`-bound image and provenance; named CX3576-Z/AIC8800D80 bench, medium, RockUSB target, authenticated API/operator, serial and power rig; cold/warm boot and health, complete exitrd teardown, real watchdog cause, recovery selection/readback, named HDMI sink/keyboard, peripheral fixtures, and externally timed cuts at every publication/record boundary. Reviewed A3 commit `209982d98f83ef149d2c3850adc63debc42f4c5a`, integrated through A-final, delivers visible-logo restoration on real HPD/VT return while preserving authenticated tty2 and DRM/blank/suspend boundaries; exact-`J`-image physical HDMI/VT/USB-keyboard/visual acceptance remains pending. |
+| CX3576 accelerators | A | Named versioned NPU model, runner, input and digest; encoder input/codec/output and decoder bitstream/frame fixtures; repeated hardware MMIO/IOMMU, binding, clock, reset, power, and error evidence. |
+| S905X5M physical acceptance and native crun | A coordinates the physical rows; `#313` retains its completed delivery records | Named unit/target, the exact paired dirty-stamped image and adjacent firmware manifest, boot0 install/readback and recovery selection, serial at 921600, display/input/peripheral fixtures, real watchdog and storage-power cuts, authenticated shutdown, quota/persistence measurements, controlled BLE/MQTT inputs, and native crun on capable hardware. No new S905X5M image or complete eMMC installer is authorized. |
+| Original-device apid reboot | A | Original device identity, current exact image, authenticated endpoint, operator, and serial trace; another board cannot substitute. |
+| Historical current-A image | A | Preserve `PASS_WITH_EXECUTOR_LIMITATION` as historical software evidence only. It is not `J` and cannot qualify any hardware row. |
+| Fleet/product activation | C inputs feed B7; no runtime executor is authorized | C's reviewed offline `FLEET-CONFIG` production inputs must be present in `J`. Client/server fleet runtime, cloud deployment, credentials/command channel, curated OCI activation, and publication remain unapproved; the delivered fleet protocol remains DESIGN only. |
+| Integration/publication | L1 decision required | No `main` integration, remote push, publication, or campaign `done` transition is authorized. |
+
+The exact physical power-cut matrix independently interrupts storage power at
+download/offline import, destination object write and file sync, object
+directory publication, candidate activation, attempt decrement, health
+confirmation and garbage collection, and redundant record write. It requires
+at least ten cuts per installation/activation boundary and fifty randomized
+redundant-record writes, with the actual side of each boundary recorded; an
+unknown boundary is inconclusive. Cutting only CPU or software execution does
+not qualify.
+
+No compatibility support is required. Automated or offline evidence cannot
+replace any named board or physical power-cut result. Final D3 reconciliation
+remains blocked on the real reviewed `J`, the B7 final handoff, and formal
+B-final evidence; L2 D must wake this same issue for that later stage. No PMA
+serializer lifecycle transition is made during this tracking stage.
