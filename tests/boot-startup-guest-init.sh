@@ -36,7 +36,8 @@ if [ "$mode" = transition ]; then transition; fi
 if [ "$mode" != unsigned-guard ]; then
     test "$("$BB" cat /sys/module/dm_verity/parameters/require_signatures)" = Y
 fi
-device=$(/fixture loop /data/image)
+worker '{"Loop":{"image":"/data/image"}}' > /run/loop-device
+device=$("$BB" cat /run/loop-device)
 echo "NATIVE_LOOP_IDENTITY_PASS $device"
 if [ "$mode" = untrusted ]; then
     if /fixture open "$device" /data/untrusted.p7s /data/untrusted.json > /run/untrusted-refusal 2>&1; then fail untrusted-signature-accepted; fi
@@ -61,7 +62,9 @@ salt=$("$BB" cat /data/salt)
 /fixture expected "$device" /data/image.json > /run/expected.table
 "$BB" cmp /run/reference.table /run/expected.table
 /sbin/veritysetup close mos-root
-/fixture open "$device" /data/trusted.p7s /data/image.json > /run/native.table
+request="{\"Verity\":{\"device\":\"$device\",\"name\":\"mos-root\",\"signature\":\"/data/trusted.p7s\",\"image\":$("$BB" cat /data/image.json)}}"
+worker "$request"
+/fixture table > /run/native.table
 "$BB" cmp /run/reference.table /run/native.table
 /fixture table > /run/readback.table
 "$BB" cmp /run/reference.table /run/readback.table
@@ -113,7 +116,8 @@ refuse_open wrong-root /data/trusted.p7s /data/wrong-root.json
 /fixture skip-key "$device" /data/image.json
 test ! -e /dev/mapper/mos-root
 uuid=$("$BB" cat /data/partuuid)
-test "$(/fixture partition "$uuid")" = /dev/vda1
+worker "{\"Partition\":{\"uuid\":\"$uuid\"}}" > /run/partition
+test "$("$BB" cat /run/partition)" = /dev/vda1
 if /fixture partition aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa; then fail non-gpt-accepted; fi
 echo 'GPT_ONLY_DEVICE_LOOKUP_PASS'
 

@@ -20,7 +20,8 @@ No compatibility or migration paths are required.
 
 ## ActiveForm
 
-Implementing the explicitly approved five-phase plan on bkd/vhqwow6o.
+Awaiting B source review of the implemented five phases. Full-image input join
+and mandatory physical CX acceptance remain pending.
 
 ## Dependencies
 
@@ -176,7 +177,7 @@ the old argument formatter exposed an unused import, which was removed.
 The full build suite reached its60-second bound during existing Docker toolbox
 tests and has no aggregate PASS; three task-created unbounded idle toolboxes
 were identified, stopped and removed. No shared builder or B7 resource changed.
-The pinned Rust check image has no cargo-machete command; that attempted optional
+The pinned Rust check image has no cargo-machete command; that attempted additional
 gate is reported unavailable, not passed. All original failure logs are retained
 in the private evidence directory. Mandatory full-image and physical acceptance
 remain distinct from these source, ABI, guest and assembly results.
@@ -203,3 +204,116 @@ U-Boot source ece349ade2973e220f524ce59e59711cc919263f; rkbin source
 ecb4fcbe954edf38b3ae037d5de6d9f5bccf81f4. The original public boot certificate
 SHA256c9cd2241cc47266b302aceae71a280c4892f9bcaf32026c96f361cde42aad74b
 remains unchanged. Only its exact file is mounted into this public-key build.
+
+### Review handoff and final native witness
+
+State: review-ready source, not done. Implementation is complete for all five
+phases; plan acceptance is deliberately open for the reviewed full-system input
+join and physical CX evidence. B owns review/integration; no main write, merge,
+push, release or completed status occurred.
+
+The real existing boot producer ran from clean source
+9673af581d9857a0ff3746a5483ca3e70533861e,
+tree bd9052b9f4f0109a56aceb1051082493224a3298:
+--producer boot --bins "mos-init mos-shutdown" --arch amd64.
+A verified task-local create/inspect/start adapter retained the hook command,
+changed its source mount to read-only and exposed only private target/cache
+writes. Limits were4CPU/cpuset4-7/10GiB/equal memory-swap, with7200-second bound.
+Container9c5f6c38f3ae16a8178620a77a04e2a4788d62a24d48f46176c66829c9c81119,
+hostPID2192272, ran21:44:07.085300573Z..21:44:52.613168347Z, exited0 and was removed.
+Producer image:
+sha256:b13d4a7b877c9d6dd9a2766c4e80f1fd020218715d62877c69ce0dc2abe4fc12.
+Cargo.lock:
+9bc386de11e4acaa4cae14223330e93ffa3e5547b0dbcaa8c9d8b35e94c4a782.
+Exact source/epoch/argv/tool/image/target/output evidence is in
+_out/boot-size/native-9673af581d9857a0ff3746a5483ca3e70533861e/.
+The native output complement check confirms no mos-deploy signing tool was
+emitted by this boot producer. Its source-file hashes were rechecked afterward.
+
+| Output | Bytes | SHA256 |
+|---|---:|---|
+| Native mos-init | 2,403,504 | 64fda99a1f9f1b66fd32adac10071cf5f3987f34628b627381f40f1be04c331e |
+| Native mos-shutdown | 2,047,144 | 5eaf5fa59306073fddce1868139628b126945c30f81c51faec0de59ae806adba |
+| Matched assembly raw cpio | 4,453,376 | b0e0e123486c7ee1e93ce1cdbd721ff7ad76158e3cb486bff14197a4696cf62d |
+| Matched assembly zstd | 1,094,275 | 3ec1935dff501b7c61a3c52c123b3a59ccc3ebce035366ed45632954c7ac21c4 |
+| Offline UKI with original boot anchor | 16,178,216 | 5839ad08717e7528f73aaf692f0efdd7e91c3087b5606ac1a5251482e67d718d |
+
+These final producer outputs supersede the earlier static probe hashes, not
+their historical evidence. Shared workspace/lock inputs require a new producer
+identity for both binaries. The rebuilt shutdown has the same size, with a new
+hash; the B3 retained teardown implementation and safety invariants are unchanged.
+B7's immutable fb6c native outputs were directly rehashed and equal the original
+baseline inputs738391aa... (init) and d2c5c9a6... (shutdown). Thus baseline control
+uses actual reviewed B2/B3 bytes while retaining their original producer identity.
+
+The final x64 guest uses the new producer's mos-init worker entry point for loop
+attachment, authenticated DM creation and GPT lookup, alongside native mount
+transitions. Its signed/differential/negative/rollback/read-only/GPT/cleanup
+console hash is1d2030d0b26f8629027b58e2932263a98c8fbc5e8e5e07dc08112dfad7fbffcf;
+compressed fixture6c56024e60a2c49472faf09d2213ed75e61d0921a25e57118642a62227553176.
+The corresponding corrupted-data run loaded the table, then panicked on read;
+consoleebc802c37dcd77f4d40fcc4b6565ba39c0feb50d0a9e5c319013fa4315281ddf,
+compressed fixture3739bcfb7c6189042b63a034e227d05b7c92f3753059aac4fd7a18fc012edb1c.
+Original kernel and content trust are unchanged. Both containers exited0 and
+were removed. Auxiliary reference/mutation binaries remain test-only inputs.
+
+Fresh-target execution of the unmodified pkgs/mos-deploy/hack/check.sh passed
+fmt, clippy,97 nextest tests (2 existing skips), doctests and cargo-deny.
+An earlier shared debug target retained a guard-removal mutation executable;
+its failed nextest result is preserved, and a new private target eliminated
+that cache collision without changing source guards or test expectations.
+The appended empty-userspace check initially refused a non-PID1 wrapper; using
+exec for that fixture, without relaxing its PID1 assertion, passed independently.
+Both actual native ELFs pass interpreter/dependency/RPATH checks; x64 C UAPI
+assertions also pass. Native source and producer identities are not relabeled
+to a later tracking-only commit.
+
+CX source reconciliation first refused the cached patch0008 mismatch. The
+successful job cloned the exact cached upstream commit locally and applied
+the complete current patch set, retaining before/after diffs and pin hashes.
+It used2CPU/4GiB on4-5 and exited0 at21:38:39.527541781Z, then was removed.
+Resolved config d464532ecd919a26106a3d7159c0c07a27654ce80e559d12be380235de42ef18
+contains CONFIG_ZSTD=y; real ZSTD decompression symbols are linked.
+The9,420,288-byte loader hash is
+f945cea2d4a83bdba35c949a64d02806456a3b850ba9c64f435f4c1e60b9e808.
+Control FDT hash:
+3da67a97449d1c61b6ab1595e205288da8590a9bbc87b70eb132e4d91814be21.
+The original boot anchor, MOS signed-file policy, standard countdown/console,
+watchdog checks and loader size bound pass. The build reports its existing
+optional tee-os blob notice; no TEE or adjacent board policy was added.
+
+New U-Boot tools verify the FIT against both generated signing control and the
+actual compiled firmware control FDT. Kernel and ramdisk mutations fail hashes,
+ramdisk compression remains none, kernel is zstd and FDT remains none.
+This offline FIT deliberately uses a historical44,890,624-byte CX Image
+(be46ffa4781baebe93c0b3ca0922a3838fb64a16bd2d2964b6249a26c575fc2d)
+and clearly marked static ARM ELF stand-ins; it is not new ARM native or physical
+acceptance and has no promoted full-image producer receipt. The FIT is14,167,498
+bytes/SHA1283acb1e1ecbb3088b50881be5eec295a75350aaff97ea812611b3b7f10dea7;
+kernel zstd13,430,015 bytes/SHA11f06242b74b18874385bbb68bbf5452d4ae9cfa2e076f0b217a92f1fddef223.
+Existing S905 resolved config
+4f19743dd3ad74c7532a14a5678010641cee2a24c0cc3e2ff97ba1163497cea2
+confirms CONFIG_ZSTD=y; its producer now asserts that resolution too.
+
+PMA-CR self-review: PASS for scoped source, with the two first-round functional
+findings fixed and no remaining high-confidence defect. Coverage is the delta
+from ef5e27c7, including native/FFI safety, producer/packing, board configuration
+and fixtures. This verdict does not waive acceptance gaps.
+Host toolchain policy passes428/428. The broad shell gate still fails verbatim:
+"FAIL: pkgs/mosd/apid/ui/verify-ui-policy.sh:82: an early-exiting grep on the right
+of a pipe, in a file that sets pipefail". That unchanged UI path is excluded.
+The whole build-suite timeout has no aggregate PASS and must not be hidden.
+
+Next runnable action: B reviews this exact scoped source and new native witness,
+then coordinates the smallest explicit combined-source/input join with B7.
+The shared mos-deploy workspace/Cargo.lock/native-hook changes require a new
+deploy-package producer identity; there is no reviewed reusable full root for
+this source. No independent full package/root/kernel-component/image candidate
+was launched. Unchanged J kernel/mosd/podman/system inputs retain their original
+identities if their relevant inputs are proven equal; no composition-only waiver.
+B7's pending x64-only boot-tools route overlaps pkgs/mos-boot/Dockerfile and
+build-tools.sh and needs a clean integration of the startup removals/zstd recipe.
+Full signed-system selection/upgrades/trial fallback/reboot/poweroff and physical
+CX cold boot remain pending. Exact missing bench inputs are the board identity,
+console/device or endpoint, final reviewed image/flash target, and cold-power
+control. Broad ARM acceptance remains deferred until approved main integration.

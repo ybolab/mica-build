@@ -2,7 +2,8 @@
 
 - **status**: in_progress
 - **createdAt**: 2026-09-11 19:27
-- **revisedAt**: 2026-09-11 21:35
+- **revisedAt**: 2026-09-11 21:52
+- **reviewStatus**: ready for B source review; full-image and physical acceptance pending
 - **approvedAt**: 2026-09-11 (explicit worker #347 dispatch)
 - **relatedTask**: [20260911-1925-boot-artifact-size](../task/20260911-1925-boot-artifact-size.md)
 
@@ -35,13 +36,13 @@ plan is read as a decided route rather than a survey.
 3. **Remove cryptsetup from the early userspace entirely.** After Phase 2 the
    initramfs contains no cryptsetup binary and no cryptsetup library.
 
-### Measured: the startup closure
+### Historical measurements: the pre-B2/B3 startup closure
 
 Transitive `DT_NEEDED` walk over the built s905x5m ARM64 archive:
 
 | Set | Files | Bytes | MiB |
 |---|---|---|---|
-| Current: `mos-init` + 6 tools | 26 | 16,149,328 | 15.40 |
+| Historical: `mos-init` + 6 tools | 26 | 16,149,328 | 15.40 |
 | Libraries | — | 14,116,944 | 13.46 (86.3%) |
 | Programs | — | 2,234,917 | 2.13 (13.7%) |
 
@@ -65,16 +66,16 @@ exclusively pulls 8,567,640 bytes:
 | `libpopt.so.0` | 68,032 |
 | `libuuid.so.1` | 67,736 |
 
-Measured endpoints of the phases below:
+Historical closure-subtraction projections, not measured implementation outputs:
 
 | After | Files | Bytes |
 |---|---|---|
-| Today | 26 | 16,149,328 |
+| Pre-B2/B3 archive | 26 | 16,149,328 |
 | Phase 2 (no veritysetup, no dmsetup) | 13 | **6,319,808** |
 | Phase 3 (no util-linux helpers) | 4 | **3,413,472** |
 | Phase 4 (static) | **1** | to be measured |
 
-### Measured: decompressor support
+### Historical measurements: decompressor support
 
 | Consumer | cx3576 | s905x5m | x64 | virt-arm64 |
 |---|---|---|---|---|
@@ -87,11 +88,11 @@ fragments, because `configure.sh` changes symbols before `olddefconfig`.
 **The kernel side is already enabled on every board.** The only missing symbol
 is cx3576's U-Boot, and Phase 5 adds it.
 
-### Measured: compression ratios
+### Historical measurements: compression ratios
 
 `zstd` is not installed on the analysis host, so `gzip -9` is recorded as a
-measured **floor**; zstd on ELF-dominated input normally does better and must be
-measured before any claim is made.
+historical comparison. It is not a guaranteed zstd floor; actual zstd output
+must be measured before any claim is made.
 
 | Object | Original | `gzip -9` | Ratio | Saves |
 |---|---|---|---|---|
@@ -182,7 +183,11 @@ undecided silently weakens an existing bound.
 
 ### Phase 2 — replace veritysetup and dmsetup with Rust
 
-Take `devicemapper` and `linux-keyutils` into `pkgs/mos-deploy`. In `mos-init`:
+Execution selects the typed-ioctl fallback through B3 lifecycle-sys plus
+linux-keyutils. The original devicemapper proposal below is retained as decision
+history; no devicemapper dependency or MPL allowance was added.
+
+Historical proposal: take `devicemapper` and `linux-keyutils` into `pkgs/mos-deploy`. In `mos-init`:
 load the PKCS#7 signature with `add_key(2)`, build the verity table line from
 the values `verity_args()` already computes, then `device_create` →
 `table_load` → `device_suspend`. Read the table back with `table_status` in
@@ -402,8 +407,9 @@ is required. Historical measurements are not current B2/B3 artifact evidence.
 - Exact reviewed dependency: fb6c4597bb902f69d528bcdc3c8372f310c322b1,
   tree cbf2fa8ff2c8fc03534b218c952a511b6a6ba392; includes B3 source
   36866b47f2647e778ef33d7183fbba88a81a494e. Integrated at ef5e27c7.
-- [ ] Phase 1: deterministic zstd archive; preserve both expanded 64 MiB and
-  compressed/load/component limits; verify malformed/truncated/oversized bytes.
+- [x] Phase 1 implementation and offline proof: deterministic zstd archive;
+  expanded and compressed 64 MiB bounds remain, as do load/component limits;
+  malformed/truncated/oversized and actual signed FIT/UKI payload checks pass.
 - [x] Phase 2 implementation and x64 kernel fixture: one typed DM/key route;
   real reference differential, signature/read-only/trusted-key/corruption and
   guard-removal evidence passed before retiring helpers.
@@ -413,7 +419,9 @@ is required. Historical measurements are not current B2/B3 artifact evidence.
 - [x] Phase 4 implementation: measured GNU static mos-init, single startup
   executable manifest and empty-userspace proof. Batched producer/full-image
   acceptance remains pending; no ARM native build was run.
-- [ ] Phase 5: resolved CX U-Boot zstd, signed FIT kernel bytes and physical boot.
+- [ ] Phase 5 acceptance: resolved CX ZSTD, complete firmware build, original
+  trust-anchor FIT verification and payload tamper refusal pass. Mandatory
+  physical cold boot remains pending.
 - Generic iteration and batched final image acceptance use x64. Focused CX
   U-Boot/FIT checks are authorized; broad ARM acceptance remains deferred until
   approved main integration. Mandatory CX cold-boot evidence remains pending
@@ -461,10 +469,9 @@ limits are recorded in the related task.
 ### Current acceptance boundary
 
 The current source implements all five phases. Phase 1 has deterministic bounded
-archive tests and actual signed UKI payload extraction/tamper refusal; the FIT
-check is next. Phase 5 has an explicit B allocation for a focused CX resolved
-config/build using the original public boot anchor, followed by signed FIT
-packing. The previous builder CONFIG_ZSTD-unset result is preserved as RED.
+archive tests and actual signed FIT/UKI extraction/tamper refusal. Phase 5 passed
+the allocated focused CX resolved config/build and signed FIT packing checks
+using the original public boot anchor. The previous builder CONFIG_ZSTD-unset result is preserved as RED.
 No broad ARM native/root/image/guest run is authorized before main integration.
 
 A review finding caught objcopy rewriting the signed UKI when extracting its
@@ -477,3 +484,19 @@ and was replaced by an ordinary disposable output file.
 Physical CX cold boot and the final batched full-image/producer evidence are
 pending. This record must not be marked completed from source, tiny TCG or
 offline packaging evidence alone.
+
+The actual x64 native producer completed at source9673af581d9857a0ff3746a5483ca3e70533861e,
+with a new source/tree/lock/tool/flag witness. The final matched assembly is
+4,453,376 raw bytes and 1,094,275 compressed bytes; startup is2,403,504 bytes and
+retained shutdown is2,047,144 bytes, measured separately. Shutdown was rebuilt
+from the shared workspace, so its output hash changes while the B3 teardown
+source/safety contract is preserved. Exact final hashes and prior probe rows
+are kept separately in the task.
+
+PMA-CR self-review found and fixed the DM partial-activation leak and signed-PE
+extraction rewrite. No remaining high-confidence source defect was identified.
+The existing Rust gate passes97 tests with2 existing skips, plus fmt/clippy/
+doctests/deny; real x64 producer-worker/verity/GPT/mount/cleanup and compressed
+artifact checks pass. This source-review result is not full-image or hardware
+acceptance. The unchanged shell-policy failure at
+`pkgs/mosd/apid/ui/verify-ui-policy.sh:82` remains reported.
