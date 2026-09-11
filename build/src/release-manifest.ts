@@ -247,6 +247,8 @@ function sourceLineage(value: unknown, source: Source, arch: string, capture: Re
     'build/src/release-manifest.ts', 'build/src/release-manifest.test.ts',
     'tests/rootfs-runtime/source_lineage_test.py', 'tests/rootfs-runtime/composition_test.py',
     'rootfs/runtime/select.py', 'tests/rootfs-runtime/selection_test.py',
+    'rootfs/runtime/consumers.json',
+    'rootfs/debian/packages/dmsetup.json', 'rootfs/debian/packages/libdevmapper1.02.1.json',
     'docs/task/20260911-0145-b7-fresh-lifecycle-acceptance.md', 'docs/plan/20260911-0145-b7-fresh-lifecycle-acceptance.md',
   ])
   requireValue(Array.isArray(l.delta), 'runtime lineage delta')

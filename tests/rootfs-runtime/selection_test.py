@@ -556,6 +556,87 @@ class SelectionTest(unittest.TestCase):
         p = self.root / 'usr/bin/helper'; p.unlink(); os.mkfifo(p)
         self.refuse('unsupported node')
 
+    def readline_resources(self, radios=()):
+        policy = json.loads(SELECTOR.with_name('consumers.json').read_text())
+        resource = next(r for r in policy['consumers']['mos-system']['roots'] if '/etc/services' in r['paths'])
+        self.rules['consumers'] = {'mos-system': {'roots': [resource], 'runtime_links': []}}
+        owners = {'netbase': '/etc/services', 'tzdata': '/usr/share/zoneinfo/Etc/UTC',
+                  'ncurses-base': '/usr/share/terminfo/x/xterm', 'login.defs': '/etc/login.defs',
+                  'libaudit-common': '/etc/libaudit.conf'}
+        if radios:
+            owners['readline-common'] = '/usr/share/readline/inputrc'
+            self.write('/etc/inputrc', b'readline configuration\n')
+        for package, path in owners.items():
+            self.write(path, b'readline configuration\n' if package == 'readline-common' else b'required resource\n')
+            self.write('/usr/share/doc/' + package + '/copyright', b'fixture license\n')
+        self.capture_ownership()
+        system = self.db / 'mos-system.list'
+        transferred = {'/etc/inputrc', *owners.values(),
+                       *('/usr/share/doc/' + package + '/copyright' for package in owners)}
+        system.write_text(''.join(path + '\n' for path in system.read_text().splitlines() if path not in transferred))
+        with self.manifest.open('a') as stream:
+            for package, path in owners.items():
+                stream.write(package + '\t1\tall\n')
+                (self.db / (package + '.list')).write_text(path + '\n/usr/share/doc/' + package + '/copyright\n')
+            for radio in radios:
+                stream.write(radio + '\t1\tall\n')
+                (self.db / (radio + '.list')).write_text('/.\n')
+                rules = [r for r in policy['consumers'][radio]['roots'] if
+                         '/usr/share/readline/inputrc' in r['paths'] or '/etc/inputrc' in r['paths']]
+                self.assertEqual(len(rules), 2)
+                self.rules['consumers'][radio] = {'roots': rules, 'runtime_links': []}
+        self.packages.write_text('\n'.join(['mos-system', *radios]) + '\n')
+
+    def test_readline_is_not_required_without_radios(self):
+        self.readline_resources()
+        self.selected()
+        self.assertTrue((self.out / 'etc/services').is_file())
+        self.assertFalse((self.out / 'etc/inputrc').exists())
+
+    def selected_readline(self, radios):
+        self.readline_resources(radios)
+        rows = {r['path']: r for r in self.selected()['files']}
+        self.assertEqual((self.out / 'etc/inputrc').read_bytes(), (self.out / 'usr/share/readline/inputrc').read_bytes())
+        self.assertEqual([rows['/etc/inputrc'][k] for k in ('mode', 'uid', 'gid')], [0o644, 0, 0])
+        self.assertTrue(rows['/etc/inputrc']['origins'])
+        self.assertEqual(self.command('verify').returncode, 0)
+
+    def test_readline_wifi_resource(self):
+        self.selected_readline(['mos-wifi'])
+
+    def test_readline_bluetooth_resource(self):
+        self.selected_readline(['mos-bluetooth'])
+
+    def test_readline_shared_radio_resource(self):
+        self.selected_readline(['mos-wifi', 'mos-bluetooth'])
+
+    def test_readline_missing_owner_refuses(self):
+        self.readline_resources(['mos-wifi'])
+        self.manifest.write_text(self.manifest.read_text().replace('readline-common\t1\tall\n', ''))
+        (self.db / 'readline-common.list').unlink()
+        self.refuse('root package not installed: readline-common')
+
+    def test_readline_missing_template_refuses(self):
+        self.readline_resources(['mos-wifi'])
+        (self.root / 'usr/share/readline/inputrc').unlink()
+        self.refuse('missing path: /usr/share/readline/inputrc')
+
+    def test_readline_missing_generated_resource_refuses(self):
+        self.readline_resources(['mos-bluetooth'])
+        (self.root / 'etc/inputrc').unlink()
+        self.refuse('missing path: /etc/inputrc')
+
+    def test_readline_unrelated_owner_remains_required(self):
+        self.readline_resources()
+        self.manifest.write_text(self.manifest.read_text().replace('netbase\t1\tall\n', ''))
+        (self.db / 'netbase.list').unlink()
+        self.refuse('root package not installed: netbase')
+
+    def test_readline_unrelated_resource_remains_required(self):
+        self.readline_resources()
+        (self.root / 'etc/services').unlink()
+        self.refuse('missing path: /etc/services')
+
     def test_current_policy_declares_all_selected_consumers(self):
         repo = SELECTOR.parents[2]
         policy = json.loads(SELECTOR.with_name('consumers.json').read_text())

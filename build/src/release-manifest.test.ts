@@ -590,7 +590,9 @@ test('non-publication acceptance retains runtime and repinned artifact tamper re
 }, OPEN_TIMEOUT_MS)
 
 
-test.each(['rootfs/runtime/compose.py', 'rootfs/runtime/select.py', 'tests/rootfs-runtime/selection_test.py'])('runtime source lineage preserves package identity for %s and derives composition provenance', path => {
+test.each(['rootfs/runtime/compose.py', 'rootfs/runtime/select.py', 'tests/rootfs-runtime/selection_test.py',
+  'rootfs/runtime/consumers.json', 'rootfs/debian/packages/dmsetup.json',
+  'rootfs/debian/packages/libdevmapper1.02.1.json'])('runtime source lineage preserves package identity for %s and derives composition provenance', path => {
   const r = runtime(), lineage = r.provenance.source_lineage
   lineage.composition_source = { commit: 'b'.repeat(40), tree: 'c'.repeat(40), epoch: 1000000001 }
   lineage.receipt_sha256 = ['d'.repeat(64)]
