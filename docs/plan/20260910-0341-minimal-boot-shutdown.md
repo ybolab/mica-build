@@ -5,6 +5,16 @@
 - **approvedAt**: (pending)
 - **relatedTask**: 20260910-0338-minimal-boot-shutdown
 
+## Current implementation status (2026-09-11)
+
+This document preserves the original feasibility proposal. B3 already delivered
+the reviewed native HYBRID supervisor plus BusyBox/dmsetup retained closure; it
+is not an unimplemented native design. The user now explicitly directs the
+single-static-executable refinement in [the current B3 plan](20260910-1206-b3-bounded-exitrd-teardown.md).
+Its direct syscall/typed DM backend preserves the existing safe state machine.
+B7 owns final combined no-Python/static-shutdown image acceptance. The historical
+measurements below are not static-artifact or current guest/RSS evidence.
+
 ## Context
 
 The user asked whether minimal BusyBox environments could serve both shutdown
@@ -127,8 +137,9 @@ Coordinate overlap with the separately owned CX3576 boot-log investigation.
 
 - A custom static shutdown executable can avoid the dynamic `dmsetup` closure,
   but requires implementing and testing mount and device-mapper operations.
-  Consider it only if the measured BusyBox-plus-dmsetup size misses an agreed
-  budget; a single stock BusyBox cannot supply those missing DM operations.
+  That former budget-only condition is superseded by the explicit 2026-09-11
+  user direction recorded in the current B3 plan; 1-2 MiB is a measurement target,
+  not permission to weaken safety or claim an unmeasured result.
 - Rebuilding a minimal systemd-shutdown is another size experiment, retaining
   its existing teardown implementation but adding build configuration work.
 - Replacing all authenticated init logic with shell is not recommended: it
@@ -137,5 +148,12 @@ Coordinate overlap with the separately owned CX3576 boot-log investigation.
 
 ## Annotations
 
-The feasibility assessment is complete. Implementation approval is pending.
+The feasibility assessment was complete at the original handoff. Subsequent
+HYBRID delivery and the approved static refinement are tracked in B3 above.
 All tests use newly built complete system images; no compatibility is required.
+
+Current acceptance scheduling (2026-09-11 user amendment): the B3 static
+refinement and B7 combined image qualify x64 first. ARM compilation and
+virt-arm64/CX3576 acceptance are deferred to one consolidated wave after the
+actual approved main merge; historical ARM preflight results are not final
+backend qualification. See the current B3 plan above for the explicit phases.

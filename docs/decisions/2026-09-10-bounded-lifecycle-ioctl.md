@@ -36,3 +36,35 @@ remains safe Rust. Exact source evidence and implementation scope are in
 B/lifecycle reviews every unsafe site and ABI proof before L2 acceptance. Replace
 wrappers with equivalent pinned safe APIs when available, and review no later
 than 2026-12-10. Hardware/guest proof remains separate from fixture evidence.
+
+
+## Approved static refinement extension (2026-09-11)
+
+L1 decision `01M28Y5AV9CZR3QMH27NAZBX55` authorizes only typed DM_DEV_STATUS,
+DM_TABLE_STATUS with DM_STATUS_TABLE_FLAG, and DM_DEV_REMOVE in the existing
+lifecycle-sys boundary. Existing owner B/lifecycle and review sunset 2026-12-10
+remain. Initialized aligned buffers, UAPI version/size/flag/count/offset checks,
+NUL termination, complete target coverage and bounded response growth/retries
+are mandatory. DM_TABLE_STATUS next offsets are relative to the first target,
+unlike table-load offsets. Verify control descriptor and current device/name/
+UUID/generation/table/providers before removing; close descriptors and freshly
+prove disappearance afterward. No generic ioctl, remove-all, forced/deferred
+release, new C dependency or business unsafe allowance is authorized.
+
+The implementation requests DM ABI 4.0 for these three long-established Linux
+operations, without optional inactive-table or deferred-removal features. A
+status response must have the kernel's 305-byte length; a table has the aligned
+312-byte header and bounded, complete targets. Its final `next` includes up to
+seven alignment bytes beyond the reported parameter terminator. Only read-only,
+active tables with matching device/name/UUID/event/count are accepted. Removal
+selects the freshly checked UUID on the same verified control descriptor; no
+mutating ioctl is blindly retried. Linux provides no atomic generation-conditional
+remove operation: quiescing users, repeated diskseq/table/consumer observations
+and post-removal disappearance are essential, and the ioctl return is never a
+release token. The wrapper cannot promise to kill a blocked kernel syscall;
+the existing supervised-worker deadline and watchdog failure policy still apply.
+
+The 2026-09-11 user schedule qualifies x64 source/UAPI/runtime fixtures first.
+ARM source layout is reviewed, but new ARM compilation and real acceptance are
+deferred until the actual approved main merge. Earlier ARM preflight evidence
+retains its original source identity.
