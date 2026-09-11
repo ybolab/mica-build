@@ -134,3 +134,5 @@ disobeys on sight teaches a reader the wrong thing about the tree.
 - [x] [**20260910-2152-b5-scratch-provenance Wire scratch runtime composition and shipped provenance**](20260910-2152-b5-scratch-provenance.md) `2026-09-10`
 
 - [x] [**20260911-0110-b6-reproducibility-closure B6 reproducibility closure**](20260911-0110-b6-reproducibility-closure.md) `2026-09-11`
+
+- [-] [**20260911-0145-b7-fresh-lifecycle-acceptance B7 fresh lifecycle and rootfs acceptance**](20260911-0145-b7-fresh-lifecycle-acceptance.md) `2026-09-11`
