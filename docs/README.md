@@ -107,8 +107,9 @@ with its index row after its outcome and replacement are recorded.
   - `qualification.md` — field-reliability qualification: the matrix and its binding rules
   - `assurance.md` — boot assurance ladder (I1–I4) and what each level requires
   - `support-tiers.md` — board support tiers: claims about evidence and ownership
-- `research/` — research notes: external products read as benchmarks, not part of the design record
+- `research/` — research notes: external products read as benchmarks, and feasibility drafts held outside the design record
   - `venus-gui-v2.md` — Venus OS gui-v2 functional reference, source-read, mapped to apid/dashboard owners
+  - `ssd202d-lite.md` — draft: mos on SigmaStar SSD202D; the 16 MiB / 128 MiB flash fork that selects between a new OS and a new board
 - `plan/` — approved proposals and remaining acceptance, with a status index
 - `task/` — PMA task tracking
 - `zh/` — current Chinese user guides and retained engineering translations
