@@ -11,12 +11,15 @@ esac
 case "$1" in
 kernel)
     bash /tools/initramfs.sh /tmp/initramfs "$EFI_ARCH"
-    ukify build --linux=/input/kernel --initrd=/output/initramfs.cpio \
+    ukify build --linux=/input/kernel --initrd=/output/initramfs.cpio.zst \
         --cmdline=@/input/cmdline --uname="$(cat /input/kernel.release)" \
         --stub="$STUB" --efi-arch="$EFI_ARCH" \
         --os-release=@/input/os-release --output=/output/boot.efi \
         --signtool=sbsign --secureboot-private-key=/signing/key.pem --secureboot-certificate=/signing/cert.pem
     sbverify --cert /signing/cert.pem /output/boot.efi
+    objcopy --dump-section .initrd=/output/signed-initrd.zst /output/boot.efi
+    cmp /output/initramfs.cpio.zst /output/signed-initrd.zst
+    rm /output/signed-initrd.zst
     ;;
 firmware)
     sbsign --key /signing/key.pem --cert /signing/cert.pem --output "/output/$BOOT_NAME" \

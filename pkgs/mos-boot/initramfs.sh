@@ -34,6 +34,12 @@ test -x "$DEST/exitrd/shutdown"
     find . -exec touch -h -d @1577836800 {} +
     find . -print0 | LC_ALL=C sort -z | cpio --null --reproducible --owner=0:0 -o -H newc --quiet
 ) > /output/initramfs.cpio
+source /tools/compression.sh
+# The existing 64 MiB safety bound applies to the expanded cpio AND the
+# transported bytes. Compression is an artifact saving, not a boot RAM saving.
+compress_payload /output/initramfs.cpio /output/initramfs.cpio.zst 67108864
+stat -c '%n %s' /output/initramfs.cpio /output/initramfs.cpio.zst > /output/initramfs.sizes
+sha256sum /output/initramfs.cpio /output/initramfs.cpio.zst > /output/initramfs.sha256
 find "$DEST" -type f -printf '%P\n' | LC_ALL=C sort > /output/initramfs.files
 test ! -e "$DEST/bin/sh"
 test -x "$DEST/bin/busybox"

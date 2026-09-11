@@ -7,7 +7,7 @@ RUN rm -f /etc/apt/sources.list.d/debian.sources && \
     printf 'deb [check-valid-until=no] %s trixie main\n' "${MOS_DEBIAN_SNAPSHOT}" > /etc/apt/sources.list.d/snapshot.list && \
     apt-get -o Acquire::Retries=3 update -qq && \
     apt-get install -y --no-install-recommends \
-        cryptsetup-bin dmsetup util-linux mount cpio file binutils \
+        cryptsetup-bin dmsetup util-linux mount cpio file binutils zstd \
         systemd systemd-boot-efi systemd-ukify sbsigntool squashfs-tools && \
     rm -rf /var/lib/apt/lists/*
 RUN dpkg --add-architecture arm64 && apt-get update -qq && \
@@ -18,7 +18,7 @@ RUN dpkg --add-architecture arm64 && apt-get update -qq && \
         cryptsetup-bin:arm64 util-linux:arm64 mount:arm64 libgcc-s1:arm64 systemd:arm64 systemd-boot-efi:arm64 && \
     for archive in /arm-debs/*.deb; do dpkg-deb -x "$archive" /arm64; done && \
     rm -rf /arm-debs /var/lib/apt/lists/*
-COPY initramfs.sh kernel.sh elf-closure.py /tools/
+COPY initramfs.sh kernel.sh compression.sh elf-closure.py /tools/
 
 FROM tools AS loader-build
 RUN printf 'Package: *\nPin: origin snapshot.debian.org\nPin-Priority: 1001\n' > /etc/apt/preferences.d/snapshot && \

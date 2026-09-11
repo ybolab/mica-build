@@ -5,6 +5,7 @@ export SOURCE_DATE_EPOCH=1577836800
 bash /tools/initramfs.sh /tmp/initramfs aa64
 test "$(stat -c%s /input/kernel)" -le 134217728
 test "$(stat -c%s /output/initramfs.cpio)" -le 67108864
+test "$(stat -c%s /output/initramfs.cpio.zst)" -le 67108864
 mkdir -p /tmp/fit-keys
 ln -s /signing/key.pem /tmp/fit-keys/mos.key
 ln -s /signing/cert.pem /tmp/fit-keys/mos.crt
@@ -23,7 +24,7 @@ cat > boot.its <<ITS
             load = <$kernel_address>; entry = <$kernel_address>; hash { algo = "sha256"; }; };
         fdt { description = "MOS board device tree"; data = /incbin/("/input/board.dtb"); type = "flat_dt"; arch = "arm64"; compression = "none";
             load = <$fdt_address>; hash { algo = "sha256"; }; };
-        ramdisk { description = "MOS authenticated boot and shutdown environment"; data = /incbin/("initramfs.cpio"); type = "ramdisk"; arch = "arm64"; os = "linux"; compression = "none";
+        ramdisk { description = "MOS authenticated boot and shutdown environment"; data = /incbin/("initramfs.cpio.zst"); type = "ramdisk"; arch = "arm64"; os = "linux"; compression = "none";
             load = <$ramdisk_address>; hash { algo = "sha256"; }; };
     };
     configurations {
@@ -37,5 +38,12 @@ mkimage -f boot.its -k /tmp/fit-keys -r boot.itb
 printf '/dts-v1/; / {};' | dtc -I dts -O dtb -o control.dtb
 fdt_add_pubkey -a sha256,rsa2048 -k /tmp/fit-keys -n mos -r conf control.dtb
 fit_check_sign -f boot.itb -k control.dtb
+# Check the bytes actually covered by the signature, including pass-through
+# ramdisk semantics. FDT stays uncompressed.
+test "$(fdtget -t s boot.itb /images/ramdisk compression)" = none
+test "$(fdtget -t s boot.itb /images/fdt compression)" = none
+dumpimage -T flat_dt -p 2 -o signed-initrd.zst boot.itb
+cmp initramfs.cpio.zst signed-initrd.zst
+rm signed-initrd.zst
 test "$(stat -c%s boot.itb)" -le 134217728
 printf '%s\n' 'MOS_SIGNED_FIT_KERNEL_PASS'

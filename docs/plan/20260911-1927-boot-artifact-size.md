@@ -1,9 +1,9 @@
 # 20260911-1927-boot-artifact-size Shrink the signed boot artifact: compression and early-userspace closure
 
-- **status**: draft
+- **status**: in_progress
 - **createdAt**: 2026-09-11 19:27
 - **revisedAt**: 2026-09-11 20:10
-- **approvedAt**: (pending)
+- **approvedAt**: 2026-09-11 (explicit worker #347 dispatch)
 - **relatedTask**: [20260911-1925-boot-artifact-size](../task/20260911-1925-boot-artifact-size.md)
 
 ## Context
@@ -393,6 +393,59 @@ changes, compatibility layers and migrations.
 ## Annotations
 
 Measurements were read off already-built artifacts under `_out/` on 2026-09-11;
-no build was run. The three route decisions above are settled; **implementation
-approval is still pending** and no code has been changed. All tests use newly
-built complete system images; no compatibility is required.
+no build was run. The three route decisions above are settled; implementation is approved by the explicit worker #347 dispatch. No compatibility
+is required. Historical measurements are not current B2/B3 artifact evidence.
+
+## Approved execution (worker #347)
+
+- Owner: boot-size/vhqwow6o; isolated branch bkd/vhqwow6o.
+- Exact reviewed dependency: fb6c4597bb902f69d528bcdc3c8372f310c322b1,
+  tree cbf2fa8ff2c8fc03534b218c952a511b6a6ba392; includes B3 source
+  36866b47f2647e778ef33d7183fbba88a81a494e. Integrated at ef5e27c7.
+- [ ] Phase 1: deterministic zstd archive; preserve both expanded 64 MiB and
+  compressed/load/component limits; verify malformed/truncated/oversized bytes.
+- [ ] Phase 2: one typed DM/key route; reference differential and signature,
+  read-only, trusted-key and corruption negatives before retiring helpers.
+- [ ] Phase 3: native mount/loop/GPT/switch-root with cleanup and watchdog proof.
+- [ ] Phase 4: measured static GNU or musl mos-init and single startup executable.
+- [ ] Phase 5: resolved CX U-Boot zstd, signed FIT kernel bytes and physical boot.
+- Generic iteration and batched final image acceptance use x64. Focused CX
+  U-Boot/FIT checks are authorized; broad ARM acceptance remains deferred until
+  approved main integration. Mandatory CX cold-boot evidence remains pending
+  without a confirmed bench device, console/endpoint, image and power control.
+- Heavy jobs require an actual B/L1 allocation; no B7 inputs are modified.
+- Final state is review, never done; local integration/commits are authorized,
+  main writes, pushes and releases are not.
+
+### Selected implementation route and evidence limits
+
+The approved typed-ioctl fallback is used, extending B3's existing lifecycle-sys
+boundary for startup create/load/resume and owned partial-creation rollback.
+The retained active-only status/table/removal parser stays strict. There is no
+second DM stack and no MPL-2.0 allowance. The historical line-count estimate is
+not an implementation-size claim. The historical licence explanation is not a
+verified compliance conclusion and does not apply to the selected fallback.
+
+Registry sparse-index review on 2026-09-11 confirms linux-keyutils 0.2.5 (latest
+non-yanked stable; archive SHA256
+83270a18e9f90d0707c41e9f35efada77b64c0e6f3f1810e71c8368a864d5590), Apache-2.0 OR MIT,
+with only existing bitflags/libc runtime dependencies. It uses Linux syscalls,
+not a cryptsetup/libdevmapper/OpenSSL library. No toolchain refresh is needed.
+The pinned rustix 1.1.4 typed ioctl and safe mount/chroot APIs are reused.
+`cargo deny check licenses bans advisories` passes without changing deny.toml;
+its existing duplicate-version and unmatched Zlib warnings remain visible.
+The plan's MPL fail-before/pass-after check is conditional on the rejected
+MPL route; adding an unused licence allowance to demonstrate it is excluded.
+
+The native worker protocol keeps the existing startup watchdog supervisor and
+its bounded process-group termination; it accepts typed operations through /init.
+The final switch-root stays in PID1, validates ramfs/tmpfs and the separate new
+root, limits traversal, avoids symlink targets and removes old-root files before
+MS_MOVE/chroot/exec. Device mappings are authenticated during TABLE_LOAD; a later
+corrupted-data read is a distinct outcome, never called a table-load refusal.
+
+Source fixtures have passed the current workspace tests (two pre-existing ignored
+runtime cases remain ignored), native mount options/worker/old-root tests and
+verity geometry/readback mutation tests. x64 C UAPI assertions include startup
+DM/loop requests. These results are not kernel, guest, signed-image or hardware
+acceptance. Helpers remain in the package until real differential proof is ready.

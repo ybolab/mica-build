@@ -99,7 +99,7 @@ export async function packKernel(inputs: KernelInputs, tb: Toolbox): Promise<Ker
   for (const uuid of [systemPartUuid, dataPartUuid]) if (!/^[0-9a-fA-F]{8}(-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}$/.test(uuid)) throw new Error('Invalid storage partition UUID')
   const release = readFileSync(join(kernelDirectory, 'kernel.release'), 'utf8').trim()
   const config = readFileSync(join(kernelDirectory, 'config'), 'utf8')
-  for (const symbol of ['BLK_DEV_LOOP', 'BLK_DEV_DM', 'DM_VERITY', 'DM_VERITY_VERIFY_ROOTHASH_SIG', 'SYSTEM_TRUSTED_KEYRING', 'EXT4_FS', 'SQUASHFS', 'WATCHDOG_NOWAYOUT',
+  for (const symbol of ['RD_ZSTD', 'BLK_DEV_LOOP', 'BLK_DEV_DM', 'DM_VERITY', 'DM_VERITY_VERIFY_ROOTHASH_SIG', 'SYSTEM_TRUSTED_KEYRING', 'EXT4_FS', 'SQUASHFS', 'WATCHDOG_NOWAYOUT',
     ...(fit ? [fit.watchdog, 'CMDLINE_FORCE'] : ['EFI_STUB', 'I6300ESB_WDT'])]) {
     if (!config.split('\n').includes(`CONFIG_${symbol}=y`)) throw new Error(`Kernel is missing built-in ${symbol}`)
   }
