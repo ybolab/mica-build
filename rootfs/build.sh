@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Build the squashfs + dm-verity arm64 rootfs slot image for cx3576 (A/B layout).
-# Usage: [BOARD_DIR=...] [WITH_MOSD=0|1]
+# Usage: [BOARD_DIR=...] [WITH_MOSD=0|1] [MOS_ROOTFS_NO_CACHE=0|1]
 #        [WITH_CONTAINERS=0|1] [MOS_PROFILE=dev|prod]
 #        [MOS_ROOTFS_WITHOUT="wifi bluetooth mqtt ..."] bash rootfs/build.sh
 
@@ -121,6 +121,20 @@ case "$WITH_CONTAINERS" in
 0 | 1) ;;
 *)
     echo "error: WITH_CONTAINERS is '$WITH_CONTAINERS'; it must be exactly 0 or 1. It selects whether mos-podman is in the resolved set, and anything else here would be read as 'not 1' and the engine would silently not ship" >&2
+    exit 1
+    ;;
+esac
+
+# Cold reproducibility checks need a cache-independent route through the same
+# stages driver as an ordinary build. The driver already implements --no-cache;
+# this explicit opt-in only bridges the rootfs entry point to that existing
+# behavior and keeps normal developer builds cached by default.
+ROOTFS_CACHE_ARGS=()
+case "${MOS_ROOTFS_NO_CACHE-0}" in
+0) ;;
+1) ROOTFS_CACHE_ARGS=(--no-cache) ;;
+*)
+    echo "error: MOS_ROOTFS_NO_CACHE is '${MOS_ROOTFS_NO_CACHE}'; it must be exactly 0 or 1" >&2
     exit 1
     ;;
 esac
@@ -550,6 +564,7 @@ echo "rootfs: composing $MOS_BOARD"
 bash "$REPO_ROOT/rootfs/debian/docker.sh" cache --arch "$MOS_ARCH" \
     --packages "$COMPOSE_STAGE/packages.txt"
 if ! bash "$REPO_ROOT/build/run.sh" --build-rootfs \
+        ${ROOTFS_CACHE_ARGS[@]+"${ROOTFS_CACHE_ARGS[@]}"} \
         "${DRIVER_ARGS[@]}" 2>&1 | tee "$log"; then
     if grep -qi 'exec format error' "$log"; then
         echo >&2

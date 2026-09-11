@@ -10,7 +10,7 @@ import sys
 sys.dont_write_bytecode = True
 import unittest
 
-from selection_test import SelectionTest, elf
+from selection_test import SelectionTest, elf, loader_cache
 
 REPO = Path(__file__).resolve().parents[2]
 COMPOSE = REPO / 'rootfs/runtime/compose.py'
@@ -84,6 +84,31 @@ class CompositionTest(unittest.TestCase):
         self.assertEqual(report['measurements']['runtime_allocation'], 'pending B7 guest evidence')
         check = subprocess.run([sys.executable, str(REPO / 'rootfs/runtime/select.py'), 'verify', '--root', str(self.f.out), '--report', str(self.f.report)], capture_output=True, text=True)
         self.assertEqual(check.returncode, 0, check.stderr)
+
+    def test_optimizer_cache_is_excluded_while_loader_state_survives(self):
+        cache = loader_cache([('libfirst.so', '/usr/lib/libfirst.so')])
+        self.f.write('/etc/ld.so.cache', cache)
+        self.f.write('/usr/sbin/ldconfig', elf(), 0o755)
+        self.f.write('/var/cache/ldconfig/aux-cache', b'host-specific optimizer state\n')
+        self.f.rules['consumers']['mos-system']['roots'].append({
+            'paths': ['/etc/ld.so.cache', '/usr/sbin/ldconfig'],
+            'kind': 'resource',
+            'reason': 'runtime dynamic loader state and maintenance tool',
+        })
+        self.f.rules_path.write_text(json.dumps(self.f.rules))
+        self.f.capture_ownership()
+        shutil.copyfile(self.f.db / 'mos-system.list', self.inputs / 'info/mos-system.list')
+        self.capture()
+
+        r = self.compose()
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertFalse(self.f.out.joinpath('var/cache/ldconfig/aux-cache').exists())
+        self.assertEqual(self.f.out.joinpath('etc/ld.so.cache').read_bytes(), cache)
+        self.assertTrue(os.access(self.f.out / 'usr/sbin/ldconfig', os.X_OK))
+        rows = {row['path'] for row in json.loads(self.f.report.read_text())['files']}
+        self.assertIn('/etc/ld.so.cache', rows)
+        self.assertIn('/usr/sbin/ldconfig', rows)
+        self.assertNotIn('/var/cache/ldconfig/aux-cache', rows)
 
     def test_missing_required_path_is_not_filtered(self):
         self.capture()
