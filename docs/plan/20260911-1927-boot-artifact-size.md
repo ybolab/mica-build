@@ -2,8 +2,8 @@
 
 - **status**: in_progress
 - **createdAt**: 2026-09-11 19:27
-- **revisedAt**: 2026-09-11 22:44
-- **reviewStatus**: R1 and route resolution accepted; pending B integration and full-system/physical acceptance
+- **revisedAt**: 2026-09-11 23:07
+- **reviewStatus**: combined native witness ready for B; full-system/physical acceptance pending
 - **approvedAt**: 2026-09-11 (explicit worker #347 dispatch)
 - **relatedTask**: [20260911-1925-boot-artifact-size](../task/20260911-1925-boot-artifact-size.md)
 
@@ -531,3 +531,24 @@ The selected EFI target, strict refusal rules, x64 isolation, zstd and startup
 helper retirement coexist without restoring BusyBox. B's later exact consumer
 binding and new producer identities remain required; full-system and physical
 acceptance are pending. This source-only resolution does not complete the plan.
+
+### Combined native producer
+
+B reviewed and integrated source as 438c9551 (tree 775874cf, epoch 1789167215).
+The next authorized obligation is one x64 boot-native production run in a clean
+private detached checkout, using the existing GNU static hook and pinned Rust
+image, followed only by direct ELF/empty-userspace proof. Prior native 9673
+outputs are historical inputs, not substitutes for this changed source. Exact
+boot-tools/deploy inputs may be prepared read-only for the later consumer join;
+full-system and mandatory physical CX acceptance remain pending.
+
+The actual combined-source boot-native hook succeeded once: mos-init 2403504
+bytes (57c865ed...), retained mos-shutdown 2047144 bytes (77bf04b4...).
+Source/tree/epoch remain 438c9551/775874cf/1789167215. Existing ELF parser and
+new-byte empty-userspace/refusal proof passed, with full stdout/stderr and
+terminal resource records retained under the combined output root. The task
+contains exact hashes. This is a new native witness, not a new compressed image
+or a guest/full-system acceptance result. The next exact deploy/boot-tools
+input inventories are prepared read-only; their production and shared-consumer
+binding remain pending. The producer allocation is released and the plan stays
+in progress for full-system and mandatory physical CX acceptance.

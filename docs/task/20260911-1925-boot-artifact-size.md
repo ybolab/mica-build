@@ -20,8 +20,8 @@ No compatibility or migration paths are required.
 
 ## ActiveForm
 
-Approved R1 correction and exact target-route integration are ready for B integration.
-Successor producer/input join, full-system and physical CX acceptance remain pending.
+Combined-source boot-native outputs and direct static/refusal proofs are ready for B
+review. Successor consumer join and full-system/physical acceptance remain pending.
 
 ## Dependencies
 
@@ -402,3 +402,61 @@ control. Broad ARM acceptance remains deferred until approved main integration.
   its original identity and does not validate R1. A truthful successor producer
   and bounded compressed-cpio/exact observer-symlink consumer binding remain
   pending, together with full-system and mandatory physical CX acceptance.
+
+## Reviewed combined boot-native producer
+
+- B integrated the 52 reviewed implementation/tracking paths into
+  438c9551ec751fcb346881541752a7596f10cb15, tree
+  775874cfdce2ef40b7f51ae3090c6c6706a5deae, epoch 1789167215. The only
+  integration source correction removes whitespace on an empty guest-init line.
+- A detached clean production checkout is scoped beneath
+  _out/boot-size/combined-438c9551ec751fcb346881541752a7596f10cb15/source.
+  The working branch is not synchronized to B/main; previous outputs are retained.
+- B authorized one actual boot-native hook run and direct static/empty-userspace
+  proof: 4 CPU, cpuset 4-7, 10 GiB RAM with equal swap limit, four workers,
+  7200s TERM/30s kill, verified before start. The Rust image is pinned to
+  b13d4a7b877c9d6dd9a2766c4e80f1fd020218715d62877c69ce0dc2abe4fc12.
+  Freeze source/lock/hook/tool/flags and use fresh private release targets/cache.
+- Actual production succeeded once from that exact source. Container
+  c7384fc81f12e549ed757e09ae8062169294d771ebbff11dabd7e74e91bcaae8,
+  host PID 2262193, 2026-09-11T23:00:22.693748579Z to 23:01:10.147862158Z,
+  exit 0, removed. Actual compiler rustc 1.98.0 (88d9e12ae), cargo 1.98.0;
+  compiler binary SHA256 3690cc576ede140504698405d5d8fa3826aaadbe71699c6c4ed0a565d6f493e2.
+  The original and actual argv, source, toolchain record and inspected limits
+  are under metadata/native/ within the combined output root.
+- New mos-init: 2403504 bytes, SHA256
+  57c865ed0b58740faaba642cc417a0b0a3a487f3b6718a1e2fcc7e1355bdea97.
+  New retained mos-shutdown: 2047144 bytes, SHA256
+  77bf04b463ece3b0aaba03fa0f91fe0939faa87c5b9b81937b24636b3e2ef1ea.
+  Both use x86_64-unknown-linux-gnu and the existing +crt-static/strip flags.
+  These are separate executable/retained bytes; no new cpio/compression/image
+  size or full-system qualification is claimed. Old 9673/fb6 outputs are intact.
+- The real hook's readelf checks and the existing combined-source
+  build/src/kernel-package.ts kernelExecutables parser passed on both new
+  binaries: x64 ELF, no PT_INTERP, DT_NEEDED, RPATH or RUNPATH. Source inventory
+  binds 49 files and rechecked unchanged after production; Cargo.lock stays
+  9bc386de11e4acaa4cae14223330e93ffa3e5547b0dbcaa8c9d8b35e94c4a782.
+- Actual stdout and stderr were collected before removal. Container stdout
+  SHA256 b4203d65cc783e5a0d49461a2ef23987903eb20ec43425457aad0e836766c3a6;
+  stderr b7d61b621ad51b14ea907406ec6e14cb82c8897f188a0673a8e76a567f9aa315.
+  The existing GNU getaddrinfo/getpwuid_r static-link warnings and linker note
+  about garbage collection remain verbatim; no warning-free claim is made.
+- Serial benign proof used only SYS_CHROOT capability and network none.
+  Container 19f655309b4718c9711acd16b989bdca2ca437d63ce1197efc3829eba14efb1c,
+  host PID 2273695, 23:03:50.624232267Z to 23:03:50.718397749Z, exit 0,
+  removed. The real startup binary executed with no loader/libraries/helpers,
+  public invocation refused non-PID1 and the native mount worker refused EPERM.
+  The new shutdown binary also refused non-PID1 before watchdog/shutdown work.
+  Proof log SHA256 d8a1eb217ad8f161caff9fb6ae2b67c0dca0fae29dc8284469594411a7672728.
+  No host/shared block device, watchdog, reboot, guest suite or ARM execution.
+- Prepared read-only successor inputs: 59 deploy context/driver/workspace files
+  and 19 boot-tools context/pin files, in metadata/successor-inputs.json
+  (SHA256 5e04111b5b6103fac2ab34525532b5be88834bd4b8515a4196b7c6dc411f0fd2).
+  Prospective deploy version 0.1.0+git438c9551ec75-1 is not a produced package.
+  The native inputs equal accepted R1 source; changed deploy and x64-only
+  boot-tools still need their own actual producer and exact consumer binding.
+- All owned jobs are terminal, containers removed, and the 4 CPU/10 GiB
+  reservation is released. tmux vhqwow6o-38f603 is an idle persistent shell.
+  The detached production checkout remains clean; the worker branch contains
+  only tracking updates for this continuation. B7 and shared resources were
+  untouched. Full-system and physical CX acceptance remain pending.
