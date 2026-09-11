@@ -1,6 +1,6 @@
 # 20260910-1206-b3-bounded-exitrd-teardown B3 bounded exitrd teardown
 
-- **status**: completed
+- **status**: implementing
 - **createdAt**: 2026-09-10 12:06
 - **approvedAt**: 2026-09-10 12:06 (prior user approval)
 - **relatedTask**: 20260910-1206-b3-bounded-exitrd-teardown
@@ -462,3 +462,292 @@ review. No heavy grant was used and no issue done transition, main merge, push,
 new workflow/subagent or sibling communication is performed. D owns final
 campaign indexes/changelog reconciliation. Owned resources and exact committed
 source verification are recorded in the guarded L2 delivery.
+
+
+## Current static refinement (2026-09-11, explicitly approved)
+
+The earlier HYBRID implementation and its completed evidence above remain
+historical delivered work. They do not satisfy this new single-static-executable
+refinement. L1 decision `01M28Y5AV9CZR3QMH27NAZBX55`, relayed in the complete B
+handoff for campaign `mos-open-plans-20260910-100408`, authorizes implementation
+without another generic approval checkpoint. Same B3 issue/branch/owner; B7 alone
+owns subsequent combined image acceptance.
+
+Clean `c6eb729cf4ef18f32540bd882651aa3f2d8c1583` was synchronized with exact reviewed
+B ref `da65dd92ed4680531e0a065f05da24e59dd94866`, tree
+`dc4fc6998508b23d74f3c43425bc0a1eab287971`, by authorized no-ff merge
+`31e7d98896541b3e571462a307772b7a4f96a56f`. No conflicts or unknown changes.
+The accepted no-Python composition remains `ce361585dc6971ad42bae870e590a1dbebb38b82`,
+tree `186b1dea92b61bee0dda22394c33a702d44cf272`, epoch `1789153454`. It is not
+reidentified as this merge. No runtime selection/Python pin or allowance changes.
+
+### Executable scope and interface
+
+1. Reuse `src/boot/shutdown.rs` and `src/bin/mos-shutdown.rs`: replace external
+   BusyBox propagation/move/unmount/sync with pinned safe rustix mount/sync calls
+   inside the existing fixed same-executable worker. Keep blocking operations
+   away from the PID1 supervisor. Preserve all existing Action/Request, watchdog,
+   Budget, child/FD lifetime, identity graph, syncfs and release-token contracts.
+2. Extend only `lifecycle-sys/src/lib.rs` (and Cargo.toml if needed) with typed
+   DM_DEV_STATUS, DM_TABLE_STATUS plus DM_STATUS_TABLE_FLAG, and DM_DEV_REMOVE.
+   Use an identity-verified held control FD, checked initialized aligned UAPI
+   buffers, bounded size/count/retry policy, exact name/UUID/dev/table identity,
+   complete target coverage and response-relative next offsets. No generic
+   ioctl, new C library, removal-all/force/deferred bypass, or business unsafe.
+3. `src/boot.rs`, `pkgs/mos-boot/initramfs.sh` and necessary existing payload wiring
+   accept exactly one static `/shutdown` member plus generated metadata/empty
+   runtime directories and the private authenticated storage record. Reject
+   loaders, libraries, BusyBox/dmsetup and every extra member together. Keep
+   source/destination descriptor preflight, owner/mode/link/path/size checks.
+   Startup retains BusyBox, blkid, veritysetup, dmsetup and mos-init setup.
+4. Modify the actual native export `hack/build-deb.sh` and required
+   `build/src/kernel-package.ts`/direct payload tests. Existing B7 callers already
+   pass explicit mos-init/mos-shutdown paths and use build-deb with both bins;
+   do not introduce an unused parallel producer. Direct signed-boot-lab scripts
+   were inspected: they package their older lab guest, not this native export;
+   change them only if an actual consumer assertion requires it.
+5. Preserve pinned Cargo versions/workspace unsafe forbid and lock. Only necessary
+   rustix features or demonstrated static inputs may change. A missing required
+   static input may change existing `build-env/rust/Dockerfile`, filtered Rust
+   images.env entries and directly affected identity/check plumbing. No global
+   tool install, toolchain refresh or unrelated runtime/producer change.
+
+### Ordered static-input preflight
+
+Inspect exact `localhost/mos-build-rust:amd64` image identity, rustc/cargo, target
+std, GNU linker/compiler and static archives. First build existing GNU x64/aa64
+shutdown targets with explicit target-only `-C target-feature=+crt-static`,
+private per-architecture target/output directories, unchanged lock and <=4
+workers. Prove actual ELF machine/type/no PT_INTERP/no DT_NEEDED and run benign
+refusal/fixed worker cases in otherwise empty userspace. A linker flag is not
+static proof. Do not apply flags to mos-init, mos-deploy or host build scripts.
+
+If the GNU route fails its full contract, preserve the failure once, then prepare
+pinned supported musl target/std/linker/libc inputs at the SAME Rust 1.98.0;
+record exact upstream URLs, digests, licenses and image identity before use.
+Workspace rust-version=1.96 remains an MSRV, not the current compiler. Report an
+irreducible missing input precisely while continuing independent source work.
+Selected route/result must be recorded here before final source freeze.
+
+### RED, GREEN and direct gates
+
+- First capture actual current dynamic artifacts, three-executable retained
+  manifest and external fixed-tool dependency as RED. Preserve all old wave and
+  setup failures without replaying unrelated no-Python/runtime/ELF suites.
+- Typed DM tests: both ABI layouts/request codes and harmless errno/FD behavior;
+  malformed/truncated/oversized/unterminated buffers, count/flags/version/offset/
+  overflow, DM_TABLE_STATUS absolute-from-first-target next semantics, provider/
+  table/name/UUID/dev mismatch, busy/race/reuse and post-remove proof failures.
+- Existing state-machine/watchdog/deadline tests plus syscall failure/order cases,
+  partial-startup shared backend, mount ID/propagation/move/ordinary unmount and
+  syncfs refusal. Privileged fixtures use only task-owned mounts, never shared
+  disks/watchdogs; actual DM/hardware remains separate when unavailable.
+- Actual x64 and aa64 static artifacts: real ELF parser, otherwise empty root
+  execution (aa64 user-mode emulator clearly labeled), one-member copied exitrd,
+  negative dynamic/extra library/executable/architecture/owner/mode/link/path/
+  manifest/partial-copy cases. Adapt existing fixtures; no new framework.
+- Focused Rust fmt/clippy/nextest/doctest/deny via repository image; relevant Bun
+  kernel/native-input checks, boot-shutdown harness, shell/host/docs checks and
+  PMA-CR safe/FFI/storage/build review. Existing unrelated limitations persist.
+- Measure binary and retained metadata/page/alignment/scratch capacity, actual
+  assembled cpio and input identities. 1-2 MiB is a target, not an assumed pass.
+  Final guest working allocation/RSS and physical watchdog/power-cut remain B7/A.
+
+### Producer identity and resource discipline
+
+Changes to the native workspace/backend/build flags change producer contexts.
+Rebuild affected native/deploy/component producers and consumers with new actual
+identities. Never extend composition-only lineage allowances or reuse original-J
+native bytes as static evidence. Report required B7 successor inputs and exact
+source/version/epoch/tool/lock/flag/artifact bindings. Keep other accepted inputs
+only under their original relevant-input proof; no broad freshness bypass.
+
+One active B L3, global at most two heavy jobs, each <=4 CPU/10 GiB/no swap,
+separate outputs and fresh resource checks. Existing B7 builder containers are
+idle buildkitd-only, not active compile jobs; do not change those shared resources.
+B3 uses its own bounded component/fixture containers and persistent tmux, no full
+root/kernel/image/guest/cold run. All reports go only to B8t4ghqi6.
+
+Historical tracking issue detected before implementation: the existing serializer has no
+reopen action; claim on this completed task returns verbatim
+`task-state: claim requires pending status, found completed`. Preserve historical
+completion and the existing owner; report this exact format gap to B, do not
+silently bypass the serializer. This refinement is explicitly implementing in
+this plan, not completed by the historical task marker.
+
+Primary contracts: [Rust linkage](https://doc.rust-lang.org/reference/linkage.html#static-and-dynamic-c-runtimes),
+[systemd initrd interface](https://systemd.io/INITRD_INTERFACE/), and
+[Linux 6.12 DM UAPI](https://raw.githubusercontent.com/torvalds/linux/v6.12/include/uapi/linux/dm-ioctl.h).
+These sources define interfaces; only actual artifacts/fixtures establish results.
+
+### Selected static input route and initial software evidence
+
+- GNU target-only `+crt-static` succeeded with the existing Rust 1.98.0 producer
+  image `sha256:b13d4a7b877c9d6dd9a2766c4e80f1fd020218715d62877c69ce0dc2abe4fc12`.
+  No musl, new package pin, lock resolution or build-environment change is needed.
+  The production shutdown route additionally strips symbols, uses its own
+  `target-deb/<producer>/shutdown-static` cache, and validates actual program and
+  dynamic headers. Host build scripts and `mos-init` keep their existing route.
+- Evidence root: `/tmp/mos-b3-static.3ttniist`. `preflight-{x64,aa64}.json/log`
+  bind source `31e7d98896541b3e571462a307772b7a4f96a56f` plus recorded patch,
+  compiler/std/linker/static archive identities and linker maps. The preliminary
+  hybrid-backend static executables are 2,463,720 / 2,303,720 bytes, SHA-256
+  `01d7b88b6c7663d1d84094909814325a01c33a29c2b60c7825444bbebccbb87c` /
+  `d95a7bdf1417ebbe52d257f094a3a4422d5309179c8776a5fcb08a2b9f2adedc`.
+  These are preflight inputs, not the final direct-backend producer outputs.
+- Both preflight executables loaded inside empty chroots. Their historical
+  external-tool worker then failed, as required by the dependency RED fixture.
+  The x64 ELF is static PIE (relocation-only PT_DYNAMIC is allowed); aa64 is
+  ET_EXEC. Neither has PT_INTERP or DT_NEEDED.
+- ARM fixture execution uses the existing approved BuildKit emulator extracted
+  read-only from `moby/buildkit@sha256:28a898719c18a33f4e8000685287fa36fd0dd9560c6440227d3a732d79bb41d8`,
+  executable SHA-256 `239ff153cde81b6a6ab2c48eef9cff234751caa8e9d841363eace8db51e000e8`.
+  This is userspace emulation, not a guest, hardware or native ARM result; no
+  binfmt/shared-builder changes were made.
+- Meaningful RED: `red-dm` (missing typed API), `red-manifest` (single static
+  layout rejected), `red-hybrid-artifact` (actual old dynamic ELF),
+  `red-empty-protocol-{x64,aa64}` (external lifecycle tool unavailable), and
+  `red-kernel-static` (dynamic shutdown input accepted). Initial empty-fixture
+  missing-Python setup failures remain separate, as do compile/obsolete-hybrid
+  positive/clippy failures while implementing; none is relabeled as a pass.
+- Necessary direct-consumer adjustments also include
+  `pkgs/mos-deploy/tests/boot.rs` and
+  `tests/boot-busybox-startup-package-test.sh`: their old three-executable
+  positive expectations must follow the new manifest. They preserve startup
+  BusyBox/operator assembly and all path/permission/identity refusal checks.
+- `green-source2` passes typed ioctl tests, the unchanged bounded supervisor and
+  storage state-machine tests, the strict copier and partial-startup tests, plus
+  Bun typecheck and four direct native-input tests. Final source-bound gates and
+  actual component/retained/archive measurements follow before delivery.
+
+### Current acceptance schedule: x64 first (user amendment, 2026-09-11)
+
+This explicit user amendment supersedes the preceding dual-architecture delivery
+matrix. Phase 1 qualifies the current source and single-static exitrd on x64.
+B3 preserves its dirty implementation and passed source gates; no further ARM
+compiler, container/emulator or guest run is authorized before main integration.
+A one-time check found no active B3 ARM container or detached build. The pending
+native producer had not started, so no process needed interruption.
+
+B3 owns x64 native/static/ABI/empty-userspace/retained fixtures and source review;
+B7 alone owns the final combined x64 root, signed image and real guest acceptance.
+ARM source/UAPI alignment is reviewed without cross-compilation. The focused
+shutdown runner defaults to x64; its explicit `--arm-abi` option is deferred until
+the actual approved main merge. Earlier ARM static preflight results remain
+historical inputs with their original identities, not validation of this backend.
+
+Phase 2 freezes that future merged commit/tree for one consolidated virt-arm64
+and CX3576 wave, including the required pair of independent equal-input virt
+cold roots. ARM rows are deferred-by-user, not passed, removed or prerequisites
+for current x64 caller readiness. No new S905 installer/full image is added.
+Main merge/push still requires the later concrete user decision. No main, sibling
+record or shared resource is modified here. B must relay this schedule to B7.
+
+### X64 source and artifact delivery
+
+The current x64 static implementation is ready for B independent source review.
+The tracking limitation is resolved by the authorized same-owner reopen below.
+The task remains in progress for B independent review; x64 caller readiness and
+all existing source/artifact evidence are unchanged. No new ARM execution
+occurred after the user scheduling amendment.
+
+| Item | Measured result / identity |
+| --- | --- |
+| `mos-shutdown` | 2,047,144 bytes; SHA-256 `d2c5c9a6e2473c0125670031c79014c6ee946b834e2e26f32a65f38939e68b35` |
+| `mos-init` | 1,673,848 bytes; SHA-256 `738391aa650a58fb3819f52831f6affd57ddd17e357c2a161faaf39d800ec642` |
+| Retained executable layout | Exactly `shutdown`; root-owned mode 0755, static x64 ET_DYN PIE, no PT_INTERP/DT_NEEDED/RPATH/RUNPATH |
+| Materialized retained files | 2,047,158 bytes: executable plus 14-byte `etc/initrd-release`; seven empty runtime directories; authenticated `storage.json` is supplied by unchanged startup handoff later |
+| Measured tmpfs limit | 3,866,624 bytes: executable rounded to 2,097,152 at 64 KiB/page, 11 directory/metadata pages (720,896), plus 1,048,576 for the bounded 65,536-byte record and scratch/headroom |
+| Packed initramfs fixture | 21,293,056 bytes; SHA-256 `3cbfb7d5af5ebb66ecbbd51fc26fe0091b60dfb1e95a34e091a772cf8865ffd0` |
+| Historical hybrid selected payload | 8,010,008 bytes; current selected payload is 5,962,864 bytes smaller |
+| Historical hybrid packed fixture | 26,563,072 bytes; its old source/tool identity is preserved, not relabeled as an equal-input reproducibility comparison |
+
+The executable is about 1.95 MiB; the 1–2 MiB binary target is measured here,
+not a guest memory claim. Native/ELF/unpacked/host-allocation/file hashes are in
+`/tmp/mos-b3-static.3ttniist/measurements.json`. Actual guest working allocation,
+RSS, final signed-image size, hardware watchdog and power-cut proof remain pending.
+Assembly used the fixed existing tool image
+`sha256:4cac4ecfca71752a5012b09d6fc5e4e89d064afc56568f703b8c04244cd53631`
+with the current `initramfs.sh` and the exact unchanged B1 x64 BusyBox bytes
+`c48d13f5cc6f68e5ef897de4c04f85cb0d8af510ff1af0256490b37029fa6c4a`.
+This image lacked the BusyBox payload, so the first assembly setup failure is
+preserved; the successful fixture explicitly mounted that verified existing
+payload. It is not a newly built production boot-tools image or a signed image.
+B7 must rebuild the changed boot-tools/native/component contexts on its reviewed
+combined source, without original-J or composition-only native reuse.
+
+Verification retained in the same external evidence directory:
+
+- `rust-gates3`: repository fmt/clippy/nextest/doctest/deny gate passed 94 tests;
+  two pre-existing IO-fault tests remain skipped, not passes. Existing duplicate
+  dependency/license warnings remain; no shear/typos/separate MSRV claim.
+- Local review then found a too-permissive DM status response length. The added
+  `red-status-length` fails at 306 bytes; `final-dm` passes fmt/clippy and all six
+  DM parser groups plus two harmless real-descriptor tests after the exact
+  305-byte guard. Only this affected source was rechecked; the passed unrelated
+  suites were not replayed. The final native producer was rebuilt for this guard.
+- `native-x64-reviewed`: actual `build-deb.sh --producer b3-static-amd64 --bins
+  "mos-init mos-shutdown" --arch amd64` succeeds with private outputs, pinned
+  Rust 1.98/GNU static route, unchanged lock digest
+  `816a21311421587b088bc65239c1489998db43421e458d2f163a180af13a049e`,
+  4 CPUs, cpuset 0–3, 10 GiB/no swap and four compiler jobs. Earlier native
+  outputs remain historical. Linker warnings about glibc `getaddrinfo` and
+  `getpwuid_r` are preserved together with the linker's garbage-collection note;
+  no allowed lifecycle path performs NSS/network/name lookup. Actual empty-root
+  and mount-worker execution below passed without any loader/library closure.
+- `x64-fixture-tools3`: compile-only x64 UAPI assertions against pinned
+  linux-libc-dev 6.12.107-1 passed; header digests and actual request/offset/size
+  checks are logged. The copy fixture links the exact final producer library.
+  Initial fixture-library selection and missing host proc-macro dependency setup
+  failures are retained, not software/hardware pass evidence.
+- `x64-artifacts2`: actual single-payload materialization, unchanged startup
+  BusyBox/blkid/veritysetup/dmsetup, empty-userspace loader/protocol/EPERM worker,
+  private propagation/API restoration, nested/busy tmpfs, ordinary unmount,
+  moved-mount stale identity refusal and syncfs fixtures pass. These containers
+  use only owned tmpfs and no physical/DM/loop/watchdog devices. This is not PID1
+  systemd or actual DM/watchdog guest acceptance.
+- `actual-negatives`: nine actual-copy refusals (extra executable/library,
+  dynamic binary, foreign architecture, wrong owner/mode, symlink, traversal,
+  missing later member) leave the destination empty. The real kernel-input
+  consumer accepts the final x64 bytes and rejects the historical dynamic ELF.
+  BusyBox package contract and actual unchanged x64 payload pass; its explicit
+  absent ARM payload line is deferred-by-user, not an ARM pass. The four Bun
+  native-input tests/24 assertions and typecheck already passed in `green-source2`.
+- `shell-final`: 161/162 files clean; the only failure is the preserved unrelated
+  `pkgs/mosd/apid/ui/verify-ui-policy.sh:82` pipefail baseline. The new producer's
+  flagged grep form was corrected without weakening the checker. Host tooling,
+  documentation and ordered shutdown log checker passed; final record checks
+  follow the scoped commit. All command/source/patch/time/log/exit-code records
+  remain inspectable. No failure or discarded fixture is renamed to GREEN.
+
+PMA-CR local review of safe API, all six unsafe sites (one added fixed DM block),
+worker/FD lifetimes, identity/race/refusal transitions, authenticated startup and
+record preservation, strict ELF copying and actual build consumers has no
+remaining introduced finding. `review-source.json` binds each changed production
+and test file and unchanged startup/authentication/lock inputs. B owns independent
+review, B7 owns final combined x64 guest acceptance, and ARM is deferred-by-user.
+Main merge, push, issue done, shared resource changes and physical actions were
+not performed. At source delivery 36866b47, the historical completed task marker remained
+because `task-state.sh` could not reopen it; the exact preparation failure was
+reported to B twice. The authorized resolution below supersedes that limitation.
+
+
+### Tracking-only same-owner reopen (2026-09-11)
+
+B relayed explicit user/L1 authorization for the missing unsupported reopen
+operation on this SAME task. Under the serializer's exclusive docs/task directory
+inode flock, the task's completed status, b3/8ezwxfy2 owner and unique [x] index
+row were re-read and asserted. Paired detail/index changes were staged with
+rollback and committed as in_progress/[-], preserving the owner, HYBRID history
+and verbatim `/tmp/mos-b3-static.3ttniist/serializer-claim.log` preparation failure.
+No shared skill/serializer or sibling status changed. The current plan and its
+one index row remain implementing/[-]; all later supported task transitions use
+`task-state.sh`.
+
+Evidence: `/tmp/mos-b3-reopen.gc9d6pdo/reopen.json` and `reopen.log`, with before/
+after detail/index snapshots, locked directory identity and exact source/time.
+The x64 implementation commit `36866b47f2647e778ef33d7183fbba88a81a494e`, original
+source-bound gates and artifact identities remain valid and unchanged. Only
+tracking/document checks run for this follow-up. B independent review, B7 x64
+signed-image acceptance and the user-deferred post-merge ARM wave remain separate;
+this transition neither closes the static refinement nor marks the campaign done.

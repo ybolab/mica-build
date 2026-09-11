@@ -1,6 +1,6 @@
 # 20260910-1206-b3-bounded-exitrd-teardown B3 bounded exitrd teardown
 
-- **status**: completed
+- **status**: in_progress
 - **priority**: P1
 - **owner**: b3/8ezwxfy2
 - **createdAt**: 2026-09-10 12:06
@@ -73,3 +73,59 @@ Delivering reviewed native lifecycle supervision and measured retained payload f
   physical/power-cut evidence. No expensive job or issue done transition.
 
 - complete: Completed approved B3 software implementation and focused verification for L2 review; B7 caller/guest and A physical evidence remain separate. Campaign mos-open-plans-20260910-100408.
+
+
+## Current user-directed static refinement (2026-09-11)
+
+The prior completion/history above records the delivered HYBRID scope only.
+The same issue now implements the explicitly approved single-static-shutdown
+refinement under L1 decision `01M28Y5AV9CZR3QMH27NAZBX55`; see the existing plan's
+current executable scope/test/input section. Ownership remains b3/8ezwxfy2.
+The approved synchronized base is da65dd92ed4680531e0a065f05da24e59dd94866 via
+merge 31e7d98896541b3e571462a307772b7a4f96a56f. No-Python composition identity,
+prior artifacts, negative evidence and B7 joint acceptance ownership are preserved.
+
+At initial static-refinement preparation, serializer restart was refused: `task-state: claim requires pending status,
+found completed`. The exact failure is preserved externally and reported to B;
+no manual status rewrite or new tracking node substitutes for a serialized claim.
+At that preparation boundary, the static refinement was not complete and
+independent preflight/RED work continued under the explicit same-owner approval.
+The later x64 delivery and authorized tracking resolution below supersede that
+preparation state; the original refusal remains preparation failure, not product RED.
+
+- Current schedule (2026-09-11 explicit user amendment): finish the static
+  refinement on x64 only. ARM compilation/fixtures/acceptance are deferred until
+  the actual approved main merge; historical ARM preflight evidence remains
+  separately identified. No task-owned ARM job was active at the boundary.
+  B7 retains combined x64 image/guest ownership. Main merge/push is not authorized.
+
+- Static x64 software delivery: direct rustix/typed DM worker backend, strict
+  single-static executable copy/manifest/kernel validation and actual producer
+  integration implemented. Final binary is 2,047,144 bytes, SHA-256
+  `d2c5c9a6e2473c0125670031c79014c6ee946b834e2e26f32a65f38939e68b35`;
+  retained files 2,047,158 bytes, tmpfs limit 3,866,624, packed fixture 21,293,056.
+  Full 94-test Rust gate passed before the final strict DM length guard; its
+  focused final fmt/clippy/eight parser+descriptor tests passed after RED.
+  Actual x64 static/empty/owned-tmpfs/copy/kernel-input negatives pass. Evidence
+  `/tmp/mos-b3-static.3ttniist`; full results and limitations are in the plan.
+- X64 source is ready for B review/B7 integration. ARM is deferred-by-user until
+  approved main integration; guest RSS/storage/watchdog/signatures and physical
+  power-cut proof remain separate. The unsupported serializer reopen was
+  reported verbatim, so this record's historical completed status was not
+  manually bypassed at the source handoff. The authorized reopen below resolves
+that tracking limitation; the plan stays implementing for B independent review.
+
+
+- reopen (2026-09-11, explicit user/L1 direction relayed by B): Continued the
+  SAME single-static-shutdown refinement as owner b3/8ezwxfy2 under the same
+  exclusive docs/task directory-inode flock as task-state.sh. Asserted the exact
+  completed status, owner and unique [x] index row; staged the paired detail/index
+  transition with rollback, then changed only this task to in_progress/[-].
+  Prior HYBRID completion/history and original serializer-claim.log are preserved.
+  No shared serializer or sibling status was modified. All later supported
+  transitions must use the original serializer. Campaign mos-open-plans-20260910-100408.
+- Current state: x64 static source delivery 36866b47f2647e778ef33d7183fbba88a81a494e
+  and its passed gates/artifacts remain unchanged and ready for B independent
+  review. This reopen is tracking only; it does not dispatch new implementation,
+  rerun source suites, close the static refinement or change B7/ARM ownership.
+  ARM remains deferred-by-user until the actual approved main merge.

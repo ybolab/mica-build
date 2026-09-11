@@ -7,20 +7,23 @@
 
 ## Description
 
-Prepare the current native shutdown and release acceptance callers, then execute
-fresh x64, virt-arm64 and CX3576 joint lifecycle/rootfs acceptance from one
-reviewed integrated J after exact L2 job allocation and the one-time L1 joint
-source review. Carry exactly two independent equal-input virt-arm64 cold roots
-and the distinct pending runtime/physical-board rows. No new S905 image.
+Complete the reviewed no-Python source with B3's single-static-shutdown
+refinement, then execute the combined x64 lifecycle/rootfs/image acceptance.
+Generic implementation and iteration use x64; only a concrete ARM64-specific
+change justifies a focused check of that affected surface. After the actual
+separately approved main merge, run the consolidated virt-arm64/CX3576 wave on
+that exact merged source, including two independent equal-input virt cold roots.
+ARM obligations remain deferred, with physical limitations separate. No S905 image.
 
 ## ActiveForm
 
-Executing the granted joint wave; W0 shared packages are complete and collected.
+Awaiting the same B3 static source handoff; J7 no-Python is reviewed and locally
+integrated. Preserve completed producers and resume only ready x64 successors.
 
 ## Dependencies
 
-- **blocked by**: remaining W1-W4 artifact and acceptance predecessors
-- **blocks**: L2 B final acceptance and D historical reconciliation
+- **blocked by**: reviewed B3 static source and affected x64 input/acceptance predecessors
+- **blocks**: L2 B Phase1 x64 handoff; deferred ARM acceptance after approved main merge
 
 ## Notes
 
@@ -39,6 +42,25 @@ Executing the granted joint wave; W0 shared packages are complete and collected.
 - Only this task/plan and their index rows are owned here. Global/historical
   status and changelog reconciliation belongs to D. Physical board evidence
   belongs to A. Initial preparation uses no expensive job.
+
+## Current architecture and producer policy (2026-09-11)
+
+The latest actual user direction supersedes historical dual-architecture
+pre-main gates. Portable Rust or shared rootfs changes alone do not trigger ARM
+compilation or a complete ARM wave. A specific ARM-only change requires its
+narrow affected-surface check; stable post-merge ARM acceptance remains owed.
+Historical ARM outputs keep their original sources and cannot qualify later code.
+
+Phase1 source/readiness and B7 acceptance are x64. The completed packet goes to
+L1 for the existing D/D3 main-integration review with explicit deferred rows;
+main merge/push still require the final human decision. No target Python and the
+single named routel omission remain unchanged. The existing owner and task stay
+in progress; no new tracking node or duplicate B3 dispatch is required.
+
+Package/root separation and the bounded per-producer identity proposal are
+recorded in the paired plan. That follow-on design is proposal-only, not a new
+prerequisite or permission to change producer, pool, lineage or release rules.
+The ongoing static correction must retain truthful changed-native identities.
 
 ## Caller checkpoint
 

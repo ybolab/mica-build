@@ -7,10 +7,11 @@
 
 ## Context
 
-The exact reviewed B0-B6 dependency tree is merged locally. B3 requires native
-`mos-shutdown` in each same-architecture kernel input. B5 requires the runtime
-report and selected-root package manifest. B6 already repaired startup archive
-fixtures; fresh artifact and equal-input cold proof remain unexecuted.
+The reviewed B0-B6 dependency tree and J7 no-Python correction are integrated
+in B. The original B3 is implementing the user-directed single-static-shutdown
+refinement after its completed hybrid scope. B7 remains the final acceptance
+executor. Runtime report and selected-root package provenance stay mandatory;
+prior failed roots and historical architecture checks retain their exact inputs.
 
 ## Proposal
 
@@ -20,12 +21,82 @@ fixtures; fresh artifact and equal-input cold proof remain unexecuted.
    exact source, command, UTC, log hashes and exit metadata. Review the diff.
 3. Commit the coherent checkpoint, inventory immutable inputs and missing
    prerequisites, and submit exact existing-wrapper job recipes to L2.
-4. After L2 reviews the checkpoint, integrate the exact approved A/C sources
-   locally and submit actual J/input manifests for the one-time L1 joint review.
-   After named L2 allocations, produce one x64, virt-arm64 and CX3576 image
-   from J, with up to two independent jobs when capacity permits. Verify the
-   complete selected-feature/runtime matrix and pinned C verifier; compare
-   exactly two independent equal-input virt-arm64 root builds. No new S905 image.
+4. After B reviews and integrates the static correction with no-Python and
+   existing A/C, freeze the exact combined source and affected producer inputs.
+   B7 automatically runs ready x64 component/root/signed-image and actual
+   lifecycle, update/fallback/reset, authentication/API/storage/service/size
+   acceptance. Submit the Phase1 evidence with explicit deferred ARM obligations
+   for L1 and existing D/D3 integration review; human main-merge approval remains
+   required. After that approved merge exists, freeze its exact commit/tree and
+   run one consolidated virt-arm64/CX3576 wave, one image per board and two
+   independent equal-input virt cold roots. No new S905 image.
+
+## Current architecture gate and producer investigation (2026-09-11)
+
+Actual user direction: generic changes iterate on x64. Only an identified
+ARM64-specific change justifies a focused ARM64 check of the affected surface;
+touching portable Rust or shared rootfs code is insufficient. Full ARM builds,
+images and cold-root acceptance are deferred until the actual approved main
+merge. Keep old ARM outputs under their original identities and mark future
+rows deferred-by-user, not PASS. Missing future ARM hashes cannot block x64
+producers or source review. No-Python/routel-only and static shutdown remain
+cumulative requirements. Main/#343/#344, push and physical boundaries remain.
+
+Current allocation is one implementation L3 (B3), then the original B7. Retain
+4 CPU/10 GiB/no-swap as the initial x64 job envelope. The conditional maximum is
+8 CPU/20 GiB/no-swap across all active task jobs and consuming owned daemons,
+with at most two heavy jobs. Reallocation requires fresh proof of no competing
+owned ARM job, host/daemon/disk headroom and actual worker needs; preserve
+labelled state when quiescing only owned idle resources. No automatic resize or
+extra compiler parallelism follows from a spare ARM slot.
+
+Read-only findings at reviewed B `da65dd92`:
+
+- `Makefile` separates `os-debs` from the board rootfs targets.
+  `rootfs/build.sh` consumes and validates prebuilt package pools; it is not the
+  local software compilation driver. Original W0/W1 reuse across failed roots
+  remains valid history, not evidence of repeated software recompilation.
+- `build-env/deb/build.sh` uses one declared producer recipe for amd64/arm64;
+  `Architecture: all` is built once and exported to both pools. Native ELF
+  outputs remain target-specific. `os-debs` traverses all declared producers
+  and architectures, and each invocation runs its declared `PREPARE` hook.
+  Rust hooks use persistent producer/target caches; invocation does not imply
+  a complete recompile. `pkgs/podman/deb/podman/prepare.sh` reuses complete,
+  correctly stamped outputs.
+- `build-env/deb/version.sh` derives the common producer Git stamp from HEAD;
+  `build-env/deb/build.sh` also derives the package epoch from HEAD.
+  `pkgs/mosd/hack/build-deb.sh` embeds the global `MOS_BUILD_COMMIT`.
+  Root/release consumers enforce a common package source. Thus even a
+  documentation/composition commit can change freshness/packaging inputs.
+- The existing verified package-source/composition-source split handles only
+  its fixed allowed deltas and actual producer-context checks. It does not
+  authorize hiding changed static-shutdown native/package inputs or relabelling
+  original J binaries. Keep source, version, epoch, receipts and digests truthful.
+- The exact `mos-podman -> mos-system (= SYSTEM_VERSION)` dependency must be
+  preserved. Producer identities cannot permit arbitrary package mixtures or
+  ignore embedded build identity and real dependency edges.
+
+Bounded follow-on proposal, not implementation authorization or a Phase1 gate:
+
+1. Extend the existing producer engine with relevant source/lock/recipe/toolchain/
+   target/feature identities and verified immutable outputs per package.
+2. Record each producer's exact source and digest in an explicit root package
+   manifest. Rebuild changed producers and actual dependents; preserve exact
+   package dependency/version constraints and embedded identities.
+3. Composition-only changes rebuild affected root/support/image stages.
+   Data-only `all` packages are shared; generic ARM packages can serve both ARM
+   boards only when their relevant inputs match. Batch dual-target production
+   at a chosen stable source milestone with isolated outputs and atomic pool
+   publication, rather than on each x64 edit.
+4. Before any cross-module implementation, identify the exact consumer/producer
+   hunks and refusal checks for changed context, wrong digest/source, incomplete
+   pool and broken dependency edges. No new build system, broad cache rewrite,
+   global freshness override or ARM batch is approved by this investigation.
+
+Continue the current B3 static/x64 work and B7 acceptance independently. If the
+existing identity consumer cannot express the actual changed-native and reused
+package inputs, return that smallest concrete technical correction; the broader
+proposal must not become an invented prerequisite for the existing delivery.
 
 ## Risks
 
