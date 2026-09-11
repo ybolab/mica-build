@@ -663,3 +663,53 @@ two equal-input virt roots and one image per required board, and lists exact
 missing J/package/kernel/trust/service/job inputs. Full runtime, authenticated
 fresh-image scans, extraction equivalence, cold proof and physical rows remain
 open. Only the existing own task/plan are updated; no global status changes.
+
+## Joint integration checkpoint (2026-09-11)
+
+L2 accepted `d6917088`; no reviewed source defect remains. Under the existing
+joint-wave grant, cleanly synchronized exact LOCAL B `c2861fdf` with no-ff merge
+`a4e48a6f`, then merged exact A `e4154126` as `6e8e6bf1` and full C `48acef7f`
+as `e176876b733d675d1e20b40b42628cd4e18b197d`. Candidate J is that final clean
+merge, tree `7e8e8bc62b52f3d78263d717e186a07f0d3430a1`, awaiting L2 review and
+the one-time L1 joint review. All original authorized ancestors remain present.
+Later task/plan commits do not relabel the payload source or package stamps.
+
+Actual conflicts: both indexes in A and C, plus C's single existing
+acceptProvenance import. Index unions retain every parent row verbatim and
+exactly once (114 task / 67 plan rows); the test file equals reviewed B7 after
+retaining its required import. No new production code or test was introduced.
+C's six mandatory production and two verifier blobs remain exact. Every one of
+1827 non-index files matches an authorized source input. Proof:
+`/tmp/mos-b7-joint.rggwkleq/joint-source-proof.json`, SHA-256
+`03e033fb6e9163d4cbaa6090a2e3a7c2027e65bb46ee34ec1ed20c019fdff4ee`.
+PMA-CR reviewed these concrete unions/source bindings with no introduced finding;
+corrective count remains one, resolved.
+
+On clean J: affected non-publication typecheck/test gate passed 3 tests / 45
+assertions (48 explicitly filtered), actual pinned sourceIdentity returned J
+and dirty=false, and docs/merge-diff checks passed. No unchanged whole suite or
+ARM64 route was repeated. A's original full staged diff check remains exit 2 on
+unchanged patch-context whitespace; index-only check passed and reviewed blob
+equality is proven. Original merge failures, conflict stages and external helper
+syntax diagnostics remain in `/tmp/mos-b7-joint.rggwkleq/`; the plan gives their
+exact classification. No failing aggregate is presented as PASS.
+
+Board-keyed candidate job manifest:
+`/tmp/mos-b7-joint.rggwkleq/J-job-inputs.json`, SHA-256
+`c8d5eacaccc4dec388e3647d4b66e450da99625691779c94e6d4587ad1aaefbc`.
+It binds J/board/profile/radios/locks/context trees/tools to commands and planned
+outputs for x64, virt-arm64 and CX3576. Selected package resolution remains
+11/11/14. Fresh package pools, selected deb/index hashes, native/root/image bytes
+are outputs of the named jobs, not fabricated prerequisites or old stamps.
+The 28 CX kernel inputs match the compiled input at J; the preserved fixed
+toolchain image also yielded GCC 13.3.0 and its complete package inventory via
+a bounded read-only metadata query. Full joint trust/firmware reuse binding is
+still pending; x64/virt external kernel/firmware handoffs are absent.
+
+The plan identifies direct Docker resource gaps at mosd/native compilation and
+boot packaging/tool-tag routing. They require exact task execution-envelope
+binding in L2's job allocation; no production scripts or shared tags were edited.
+Missing public trust/signing mappings and controlled service peers/guest inputs
+remain explicit. No private signing key, live main source or physical disk was
+accessed. No production package/root/kernel/image/guest/cold job started, and no
+global status changed. The task remains open for actual milestone acceptance.
