@@ -800,6 +800,86 @@ class SelectionTest(unittest.TestCase):
         (self.root / 'etc/services').unlink()
         self.refuse('missing path: /etc/services')
 
+    def iproute_without_python(self):
+        entries = ['/usr/bin/ip', '/usr/bin/lnstat', '/usr/bin/nstat', '/usr/bin/rdma', '/usr/bin/ss',
+                   '/usr/sbin/arpd', '/usr/sbin/bridge', '/usr/sbin/dcb', '/usr/sbin/devlink', '/usr/sbin/genl',
+                   '/usr/sbin/rtacct', '/usr/sbin/rtmon', '/usr/sbin/tc', '/usr/sbin/tipc', '/usr/sbin/vdpa',
+                   '/usr/bin/ctstat', '/usr/bin/rtstat', '/usr/sbin/ip']
+        policy = json.loads(SELECTOR.with_name('consumers.json').read_text())
+        rule = next(r for r in policy['consumers']['mos-system']['roots']
+                    if r.get('packages') == ['iproute2'] and r['kind'] == 'executable')
+        self.rules['consumers']['mos-system']['roots'].append(rule)
+        self.rules['consumers']['mos-system']['roots'].append({'paths': ['/usr/bin/env'], 'kind': 'executable', 'reason': 'retained environment tool'})
+        for path in entries:
+            self.write(path, elf(), 0o755)
+        self.write('/usr/bin/routel', b'#! /usr/bin/env python3\nimport json\n', 0o755)
+        self.write('/usr/bin/env', elf(), 0o755)
+        self.write('/usr/share/doc/iproute2/copyright', b'iproute fixture license\n')
+        self.capture_ownership()
+        owned = [*entries, '/usr/bin/routel', '/usr/share/doc/iproute2/copyright']
+        system = self.db / 'mos-system.list'
+        system.write_text(''.join(p + '\n' for p in system.read_text().splitlines() if p not in owned))
+        (self.db / 'iproute2.list').write_text('\n'.join(owned) + '\n')
+        with self.manifest.open('a') as stream:
+            stream.write('iproute2\t6.15.0-1\tamd64\n')
+        return entries
+
+    def test_iproute_omits_only_routel_without_python(self):
+        entries = self.iproute_without_python()
+        rows = {r['path']: r for r in self.selected()['files']}
+        self.assertNotIn('/usr/bin/routel', rows)
+        self.assertFalse((self.out / 'usr/bin/python3').exists())
+        for path in entries:
+            self.assertEqual((self.out / path[1:]).read_bytes(), (self.root / path[1:]).read_bytes())
+            self.assertEqual([o['package'] for o in rows[path]['origins']], ['iproute2'])
+        self.assertEqual(self.command('verify').returncode, 0)
+
+    def test_iproute_other_script_interpreter_still_refuses(self):
+        self.iproute_without_python()
+        self.write('/usr/bin/nstat', b'#!/usr/bin/env absent-interpreter\n', 0o755)
+        self.refuse('missing env command: absent-interpreter')
+
+    def test_iproute_missing_retained_entry_still_refuses(self):
+        self.iproute_without_python()
+        (self.root / 'usr/bin/ss').unlink()
+        self.refuse('/usr/bin/ss')
+
+    def retained_named_resources(self):
+        policy = json.loads(SELECTOR.with_name('consumers.json').read_text())
+        roots = [r for r in policy['consumers']['mos-system']['roots'] if r['kind'] == 'resource' and r.get('packages') in
+                 [['tzdata'], ['debianutils', 'bash', 'dash'], ['e2fsprogs']]]
+        self.rules['consumers']['mos-system']['roots'].extend(roots)
+        owners = {'tzdata': ['/usr/share/zoneinfo/iso3166.tab', '/usr/share/zoneinfo/Europe/London'],
+                  'debianutils': ['/usr/share/debianutils/shells'], 'bash': ['/usr/share/debianutils/shells.d/bash'],
+                  'dash': ['/usr/share/debianutils/shells.d/dash'], 'e2fsprogs': ['/etc/e2scrub.conf']}
+        for owner, paths in owners.items():
+            self.write('/usr/share/doc/' + owner + '/copyright', b'fixture license\n')
+            for path in paths:
+                self.write(path, b'configured retained tool resource\n')
+        self.capture_ownership()
+        system = self.db / 'mos-system.list'
+        transferred = {p for paths in owners.values() for p in paths}
+        system.write_text(''.join(p + '\n' for p in system.read_text().splitlines() if p not in transferred))
+        with self.manifest.open('a') as stream:
+            for owner, paths in owners.items():
+                stream.write(owner + '\t1\tall\n')
+                (self.db / (owner + '.list')).write_text('\n'.join(paths) + '\n')
+        return transferred
+
+    def test_retained_named_resources_without_python(self):
+        required = self.retained_named_resources()
+        rows = {r['path'] for r in self.selected()['files']}
+        self.assertTrue(required <= rows)
+        self.assertFalse(any('python' in p for p in rows))
+        self.assertEqual(self.command('verify').returncode, 0)
+
+    def test_retained_named_resources_missing_input_refuses(self):
+        required = self.retained_named_resources()
+        for path in sorted(required):
+            with self.subTest(path=path):
+                at = self.root / path[1:]; held = self.base / 'held-named-resource'
+                at.rename(held); self.refuse(path); held.rename(at)
+
     def test_current_policy_declares_all_selected_consumers(self):
         repo = SELECTOR.parents[2]
         policy = json.loads(SELECTOR.with_name('consumers.json').read_text())
