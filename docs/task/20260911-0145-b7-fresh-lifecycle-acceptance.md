@@ -8,9 +8,10 @@
 ## Description
 
 Prepare the current native shutdown and release acceptance callers, then execute
-fresh x64 and virt-arm64 lifecycle/rootfs acceptance from one reviewed integrated
-source after each exact L2 job allocation. Carry the two serial equal-input
-virt-arm64 cold root comparisons and the distinct pending runtime/board rows.
+fresh x64, virt-arm64 and CX3576 joint lifecycle/rootfs acceptance from one
+reviewed integrated J after exact L2 job allocation and the one-time L1 joint
+source review. Carry exactly two independent equal-input virt-arm64 cold roots
+and the distinct pending runtime/physical-board rows. No new S905 image.
 
 ## ActiveForm
 
@@ -438,3 +439,112 @@ findings. The new fixture invokes the pinned wrapper, not a mock container or ho
 sourceIdentity bypass. Ordinary-checkout scope checks mount protection; the real
 production sourceIdentity call runs on this actual linked worktree. Existing
 release policy and tamper fixtures are preserved. Task/plan remain open.
+
+## R1 clean checkpoint and bounded ARM64 route results
+
+Isolated R1 correction commit: `fa817ca9b1bfe118c9ef4d5d98a1e87c20a63bc8`,
+tree `8cace615cb023ebb560a0feb361cfffdfb1e3914`. Final wrapper regression passed
+2 tests / 13 assertions; strict TypeScript, shell syntax, host-toolchain lint
+422/422, docs and diff checks passed. Prior successful native/caller, geometry,
+release and offline shutdown gates were preserved, not relabeled or replaced.
+
+On that exact clean commit, the original pinned wrapper command returned
+`{"commit":"fa817ca9b1bfe118c9ef4d5d98a1e87c20a63bc8","dirty":false}`.
+The unchanged consumer CLI then used a task-owned negative fixture with that
+actual source, exact committed board evidence and actual builder-image mapping.
+It passed source/policy/evidence/tool checks and refused intentionally empty notes
+inside typed assembleRelease: `Invalid release: empty release notes` (exit 1).
+No artifact directory or acceptance record was created. This proves entry beyond
+source validation, not complete artifact qualification. Evidence:
+`/tmp/mos-b7-r1.9BVl5b/{r1-clean-identity,r1-clean-consumer}.{json,log}` and
+`entry-proof.json`; the fixture path/hash and exact command are preserved there.
+
+### ARM64 input and execution identities
+
+All route evidence is task-owned under
+`/srv/station/work/tmp/mos/75btxdqb/route-ICNGawQo/`; `/srv` paths map identically
+to the Docker host. Per-step records include argv, UTC, source commit, stdout,
+stderr, exit code and hashes. No private trust material is included.
+
+- Debian source index: `d7e12182ce18b85b93007c1dedf31f2d29e01ccf3182cc4017c709b6259bc132`.
+- Actual arm64/v8 child: `7215f78f35ffe58fe13f244fac9c4f21326d55187271fbb3e1a8aa5cc7e387ab`;
+  config: `7e3898f7b011a107d0ef7393d5f604a6e0c0ff05ac4f2476630a8af21059ec9b`.
+- Actual target `/usr/bin/dash`: 199256 bytes,
+  `367967c823a0c391e5049b15a67c6a0a629c88b9b6dcdca75ef13ac9d65334b1`;
+  `/usr/bin/dpkg`: 396184 bytes,
+  `d8878dcd8949b2d18359b98082e18b2c3bb77f4cbe14e7a90f58b3fad2670e79`.
+  Prior extracted ELF64 little-endian headers have e_machine=183. The successful
+  BuildKit RUN independently reproduced both executable hashes in its output.
+- Verified A emulator and the private daemon's own copy both hash to
+  `239ff153cde81b6a6ab2c48eef9cff234751caa8e9d841363eace8db51e000e8`.
+- BuildKit image: `moby/buildkit@sha256:28a898719c18a33f4e8000685287fa36fd0dd9560c6440227d3a732d79bb41d8`,
+  actual amd64 / v0.32.2; installed Buildx v0.36.1. No floating-tag replacement.
+
+The explicit Docker probe used the exact child and read-only emulator copy,
+network none, dropped capabilities, no-new-privileges, 2 CPUs and 512 MiB. Its
+shell command explicitly invoked the emulator again for dpkg. It exited 255:
+`.buildkit_qemu_emulator: /dev/.buildkit_qemu_emulator: Invalid ELF image for this architecture`.
+That invocation failed and was not repeated. It is separate from both prior
+unassisted exec-format failures and the successful BuildKit route below.
+
+### Private BuildKit RUN proof and resource retirement
+
+Only one actual ARM64 RUN probe executed. The successful route used a private
+labelled container `ai-agent-mos-wave-75btxdqb-arm`, builder
+`mos-wave-75btxdqb-arm`, and labelled state volume
+`ai-agent-mos-wave-75btxdqb-arm-state-icngawqo`. It exposed only the Unix socket
+through `docker-container://ai-agent-mos-wave-75btxdqb-arm`; no TCP listener,
+host/source/device/socket bind, shared-builder change or binfmt registration.
+HostConfig verified NanoCpus=4000000000, Memory=MemorySwap=10737418240,
+AutoRemove=true and exactly the owned state-volume mount. The source-approved
+rootful namespace privilege remained confined to this daemon. Configuration
+`[worker.oci] max-parallelism = 4` has SHA-256
+`6d07b01fdf2dafa4aead7cfcca4e35036f8842349cd6e8e144b153eaec2b9063`.
+
+For deterministic startup, configuration was copied into the created, stopped
+container and verified before starting the image's original entrypoint. Buildx
+remote create/bootstrap succeeded. Exact timeout-180 build argv and a tiny
+Dockerfile are in `buildkit-prepared/arm64-buildkit-run.json` and
+`buildkit-prepared/probe-context/Dockerfile`. The RUN used network none and
+no-cache, executed dpkg, checked arm64 and both target ELF hashes, then exported
+only three small evidence files. It returned 0 with
+`ARM64_BUILDKIT_RUN_PASS`. Proof: `buildkit-prepared/buildkit-proof.json`.
+This establishes emulated BuildKit userspace execution, not host binfmt, native
+crun, system-QEMU boot, lifecycle, physical hardware or any final root/image.
+
+Preserved setup/cleanup failures remain individually visible:
+
+1. Initial read-only volume-absence parsing expected capitalized `No such`;
+   Docker returned `no such volume`. No resource existed or was created then.
+2. `timeout 30 docker ps --format '{{json .}}'` timed out (124, empty streams)
+   before resource creation. The subsequent bounded inventory used explicit
+   ID/name/image/status fields; no daemon/host setting changed.
+3. The first private container's immediate post-start configuration copy failed:
+   `Could not find the file /tmp/b7-buildkitd.toml in container 9a852383f08a78297296abfc553efe0f6e1f11f55556482376590d53471947e9`.
+   No Buildx handle or RUN existed. That container and its empty volume were
+   retired; the verified pre-start configuration sequence resolved the ordering.
+4. After the successful RUN, immediate volume removal reported `volume is in use`
+   while Docker auto-removal was settling. The enclosing script exited 1; it is
+   not an aggregate PASS. Once absence was observed, a separate owned-resource
+   cleanup verified labels and removed the volume successfully. The successful
+   RUN was not replayed. `buildkit-prepared/cleanup-proof.json` records completion.
+
+No private daemon, builder, state volume or detached gate remains. Resource
+snapshots record 8 daemon CPUs / 33635225600 total bytes and approximately
+297 GB free disk, with explicit per-container usage; these are snapshots, not a
+future heavy-job reservation. Shared builders and A's historical proof remain
+unchanged. The remote connection and worker setting follow the
+[Docker remote driver](https://docs.docker.com/build/builders/drivers/remote/)
+and [pinned BuildKit configuration](https://github.com/moby/buildkit/blob/v0.32.2/docs/buildkitd.toml.md).
+
+### Next dependency boundary
+
+L2 must review this isolated R1 correction and the already delivered consumer
+before the authorized exact A/C joint merges. Local B is still
+`ebdd7208f3c026c96e08d003d9d4f383c22f1eb9`; J does not exist yet. The route proof
+removes a generic BuildKit ARM64-route blocker but supplies no selected package
+pool, native release export, trust material, kernel equality manifest or fresh
+artifact. Actual joint input freeze, one-time L1 source review, named heavy jobs,
+full provenance/image/verifier/API/runtime/cold proof and physical bench rows
+remain pending. No passed expensive matrix was repeated and no expensive
+package/root/kernel/image/guest production was started.
