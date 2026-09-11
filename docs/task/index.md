@@ -201,3 +201,11 @@ thing about the tree. Both indexes now say the same thing.
 - [x] [**20260911-0110-b6-reproducibility-closure B6 reproducibility closure**](20260911-0110-b6-reproducibility-closure.md) `P1`
 
 - [-] [**20260911-0145-b7-fresh-lifecycle-acceptance B7 fresh lifecycle and rootfs acceptance**](20260911-0145-b7-fresh-lifecycle-acceptance.md) `P1`
+
+- [x] [**20260910-1014-a1-cx3576-resource-repairs CX3576 accelerator and resource repairs**](20260910-1014-a1-cx3576-resource-repairs.md) `P1`
+
+- [x] [**20260910-1014-a2-cx3576-acceptance-matrix Current CX3576 acceptance matrix and evidence baseline**](20260910-1014-a2-cx3576-acceptance-matrix.md) `P1`
+
+- [x] [**20260910-1014-a3-cx3576-late-hdmi-logo CX3576 late HDMI and return-to-logo repair**](20260910-1014-a3-cx3576-late-hdmi-logo.md) `P1`
+
+- [x] [**20260910-1014-a4-cx3576-integrated-acceptance CX3576 integrated artifact and board acceptance**](20260910-1014-a4-cx3576-integrated-acceptance.md) `P1`

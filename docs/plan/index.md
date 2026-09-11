@@ -136,3 +136,11 @@ disobeys on sight teaches a reader the wrong thing about the tree.
 - [x] [**20260911-0110-b6-reproducibility-closure B6 reproducibility closure**](20260911-0110-b6-reproducibility-closure.md) `2026-09-11`
 
 - [-] [**20260911-0145-b7-fresh-lifecycle-acceptance B7 fresh lifecycle and rootfs acceptance**](20260911-0145-b7-fresh-lifecycle-acceptance.md) `2026-09-11`
+
+- [x] [**20260910-1014-a1-cx3576-resource-repairs CX3576 accelerator and resource repairs**](20260910-1014-a1-cx3576-resource-repairs.md) `2026-09-10`
+
+- [x] [**20260910-1014-a2-cx3576-acceptance-matrix Current CX3576 acceptance matrix and evidence baseline**](20260910-1014-a2-cx3576-acceptance-matrix.md) `2026-09-10`
+
+- [x] [**20260910-1014-a3-cx3576-late-hdmi-logo CX3576 late HDMI and return-to-logo repair**](20260910-1014-a3-cx3576-late-hdmi-logo.md) `2026-09-10`
+
+- [x] [**20260910-1014-a4-cx3576-integrated-acceptance CX3576 integrated artifact and board acceptance**](20260910-1014-a4-cx3576-integrated-acceptance.md) `2026-09-10`
