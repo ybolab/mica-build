@@ -2,8 +2,8 @@
 
 - **status**: in_progress
 - **createdAt**: 2026-09-11 19:27
-- **revisedAt**: 2026-09-11 22:31
-- **reviewStatus**: B347-R1 corrected; awaiting B review and pending full-image/physical acceptance
+- **revisedAt**: 2026-09-11 22:44
+- **reviewStatus**: R1 and route resolution accepted; pending B integration and full-system/physical acceptance
 - **approvedAt**: 2026-09-11 (explicit worker #347 dispatch)
 - **relatedTask**: [20260911-1925-boot-artifact-size](../task/20260911-1925-boot-artifact-size.md)
 
@@ -519,3 +519,15 @@ B347-R1 section. The three-file private target-route patch reconciles B 85c54845
 without restoring helpers; 15 isolated branch/launcher cases pass. B's later
 compressed-cpio/observer-symlink consumer correction and truthful successor producer
 binding remain required. Full-system and physical acceptance are still pending.
+
+### Accepted single-target route applied
+
+B closed R1 after independent review and authorized the exact three-file route
+patch (SHA256 63b227818b4ca26dfa4e90ebe64c229b99f37496eebf4f361925bf6ace6d986f).
+It is now applied on the same branch with final bytes equal to the accepted
+proposal and its 15-case test inputs. Only routing/syntax/docs/diff validation is
+needed here; prior Rust, guest, native and packing suites are preserved, not rerun.
+The selected EFI target, strict refusal rules, x64 isolation, zstd and startup
+helper retirement coexist without restoring BusyBox. B's later exact consumer
+binding and new producer identities remain required; full-system and physical
+acceptance are pending. This source-only resolution does not complete the plan.

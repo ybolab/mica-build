@@ -20,8 +20,8 @@ No compatibility or migration paths are required.
 
 ## ActiveForm
 
-Awaiting B review of the B347-R1 ownership correction and the private target-route
-integration proposal. Full-image input join and physical CX acceptance remain pending.
+Approved R1 correction and exact target-route integration are ready for B integration.
+Successor producer/input join, full-system and physical CX acceptance remain pending.
 
 ## Dependencies
 
@@ -376,3 +376,29 @@ control. Broad ARM acceptance remains deferred until approved main integration.
   later reviewed producer must emit a new source/recipe identity. B's bounded
   compressed-cpio consumer and exact observer-symlink binding are still pending,
   along with full signed-system and mandatory physical CX acceptance.
+
+## Approved target-route integration
+
+- B independently accepted 92b3cedd and closed B347-R1 with zero remaining
+  introduced findings. Existing source/fixture limitations remain unchanged.
+- Applied exactly the reviewed patch SHA256
+  63b227818b4ca26dfa4e90ebe64c229b99f37496eebf4f361925bf6ace6d986f to
+  pkgs/mos-boot/Dockerfile, pkgs/mos-boot/build-tools.sh and
+  tests/boot-startup-package-test.sh. The resolution is a separate commit from
+  the R1 correction, accompanied only by these existing task/plan updates.
+- Final Dockerfile SHA256
+  169d9dff654eafd33a44a9b4ac2a1e23cee2604ec3fa558297d1530d1d98badf;
+  launcher 9cd889316846898a113d14680ef241e520c8474416e020a76b3871950784de03;
+  startup test 0f061473c01ecbeac2ddaa0842e639f510398b12f3728fc7efc954cfef64476c.
+  All bytes match the accepted private proposal, and the exact previously tested
+  route prefix plus its five supporting input files remain identical. The
+  existing 15-case isolated route evidence is reused; no suite or build was rerun.
+- Direct syntax and diff checks passed. Preserve strict x64/aa64 validation,
+  amd64 producer platform, no ARM acquisition/compiler reachability for x64,
+  selected EFI output, zstd/compression tooling and retired startup helpers.
+  Pins, trust, licence/source inputs and B3 shutdown are unchanged by this step.
+- No container or heavy allocation was used. No B/B7 worktree, rootfs consumer,
+  release policy or frozen artifact was changed. Old native 9673 evidence retains
+  its original identity and does not validate R1. A truthful successor producer
+  and bounded compressed-cpio/exact observer-symlink consumer binding remain
+  pending, together with full-system and mandatory physical CX acceptance.
