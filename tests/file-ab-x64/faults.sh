@@ -64,7 +64,7 @@ grep -q 'Power down' faults/shared-system.log
 echo 'PASS: shared SYSTEM damage powers off for reflash without retry churn'
 
 cp --reflink=auto --sparse=always image/factory-disk.img faults/shared-data.img
-printf '\000\000' | dd of=faults/shared-data.img bs=1 seek=$((2561 * 1048576 + 1024 + 56)) conv=notrunc status=none
+printf '\000\000' | dd of=faults/shared-data.img bs=1 seek=$((1537 * 1048576 + 1024 + 56)) conv=notrunc status=none
 bash /lab/boot.sh faults/shared-data.img writable 60 "$board" > faults/shared-data.log 2>&1
 grep -q 'shared DATA metadata unavailable; recovery required' faults/shared-data.log
 grep -q 'Power down' faults/shared-data.log

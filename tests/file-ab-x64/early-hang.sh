@@ -7,6 +7,7 @@ board=${2:?board required}
 init=$(realpath "${3:?fault-injected init required}")
 cert=$(realpath "${4:?content certificate required}")
 key=$(realpath "${5:?content key required}")
+shutdown=${6:?compiled mos-shutdown required}
 case "$board" in x64|virt-arm64) ;; *) exit 1;; esac
 work=$(mktemp -d "$PWD/_out/early-hang.XXXXXX")
 out="$work/boot"
@@ -16,7 +17,7 @@ for file in root kernel firmware metadata.key.pem metadata.pub db.key.pem db.cer
     cp -a "$source/$file" "$out/$file"
 done
 printf 'Evidence: %s\n' "$work"
-timeout -k 20 700 bun tests/file-ab-x64/update.ts "$out" "$cert" "$key" 7 kernel "$out/root" "$out/kernel" "$init"
+timeout -k 20 700 bun tests/file-ab-x64/update.ts "$out" "$cert" "$key" 7 kernel "$out/root" "$out/kernel" "$init" "$shutdown"
 timeout -k 15 450 docker run --rm --label ai-agent=true --network traefik \
     -v "$out:/w" -v "$PWD/tests/file-ab-x64:/harness:ro" ai-agent/mos-p2-lab \
     bash /harness/boot.sh image/disk.img writable 400 "$board" > "$out/install.log" 2>&1

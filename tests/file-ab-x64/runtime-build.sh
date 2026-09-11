@@ -8,6 +8,7 @@ certificate=${3:?public content certificate required}
 key=${4:?external content signing key required}
 init=${5:?compiled mos-init required}
 board=${6:?x64 or virt-arm64 required}
+shutdown=${7:?compiled mos-shutdown required}
 case "$board" in x64|virt-arm64) ;; *) echo 'unsupported acceptance board' >&2; exit 1;; esac
 scratch=$(mktemp -d "$PWD/_out/file-runtime.XXXXXX")
 evidence="$scratch/boot"
@@ -24,7 +25,7 @@ install -m 0644 tests/file-ab-x64/var-state.service "$scratch/tree/etc/systemd/s
 ln -s /etc/systemd/system/test-var-state.service "$scratch/tree/etc/systemd/system/sysinit.target.wants/test-var-state.service"
 install -m 0644 "$certificate" "$scratch/content.cert.pem"
 install -m 0600 "$key" "$scratch/content.key.pem"
-bash tests/file-ab-x64/bun.sh tests/file-ab-x64/build.ts "$evidence" "$board" "$kernel" "$scratch/content.cert.pem" "$scratch/content.key.pem" "$init" "$scratch/tree"
+bash tests/file-ab-x64/bun.sh tests/file-ab-x64/build.ts "$evidence" "$board" "$kernel" "$scratch/content.cert.pem" "$scratch/content.key.pem" "$init" "$scratch/tree" "$shutdown"
 cat >"$scratch/extension.service" <<'UNIT'
 [Unit]
 Description=Persistent extension acceptance

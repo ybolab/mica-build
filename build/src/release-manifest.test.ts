@@ -8,6 +8,7 @@ import { canonicalJson, componentId } from './components.ts'
 import { packArchive } from './component-archive.ts'
 import { assembleRelease, gateRelease, type ReleaseInputs } from './release-manifest.ts'
 import { sourceIdentity } from './release-cli.ts'
+import { acceptProvenance } from '../../tests/file-ab-x64/provenance-acceptance.ts'
 import { Toolbox } from './toolbox.ts'
 import { OPEN_TIMEOUT_MS } from './testing.ts'
 
@@ -30,26 +31,37 @@ function repin(name: string) {
 }
 // Produce the input through the real selector/composition entry, using only a
 // small installed fixture. Its measured byte image is not a SquashFS/boot claim.
-function runtimeFixture(): void {
+function runtimeFixture(arch = 'amd64'): void {
   const result = spawnSync('python3', ['-c', `
-import hashlib, json, pathlib, shutil, sys
+import hashlib, json, os, pathlib, shutil, struct, sys
 sys.dont_write_bytecode = True
-repo, work = map(pathlib.Path, sys.argv[1:])
+repo, work = map(pathlib.Path, sys.argv[1:3])
+arch = sys.argv[3]
 sys.path.insert(0, str(repo / 'tests/rootfs-runtime'))
 from composition_test import CompositionTest
+from selection_test import CAP
 case = CompositionTest()
 case.setUp()
 try:
     marker = work / 'meta/GENERATED'
     case.public_metadata(marker.read_bytes() if marker.exists() else None)
     case.f.write('/usr/share/mos/meta/updates/manifest.json', (work / 'meta/updates/manifest.json').read_bytes())
+    if arch == 'arm64':
+        for path in case.f.root.rglob('*'):
+            if not path.is_symlink() and path.is_file() and path.read_bytes().startswith(b'\\x7fELF'):
+                data = bytearray(path.read_bytes()); struct.pack_into('<H', data, 18, 183); path.write_bytes(data)
+        os.setxattr(case.f.root / 'usr/bin/captool', 'security.capability', bytes.fromhex(CAP))
+        for path in [case.f.manifest, case.inputs / 'manifest.tsv', case.inputs / 'upstream.tsv', case.f.root / 'usr/share/mos/manifest.tsv']:
+            path.write_text(path.read_text().replace('amd64', 'arm64'))
+        for directory in [case.f.db, case.inputs / 'info']:
+            (directory / 'libfixture:amd64.list').rename(directory / 'libfixture:arm64.list')
     case.capture()
     app = case.f.root / 'usr/bin/app'
     data = bytearray(app.read_bytes()); data[-1] = 44; app.write_bytes(data)
     counterpart = case.debug / '.build-id/ab/cd.debug'
     counterpart.parent.mkdir(parents=True); counterpart.write_bytes(b'fixture debug counterpart')
     (case.debug / 'manifest.tsv').write_text('/usr/bin/app\\tabcd\\t.build-id/ab/cd.debug\\t2048\\t2048\\t' + hashlib.sha256(data).hexdigest() + '\\n')
-    result = case.compose()
+    result = case.command('compose', root=case.f.root, output=case.f.out, inputs=case.inputs, rules=case.f.rules_path, arch=arch, epoch=1000000000, debug=case.debug, report=case.f.report)
     assert result.returncode == 0, result.stderr
     (case.f.base / 'rootfs-verity.img').write_bytes(bytes([42]) * 12288)
     (case.f.base / 'rootfs-verity.env').write_text('SQUASHFS_BYTES=8192\\nIMAGE_BYTES=12288\\nVERITY_ROOT_HASH=' + 'a' * 64 + '\\nVERITY_SALT=' + 'c' * 64 + '\\nVERITY_HASH_ALGO=sha256\\nVERITY_DATA_BLOCK_SIZE=4096\\nVERITY_HASH_BLOCK_SIZE=4096\\nVERITY_DATA_BLOCKS=2\\nVERITY_HASH_START_BLOCK=2\\nVERITY_DATA_SECTORS=16\\n')
@@ -59,7 +71,7 @@ try:
     shutil.copyfile(case.f.out / 'usr/share/mos/manifest.tsv', work / 'packages.tsv')
 finally:
     case.doCleanups()
-`, new URL('../../', import.meta.url).pathname, work], { encoding: 'utf8', timeout: 15000 })
+`, new URL('../../', import.meta.url).pathname, work, arch], { encoding: 'utf8', timeout: 15000 })
   expect(result.status, result.stderr).toBe(0)
 }
 function runtime() {
@@ -412,3 +424,130 @@ test('runtime report preserves nanoseconds and refuses one-nanosecond divergence
   repin('rootfs-report.runtime.json')
   expect(() => gateRelease(inputs.out, keys)).toThrow('runtime final file metadata')
 })
+
+// These signed byte fixtures exercise artifact/provenance checks, not guest boot.
+async function virtAcceptanceFixture() {
+  const repo = new URL('../../', import.meta.url).pathname
+  const checkout = join(work, 'frozen-checkout')
+  mkdirSync(join(checkout, 'boards/virt-arm64'), { recursive: true })
+  mkdirSync(join(checkout, 'build-env'))
+  for (const path of ['boards/virt-arm64/board.env', 'boards/virt-arm64/evidence.json', 'build-env/images.env']) {
+    writeFileSync(join(checkout, path), readFileSync(join(repo, path)))
+  }
+  const tb = await Toolbox.open({ key: 'release-git-fixture', imageKey: 'IMAGE_ALPINE_3_21', manager: 'apk', packages: ['git'], tools: ['git'] }, { mounts: [checkout] })
+  try {
+    const git = (...args: string[]) => tb.must(['git', '-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', '-C', checkout, ...args], {
+      env: { GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null' },
+    })
+    await git('init', '--initial-branch=fixture')
+    await git('add', '.')
+    await git('commit', '--no-gpg-sign', '-m', 'Freeze isolated acceptance fixture')
+  } finally { await tb.close() }
+  inputs.source = await sourceIdentity(checkout)
+  inputs.builderImages = Object.fromEntries(readFileSync(join(checkout, 'build-env/images.env'), 'utf8').split('\n')
+    .flatMap(line => { const match = /^((?:IMAGE|LOCAL)_[A-Z0-9_]+)=(.+)$/.exec(line); return match ? [[match[1]!, match[2]!]] : [] }))
+  const signer = new Signer(generateKeyPairSync('ed25519').privateKey, true)
+  keys = inputs.keys = [signer.publicKey]
+  const bytes = readFileSync(join(work, 'kernel/boot.efi'))
+  const artifact = { bytes: bytes.length, sha256: hash(bytes) }
+  const d = JSON.parse(readFileSync(join(repo, 'tests/component-contracts/deployment.json'), 'utf8'))
+  d.board = d.kernel.board = 'virt-arm64'
+  d.arch = d.kernel.arch = d.rootfs.arch = 'arm64'
+  d.kernel.boot.artifact = d.kernel.support.image = d.kernel.support.signature = d.rootfs.content.image = d.rootfs.content.signature = artifact
+  d.kernel.id = componentId(d.kernel); d.rootfs.id = componentId(d.rootfs)
+  rmSync(inputs.update)
+  packArchive(JSON.stringify(signer.sign(JSON.parse(canonicalJson(d)))), join(work, 'kernel'), join(work, 'root'), keys, inputs.update)
+  const f = { schema: 'mos/firmware/v1', id: '', board: 'virt-arm64', arch: 'arm64', generation: 1, version: 'one', artifact, target: { format: 'efi', partition: 1, path: 'EFI/BOOT/BOOTAA64.EFI' } }
+  f.id = componentId(f)
+  writeFileSync(join(inputs.firmware, 'firmware.json'), JSON.stringify(signer.sign(JSON.parse(canonicalJson(f)))))
+  renameSync(join(inputs.firmware, 'BOOTX64.EFI'), join(inputs.firmware, 'BOOTAA64.EFI'))
+  const image = join(work, 'mos-virt-arm64-20260911-020000.img')
+  renameSync(inputs.image, image)
+  Object.assign(inputs, { board: 'virt-arm64', image, evidence: join(checkout, 'boards/virt-arm64/evidence.json') })
+  runtimeFixture('arm64')
+  return checkout
+}
+
+test('non-publication acceptance uses the same valid candidate that both normal CLI modes refuse', async () => {
+  const checkout = await virtAcceptanceFixture()
+  // Independently establish that the low-level candidate is otherwise valid.
+  const valid = assembleRelease({ ...inputs, out: join(work, 'control') })
+  expect(valid.manifest.board).toBe('virt-arm64')
+  const repo = new URL('../../', import.meta.url).pathname
+  const publicKey = join(work, 'metadata.pub'); writeFileSync(publicKey, keys[0]!)
+  const assemble = spawnSync(process.execPath, [join(repo, 'build/src/release-cli.ts'), 'assemble', '--board', inputs.board, '--version', inputs.version,
+    '--image', inputs.image, '--update', inputs.update, '--firmware', inputs.firmware,
+    '--package-manifest', inputs.packages, '--runtime-report', inputs.runtimeReport, '--baked-meta', inputs.meta,
+    '--notes', inputs.notes, '--out', inputs.out, '--channel', inputs.channel, '--profile', inputs.profile, '--public-key', publicKey], { encoding: 'utf8', timeout: 30000 })
+  expect(assemble.status).not.toBe(0)
+  expect(assemble.stderr).toContain('Board virt-arm64 has no release publication target')
+  expect(existsSync(inputs.out)).toBe(false)
+  const printed = spyOn(console, 'log')
+  try {
+    await acceptProvenance(inputs, checkout)
+    expect(printed.mock.calls.flat().join(' ')).toContain('NON_PUBLICATION_ARTIFACT_ACCEPTANCE')
+    expect(printed.mock.calls.flat().join(' ')).not.toContain('RELEASE_GATE_PASS')
+  } finally { printed.mockRestore() }
+  const record = JSON.parse(readFileSync(`${inputs.out}.acceptance.json`, 'utf8'))
+  expect(record.publicationEligible).toBe(false)
+  expect(record.source).toEqual(inputs.source)
+  expect(record.manifestSha256).toBe(hash(readFileSync(join(inputs.out, 'manifest.json'))))
+  expect(record.artifacts).toEqual(read('manifest.json').artifacts)
+  expect(read('manifest.json').artifacts).toEqual(valid.manifest.artifacts)
+  const gate = spawnSync(process.execPath, [join(repo, 'build/src/release-cli.ts'), 'gate', '--dir', inputs.out, '--public-key', publicKey], { encoding: 'utf8', timeout: 30000 })
+  expect(gate.status).not.toBe(0)
+  expect(gate.stderr).toContain('Board virt-arm64 has no release publication target')
+  expect(gate.stdout).not.toContain('RELEASE_GATE_PASS')
+  expect(readFileSync(join(repo, 'boards/virt-arm64/board.env'), 'utf8')).toMatch(/^BOARD_RELEASE_TARGET=0$/m)
+}, OPEN_TIMEOUT_MS)
+
+test('non-publication acceptance refuses false source, dirty checkout, policy widening and reused evidence', async () => {
+  const checkout = await virtAcceptanceFixture()
+  await expect(acceptProvenance({ ...inputs, source: { commit: '0'.repeat(40), dirty: false } }, checkout)).rejects.toThrow('frozen source')
+  for (const change of [{ board: 'x64' }, { channel: 'candidate' }, { profile: 'prod' }]) {
+    await expect(acceptProvenance({ ...inputs, ...change } as ReleaseInputs, checkout)).rejects.toThrow('virt-arm64/development/dev')
+  }
+  await expect(acceptProvenance({ ...inputs, builderImages: { IMAGE_TEST: 'wrong' } }, checkout)).rejects.toThrow('builder image')
+  const evidence = join(work, 'changed-evidence.json')
+  writeFileSync(evidence, readFileSync(inputs.evidence, 'utf8') + '\n')
+  await expect(acceptProvenance({ ...inputs, evidence }, checkout)).rejects.toThrow('committed board evidence')
+  const dirty = join(checkout, 'untracked')
+  writeFileSync(dirty, 'uncommitted')
+  await expect(acceptProvenance(inputs, checkout)).rejects.toThrow('frozen source')
+  rmSync(dirty)
+  writeFileSync(`${inputs.out}.acceptance.json`, 'existing evidence')
+  await expect(acceptProvenance(inputs, checkout)).rejects.toThrow('exists')
+  expect(existsSync(inputs.out)).toBe(false)
+}, OPEN_TIMEOUT_MS)
+
+test('non-publication acceptance retains runtime and repinned artifact tamper refusals', async () => {
+  const checkout = await virtAcceptanceFixture()
+  const original = runtime()
+  writeRuntime({ ...original, architecture: 'amd64' })
+  await expect(acceptProvenance(inputs, checkout)).rejects.toThrow('architecture')
+  expect(existsSync(inputs.out)).toBe(false)
+  writeRuntime(original)
+  await acceptProvenance(inputs, checkout)
+  for (const name of ['rootfs-report.runtime.json', 'provenance.json', 'firmware.json', 'board-evidence.json']) {
+    const bytes = readFileSync(join(inputs.out, name))
+    const record = read(name)
+    if (name === 'rootfs-report.runtime.json') record.measurements.verity_image.sha256 = '0'.repeat(64)
+    if (name === 'provenance.json') record.source.commit = '0'.repeat(40)
+    if (name === 'firmware.json') record.signature = 'tampered'
+    if (name === 'board-evidence.json') record.board = 'x64'
+    write(name, record); repin(name)
+    expect(() => gateRelease(inputs.out, keys)).toThrow()
+    writeFileSync(join(inputs.out, name), bytes); repin(name)
+    expect(() => gateRelease(inputs.out, keys)).not.toThrow()
+  }
+  for (const name of ['update.mosupd', 'firmware.bin']) {
+    const bytes = readFileSync(join(inputs.out, name)); const changed = Buffer.from(bytes)
+    changed[changed.length - 1] = changed[changed.length - 1]! ^ 1
+    writeFileSync(join(inputs.out, name), changed); repin(name)
+    expect(() => gateRelease(inputs.out, keys)).toThrow()
+    writeFileSync(join(inputs.out, name), bytes); repin(name)
+    expect(() => gateRelease(inputs.out, keys)).not.toThrow()
+  }
+  writeFileSync(join(inputs.out, 'mos-virt-arm64-20260911-020000.img'), 'tampered image')
+  expect(() => gateRelease(inputs.out, keys)).toThrow('digest or length')
+}, OPEN_TIMEOUT_MS)

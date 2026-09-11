@@ -7,6 +7,7 @@ certificate=${2:?public content certificate required}
 key=${3:?external content key required}
 init=${4:?compiled mos-init required}
 board=${5:?x64 or virt-arm64 required}
+shutdown=${6:?compiled mos-shutdown required}
 case "$board" in x64) firmware=BOOTX64.EFI;; virt-arm64) firmware=BOOTAA64.EFI;; *) exit 1;; esac
 test -f "$evidence/image/factory-disk.img"
 test ! -e "$evidence/updates"
@@ -24,7 +25,7 @@ root="$evidence/root"
 kernel="$evidence/kernel"
 for spec in '3 root' '4 kernel' '5 bad-health' '6 combined'; do
     read -r generation kind <<<"$spec"
-    timeout 360s bun tests/file-ab-x64/update.ts "$evidence" "$certificate" "$key" "$generation" "$kind" "$root" "$kernel" "$init"
+    timeout 360s bun tests/file-ab-x64/update.ts "$evidence" "$certificate" "$key" "$generation" "$kind" "$root" "$kernel" "$init" "$shutdown"
     output="$evidence/updates/$generation"
     boot "$output/install.log"
     grep -F FILE_AB_INSTALL_PASS "$output/install.log"

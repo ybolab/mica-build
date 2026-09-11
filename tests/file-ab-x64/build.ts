@@ -10,9 +10,9 @@ import { packBootFirmware, packKernel } from '../../build/src/kernel-package.ts'
 import { Toolbox } from '../../build/src/toolbox.ts'
 import { Signer } from '../../shared/update-envelope.ts'
 
-const [outputArg, board, kernelArg, certificateArg, keyArg, initArg, rootArg] = Bun.argv.slice(2)
-if (!outputArg || !kernelArg || !certificateArg || !keyArg || !initArg || !rootArg || (board !== 'x64' && board !== 'virt-arm64')) {
-  throw new Error('Usage: build.ts OUTPUT x64|virt-arm64 BSP_KERNEL CERTIFICATE CONTENT_KEY MOS_INIT FULL_ROOT_TREE')
+const [outputArg, board, kernelArg, certificateArg, keyArg, initArg, rootArg, shutdownArg] = Bun.argv.slice(2)
+if (!outputArg || !kernelArg || !certificateArg || !keyArg || !initArg || !rootArg || !shutdownArg || (board !== 'x64' && board !== 'virt-arm64')) {
+  throw new Error('Usage: build.ts OUTPUT x64|virt-arm64 BSP_KERNEL CERTIFICATE CONTENT_KEY MOS_INIT FULL_ROOT_TREE MOS_SHUTDOWN')
 }
 const output = resolve(outputArg)
 mkdirSync(output)
@@ -26,7 +26,7 @@ try {
   const bootSigning = { key: join(output, 'db.key.pem'), certificate: join(output, 'db.cert.pem') }
   await tb.must(['openssl', 'req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-sha256', '-days', '1', '-subj', '/CN=file-ab-boot-test', '-keyout', bootSigning.key, '-out', bootSigning.certificate])
   const layout = parseFileLayout(readFileSync(resolve(`boards/${board}/board.env`), 'utf8'))
-  const kernel = await packKernel({ board, kernelDirectory: resolve(kernelArg), init: resolve(initArg), publicKeys: [signer.publicKey],
+  const kernel = await packKernel({ board, kernelDirectory: resolve(kernelArg), init: resolve(initArg), shutdown: resolve(shutdownArg), publicKeys: [signer.publicKey],
     systemPartUuid: layout.partitions[1]!.guid, dataPartUuid: layout.partitions[2]!.guid, output: join(output, 'kernel'), contentSigning: signing, bootSigning }, tb)
   const content = await packComponent(resolve(rootArg), join(output, 'root'), 'rootfs', signing, tb)
   const rootfs = describeRoot(board === 'x64' ? 'amd64' : 'arm64', 'proof', content)

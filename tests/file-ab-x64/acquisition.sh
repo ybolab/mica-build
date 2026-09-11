@@ -9,6 +9,7 @@ init=${4:?mos-init required}
 board=${5:?board required}
 origin=${6:?running update server origin required}
 token=${7:?admin token file required}
+shutdown=${8:?compiled mos-shutdown required}
 test -f "$evidence/image/factory-disk.img"
 test ! -e "$evidence/updates"
 boot() {
@@ -22,7 +23,7 @@ root="$evidence/root"
 kernel="$evidence/kernel"
 for spec in '3 root' '4 kernel'; do
     read -r generation kind <<<"$spec"
-    timeout 360s bun tests/file-ab-x64/update.ts "$evidence" "$certificate" "$key" "$generation" "$kind" "$root" "$kernel" "$init"
+    timeout 360s bun tests/file-ab-x64/update.ts "$evidence" "$certificate" "$key" "$generation" "$kind" "$root" "$kernel" "$init" "$shutdown"
     output="$evidence/updates/$generation"
     mv "$evidence/offline" "$output/raw-media"
     mkdir "$evidence/offline"
