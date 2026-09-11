@@ -242,6 +242,7 @@ class SelectionTest(unittest.TestCase):
         mutations = [('capability', lambda: os.removexattr(self.out / 'usr/bin/captool', 'security.capability')),
                      ('mode', lambda: (self.out / 'usr/bin/helper').chmod(0o644)),
                      ('uid', lambda: os.chown(self.out / 'var/lib/seed', 0, 456)),
+                     ('mtime', lambda: os.utime(self.out / 'etc/generated.conf', ns=(0, 0))),
                      ('digest', lambda: (self.out / 'etc/generated.conf').write_bytes(b'bad')),
                      ('target', lambda: ((self.out / 'etc/relative').unlink(), (self.out / 'etc/relative').symlink_to('/etc/license'))),
                      ('hardlink', lambda: ((self.out / 'var/lib/seed-alias').unlink(), shutil.copy2(self.out / 'var/lib/seed', self.out / 'var/lib/seed-alias')))]
