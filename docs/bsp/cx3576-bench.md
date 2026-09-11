@@ -957,8 +957,15 @@ one adapter-only recovery, preserving those retries and failed bytes; no
 automatic fourth recovery is allowed. Actual-archive RED/GREEN and scoped
 review precede unchanged smoke on the existing root, without rebuilding it.
 The exact C verifier tool is now handed off separately at `48acef7f`; its
-native file set is mosd, apid and mos-deploy, not mos-mqttd. Smoke,
-signed root/support/FIT, fresh records, full image
+native file set is mosd, apid and mos-deploy, not mos-mqttd. The unchanged smoke
+subsequently passed on 2026-09-11T00:45:29Z..00:45:57Z, exit 0: 11 PASS and
+one EXECUTOR-LIMITED crun row through BuildKit/qemu-user, not native crun or
+board qualification. It used the original OCI `d23db694...` with actual
+manifest content ID `1cfe2b6a...`; source `9d1218e2`, original root,
+load-copy evidence and shared factory alias remain unchanged. The linked A4
+detail preserves the full crun diagnostic, exact hashes and retry chronology.
+New signed root/support/FIT composition is the next serialized private gate;
+it reuses the passed root/kernel without rebuilding them. Fresh records, full image
 and candidate-specific verifier checks remain open. This is not an image ready
 to flash or a physical qualification result; the two old roots remain inadmissible.
 

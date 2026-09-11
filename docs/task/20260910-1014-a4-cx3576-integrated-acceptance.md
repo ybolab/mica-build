@@ -15,7 +15,7 @@ without relabelling its dirty-stamped build or duplicating implementation.
 
 ## ActiveForm
 
-Completed collector and coherent kernel evidence; implementing the separately L1-authorized load-adapter recovery before unchanged smoke. Physical qualification remains blocked.
+Completed collector, coherent kernel and unchanged root smoke evidence; preparing signed root/support/FIT on the immutable A baseline. Physical qualification remains blocked.
 
 ## Dependencies
 
@@ -26,7 +26,7 @@ Completed collector and coherent kernel evidence; implementing the separately L1
 
 ### Authorized composition continuation — 2026-09-10
 
-Phase state: adapter recovery authorized on 2026-09-11, owned by
+Phase state: adapter recovery and unchanged smoke passed on 2026-09-11; signed-component composition is in progress, owned by
 `bkd/1zjiu5h5`. Historical automatic retries remain 2 of 2; the case-specific
 `l1AuthorizedAdapterRecovery=1` is separate, with no automatic fourth recovery.
 The completed task/index
@@ -609,6 +609,101 @@ per-operation timeout. Live/final `smoke-gate.json`, `smoke-gate.log` and
 timestamps and exit. The persistent shell is reused only after an idle check.
 No root/package/kernel rebuild, signing or physical execution is claimed by
 this adapter GREEN. L2 collects the detached smoke result before continuation.
+
+### Collected unchanged smoke and signed-component continuation — 2026-09-11
+
+The authorized adapter recovery's mandatory smoke finished successfully without
+rebuilding any package, root or kernel. Historical automatic retries remain 2;
+`l1AuthorizedAdapterRecovery=1` is separate, with no automatic fourth recovery.
+This closes the adapter/smoke blocker, not the remaining image or physical rows.
+
+The exact command was
+`MOS_BOARD=cx3576 bash verify/run.sh --smoke --board cx3576 --builder mos-rauc-arm64`,
+from immutable `P/source` at `9d1218e2689eb5e3fce99ad1736f3a1fdc8c8801`,
+tree `0a1c2b4ddd86945961da16cc6d4d268e636f2273`. Documentation checkpoint
+`6d08754c300a15d0601c69dd37abb04fbd034029` does not relabel those artifacts.
+The existing `R=adapter-recovery-20260911-edC647` gate ran
+2026-09-11T00:45:29Z..00:45:57Z, exit 0, PID 2023476 (now absent), in the
+persistent shell `1zjiu5h5-a3c184`. The exact result is 11 PASS,
+1 EXECUTOR-LIMITED, zero failures and zero unclaimed entries of 12, through
+BuildKit/qemu-user. Preserve the crun row verbatim:
+
+```text
+EXECUTOR-LIMITED crun             /usr/bin/crun                      EXECUTED under the buildkit executor and exited 1 the one way this register entry declares this executor cannot avoid: crun re-executes libcrun through a memory file descriptor (its CVE-2024-21626 mitigation) before parsing argv, and qemu-user cannot service that fexecve -- so under emulation it cannot reach its own --version handler. The emulator's limit, not the binary's. stderr="Failed to re-execute libcrun via memory file descriptor". Nothing was asserted about the version, and this is NOT a pass: on the native route the same outcome is a FAIL, and any other status or stderr is a FAIL here too.
+```
+
+Collected evidence under `P/R`:
+
+| File / identity | SHA-256 / value |
+|---|---|
+| `smoke-gate.sh` | `2636c6f09ec9b5bc22fb5f658ea147c146c0c506e975e8e667b6bb26e91211c8` |
+| `smoke-gate.log`, 4339 bytes / 32 lines, ending `GATE_EXIT_CODE=0` | `a334cc02ef29ca6e8105e21e819c9a1c3e110689c27e1059cd52e4afa21528d9` |
+| `smoke.log` | `7b4ce1ad1dac035b75aeaa467ec503c6cb7e9b648ee2d9c25df85c1d00c535ab` |
+| `loaded-content.json` | `ba1bfee46a9ef1485e02464640c62d0b041bd6f96e55792477b0166c32e35816` |
+| Actual loaded manifest content ID | `sha256:1cfe2b6af1505f84fca72a956407de0ede9ea451a687e88abdabfe6277934e5c` |
+| Equal shared factory alias before/after files | `935f34b2e8bed28b64ba25494339798dab30ed1644280aed97b2ebead5366ab6` |
+
+Original OCI `d23db694...`, verity root `1ff66263...`, the retained corrupt
+copy `83e4c61d...` and corrected load-only copy `e33b3b15...` remain unchanged.
+Both preserved-input and reviewed-code manifests passed again; source file
+manifests compare equal and tracked status remains clean. The earlier actual
+large-layer RED/positive-original/GREEN and seven focused adapter tests remain
+the behavioral evidence; they were not rerun merely for collection. Pre-load
+self-review passed; L2's independent code/diff review is not claimed complete.
+
+The next serialized gate is
+`bash /srv/station/work/tmp/mos/1zjiu5h5/composition-20260910-2026-z2Ljld/components-20260911-C9sQha/components-gate.sh`.
+Its fresh directory `G=P/components-20260911-C9sQha` owns
+`components-gate.json`, `components-gate.log`, `root-sign.log`,
+`kernel-pack.log`, `component-SHA256SUMS` and new `components/{root,kernel}`.
+It calls the unchanged `build/run.sh --components root`, then
+`--components kernel`, with 600s and 900s ceilings respectively.
+The first command signs the already emitted verity root, not a new root build.
+The second creates new support from the passed modules/current board radios
+and regdb, and a newly authenticated kernel/DTB/initramfs FIT. It does not
+rebuild the kernel or reuse old component signatures/deployment envelopes.
+
+Input staging is only byte-preserving copies: the compiled artifact's
+`Image`, `rk3576-src.dtb`, `kernel.release`, `modules.tar` and
+`regdb-certs.pem` keep their names; `.config` becomes packager-required
+`inputs/kernel/config`. Approved reused #313 native init becomes
+`inputs/mos-init`, retaining original dirty-development source equivalence
+and hash `33e66fbc...`. `G/input-SHA256SUMS` binds source and copied bytes
+(manifest hash `d418055de448004c9cefc90368ebf5b67adcb0ab16d1adc9b78a29b105b3f567`);
+`selected-input-SHA256SUMS` independently asserts the handed-off identities.
+
+The existing FIT tooling is pinned by content ID
+`sha256:d75165f107b50d2c1cc0e9d07b49802ed78cc6b066f6b63595f7b38290145380`;
+all five fit/initramfs/ELF-closure/regdb script/environment hashes still match
+the immutable source. The selected existing OpenSSL tool is
+`sha256:3ef9650dedf6b5bb032a728069029cbec9e99366fba0e61cb2ea852296e37d68`.
+Content and boot private/public correspondence and metadata Ed25519
+correspondence passed using public derivations without exposing private bytes.
+`G/trust-preflight.log` hash is
+`3d04d3bb9e54bc5fa6f4563f0dedee1f6f77b347d572fc212b8d303a8902d0e4`.
+The content certificate remains the compiled `101209c3...` anchor. No key
+generation/rotation, shared retagging or firmware rebuild is involved.
+
+The invocation-only wrapper adds task labels/names, pins existing tools by
+content ID and mounts staged kernel inputs read-only. It refuses shared-parent
+mounts and build/load/tag/push operations. A real short read-only mount probe
+passed (`wrapper-probe.log` hash
+`749129b89638b6d869694051c55bbbda802561159b917ef299588f95b3fb99f5`);
+the forbidden `/srv` mount was refused before Docker execution, exit 1
+(`wrapper-rejected-mount.log` hash
+`5efc01bccc036e490f174f15764c31ed8801f2084b13b2a7e8807f9561cc1192`).
+These are invocation checks, not additional board or smoke results.
+
+Still open: actual emitted initramfs/root loader and service/device closure,
+authenticated build-identity correspondence, signatures under the inherited
+firmware's embedded key, candidate negatives, fresh deployment generations,
+full image/record readback and separately pinned C-final `48acef7f` full-image
+verification. The required native scan files are mosd/apid/mos-deploy, with
+their actual packed hashes recorded above. No C payload is imported.
+All 38 mandatory CX physical rows, NPU ownership, S905 hardware and original
+device reboot remain unqualified; historical D5 remains optional/nonblocking.
+The short preflight containers used `--rm`; no heavy job was active before
+this gate's dispatch. Preserve the idle task shell, source, inputs and logs.
 
 ### Original collector/kernel tracking
 

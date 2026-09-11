@@ -101,7 +101,7 @@ image, firmware, x64/virt-arm64 matrix or the passed kernel was rebuilt merely
 for documentation. This completes the bounded software/evidence deliverable,
 not exact-image composition or any of the mandatory physical rows.
 
-## Authorized composition phase — L1 adapter recovery in progress
+## Authorized composition phase — smoke passed; signed components in progress
 
 The subsequent exact L1/L2 source/input handoff resolves the earlier current-root
 and native-init dependency. It authorizes read-only execution of the existing
@@ -193,3 +193,21 @@ actual candidate execution. Its required third native ELF is mos-deploy, not
 mos-mqttd. Use only a separately identified tool snapshot for the eventual
 authenticated image scan; no C payload is imported into artifact source
 `9d1218e2`. Prior PMA completion fields and all physical blockers are unchanged.
+
+The unchanged mandatory smoke passed on 2026-09-11T00:45:29Z..00:45:57Z,
+exit 0, at artifact source `9d1218e2` and documentation checkpoint `6d08754c`.
+It executed 11 PASS / 1 EXECUTOR-LIMITED (crun) / 0 failures / 0 unclaimed
+through BuildKit/qemu-user. The task preserves the exact crun diagnostic and
+unasserted-version limit; this is not native crun or physical qualification.
+Original root/OCI, source, corrected/broken copies and shared factory alias
+were revalidated unchanged. No passed input was rebuilt.
+
+Continue step 3 with the new private `components-20260911-C9sQha` gate:
+sign the existing root, then produce new support/FIT using the exact compiled
+kernel, approved source-equivalent init and existing matching development keys.
+Public derivation correspondence and fixed FIT-tool script hashes passed.
+The task records byte-preserving filename mappings, exact manifests, limits
+and detached-gate paths. Detailed loader/service/device closure, firmware-key
+authentication, fresh records/full image and C-final candidate verification
+remain following obligations, not inferred passes. Historical automatic
+retries=2 and separate authorized adapter recovery=1 remain unchanged.
