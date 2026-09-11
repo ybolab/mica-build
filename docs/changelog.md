@@ -1,28 +1,5 @@
 # Changelog
 
-## Boot artifact and shutdown payload planning (2026-09-11)
-
-Two records now cover the two independent costs of the early-userspace archive.
-The [shutdown payload plan](plan/20260910-0341-minimal-boot-shutdown.md) was
-revised away from BusyBox to a purpose-built static `mos-shutdown`: of the
-17,253,688 bytes the exitrd keeps resident, the executable systemd pivots into
-is 67,928 bytes and the remaining 99.6% is a shared-library closure it does not
-exercise, so the fix is to remove the linkage rather than swap the program.
-
-The [boot artifact plan](plan/20260911-1927-boot-artifact-size.md) takes the
-startup half, which is released at `switch_root` and therefore costs flash,
-update bandwidth and hashed bytes rather than RAM: the uncompressed initramfs is
-50.3% of the s905x5m FIT and 42.7% of the cx3576 FIT. Five phases compress the
-ramdisk without a U-Boot change, replace `veritysetup` and `dmsetup` with the
-`devicemapper` and `linux-keyutils` crates, internalise the remaining util-linux
-helpers, static-link `mos-init`, and add `CONFIG_ZSTD` to cx3576's U-Boot so the
-kernel node compresses too. A transitive ELF walk puts the startup closure at
-16,149,328 bytes today and 6,319,808 after the verity phase alone.
-
-Both plans remain drafts; implementation is pending approval. The device-mapper
-crates are MPL-2.0 and `pkgs/mos-deploy/deny.toml` does not yet allow it, so
-that licence review is a recorded gate rather than an assumed one.
-
 ## S905X5M signed-file development images (2026-09-10)
 
 The [S905X5M port](task/20260910-0554-s905x5m-current-system.md) now produces

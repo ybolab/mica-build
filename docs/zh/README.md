@@ -46,9 +46,8 @@ contracts for current boot, storage, updates, API and build behavior.
   - [`ro-root.md`](../design/ro-root.md) — 只读根：squashfs + dm-verity，以及写入去哪里
   - [`uboot-ab-handshake.md`](../design/uboot-ab-handshake.md) — Current signed FIT and native-record contract (English)
   - [`built-in-ui-design.md`](design/built-in-ui-design.md) — 面向产品/UI 设计师的完整功能、页面、流程、状态与原型指南
-- `research/` — 调研笔记:作为基准阅读的外部产品,以及置于设计记录之外的可行性草案
+- `research/` — 调研笔记:作为基准阅读的外部产品,不属于设计记录
   - [`venus-gui-v2.md`](research/venus-gui-v2.md) — Venus OS gui-v2 功能参考,源码通读,映射到 apid/dashboard 归属
-  - [`ssd202d-lite.md`](research/ssd202d-lite.md) — 草案:SSD202D 上的 mos;16 MiB / 128 MiB 的 flash 岔口,在造新 OS 与加一块板之间做选择
 
 ## 与英文文档的关系
 

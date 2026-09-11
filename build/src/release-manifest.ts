@@ -226,9 +226,39 @@ function readRuntime(path: string): Record<string, unknown> {
   }
   return object(value, ['architecture', 'consumers', 'inputs', 'files', 'external_inputs', 'provenance', 'measurements'])
 }
-function sourceLineage(value: unknown, source: Source, arch: string, capture: Record<string, unknown>) {
-  const l = object(value, ['schema', 'package_source', 'composition_source', 'architecture', 'root_epoch', 'pool', 'receipt_sha256', 'delta'])
-  requireValue(l.schema === 'mos/source-lineage/v1' && l.architecture === arch, 'runtime lineage schema/architecture')
+const JOIN_ORIGINAL = { commit: 'e176876b733d675d1e20b40b42628cd4e18b197d', tree: '7e8e8bc62b52f3d78263d717e186a07f0d3430a1', epoch: 1789097968, version: '0.1.0+gite176876b733d-1' }
+const JOIN_REBUILT = { commit: 'fb6c4597bb902f69d528bcdc3c8372f310c322b1', tree: 'cbf2fa8ff2c8fc03534b218c952a511b6a6ba392', epoch: 1789157855, version: '0.1.0+gitfb6c4597bb90-1' }
+const JOIN_RECEIPTS = { original: 'fc79903fcd6dc8bf40191c5f4cdf4979d664dfd0315a53521d57af821f80d166', native: '175f2dbe31b08bde91f8cf5a15680c9ec7fb38d6c2e0bda46edff5f24e558d09', deploy: '267dff5433d4bc2b2a409a06e3019fd0f680f449c4866d60f8b3353b237a4683' }
+const JOIN_NATIVE = { 'mos-init': { bytes: 1673848, sha256: '738391aa650a58fb3819f52831f6affd57ddd17e357c2a161faaf39d800ec642' }, 'mos-shutdown': { bytes: 2047144, sha256: 'd2c5c9a6e2473c0125670031c79014c6ee946b834e2e26f32a65f38939e68b35' } }
+const JOIN_CONSUMERS = new Set(['rootfs/runtime/source-lineage.py', 'rootfs/build.sh', 'build/src/release-manifest.ts', 'tests/deb-package-gate.sh', 'tests/rootfs-runtime/source_lineage_test.py', 'tests/rootfs-runtime/composition_test.py', 'build/src/release-manifest.test.ts', 'docs/task/20260911-0145-b7-fresh-lifecycle-acceptance.md', 'docs/plan/20260911-0145-b7-fresh-lifecycle-acceptance.md'])
+const canonicalSha = (value: unknown) => createHash('sha256').update(canonicalJson(value) + '\n').digest('hex')
+function producerJoin(value: unknown, packages: Record<string, unknown>[], source: unknown, arch: string) {
+  const j = object(value, ['schema', 'rebuilt_source', 'approved_delta', 'producer_inputs', 'original_pool', 'witnesses', 'mapping', 'native', 'production'])
+  requireValue(j.schema === 'mos/producer-join/v1' && arch === 'amd64', 'producer join schema/architecture')
+  same(source, JOIN_ORIGINAL, 'producer join original source'); same(j.rebuilt_source, JOIN_REBUILT, 'producer join rebuilt source')
+  same(canonicalSha(j.production), '3f1fe46df0aa7d686616288b655119baeccba12589951e121321388aa45f3f58', 'producer join tool/recipe/target/flags')
+  same(j.witnesses, JOIN_RECEIPTS, 'producer join witnesses'); same(j.native, JOIN_NATIVE, 'producer join native')
+  same(canonicalSha(j.approved_delta), '25a8aa2051a6c6cc968554828a50a875781f9d5076f48127e2d295ab2110cbf1', 'producer join approved delta')
+  same(canonicalSha(j.producer_inputs), '3fa9b2060d685c5e4f0beeed48ef4045621ccf1fb94344f800aab0e2ea4cae3e', 'producer join PREPARE/input attribution')
+  same(canonicalSha(j.original_pool), 'de26c7fd9d4e5b76ae10aa166659e2d047ede56088a79fd46024fb419a5b4087', 'producer join original pool')
+  const original = object(j.original_pool, ['files', 'packages'])
+  const old = new Map(array(original.packages).map(value => { const row = record(value); return [row.package, row] }))
+  same(packages.map(p => p.package).sort(), [...old.keys()].sort(), 'producer join package membership')
+  const mapping = Object.fromEntries(packages.map(p => [p.package as string, p.package === 'mos-deploy' ? JOIN_REBUILT.commit : JOIN_ORIGINAL.commit]))
+  same(j.mapping, mapping, 'producer join unique source mapping')
+  for (const p of packages) {
+    if (p.package !== 'mos-deploy') same(p, old.get(p.package), 'producer join reused archive/control bytes')
+    else same(p, { package: 'mos-deploy', architecture: 'amd64', version: JOIN_REBUILT.version,
+      archive: 'pool/mos-deploy_' + JOIN_REBUILT.version + '_amd64.deb',
+      sha256: '5c86a35df5ce3a495fdd8390f40a6e3d099fac4f10346e53783481ccda281168',
+      control_sha256: '43440d0b43a9e2ab31b1a9940dc072d5f83cc088bd5e0675089e61dd141f84b2' }, 'producer join deploy archive/control bytes')
+  }
+}
+
+export function sourceLineage(value: unknown, source: Source, arch: string, capture: Record<string, unknown>) {
+  const joined = record(value).schema === 'mos/source-lineage/join-v1'
+  const l = object(value, ['schema', 'package_source', 'composition_source', 'architecture', 'root_epoch', 'pool', 'receipt_sha256', 'delta', ...(joined ? ['producer_join'] : [])])
+  requireValue(['mos/source-lineage/v1', 'mos/source-lineage/join-v1'].includes(l.schema as string) && l.architecture === arch, 'runtime lineage schema/architecture')
   const p = object(l.package_source, ['commit', 'tree', 'epoch', 'version'])
   const c = object(l.composition_source, ['commit', 'tree', 'epoch'])
   for (const identity of [p, c]) {
@@ -246,6 +276,7 @@ function sourceLineage(value: unknown, source: Source, arch: string, capture: Re
     'rootfs/compose/compose-capture.sh', 'rootfs/compose/compose-install.sh',
     'build/src/release-manifest.ts', 'build/src/release-manifest.test.ts',
     'tests/rootfs-runtime/source_lineage_test.py', 'tests/rootfs-runtime/composition_test.py',
+    'tests/deb-package-gate.sh',
     'rootfs/runtime/select.py', 'tests/rootfs-runtime/selection_test.py',
     'rootfs/runtime/consumers.json',
     'rootfs/debian/packages/dmsetup.json', 'rootfs/debian/packages/libdevmapper1.02.1.json',
@@ -281,13 +312,18 @@ function sourceLineage(value: unknown, source: Source, arch: string, capture: Re
     requireValue(typeof row.package === 'string' && /^[a-z0-9][a-z0-9+.-]+$/.test(row.package) && !names.has(row.package), 'runtime lineage package name/set')
     names.add(row.package)
     requireValue([arch, 'all'].includes(row.architecture as string) && typeof row.version === 'string'
-      && row.version.split('+').at(-1) === (p.version as string).split('+').at(-1), 'runtime lineage package stamp/architecture')
+      && row.version.split('+').at(-1) === (joined && row.package === 'mos-deploy' ? JOIN_REBUILT.version : p.version as string).split('+').at(-1), 'runtime lineage package stamp/architecture')
     requireValue(typeof row.archive === 'string' && /^pool\/[^/]+\.deb$/.test(row.archive) && !expected.has(row.archive), 'runtime lineage archive')
     expected.add(row.archive); digest(row.sha256); digest(row.control_sha256)
     same(files[row.archive], row.sha256, 'runtime lineage archive digest')
     return row
   })
   same(Object.keys(files).sort(), [...expected].sort(), 'runtime lineage pool membership')
+  if (joined) {
+    same(l.receipt_sha256, Object.values(JOIN_RECEIPTS).sort(), 'producer join receipt set')
+    requireValue(l.root_epoch === 1577836800 && paths.every(p => JOIN_CONSUMERS.has(p)), 'producer join consumer delta/epoch')
+    producerJoin(l.producer_join, packages, p, arch)
+  }
   for (const name of ['Packages', 'SHA256SUMS', 'manifest.txt']) same(capture[name], files[name], 'runtime lineage pool capture')
   same(capture['source-lineage.json'], createHash('sha256').update(canonicalJson(value) + '\n').digest('hex'), 'runtime lineage capture bytes')
   return { record: value, packages, rootEpoch: l.root_epoch as number }
@@ -322,6 +358,7 @@ function shippedRuntime(path: string, inventory: string, arch: string, root: Ver
       requireValue(match, 'runtime lineage missing installed package')
       for (const key of ['version', 'architecture', 'archive'] as const) same(row[key], match[key], 'runtime lineage installed package')
       same(row.archive_sha256, match.sha256, 'runtime lineage installed archive')
+      if (record(lineage.record).schema === 'mos/source-lineage/join-v1') same(row.source, { package: match.package, version: match.version }, 'producer join installed control source')
     }
   }
   requireValue((report.consumers as string[]).every(name => lineage.packages.some(p => p.package === name)), 'runtime lineage selected package missing')
@@ -453,8 +490,58 @@ function derived(dir: string, m: Omit<ReleaseManifest, 'artifacts'>, image: stri
       inputs: [image, 'update.mosupd', 'firmware.json', 'firmware.bin', 'package-manifest.tsv', 'rootfs-report.runtime.json', 'baked-meta.json', 'development-marker.txt', 'board-evidence.json', 'builder-images.json', 'release-notes.md'].map(filename => measure(dir, filename, files[filename]!)) },
   }
 }
+/** Bind the authenticated x64 UKI's actual native bytes to the joined witness. */
+export function verifyJoinedNativePayload(boot: Buffer, expected: Record<string, { bytes: number, sha256: string }>) {
+  requireValue(boot.length >= 64 && boot.length <= 256 * 1048576 && boot.toString('ascii', 0, 2) === 'MZ', 'joined UKI header')
+  const pe = boot.readUInt32LE(60)
+  requireValue(pe >= 64 && pe + 24 <= boot.length && boot.toString('ascii', pe, pe + 4) === 'PE\0\0'
+    && boot.readUInt16LE(pe + 4) === 0x8664, 'joined UKI architecture')
+  const count = boot.readUInt16LE(pe + 6), optional = boot.readUInt16LE(pe + 20), start = pe + 24 + optional
+  requireValue(count > 0 && count <= 96 && optional >= 2 && start + count * 40 <= boot.length
+    && boot.readUInt16LE(pe + 24) === 0x20b, 'joined UKI sections')
+  const initrds: Buffer[] = []
+  for (let i = 0; i < count; i++) {
+    const at = start + i * 40, name = boot.toString('ascii', at, at + 8).replace(/\0.*$/, '')
+    const bytes = boot.readUInt32LE(at + 8), size = boot.readUInt32LE(at + 16), offset = boot.readUInt32LE(at + 20)
+    if (name === '.initrd') {
+      requireValue(bytes > 0 && size >= bytes && offset >= start + count * 40 && offset + size <= boot.length, 'joined initrd bounds')
+      initrds.push(boot.subarray(offset, offset + bytes))
+    }
+  }
+  requireValue(initrds.length === 1, 'joined unique initrd')
+  const cpio = initrds[0]!, names = new Set<string>(), matched = new Set<string>()
+  const wanted: Record<string, string> = { init: 'mos-init', 'sbin/mos-shutdown': 'mos-shutdown', 'exitrd/shutdown': 'mos-shutdown' }
+  let at = 0, trailer = false
+  const align = (value: number) => Math.ceil(value / 4) * 4
+  for (let count = 0; count < 10000 && at < cpio.length; count++) {
+    requireValue(at + 110 <= cpio.length && cpio.toString('ascii', at, at + 6) === '070701', 'joined cpio header')
+    const field = (index: number) => {
+      const text = cpio.toString('ascii', at + 6 + index * 8, at + 14 + index * 8)
+      requireValue(/^[0-9a-fA-F]{8}$/.test(text), 'joined cpio field'); return Number.parseInt(text, 16)
+    }
+    const mode = field(1), uid = field(2), gid = field(3), size = field(6), nameSize = field(11)
+    requireValue(nameSize > 0 && nameSize <= 4096 && at + 110 + nameSize <= cpio.length, 'joined cpio name bounds')
+    const rawName = cpio.subarray(at + 110, at + 110 + nameSize)
+    requireValue(rawName.at(-1) === 0 && !rawName.subarray(0, -1).includes(0), 'joined cpio name terminator')
+    const name = new TextDecoder('utf-8', { fatal: true }).decode(rawName.subarray(0, -1)).replace(/^\.\//, '')
+    const data = align(at + 110 + nameSize), end = data + size
+    requireValue(end <= cpio.length, 'joined cpio data bounds')
+    at = align(end)
+    if (name === 'TRAILER!!!') { requireValue(size === 0 && cpio.subarray(at).every(b => b === 0), 'joined cpio trailer'); trailer = true; break }
+    requireValue(!/[\x00-\x1f\x7f]/.test(name) && (name === '.' || (!name.startsWith('/') && name.split('/').every(p => p && p !== '.' && p !== '..'))), 'joined cpio path')
+    requireValue(!names.has(name), 'joined duplicate cpio path'); names.add(name)
+    if (Object.hasOwn(wanted, name)) {
+      const witness = expected[wanted[name]!]
+      requireValue(witness && mode === 0o100755 && uid === 0 && gid === 0 && size === witness.bytes
+        && createHash('sha256').update(cpio.subarray(data, end)).digest('hex') === witness.sha256, 'joined authenticated native bytes/mode')
+      matched.add(name)
+    }
+  }
+  requireValue(trailer && matched.size === 3, 'joined missing native payload')
+}
+
 /** Authenticate every MOSUPD01 object using bounded reads, without unpacking it. */
-export function verifyArchive(path: string, keys: readonly string[]) {
+export function verifyArchive(path: string, keys: readonly string[], joinedNative = false) {
   regular(path)
   const fd = openSync(path, 'r')
   const exact = (length: number) => {
@@ -475,9 +562,12 @@ export function verifyArchive(path: string, keys: readonly string[]) {
     requireValue(exact(4).readUInt32BE() === objects.size, 'update object count')
     for (const [sha, bytes] of [...objects].sort(([a], [b]) => a.localeCompare(b))) {
       requireValue(exact(64).toString() === sha && exact(8).readBigUInt64BE() === BigInt(bytes), 'update object header')
-      const hash = createHash('sha256')
-      for (let remaining = bytes; remaining > 0;) { const count = Math.min(65536, remaining); hash.update(exact(count)); remaining -= count }
+      const hash = createHash('sha256'), nativeBoot = joinedNative && sha === deployment.kernel.boot.artifact.sha256
+      if (nativeBoot) requireValue(deployment.board === 'x64' && deployment.kernel.boot.format === 'uki' && bytes <= 256 * 1048576, 'joined kernel artifact')
+      const chunks: Buffer[] = []
+      for (let remaining = bytes; remaining > 0;) { const count = Math.min(65536, remaining), chunk = exact(count); hash.update(chunk); if (nativeBoot) chunks.push(chunk); remaining -= count }
       requireValue(hash.digest('hex') === sha, 'update object digest')
+      if (nativeBoot) verifyJoinedNativePayload(Buffer.concat(chunks), JOIN_NATIVE)
     }
     requireValue(readSync(fd, Buffer.alloc(1)) === 0, 'trailing update archive bytes')
     return deployment
@@ -499,7 +589,8 @@ export function gateRelease(dir: string, keys: readonly string[]) {
   requireValue(canonicalJson(developmentDomains) === canonicalJson(m.developmentDomains), 'development marker differs')
   requireValue(m.channel === 'development' || developmentDomains.length === 0, 'development keys cannot use customer channels')
   requireValue(evidence(JSON.parse(read(join(dir, 'board-evidence.json'))), m.board) === m.bootAssurance, 'evidence assurance differs')
-  const deployment = verifyArchive(join(dir, 'update.mosupd'), keys)
+  const joined = record(record(readRuntime(join(dir, 'rootfs-report.runtime.json')).provenance).source_lineage).schema === 'mos/source-lineage/join-v1'
+  const deployment = verifyArchive(join(dir, 'update.mosupd'), keys, joined)
   requireValue(deployment.board === m.board && deployment.version === m.version, 'update board or version differs')
   const firmware = authenticateFirmware(read(join(dir, 'firmware.json'), 16384), keys)
   requireValue(firmware.board === m.board, 'firmware board differs')

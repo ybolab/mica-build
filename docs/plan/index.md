@@ -109,7 +109,7 @@ disobeys on sight teaches a reader the wrong thing about the tree.
 
 - [x] [**20260910-0159-cx3576-uboot-console Restore the standard CX3576 U-Boot console entry**](20260910-0159-cx3576-uboot-console.md) `2026-09-10`
 
-- [ ] [**20260910-0341-minimal-boot-shutdown Shrink the retained shutdown payload with a purpose-built mos-shutdown**](20260910-0341-minimal-boot-shutdown.md) `2026-09-10`
+- [ ] [**20260910-0341-minimal-boot-shutdown Minimize boot and shutdown userspace with BusyBox**](20260910-0341-minimal-boot-shutdown.md) `2026-09-10`
 
 - [x] [**20260910-0517-writable-var-regdb Writable var with bounded DATA storage and matching regdb**](20260910-0517-writable-var-regdb.md) `2026-09-10`
 

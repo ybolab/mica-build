@@ -24,7 +24,7 @@ transition() {
     worker '{"Move":{"source":"/run","target":"/newroot/run"}}'
     trap - EXIT
     exec /fixture switch
-    
+
 }
 for path in dev proc sys run; do "$BB" mkdir -p "/$path"; done
 worker '{"Mount":{"source":"devtmpfs","target":"/dev","kind":"devtmpfs","options":"nosuid,mode=0755"}}'
