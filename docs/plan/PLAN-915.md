@@ -1,11 +1,16 @@
 # PLAN-915 Adopt per-board `SYS_BOOTM_LEN` derivations
 
-- **status**: implementing
+- **status**: rejected
 - **createdAt**: 2026-08-31 08:40 UTC
 - **approvedAt**: 2026-08-31 08:40 UTC (owner decision)
 - **relatedTask**: RFCT-926
 
 ## Context
+
+This section-5 derivation plan is superseded by the current fixed signed-FIT
+board contract and complete-image gates. Its historical arithmetic remains
+evidence for the former boot path; it is not a current compatibility floor or
+an instruction to reconstruct the removed path.
 
 Section 5 currently gives every U-Boot-chain board one 128 MiB
 `CONFIG_SYS_BOOTM_LEN` floor. RFCT-919 establishes that s905x5m's current
@@ -52,6 +57,8 @@ storage, bootloader, deployment, key or remote-push action is permitted.
 
 ## Annotations
 
+- Closed as superseded on 2026-09-10; current FIT policy and remaining physical
+  acceptance are tracked by the signed-file delivery and campaign records.
 - Owner-approved option (c) on 2026-08-31 authorizes implementation.
 - RFCT-924 / PLAN-914 own the FIT tree-debt classification and must not be
   overwritten by this work.

@@ -1,6 +1,6 @@
 # RFCT-335 Add a generic virtual arm64 board, bootable in QEMU
 
-- **status**: in_progress
+- **status**: completed
 - **priority**: P1
 - **owner**: bkd/y6gfy207
 - **createdAt**: 2026-09-06 08:20
@@ -36,7 +36,7 @@ Acceptance for the planning round (this round):
 
 ## ActiveForm
 
-Planning a generic virtual arm64 board bootable in QEMU
+Completed; the current architecture records the virtual ARM64 QEMU board.
 
 ## Dependencies
 
@@ -54,3 +54,5 @@ Planning a generic virtual arm64 board bootable in QEMU
 - Related plan: [PLAN-085](../plan/PLAN-085.md).
 - PMA ids were assigned at dispatch rather than chosen here: RFCT-334 is held
   by a task running beside this one.
+
+- complete: PLAN-085 is completed and the virtual arm64 board obligation is represented by the current architecture.

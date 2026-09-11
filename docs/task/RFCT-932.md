@@ -1,6 +1,6 @@
 # RFCT-932 Build and prove a reference MQTT application on s905x5m
 
-- **status**: in_progress
+- **status**: closed
 - **priority**: P1
 - **owner**: l2-mqtt-reference
 - **createdAt**: 2026-08-31 19:52 UTC
@@ -38,17 +38,12 @@ limited to the coordinated eMMC slot contents; eMMC boot areas and
 
 ## ActiveForm
 
-The sole HDMI+MQTT package is sealed and ready for the parameterized
-card-builder stage. The owner selected RFCT-934's current `p7`-to-`p8` clone
-as the one B construction for its current watchdog run; RFCT-932 will not
-write p8. MQTT hardware work still waits for the owner-approved combined-image
-deployment path and the owner's single hardware pass.
+Closed as superseded by the current S905X5M signed-file system. Historical
+package evidence remains in Git; no old raw-slot procedure is executable.
 
 ## Dependencies
 
-- **blocked by**: the owner-approved combined-image deployment path and the
-  owner hardware pass; RFCT-934 exclusively owns the current p7-to-p8 B
-  construction, so no independent p8 writer is permitted
+- **blocked by**: (none; historical deployment path superseded)
 - **blocks**: (none)
 
 ## Investigation
@@ -227,3 +222,5 @@ deployment path and the owner's single hardware pass.
   Project-pinned `veritysetup verify` passed for rootfs A against the root
   hash in the B boot environment. No card build, board write, boot-area
   access, reboot, slot change, or MQTT hardware test has been performed.
+
+- close: Superseded by the current S905X5M signed-file system; historical raw-slot deployment instructions must not run.

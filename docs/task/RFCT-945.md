@@ -1,9 +1,16 @@
 # RFCT-945 Verify managed Wi-Fi connectivity on the S905X5M SD system
 
-- **status**: in_progress
+- **status**: closed
 - **priority**: P1
 - **owner**: miehq
 - **createdAt**: 2026-09-08 09:30 UTC
+
+## Reconciliation
+
+Closed as superseded by current S905X5M signed-file integration. The successful
+historical DNS/HTTPS results and failed gateway ICMP probe remain evidence for
+that old image only. Current physical Wi-Fi qualification remains explicitly
+open and unassigned in the campaign record.
 
 ## Scope and authorization
 
@@ -66,3 +73,5 @@ other runtime blockers.
 
 Local evidence: `tmp/sd-wifi-connectivity.log`,
 `tmp/sd-wifi-connectivity.json`, `tmp/sd-wired-icmp-baseline.log`.
+
+- close: Historical Wi-Fi evidence is retained; current-image physical Wi-Fi acceptance remains unassigned in the campaign record.
