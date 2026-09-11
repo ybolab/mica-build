@@ -226,3 +226,41 @@ image; run current board offline checks and exact C-final `48acef7f` as a
 separate read-only tool. Preserve detailed failures and all successful inputs.
 No rebuild, automatic fourth recovery, source import or physical action is
 part of this continuation. D receives these phase deltas through L2 only.
+
+### Final current-A candidate evidence — 2026-09-11
+
+The original candidate gate remains RED (exit 1, 01:19:24Z..01:22:16Z), solely
+for the task-owned per-object closure model. Its trust/negative/image/offline
+subchecks and the exact C-final authenticated runner passed, the latter with
+126 checks / 0 skipped and 3 native ELFs / 19824184 scanned bytes.
+L1 separately authorized a bounded checker correction after inspecting the
+actual bytes; `historicalAutomaticRetries=2`, `l1AuthorizedAdapterRecovery=1`
+and `l1AuthorizedCheckerCorrection=1` are distinct, with no blanket retry grant.
+
+Actual original-root ARM64 loader `--list` exited 0 at 01:34:26Z..01:34:27Z.
+Its complete consumer/loaded-SONAME map and 22 OCI/packed-root file identities
+justify the private context correction without inheriting RUNPATH or adding a
+global systemd directory. Focused RED/GREEN covers the actual readelf failure,
+missing/wrong/hash-mismatched providers, transitive/version failures and
+RPATH/RUNPATH controls; 13 tests pass. Only affected static root closure was
+rerun, 01:40:13Z..01:40:24Z, exit 0, 1050/1050. All earlier 1049 successful
+rows retain exact hashes/interpreters/provider maps; initramfs/exitrd gates
+were preserved. The task detail binds all commands, reports and limitations.
+
+The new aggregate is `F/checker-correction-20260911-0v18dL/aggregate.json`,
+SHA-256 `cd8e152347765734a29b5eb4428ef05da610056ade8387aaac07fa6f0375af9e`:
+current-A software PASS with the existing crun executor limitation, not native
+or physical qualification. Exact image `mos-cx3576-20260911-012036.img` has
+SHA-256 `9939186656bd553e337237e0f4cb44584f24088e17f4e453a9d2d7032754827e`,
+fresh signed generations 2026091101/2026091102 and SYSTEM=1 GiB. Artifact source
+remains `9d1218e2`, kernel `38a362cd`, verifier tool `48acef7f`; inherited firmware
+and dirty-development init provenance are not relabelled. No passed artifact
+or gate was rebuilt, no B/C payload imported and no old RED erased.
+
+Repository changes remain the existing task/plan/bench evidence only. PMA
+completion fields preserve the earlier bounded software outcome; there is no
+reopen/index/status operation. Scoped shared/Python review and cheap docs checks
+precede the final local documentation commit and L2 review. Heavy use returns
+to 0; evidence and the idle shell are retained. All mandatory physical rows,
+NPU, S905/original-device and native crun remain unqualified; optional D5 is
+nonblocking. D alone reconciles later global history through L2's handoff.

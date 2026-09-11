@@ -15,7 +15,7 @@ without relabelling its dirty-stamped build or duplicating implementation.
 
 ## ActiveForm
 
-Completed collector, coherent kernel, unchanged smoke and component production; verifying trust/closure and composing the exact full CX candidate. Physical qualification remains blocked.
+Completed current A-baseline candidate evidence with the recorded crun executor limitation; awaiting L2 review. Physical qualification remains blocked.
 
 ## Dependencies
 
@@ -26,12 +26,13 @@ Completed collector, coherent kernel, unchanged smoke and component production; 
 
 ### Authorized composition continuation — 2026-09-10
 
-Phase state: adapter recovery, unchanged smoke and component production passed on 2026-09-11; candidate trust/closure/image acceptance is in progress, owned by
+Phase state: current A-baseline candidate software evidence completed on 2026-09-11 with the crun executor limitation, owned by
 `bkd/1zjiu5h5`. Historical automatic retries remain 2 of 2; the case-specific
-`l1AuthorizedAdapterRecovery=1` is separate, with no automatic fourth recovery.
+`l1AuthorizedAdapterRecovery=1` and `l1AuthorizedCheckerCorrection=1` are
+separate concrete L1 decisions, not a blanket recovery waiver.
 The completed task/index
-status above preserves the earlier collector/kernel delivery; it does not claim
-that this new candidate exists or passes. The PMA serializer has no reopen
+status above preserves the earlier collector/kernel delivery; the dated result
+below separately qualifies the new software candidate, never hardware. The PMA serializer has no reopen
 operation, so this continuation is a content update under the explicit L1/L2
 handoff, not an invented status transition or a second task. Composition began
 with recovery count 1. The subsequently authorized archive-acquisition recovery
@@ -794,6 +795,163 @@ is edited. Current component production is not yet a complete-image acceptance
 result. The prior crun EXECUTOR-LIMITED row, every mandatory physical row,
 NPU OPEN, S905/original-device blockers and optional D5 classification remain.
 Historical retries=2 and separately authorized adapter recovery=1 are unchanged.
+
+### Final candidate collection and authorized checker correction — 2026-09-11
+
+L1's concrete acceptance-checker decision, delivered through L2, authorizes
+non-boot loader diagnosis and a private checker correction only. Historical
+automatic retries remain 2; authorized adapter recovery remains 1; the distinct
+`l1AuthorizedCheckerCorrection=1` is recorded without authorizing another
+automatic recovery. No product, root, package, kernel, C tool or existing
+artifact was modified or rebuilt. Earlier tracking completion fields remain
+unchanged. This section supersedes only the earlier composition-pending state.
+
+Original `F/candidate-gate.sh` ran 2026-09-11T01:19:24Z..01:22:16Z,
+PID 2161134, documentation checkpoint `e8955ea01581af02111a0fc6803a1eb4c422ba1e`.
+It remains **RED, exit 1**, with its complete 19145-byte / 155-line log
+`b1d6d1b658caaacc2e523caa877f8304cd7fc94463c4588f7d6b5a4534e8f700`.
+The only failed subcheck was the per-object closure's 1049/1050 result:
+`libsystemd-core-257.so -> libsystemd-shared-257.so`. Original checker
+`27873de7ff28a6bc921645e00f4c150c836b6aa00d512e34672cfd82c6fe5f2a`
+and failure report
+`8f04c7fd83c0700f3c825dcb77d715d27f611604cdf62627ccd23ed62feef4cf`
+remain untouched. Trust, negative, image, board-offline and C126 subchecks
+actually passed in that original gate; none was rerun to collect this result.
+
+New evidence directory:
+`Q=F/checker-correction-20260911-0v18dL`.
+`Q/proof-final/loader-proof.sh` executed the **actual target loader**
+`/lib/ld-linux-aarch64.so.1 --list /usr/lib/systemd/systemd` in the original
+OCI content identity `sha256:1cfe2b6a...`, read-only and network-disabled.
+It mounted only the existing BuildKit static AArch64 emulator, SHA-256
+`239ff153cde81b6a6ab2c48eef9cff234751caa8e9d841363eace8db51e000e8`,
+read-only copied from builder image
+`sha256:28a898719c18a33f4e8000685287fa36fd0dd9560c6440227d3a732d79bb41d8`.
+No target libraries, loader/cache substitutes, `LD_LIBRARY_PATH`, PID1 or
+systemd startup were introduced. Execution at 01:34:26Z..01:34:27Z exited 0;
+PID 2171016 and the exact command are in `Q/proof-final/loader-proof.json`
+(`891a33fc1d0a3de0c4b94328c365ae318057e92a0c58eb6ef15be47f7421ba1f`).
+
+The real link map resolves both directly needed systemd DSOs from their
+private directory. `Q/bind-loader-proof.py` verifies 22 exact files, including
+the consumer, loader, target cache and 19 named providers, against both original
+OCI layer bytes and the squashfs-extracted root. Consumer/core/shared hashes
+are respectively `46044b7912af7f7087837554b186ca3ddb640c0f6646cf5e625be5078d5db80d`,
+`44786c07036c7691392d001046a1d70789e0911067c12aacce27ca68f58e5699`,
+`a62b81da3b82a87fd91e5d4a92bf611719b898b098a9327be5b441d965cdf997`.
+Binding manifest `Q/loader-bindings.json` is
+`811de5f0d2e798b0c3847e5e41e2b03d573f770efa2ee2409c0f30902dc47707`.
+This establishes loaded-SONAME reuse, **not RUNPATH inheritance** or a physical
+startup pass. The old checker incorrectly treated core as a fresh namespace.
+
+The new private checker retains independent checks outside this one evidenced
+consumer. Its breadth-first DT_NEEDED context must match the real loader map,
+exact provider paths/hashes, SONAMEs and version definitions before reuse.
+There is no global private-directory fallback, basename-tree search or DSO skip.
+`Q/context-red.log` records five failures including the actual readelf fixture;
+its preserved RED model deliberately retains the old per-object lookup.
+`PYTHONDONTWRITEBYTECODE=1 timeout 20 python3 Q/context_test.py` now passes
+13 tests (`Q/context-final-green.log`, SHA-256
+`743d986b95f922ff15e783e59063994ee1b7ec26ea8673e7612810ab7adf8a5f`).
+Controls reject absent/wrong providers, changed provider identity, unavailable
+transitive dependencies, exact version mismatch, borrowed unrelated namespaces
+and inherited RUNPATH; RPATH inheritance and RUNPATH precedence are tested.
+
+Only the affected static root closure was rerun via `bash Q/closure-check.sh`:
+01:40:13Z..01:40:24Z, PID 2174241, exit 0, **1050/1050**. Its checker hash is
+`8c32948512a2bac52a08c289754cc68e9dc61fd20858da6d106c0ca244da0f69`;
+report hash `331c1f477773199aff194df1957e7eb325c098ba3dc46c6e32bac25c5986600b`;
+log hash `3e1befc0d5b549c6f72bfd615865daae7c566f55ce6597177e1ef24f687cee69`.
+Every prior successful row retains identical file hash, interpreter and provider
+mapping. Original initramfs 27/27 and exitrd 20/20 evidence is preserved without
+rerunning it. These are static checks, not arbitrary dlopen/service coverage.
+
+#### Exact immutable candidate and independent acceptance
+
+The complete image is
+`F/assembly/image/mos-cx3576-20260911-012036.img`, 1362100224 bytes,
+SHA-256 `9939186656bd553e337237e0f4cb44584f24088e17f4e453a9d2d7032754827e`.
+It retains artifact source `9d1218e2` / tree `0a1c2b4d...`, kernel source
+`38a362cd`, and the component/build IDs above. Original firmware generation 5
+and source-equivalent dirty-development init are reused explicitly, not rebuilt
+or relabelled. No B/C product payload is included.
+
+| Fresh signed generation | Deployment ID | Envelope SHA-256 |
+|---|---|---|
+| 2026091101 | `32810045941a51f2101755c56eead3c6db3b202da5ded07433305166f46f9178` | `8557e46dac3e4783dfb665e29ccf01e0b96cd51dd041a4338dddb2dd34849678` |
+| 2026091102 | `67f2daf04c384b35ea640476ac732891b399637b21e43692e954dc3c6f49d2cd` | `cd373b6b2c1cc2e278d1521a68f71ef4087277331a68673e16a46d0f5aaa5f38` |
+
+The original trust gate verifies the new FIT under the **selected firmware's
+actual embedded key**, independently extracts its control FDT, and rejects
+kernel/DTB/initramfs tampering, no signature and a wrong public key. Root/support
+CMS verifies under the compiled content anchor, with changed-hash and
+wrong-certificate negatives. `F/trust-check.log` is
+`1376e9c476d18188217ec6fbe35e36a3ad1ade3785c9dae89414945e40ba397d`;
+individual positive/negative logs are bound in the new aggregate.
+
+The unchanged board offline check returned
+`CX3576_GPT_LOADER_COUNTERS_FILESYSTEM_PASS` (`F/board-offline.log`,
+`5b78d2a0e7e561d2120b7f2a5ef7de2f733b84b7d46019887a263be3755727ed`).
+It read actual CX partition LBAs, firmware bytes and CRC-protected attempt
+records at absolute 16/17 MiB, three attempts per fresh deployment, filesystem
+flags and DATA project quotas. This is the CX contract, not S905's record offsets.
+The full authenticated runner also checked backup GPT, clean filesystems,
+signed deployment/object readback, verity trees and firmware receipt. SYSTEM is
+1073741824 bytes; initial DATA is 268435456 bytes and remains the growable
+partition. SYSTEM contains final signed objects/records, not staging.
+
+C-final **tool only** `48acef7f1a3683b1f3bb6261911b1a5123197da2` ran the exact
+authenticated image command recorded above, returning **126 PASS / 0 skipped**
+under `F/verification/cx3576-peHhe4`. Log `F/candidate-verify.log` is
+`bde0271d6730868ab181c8e2130a7d12409e15fa14e5cf122c385eb942519175`.
+Endpoint scan counts are **3 files / 19824184 bytes**, for these actual packed
+files (also matched to the authenticated verifier's extraction):
+
+| Required ELF | SHA-256 |
+|---|---|
+| `/usr/bin/mosd` | `c51f63b2cfcd3ea385ed454d457eb3bfae2c43ba0bd7cccbfc5bf310fec570c5` |
+| `/usr/bin/apid` | `8ebf33df0f439ebcb384c2cd3f560825084e2330d1a9504b8e326fb7118d29ef` |
+| `/usr/bin/mos-deploy` | `fa8b7c9e1f3732a3c9a325442f17febe982a766981efbd8fb4554ced8ded3857` |
+
+Packed policy inspection retains layout hash `683ce083...`, zero byte/inode
+limits on projects 100/102, bounded whole `/var` on project 101, private
+DATA/var and DATA/containers binds, container storage/tmp outside `/var`,
+`NAutoVTs=0` / `ReserveVT=2`, and the authenticated getty template without
+autologin. C126 additionally covers service/device/tool/package-policy closure.
+These observations do not prove live quota/reset enforcement or login execution.
+
+`Q/aggregate.json`, SHA-256
+`cd8e152347765734a29b5eb4428ef05da610056ade8387aaac07fa6f0375af9e`,
+is a **new** current-A software result: `PASS_WITH_EXECUTOR_LIMITATION`.
+It combines the immutable candidate's prior successful gates with fresh closure
+proof, while preserving original aggregate RED. The exact 11 PASS / 1 crun
+EXECUTOR-LIMITED / 0 failures / 0 unclaimed smoke and version-unasserted
+diagnostic above remain unchanged. No root/package/kernel/image/smoke/C-suite
+regeneration occurred in this correction.
+
+Instrumentation limitations are retained: the initial loader wrapper completed
+its command but failed serializing a reserved jq field; its exit was not promoted
+to a loader pass. The separately recorded one-second proof above collected the
+real exit 0. The first aggregate collector used an unavailable Python 3.11 API
+on Python 3.10; its failure and script are retained, and only the bounded hash
+reader was corrected. Neither is a product-root or hardware failure, nor an
+additional build recovery. Full original warnings and adapter review files remain.
+
+Scoped pma-cr shared/Python review covers the private checker/context, regression
+fixtures, loader evidence, aggregate collector and this three-document delta.
+The prior adapter review remains under `P/adapter-recovery-20260911-edC647/` for
+L2's independent review. Final review/gate identities are in `Q/review.md` and
+`Q/final-docs.json`; no sibling/index/global-history status is changed.
+
+No owned Docker container or detached gate remains; heavy use is 0. The original
+idle persistent shell and all source, cache, package, kernel, root, successful
+and failed archive/log evidence are retained. Shared factory alias is unchanged.
+All 38 mandatory CX physical rows, NPU ownership/workloads, native crun, S905
+and original-device reboot remain unqualified. A coordinates and A4 integrates;
+bench/operator/device/API/media/flashed-image/power/BLE-peer/MQTT-workload inputs
+are still missing. Historical optional D5 is nonblocking. D receives this exact
+current-A composition delta through L2; it is not final combined B/C acceptance
+or authorization to flash, publish or mark hardware complete.
 
 ### Original collector/kernel tracking
 
