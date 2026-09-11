@@ -1023,3 +1023,38 @@ container archive identity remain specific runtime job inputs. Missing peers
 did not delay source integration. Every original guest/physical/teardown/cold
 row remains open, with one final image per required board, only the second
 independent virt root, and no new S905 image or physical qualification.
+
+## Granted automatic wave and first actual outputs (2026-09-11 09:04 UTC)
+
+The 08:43 UTC L1 final review accepts J
+`e176876b733d675d1e20b40b42628cd4e18b197d` and authorizes W0-W4 without
+per-producer approval. The later recovery relay directs immediate execution.
+The earlier pending grant rows are historical. Execution uses independent J
+checkouts under `W/sources`; documentation HEAD does not label payloads.
+`W` is `_out/wave/e176876b733d675d1e20b40b42628cd4e18b197d` in this worktree.
+
+W0 is now complete: the five original all-architecture producers and both
+original index commands exited 0. Seven J-stamped packages have identical bytes
+in the amd64 and arm64 pools. Exact source/tool/script/resource/command/time/log
+and output evidence is in `W/metadata/W0.json`; immutable consumer copies and
+hashes are bound by `W/metadata/W0-delivery.json`. The task record carries both
+manifest hashes and the original recorder environment failure. The producer
+sources were unchanged and clean after execution. No architecture-specific
+package, root, signature, image, guest, API or physical result follows from W0.
+
+Continue W1 with the frozen shared packages and the existing named architecture
+producer sets. The grant permits at most two freshly capacity-checked jobs,
+each with an aggregate 4 CPU/10 GiB/no-swap envelope. Direct siblings and private
+BuildKit execution divide that same envelope. Preserve task wrapper bytes and
+actual resolved tool identities; no shared tag changes. The read-only public
+trust capture is an available input, while pairing/schema proofs precede actual
+signing/root staging. Controlled service setup does not gate package production.
+
+For W2, x64 and CX use `MOS_ROOTFS_NO_CACHE=0`; virt-arm64 run1 and its sole
+independent equal-input run2 use `MOS_ROOTFS_NO_CACHE=1`. This corrects the old
+x64 draft value. Reuse the approved unchanged CX Linux export. Required pinned
+x64/virt kernel production is authorized if complete input equality cannot
+establish reuse. Build one final image each for x64, virt-arm64 and CX; use
+disposable copies for scenarios. The independent C verifier stays pinned to
+`48acef7f1a3683b1f3bb6261911b1a5123197da2`. All earlier distinct lifecycle,
+storage, authentication, API, runtime-memory and physical limitations remain.

@@ -15,11 +15,11 @@ and the distinct pending runtime/physical-board rows. No new S905 image.
 
 ## ActiveForm
 
-Preparing and verifying the B7 acceptance checkpoint.
+Executing the granted joint wave; W0 shared packages are complete and collected.
 
 ## Dependencies
 
-- **blocked by**: final integrated source and exact L2 milestone job allocation
+- **blocked by**: remaining W1-W4 artifact and acceptance predecessors
 - **blocks**: L2 B final acceptance and D historical reconciliation
 
 ## Notes
@@ -713,3 +713,53 @@ Missing public trust/signing mappings and controlled service peers/guest inputs
 remain explicit. No private signing key, live main source or physical disk was
 accessed. No production package/root/kernel/image/guest/cold job started, and no
 global status changed. The task remains open for actual milestone acceptance.
+
+## Final execution grant and W0 collection (2026-09-11 09:04 UTC)
+
+L1 approved J `e176876b733d675d1e20b40b42628cd4e18b197d`, tree
+`7e8e8bc62b52f3d78263d717e186a07f0d3430a1`, and the automatic W0-W4
+phase DAG at 08:43 UTC. This supersedes the earlier pending review/allocation
+rows. No additional producer input/output approval is pending. L2 B remains the
+only report/collection endpoint; L1 issue `10nksom6` coordinates the campaign.
+
+W0 ran the original `build-env/deb/build.sh --producer NAME --arch all` driver
+once each for `ca-trust`, `profile`, `system`, `wifi`, and `bluetooth`, with
+`timeout --signal=TERM --kill-after=30s 3600` per producer. All five exited 0.
+Both original `build-env/deb/repo.sh --arch ARCH` invocations exited 0 under
+300-second timeouts. Seven shared packages carry the actual J-derived version
+`0.1.0+gite176876b733d-1`; both pools contain identical package bytes.
+
+The independent clean checkout is `W/sources/shared`, where
+`W=_out/wave/e176876b733d675d1e20b40b42628cd4e18b197d` in this worktree.
+It has its own Git metadata and no object alternates. The final source status
+check exited 0 with empty output. Read-only copies of both completed pools and
+indexes are at `W/frozen-pools/shared-all`; they are W1 inputs, not a completed
+selected architecture pool or root/image qualification.
+
+W0 started at 09:03:40 UTC; its first actual producer started at 09:04:21 UTC,
+PID `2401014`. It finished at 09:04:53 UTC, exit 0. Persistent tmux
+`75btxdqb-7e0f1b`, pane `%101`, shell PID `2400503`, orchestrator PID `2400556`.
+No child remained when collected. Exact step argv/PIDs/UTC/log hashes/exit codes
+and all output identities are in `W/metadata/W0.json`, SHA256
+`87d721d6af0868d235b7cc8e5726d71bef0f8fcc519da7700737db99f7d8aad4`.
+The frozen delivery is `W/metadata/W0-delivery.json`, SHA256
+`e1daa56c9314ca0df13d71837a876abb006e891edca02a96984e58313cff0213`.
+
+Only the owned remote builder `mos-wave-75btxdqb-x64` and its labelled state
+volume were created. The approved BuildKit image and emulator hashes matched.
+BuildKit runs under 4 CPU/10 GiB/no-swap and worker parallelism 4. Sequential
+direct index containers use 3 CPU/8 GiB while the idle daemon is limited to
+1 CPU/2 GiB; the aggregate stays within the same job envelope. The owned daemon
+and state are retained for W1. No shared builder, host emulation or tool tag was
+modified. Task-private wrapper forwarding checks passed for original arguments,
+read-only source mounts, writable caches, names, network and private tool tags.
+
+The first task-local recorder exited 1 before any producer/resource creation:
+`AttributeError: module 'hashlib' has no attribute 'file_digest'`. Its original
+script and log remain under `W/tools/w0-startup-original.py` and
+`W/logs/W0/orchestrator-startup-python.log`, with metadata in
+`W/metadata/W0-startup-python.json`. Streaming SHA256 corrected only this private
+recorder. No producer was repeated and frozen product source did not change.
+Public trust hashes and private-key 0600 permissions were captured without
+reading private contents; signing pairing and public-meta validation remain
+required before their consuming phases.
