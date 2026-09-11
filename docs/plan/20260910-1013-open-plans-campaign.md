@@ -221,8 +221,12 @@ including exact-image install/boot, lifecycle, watchdog/recovery, externally
 timed publication/record-boundary power cuts, HDMI/VT, named NPU/VENC/VDEC and
 peripheral fixtures, native crun on capable S905X5M hardware, and the
 original-device authenticated apid reboot. B7 supplies the joint software
-image/provenance inputs. Late-HDMI restoration remains unimplemented, and no
-automated evidence qualifies these physical rows.
+image/provenance inputs. Reviewed A3 commit
+`209982d98f83ef149d2c3850adc63debc42f4c5a`, integrated through A-final,
+delivers visible-logo restoration on real HPD/VT return while preserving
+authenticated tty2 and DRM/blank/suspend boundaries; exact-`J`-image physical
+HDMI/VT/USB-keyboard/visual acceptance remains pending, and no automated
+evidence qualifies these physical rows.
 
 The exact power-cut matrix independently cuts storage power at download/offline
 import, destination object write and file sync, object directory publication,
