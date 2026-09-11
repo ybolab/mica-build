@@ -6,7 +6,7 @@ import { dirname, join } from 'node:path'
 import { Signer } from '../../shared/update-envelope.ts'
 import { canonicalJson, componentId } from './components.ts'
 import { packArchive } from './component-archive.ts'
-import { assembleRelease, gateRelease, type ReleaseInputs } from './release-manifest.ts'
+import { assembleRelease, gateRelease, verifyArchive, verifyJoinedNativePayload, type ReleaseInputs } from './release-manifest.ts'
 import { sourceIdentity } from './release-cli.ts'
 import { acceptProvenance } from '../../tests/file-ab-x64/provenance-acceptance.ts'
 import { Toolbox } from './toolbox.ts'
@@ -618,6 +618,58 @@ test.each(['missing', 'unknown', 'source', 'receipt', 'pool', 'stamp', 'epoch', 
   if (mutation === 'capture') r.provenance.capture_sha256['source-lineage.json'] = '0'.repeat(64)
   else if (mutation !== 'missing') r.provenance.capture_sha256['source-lineage.json'] = hash(Buffer.from(canonicalJson(lineage) + '\n'))
   if (mutation === 'dirty') inputs.source.dirty = true
+  writeRuntime(r)
+  expect(() => assembleRelease(inputs)).toThrow()
+})
+
+function joinedUki(change = '') {
+  const init = Buffer.from('fixture init'), shutdown = Buffer.from('fixture static shutdown')
+  const expected = { 'mos-init': { bytes: init.length, sha256: hash(init) }, 'mos-shutdown': { bytes: shutdown.length, sha256: hash(shutdown) } }
+  const parts: Buffer[] = []
+  const entry = (name: string, bytes: Buffer, mode = 0o100755) => {
+    const fields = [1, mode, change === 'owner' ? 1 : 0, 0, 1, 1577836800, bytes.length, 0, 0, 0, 0, name.length + 1, 0]
+    const header = Buffer.from('070701' + fields.map(n => n.toString(16).padStart(8, '0')).join(''))
+    const named = Buffer.concat([header, Buffer.from(name + '\0')])
+    parts.push(named, Buffer.alloc((4 - named.length % 4) % 4), bytes, Buffer.alloc((4 - bytes.length % 4) % 4))
+  }
+  entry('./init', init)
+  entry('./sbin/mos-shutdown', change === 'bytes' ? Buffer.from('different') : shutdown, change === 'mode' ? 0o100777 : 0o100755)
+  if (change !== 'missing') entry('./exitrd/shutdown', shutdown)
+  if (change === 'duplicate') entry('./init', init)
+  if (change !== 'trailer') entry('TRAILER!!!', Buffer.alloc(0), 0)
+  const cpio = Buffer.concat(parts), boot = Buffer.alloc(512 + cpio.length)
+  boot.write('MZ'); boot.writeUInt32LE(64, 60); boot.write('PE\0\0', 64)
+  boot.writeUInt16LE(change === 'architecture' ? 0xaa64 : 0x8664, 68); boot.writeUInt16LE(1, 70)
+  boot.writeUInt16LE(240, 84); boot.writeUInt16LE(0x20b, 88)
+  boot.write('.initrd', 328); boot.writeUInt32LE(cpio.length, 336); boot.writeUInt32LE(cpio.length, 344)
+  boot.writeUInt32LE(change === 'bounds' ? boot.length : 512, 348); cpio.copy(boot, 512)
+  return { boot, expected }
+}
+
+test('joined native payload binds all three actual archive entries', () => {
+  const f = joinedUki()
+  expect(() => verifyJoinedNativePayload(f.boot, f.expected)).not.toThrow()
+  f.expected['mos-shutdown'].sha256 = 'f'.repeat(64)
+  expect(() => verifyJoinedNativePayload(f.boot, f.expected)).toThrow('native bytes')
+})
+
+test.each(['bytes', 'owner', 'mode', 'missing', 'duplicate', 'trailer', 'architecture', 'bounds'])('joined native payload refuses %s', change => {
+  const f = joinedUki(change)
+  expect(() => verifyJoinedNativePayload(f.boot, f.expected)).toThrow()
+})
+
+test('joined archive cannot accept an authenticated kernel lacking witnessed native payloads', () => {
+  // This archive is otherwise valid and signed. Join mode must additionally
+  // inspect the authenticated boot bytes, not only hash a claimed path list.
+  expect(() => verifyArchive(inputs.update, keys)).not.toThrow()
+  expect(() => verifyArchive(inputs.update, keys, true)).toThrow('joined UKI')
+})
+
+test.each(['missing', 'unknown', 'self-authorized'])('runtime joined lineage refuses %s producer witnesses', change => {
+  const r = runtime()
+  r.provenance.source_lineage.schema = 'mos/source-lineage/join-v1'
+  if (change !== 'missing') r.provenance.source_lineage.producer_join = change === 'unknown' ? { schema: 'unknown' } : { approved: true }
+  r.provenance.capture_sha256['source-lineage.json'] = hash(Buffer.from(canonicalJson(r.provenance.source_lineage) + '\n'))
   writeRuntime(r)
   expect(() => assembleRelease(inputs)).toThrow()
 })
