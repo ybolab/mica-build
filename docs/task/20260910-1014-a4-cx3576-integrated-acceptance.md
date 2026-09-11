@@ -15,7 +15,7 @@ without relabelling its dirty-stamped build or duplicating implementation.
 
 ## ActiveForm
 
-Completed collector, coherent kernel and unchanged root smoke evidence; preparing signed root/support/FIT on the immutable A baseline. Physical qualification remains blocked.
+Completed collector, coherent kernel, unchanged smoke and component production; verifying trust/closure and composing the exact full CX candidate. Physical qualification remains blocked.
 
 ## Dependencies
 
@@ -26,7 +26,7 @@ Completed collector, coherent kernel and unchanged root smoke evidence; preparin
 
 ### Authorized composition continuation — 2026-09-10
 
-Phase state: adapter recovery and unchanged smoke passed on 2026-09-11; signed-component composition is in progress, owned by
+Phase state: adapter recovery, unchanged smoke and component production passed on 2026-09-11; candidate trust/closure/image acceptance is in progress, owned by
 `bkd/1zjiu5h5`. Historical automatic retries remain 2 of 2; the case-specific
 `l1AuthorizedAdapterRecovery=1` is separate, with no automatic fourth recovery.
 The completed task/index
@@ -704,6 +704,96 @@ All 38 mandatory CX physical rows, NPU ownership, S905 hardware and original
 device reboot remain unqualified; historical D5 remains optional/nonblocking.
 The short preflight containers used `--rm`; no heavy job was active before
 this gate's dispatch. Preserve the idle task shell, source, inputs and logs.
+
+### Collected components and full-candidate gate — 2026-09-11
+
+`G/components-gate.sh` completed at 2026-09-11T01:00:14Z..01:00:34Z,
+exit 0; PID 2146905 is absent. Artifact source remains `9d1218e2` /
+`0a1c2b4d...`, documentation checkpoint `809329ab4c8a77eb1c695a3dea464ef24ab88403`.
+The full 2273-byte / 17-line log ends `GATE_EXIT_CODE=0`, SHA-256
+`cf8c0fbd3451e2dce0b578af101c8c236c3574f3f083bd5cb0290704c8424514`.
+All 16 files match `G/component-SHA256SUMS`, manifest hash
+`46bc5d44d5fd570fc39023307b9b5583f583f09f1087b1c4ea81150985dc0e42`.
+Input/reviewed-code manifests and before/after source inventory also match.
+No successful build or smoke was repeated.
+
+| Emitted component / artifact | Exact ID or SHA-256 |
+|---|---|
+| Root component ID | `13862bc2b0b67bce309b0edf31c92eb704b3cddfbd1e09b59f2c94c6b4a2ab65` |
+| Kernel component ID | `fbf2fc6355907861ebe56c11844637c3b6ae56ffc5f3e2a78872070c4e330788` |
+| Support component ID | `0b3ca31c64c3541509bf4d85ea497c57495c4ef7bed2178404f96fedb3eb5318` |
+| Kernel build ID | `d25c19e3190a1efc76624309f73535353bff0d18a6083832d6d66f0e75be9750` |
+| `boot.itb`, 78590850 bytes | `18810e4e407e965d36bb1db4c83d84e003d6804392c37d92611e76fd4734463c` |
+| `support.img`, 1552384 bytes | `6665065012f9f6fd0eb6ff275d03d07fe9a76a99fbefe121c76abebcdcec5c13` |
+| `rootfs.img`, unchanged 76947456 bytes | `1ff6626307d43294aa6c01777ce1e2a8c0478e06d9630e9f890a87545f662569` |
+| `initramfs.cpio`, 33615872 bytes | `3fd8b5a921551a7ae492adfd249ea3262b1258b1e91d85b54f1b809fe860553a` |
+| Root hash CMS signature | `5d13f55678ceb710e196a98f2f6c195e8313caebba962150592208c6a18e4fb3` |
+| Support hash CMS signature | `02d47fe89acb34223590d23e4a5491dd86b54df3a7ab09f0477c0a9520abc831` |
+
+Independent identity reconstruction uses the unchanged component functions
+and all actual inputs, including selected init `33e66fbc...`, config, DTB,
+support ID, UUIDs, cmdline, public trust and packager content ID. It matches
+both kernel build ID and `boot.json`. The inherited firmware descriptor
+authenticates under the selected metadata public key, and its recorded bytes
+match the loader: ID
+`2a48a62238cf4f1e76739f32ccc3e76c87650e2e7723d4d0e3be00e7ebf1054d`,
+generation 5, original version `20260910-030156-integrated`. This does not
+relabel firmware or the reused native init as rebuilt.
+
+The next gate owns
+`F=/srv/station/work/tmp/mos/1zjiu5h5/composition-20260910-2026-z2Ljld/candidate-20260911-4LPPCz`;
+command `bash F/candidate-gate.sh`, persistent shell `1zjiu5h5-a3c184`.
+Its preflight identity evidence is `F/identity-evidence.json`, hash
+`d7d11028b2512312fdba67b4ea3271d3d6787453dbbbca477cd710612d2d7ca3`.
+The selected firmware's actual U-Boot FIT starts at loader byte 8355840;
+its default `config-1` selects `fdt-1`, at loader byte 9224192, 170435
+bytes. All five external image hashes and that configuration relation passed
+the read-only preflight; truncated FDT inputs were refused. This is a byte
+offset inside the supplied file, never an assumed bench/disk address.
+The following real signature gate uses that extracted control, not the
+packager's temporary `control.dtb`.
+
+The single serialized candidate gate will:
+
+1. Check actual new FIT payload bytes, verify it under selected firmware trust,
+   and reject kernel/DTB/initramfs tampering, absent signature and a distinct
+   existing public certificate. Independently verify root/support CMS under the
+   compiled content anchor and reject changed hashes/wrong certificates. No
+   key generation or source change is involved.
+2. Extract the actual initramfs and root; compare selected init/boot identity,
+   then inspect AArch64 ELF interpreters, NEEDED providers and symbol-version
+   closure separately for initramfs, exitrd and root. A missing-loader fixture
+   already failed with one examined ELF, not a zero-input pass. Static closure
+   is not target execution or native crun proof.
+3. Create fresh development deployment generations 2026091101/2026091102 and
+   assemble a timestamped full CX image using the unchanged A recipes. Old
+   11/12 records are not reused. Run the existing board offline image check
+   against a private filename-only namespace for these exact candidate bytes.
+4. Run the exact reviewed C-final tool command
+   `bash verify/run.sh --verify --board cx3576 --image FULL_FACTORY_IMAGE --public-key EXACT_METADATA_PUBLIC_KEY --work TASK_OWNED_DIRECTORY`.
+   The separately archived tool is `48acef7f1a3683b1f3bb6261911b1a5123197da2`,
+   tree `553c1e7af96203315f79e7ea61e862f7a753e3a5`; both reviewed verifier
+   blobs match the handoff. It is not merged into the A artifact source.
+   Original tool-file manifest and package lock are retained; local verify
+   dependencies are copied only after equal-lock comparison, not rebuilt or
+   represented as new source. Exact packed mosd/apid/mos-deploy hashes are
+   asserted before candidate scanning. Nonzero scan counts and actual results
+   must be collected; no full-image pass is inferred from an isolated sample.
+
+`F/input-SHA256SUMS` hash:
+`5a68a9b7e13ea2707c11bee7a46a5f96f4d58d622efe6895286e8dc7143d75f5`.
+`F/verifier-SHA256SUMS` hash:
+`55e5dea92aed687503aeac44590f778a3198b0269bf78a5255ccae4fe777c080`.
+Gate metadata/log are `F/candidate-gate.json` and `F/candidate-gate.log`;
+separate trust, closure, deployment, image-build, board-offline and C verifier
+logs retain actual failures. A closure/offline/verifier finding is retained
+while independent authorized checks continue; it is never downgraded to pass.
+
+Scope review and cheap checks precede dispatch. No product or earlier artifact
+is edited. Current component production is not yet a complete-image acceptance
+result. The prior crun EXECUTOR-LIMITED row, every mandatory physical row,
+NPU OPEN, S905/original-device blockers and optional D5 classification remain.
+Historical retries=2 and separately authorized adapter recovery=1 are unchanged.
 
 ### Original collector/kernel tracking
 

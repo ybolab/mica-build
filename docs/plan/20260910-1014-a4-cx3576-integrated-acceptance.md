@@ -101,7 +101,7 @@ image, firmware, x64/virt-arm64 matrix or the passed kernel was rebuilt merely
 for documentation. This completes the bounded software/evidence deliverable,
 not exact-image composition or any of the mandatory physical rows.
 
-## Authorized composition phase — smoke passed; signed components in progress
+## Authorized composition phase — components emitted; full candidate in progress
 
 The subsequent exact L1/L2 source/input handoff resolves the earlier current-root
 and native-init dependency. It authorizes read-only execution of the existing
@@ -211,3 +211,18 @@ and detached-gate paths. Detailed loader/service/device closure, firmware-key
 authentication, fresh records/full image and C-final candidate verification
 remain following obligations, not inferred passes. Historical automatic
 retries=2 and separate authorized adapter recovery=1 remain unchanged.
+
+Component production passed on 2026-09-11T01:00:14Z..01:00:34Z, exit 0,
+documentation checkpoint `809329ab`, unchanged artifact source `9d1218e2`.
+All 16 emitted files and original inputs were revalidated. The task records
+new root/kernel/support IDs, full build-identity reconstruction with the
+selected init, and authenticated inherited firmware descriptor. This is not
+yet full FIT-under-firmware/CMS-negative or full-image acceptance.
+
+Continue with the single `candidate-20260911-4LPPCz` gate: actual embedded
+firmware trust and negative cases; separately inspect init/exitrd/root ELF
+closure; create fresh generations 2026091101/2026091102 and a timestamped full
+image; run current board offline checks and exact C-final `48acef7f` as a
+separate read-only tool. Preserve detailed failures and all successful inputs.
+No rebuild, automatic fourth recovery, source import or physical action is
+part of this continuation. D receives these phase deltas through L2 only.

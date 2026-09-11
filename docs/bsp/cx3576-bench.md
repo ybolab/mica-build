@@ -964,8 +964,13 @@ board qualification. It used the original OCI `d23db694...` with actual
 manifest content ID `1cfe2b6a...`; source `9d1218e2`, original root,
 load-copy evidence and shared factory alias remain unchanged. The linked A4
 detail preserves the full crun diagnostic, exact hashes and retry chronology.
-New signed root/support/FIT composition is the next serialized private gate;
-it reuses the passed root/kernel without rebuilding them. Fresh records, full image
+New signed root/support/FIT production passed at 2026-09-11T01:00:14Z..01:00:34Z,
+exit 0, with all 16 files revalidated. The new FIT is `18810e4e...`, support
+is `66650650...` and root remains `1ff66263...`. It reused the passed
+root/kernel without rebuilding them. The linked task records exact component
+IDs and the next gate's real firmware-key/CMS checks, ELF closure, fresh
+generations 2026091101/2026091102 and separately pinned C-final verifier.
+Fresh records, full image
 and candidate-specific verifier checks remain open. This is not an image ready
 to flash or a physical qualification result; the two old roots remain inadmissible.
 
