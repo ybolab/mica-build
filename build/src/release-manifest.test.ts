@@ -622,7 +622,7 @@ test.each(['missing', 'unknown', 'source', 'receipt', 'pool', 'stamp', 'epoch', 
   expect(() => assembleRelease(inputs)).toThrow()
 })
 
-function joinedUki(change = '') {
+function joinedUki(change = '', withBusybox = false) {
   const init = Buffer.from('fixture init'), shutdown = Buffer.from('fixture static shutdown')
   const expected = { 'mos-init': { bytes: init.length, sha256: hash(init) }, 'mos-shutdown': { bytes: shutdown.length, sha256: hash(shutdown) } }
   const parts: Buffer[] = []
@@ -636,6 +636,7 @@ function joinedUki(change = '') {
   entry('./sbin/mos-shutdown', change === 'bytes' ? Buffer.from('different') : shutdown, change === 'mode' ? 0o100777 : 0o100755)
   if (change !== 'missing') entry('./exitrd/shutdown', shutdown)
   if (change === 'duplicate') entry('./init', init)
+  if (withBusybox && change !== 'missing-busybox') entry('./bin/busybox', Buffer.from(change === 'wrong-busybox' ? 'changed busybox' : 'fixture busybox'))
   if (change !== 'trailer') entry('TRAILER!!!', Buffer.alloc(0), 0)
   const cpio = Buffer.concat(parts), boot = Buffer.alloc(512 + cpio.length)
   boot.write('MZ'); boot.writeUInt32LE(64, 60); boot.write('PE\0\0', 64)
@@ -672,4 +673,15 @@ test.each(['missing', 'unknown', 'self-authorized'])('runtime joined lineage ref
   r.provenance.capture_sha256['source-lineage.json'] = hash(Buffer.from(canonicalJson(r.provenance.source_lineage) + '\n'))
   writeRuntime(r)
   expect(() => assembleRelease(inputs)).toThrow()
+})
+
+
+test('joined boot tool payload binds the authenticated startup BusyBox bytes', () => {
+  const f = joinedUki('', true), bytes = Buffer.from('fixture busybox')
+  const busybox = { bytes: bytes.length, sha256: hash(bytes) }
+  expect(() => verifyJoinedNativePayload(f.boot, f.expected, busybox)).not.toThrow()
+  for (const change of ['missing-busybox', 'wrong-busybox']) {
+    const bad = joinedUki(change, true)
+    expect(() => verifyJoinedNativePayload(bad.boot, bad.expected, busybox)).toThrow()
+  }
 })
