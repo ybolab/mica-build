@@ -17,6 +17,9 @@ spec = importlib.util.spec_from_file_location('runtime_selector', Path(__file__)
 selector = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(selector)
 require = selector.require
+lineage_spec = importlib.util.spec_from_file_location('source_lineage', Path(__file__).with_name('source-lineage.py'))
+lineage = importlib.util.module_from_spec(lineage_spec)
+lineage_spec.loader.exec_module(lineage)
 
 # debootstrap setup_devices_simple creates these in the disposable installation.
 # Capture their identity for transfer checks; runtime selection stays strict.
@@ -234,12 +237,23 @@ def measurements(root: Path, rows: list) -> dict:
 def compose(args: argparse.Namespace) -> None:
     inputs = selector.host_path(args.inputs)
     root = selector.host_path(args.root)
+    source_lineage = lineage.validate(lineage.load(inputs / 'source-lineage.json'), args.arch, int(args.epoch))
+    require((inputs / 'source-lineage.json').read_bytes() == lineage.canonical(source_lineage), 'noncanonical source lineage capture')
+    for name in ('Packages', 'SHA256SUMS', 'manifest.txt'):
+        require(selector.sha256(inputs / name) == source_lineage['pool']['files'][name], 'source lineage captured pool changed: ' + name)
     configured = json.loads((inputs / 'configured.json').read_text())
     args.inventory = str(inputs / 'manifest.tsv')
     args.packages = str(inputs / 'selected.pkgs')
     args.ownership = str(inputs / 'info')
     engine = selector.Selector(args)
     records = archives(inputs, engine.packages)
+    local = {row['package']: row for row in source_lineage['pool']['packages']}
+    require(all(name in local for name in (inputs / 'selected.pkgs').read_text().splitlines()), 'source lineage selected package missing')
+    for name, row in records.items():
+        if name in local:
+            expected = local[name]
+            require(all(row[k] == expected[k] for k in ('version', 'architecture', 'archive'))
+                    and row['archive_sha256'] == expected['sha256'], 'source lineage installed package mismatch: ' + name)
     effective = inputs / 'runtime-rules.json'
     write_json(effective, generated_rules(engine, inputs, configured))
     args.rules = str(effective)
@@ -286,7 +300,7 @@ def compose(args: argparse.Namespace) -> None:
                                 generators=[o['generated'] for o in origins if 'generated' in o])
         if path in debug:
             provenance[path]['debug'] = debug[path]
-    report['provenance'] = dict(build_packages=[records[p] for p in sorted(records)],
+    report['provenance'] = dict(source_lineage=source_lineage, build_packages=[records[p] for p in sorted(records)],
                                 shipped_packages=[records[p] for p in sorted(contributors)], files=provenance,
                                 configured_sha256=selector.sha256(inputs / 'configured.json'))
     report['provenance']['capture_sha256'] = {str(p.relative_to(inputs)): selector.sha256(p)

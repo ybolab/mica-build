@@ -15,6 +15,7 @@ from selection_test import SelectionTest, elf, loader_cache
 
 REPO = Path(__file__).resolve().parents[2]
 COMPOSE = REPO / 'rootfs/runtime/compose.py'
+PACKAGE_VERSION = '0.1.0+git' + 'a' * 12 + '-1'
 
 
 class CompositionTest(unittest.TestCase):
@@ -39,9 +40,30 @@ class CompositionTest(unittest.TestCase):
         # An unselected executable is an operator omission, even when owned.
         f.root.joinpath('usr/bin/unselected').unlink()
         f.rules_path.write_text(json.dumps(f.rules))
+        for path in (f.manifest, self.inputs / 'manifest.tsv', self.inputs / 'sources.tsv', f.root / 'usr/share/mos/manifest.tsv'):
+            path.write_text(path.read_text().replace('mos-system\t1\t', 'mos-system\t' + PACKAGE_VERSION + '\t')
+                            .replace('mos-system\tmos-system\t1\n', 'mos-system\tmos-system\t' + PACKAGE_VERSION + '\n'))
+        index = self.inputs / 'Packages'
+        index.write_text(index.read_text().replace('Version: 1\n', 'Version: ' + PACKAGE_VERSION + '\n'))
+        self.lineage()
         self.debug = f.base / 'debug'
         self.debug.mkdir()
         (self.debug / 'manifest.tsv').write_text('#path\tbuild-id\tdebug\tbytes-before\tbytes-after\tsha256-after\n')
+
+    def lineage(self, arch='amd64'):
+        for name in ('SHA256SUMS', 'manifest.txt'):
+            if not (self.inputs / name).exists():
+                (self.inputs / name).write_text('fixture pool index\n')
+        files = {name: hashlib.sha256((self.inputs / name).read_bytes()).hexdigest()
+                 for name in ('Packages', 'SHA256SUMS', 'manifest.txt')}
+        files['pool/mos-system.deb'] = 'c' * 64
+        record = dict(schema='mos/source-lineage/v1', architecture=arch, root_epoch=1000000000,
+                      package_source=dict(commit='a' * 40, tree='b' * 40, epoch=1000000000, version=PACKAGE_VERSION),
+                      composition_source=dict(commit='a' * 40, tree='b' * 40, epoch=1000000000),
+                      receipt_sha256=[], delta=[], pool=dict(files=files, packages=[dict(
+                          package='mos-system', version=PACKAGE_VERSION, architecture='all',
+                          archive='pool/mos-system.deb', sha256='c' * 64, control_sha256='d' * 64)]))
+        (self.inputs / 'source-lineage.json').write_text(json.dumps(record, sort_keys=True, separators=(',', ':')) + '\n')
 
     def command(self, action, **options):
         argv = [sys.executable, str(COMPOSE), action]
@@ -66,6 +88,36 @@ class CompositionTest(unittest.TestCase):
         os.mknod(path, stat.S_IFCHR | mode, os.makedev(major, minor))
         path.chmod(mode)
         return path
+
+    def test_missing_swapped_or_malformed_lineage_refuses(self):
+        self.capture()
+        path = self.inputs / 'source-lineage.json'
+        original = path.read_bytes()
+        for mutation in ('missing', 'epoch', 'architecture', 'unknown', 'duplicate', 'pool'):
+            with self.subTest(mutation=mutation):
+                path.write_bytes(original)
+                if mutation == 'missing':
+                    path.unlink()
+                elif mutation == 'duplicate':
+                    path.write_bytes(original.replace(b'{', b'{"schema":"duplicate",', 1))
+                else:
+                    value = json.loads(original)
+                    if mutation == 'epoch': value['root_epoch'] += 1
+                    if mutation == 'architecture': value['architecture'] = 'arm64'
+                    if mutation == 'unknown': value['waiver'] = True
+                    if mutation == 'pool': value['pool']['files']['Packages'] = '0' * 64
+                    path.write_text(json.dumps(value, sort_keys=True, separators=(',', ':')) + '\n')
+                r = self.compose()
+                self.assertNotEqual(r.returncode, 0, mutation)
+                self.assertIn('lineage', r.stderr)
+                self.assertFalse(self.f.report.exists())
+
+    def test_lineage_is_captured_and_retained_in_runtime_provenance(self):
+        self.capture()
+        r = self.compose(); self.assertEqual(r.returncode, 0, r.stderr)
+        record = json.loads(self.f.report.read_text())['provenance']
+        self.assertEqual(record['source_lineage'], json.loads((self.inputs / 'source-lineage.json').read_text()))
+        self.assertEqual(record['capture_sha256']['source-lineage.json'], hashlib.sha256((self.inputs / 'source-lineage.json').read_bytes()).hexdigest())
 
     def test_bootstrap_devices_are_captured_but_never_shipped(self):
         devices = {'console': (5, 1), 'full': (1, 7), 'null': (1, 3), 'ptmx': (5, 2),
