@@ -13,12 +13,13 @@ SELECTOR = Path(__file__).resolve().parents[2] / 'rootfs/runtime/select.py'
 CAP = struct.pack('<IIIII', 0x02000001, 0x2000, 0, 0, 0).hex()
 
 
-def elf(machine=62, needed=(), interp=None, runpath=None, rpath=None):
+def elf(machine=62, needed=(), interp=None, runpath=None, rpath=None, soname=None):
     """A sectionless ELF64 with PT_LOAD/PT_DYNAMIC, just as stripped inputs may be."""
     strings = bytearray(b'\0')
     tags = []
     for tag, values in [(1, needed), (29, [runpath] if runpath is not None else []),
-                        (15, [rpath] if rpath is not None else [])]:
+                        (15, [rpath] if rpath is not None else []),
+                        (14, [soname] if soname is not None else [])]:
         for value in values:
             tags.append((tag, len(strings)))
             strings.extend(value.encode() + b'\0')
@@ -455,6 +456,121 @@ class SelectionTest(unittest.TestCase):
         self.write('/usr/private/libfirst.so', elf())
         self.write('/usr/bin/helper', elf(needed=['libfirst.so']), 0o755)
         self.capture_ownership(); self.refuse('ambiguous library')
+
+    def test_elf_entry_direct_siblings_are_discovered_before_children(self):
+        self.write('/usr/bin/app', elf(needed=['libcore.so', 'libshared.so'], runpath='/usr/private'), 0o755)
+        self.write('/usr/private/libcore.so', elf(needed=['libshared.so']))
+        self.write('/usr/private/libshared.so', elf())
+        self.capture_ownership()
+        rows = {row['path']: row for row in self.selected()['files']}
+        self.assertIn('/usr/private/libcore.so', rows)
+        self.assertIn('/usr/private/libshared.so', rows)
+        self.assertEqual(self.command('verify').returncode, 0)
+
+    def test_elf_entry_soname_alias_is_loaded_without_synthetic_file(self):
+        self.write('/usr/bin/app', elf(needed=['libcore.so', 'libprovider.so'], runpath='/usr/private'), 0o755)
+        self.write('/usr/private/libcore.so', elf(needed=['libalias.so']))
+        self.write('/usr/private/libprovider.so', elf(soname='libalias.so'))
+        self.capture_ownership()
+        rows = {row['path']: row for row in self.selected()['files']}
+        self.assertIn('/usr/private/libprovider.so', rows)
+        self.assertNotIn('/usr/private/libalias.so', rows)
+        self.assertFalse((self.root / 'usr/private/libalias.so').exists())
+        self.assertEqual(self.command('verify').returncode, 0)
+
+    def test_elf_entry_loaded_provider_cannot_hide_missing_transitive_library(self):
+        self.write('/usr/bin/app', elf(needed=['libcore.so', 'libprovider.so'], runpath='/usr/private'), 0o755)
+        self.write('/usr/private/libcore.so', elf(needed=['libalias.so']))
+        self.write('/usr/private/libprovider.so', elf(soname='libalias.so', needed=['libabsent.so']))
+        self.capture_ownership(); self.refuse('shared library libabsent.so')
+
+    def test_elf_entry_missing_direct_sibling_is_not_supplied_by_context(self):
+        self.write('/usr/bin/app', elf(needed=['libcore.so', 'libshared.so'], runpath='/usr/private'), 0o755)
+        self.write('/usr/private/libcore.so', elf(needed=['libshared.so']))
+        self.capture_ownership(); self.refuse('shared library libshared.so')
+
+    def test_elf_entry_independent_root_cannot_borrow_retained_namespace(self):
+        self.write('/usr/bin/app', elf(needed=['libcore.so', 'libshared.so'], runpath='/usr/private'), 0o755)
+        self.write('/usr/private/libcore.so', elf(needed=['libshared.so']))
+        self.write('/usr/private/libshared.so', elf())
+        self.rules['consumers']['mos-system']['roots'].append({
+            'paths': ['/usr/private/libcore.so'], 'kind': 'resource', 'reason': 'independent ELF entry',
+        })
+        self.capture_ownership(); self.refuse('shared library libshared.so for /usr/private/libcore.so')
+
+    def test_elf_entry_keeps_first_discovery_context(self):
+        self.write('/usr/bin/app', elf(needed=['liba.so', 'libb.so']), 0o755)
+        self.write('/usr/lib/liba.so', elf(needed=['libcommon.so'], runpath='/usr/private'))
+        self.write('/usr/lib/libb.so', elf(needed=['libcommon.so'], rpath='/usr/private:/usr/child'))
+        self.write('/usr/private/libcommon.so', elf(needed=['libchild.so']))
+        self.write('/usr/child/libchild.so', elf())
+        self.capture_ownership(); self.refuse('shared library libchild.so')
+
+    def test_elf_entry_soname_conflict_across_independent_entries_is_refused(self):
+        self.write('/usr/bin/app', elf(needed=['liba.so']), 0o755)
+        self.write('/usr/lib/liba.so', elf(soname='libalias.so'))
+        self.write('/usr/bin/helper', elf(needed=['libb.so']), 0o755)
+        self.write('/usr/lib/libb.so', elf(soname='libalias.so'))
+        self.capture_ownership(); self.refuse('ambiguous library libalias.so')
+
+    def test_elf_entry_loaded_soname_does_not_mask_ambiguous_cache(self):
+        self.write('/usr/bin/app', elf(needed=['libprovider.so', 'libalias.so']), 0o755)
+        self.write('/usr/lib/libprovider.so', elf(soname='libalias.so'))
+        self.write('/etc/ld.so.cache', loader_cache([
+            ('libalias.so', '/usr/lib/libfirst.so'), ('libalias.so', '/usr/lib/libsecond.so'),
+        ]))
+        self.capture_ownership(); self.refuse('ambiguous cache library: libalias.so')
+
+    def test_elf_entry_wrong_architecture_is_not_registered_by_soname(self):
+        self.write('/usr/bin/app', elf(needed=['libcore.so', 'libprovider.so'], runpath='/usr/private'), 0o755)
+        self.write('/usr/private/libcore.so', elf(needed=['libalias.so']))
+        self.write('/usr/private/libprovider.so', elf(machine=183, soname='libalias.so'))
+        self.capture_ownership(); self.refuse('ELF architecture')
+
+    def test_elf_entry_breadth_first_discovers_provider_before_grandchild(self):
+        self.write('/usr/bin/app', elf(needed=['liba.so', 'libb.so'], runpath='/usr/private'), 0o755)
+        self.write('/usr/private/liba.so', elf(needed=['libchild.so'], runpath='/usr/private'))
+        self.write('/usr/private/libb.so', elf(needed=['libshared.so'], runpath='/usr/deep'))
+        self.write('/usr/private/libchild.so', elf(needed=['libshared.so']))
+        self.write('/usr/deep/libshared.so', elf(soname='libshared.so'))
+        self.capture_ownership()
+        paths = {row['path'] for row in self.selected()['files']}
+        self.assertIn('/usr/private/libchild.so', paths)
+        self.assertIn('/usr/deep/libshared.so', paths)
+        self.assertEqual(self.command('verify').returncode, 0)
+
+    def test_elf_entry_dependency_cycle_is_bounded(self):
+        self.write('/usr/lib/libsecond.so', elf(needed=['libfirst.so']))
+        self.capture_ownership()
+        paths = {row['path'] for row in self.selected()['files']}
+        self.assertIn('/usr/lib/libfirst.so', paths)
+        self.assertIn('/usr/lib/libsecond.so', paths)
+        self.assertEqual(self.command('verify').returncode, 0)
+
+    def test_elf_soname_invalid_names_are_refused(self):
+        for name in ['', '.', '..', '/usr/lib/libfirst.so', 'lib/name', 'lib\tname', 'lib name', '$ORIGIN']:
+            with self.subTest(name=name):
+                self.write('/usr/lib/libfirst.so', elf(soname=name))
+                self.refuse('invalid ELF SONAME')
+
+    def test_elf_soname_duplicate_tag_is_refused(self):
+        data = bytearray(elf(needed=['libsecond.so'], soname='libfirst.so'))
+        struct.pack_into('<Q', data, 512 + 2 * 16, 14)
+        self.write('/usr/lib/libfirst.so', data)
+        self.refuse('ambiguous ELF dynamic tag')
+
+    def test_elf_soname_string_bounds_and_utf8_are_checked(self):
+        for mutation in ['bounds', 'termination', 'utf8']:
+            with self.subTest(mutation=mutation):
+                data = bytearray(elf(soname='libfirst.so'))
+                if mutation == 'bounds':
+                    struct.pack_into('<Q', data, 512 + 2 * 16 + 8, len(data))
+                elif mutation == 'termination':
+                    data[1024 + len(b'\0libfirst.so')] = 0xff
+                else:
+                    data[1025] = 0xff
+                self.write('/usr/lib/libfirst.so', data)
+                self.refuse('utf-8' if mutation == 'utf8' else 'invalid ELF string')
 
     def test_removed_owned_hwdb_vendor_enablement_is_not_selected(self):
         unit = '/usr/lib/systemd/system/systemd-hwdb-update.service'

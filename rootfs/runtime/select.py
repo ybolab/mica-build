@@ -5,6 +5,7 @@ Inputs reuse selected package names, manifest.tsv and captured dpkg info/*.list.
 Consumer declarations describe runtime reasons, not a second package inventory.
 """
 import argparse
+from collections import deque
 import fnmatch
 import hashlib
 import json
@@ -95,7 +96,7 @@ def elf_info(data: bytes, machine: int, path: str) -> dict:
     dynamic = [s for s in segments if s[0] == 2]
     interps = [s for s in segments if s[0] == 3]
     require(len(dynamic) <= 1 and len(interps) <= 1, f'ambiguous ELF segments: {path}')
-    result = dict(needed=[], interp=None, rpath=None, runpath=None)
+    result = dict(needed=[], interp=None, rpath=None, runpath=None, soname=None)
     if interps:
         s = interps[0]; raw = data[s[2]:s[2] + s[5]]
         require(raw.endswith(b'\0') and b'\0' not in raw[:-1], f'invalid ELF interpreter: {path}')
@@ -116,10 +117,10 @@ def elf_info(data: bytes, machine: int, path: str) -> dict:
     require(not any(t in (0x6ffffefb, 0x6ffffefc, 0x7fffffff, 0x7ffffffd) or
                     (t == 0x6ffffffb and v & 0x800) for t, v in entries),
             f'unsupported ELF loader policy: {path}')
-    for tag in (5, 10, 15, 29):
+    for tag in (5, 10, 14, 15, 29):
         require(sum(t == tag for t, _ in entries) <= 1, f'ambiguous ELF dynamic tag: {path}')
     values = dict(entries)
-    if not any(t in (1, 15, 29) for t, _ in entries):
+    if not any(t in (1, 14, 15, 29) for t, _ in entries):
         return result
     require(5 in values and 10 in values, f'missing ELF string table: {path}')
     loads = [s for s in segments if s[0] == 1 and s[3] <= values[5] and values[5] + values[10] <= s[3] + s[5]]
@@ -127,7 +128,7 @@ def elf_info(data: bytes, machine: int, path: str) -> dict:
     start = loads[0][2] + values[5] - loads[0][3]
     strings = data[start:start + values[10]]
     for tag, value in entries:
-        if tag not in (1, 15, 29):
+        if tag not in (1, 14, 15, 29):
             continue
         end = strings.find(b'\0', value)
         require(0 <= value < len(strings) and end >= 0, f'invalid ELF string: {path}')
@@ -135,6 +136,10 @@ def elf_info(data: bytes, machine: int, path: str) -> dict:
         if tag == 1:
             require(bool(text), f'empty ELF dependency: {path}')
             result['needed'].append(text)
+        elif tag == 14:
+            require(bool(re.fullmatch(r'[^/\x00-\x20\x7f$]+', text)) and text not in ('.', '..'),
+                    f'invalid ELF SONAME: {path}')
+            result['soname'] = text
         else:
             result['rpath' if tag == 15 else 'runpath'] = text
     return result
@@ -220,7 +225,6 @@ class Selector:
         self.files = {}
         self.generated = {}
         self.links = {}
-        self.visited = set()
         self.bindings = {}
         self.paths = tree_paths(self.root)
         cache, _ = self.resolve('/etc/ld.so.cache', missing=True)
@@ -292,11 +296,12 @@ class Selector:
         if path != '/':
             self.retain(str(Path(path).parent), f'parent of {path}')
 
-    def add(self, path: str, reason: str, executable: bool = False, inherited: tuple = (), scripts: tuple = ()) -> None:
+    def add(self, path: str, reason: str, executable: bool = False, inherited: tuple = (), scripts: tuple = (),
+            context: dict | None = None, requested: str | None = None) -> None:
         path = normalized(path)
         physical, parents = self.resolve(path, follow_leaf=False)
         for parent in parents:
-            self.add(parent, f'path link for {path}')
+            self.add(parent, f'path link for {path}', inherited=inherited, scripts=scripts, context=context)
         self.retain(physical, reason)
         if physical in self.links:
             contract = self.links[physical]
@@ -315,56 +320,35 @@ class Selector:
                 if link == physical:
                     self.retain(link, f'symlink for {path}')
                 else:
-                    self.add(link, f'symlink for {path}')
-            self.add(resolved, f'link target of {path}', executable, inherited, scripts)
+                    self.add(link, f'symlink for {path}', inherited=inherited, scripts=scripts, context=context)
+            self.add(resolved, f'link target of {path}', executable, inherited, scripts, context, requested)
             return
         if executable:
             require(self.files[physical]['type'] == 'file' and self.files[physical]['mode'] & 0o111, f'not executable: {physical}')
             require(physical not in scripts, f'interpreter cycle: {physical}')
         if self.files[physical]['type'] != 'file':
             return
-        key = (physical, inherited, executable)
-        if key in self.visited:
-            return
-        self.visited.add(key)
         data = self.at(physical).read_bytes()
         if data.startswith(b'\x7fELF'):
             info = elf_info(data, self.machine, physical)
-            if info['interp']:
-                try:
-                    self.add(info['interp'], f'ELF interpreter of {physical}', True, scripts=(*scripts, physical))
-                except Refusal as error:
-                    raise Refusal(f'ELF interpreter of {physical}: {error}') from None
-            rpath = tuple(self.search_dirs(info['rpath'], physical)) if info['runpath'] is None else ()
-            runpath = self.search_dirs(info['runpath'], physical)
-            ancestors = tuple(dict.fromkeys(rpath + inherited))
-            search = (list(ancestors) if info['runpath'] is None else []) + runpath
-            for needed in info['needed']:
-                name = self.expand(needed, physical)
-                if '/' in name:
-                    candidates = [normalized(name)]
-                else:
-                    cached = self.cache.get(name, [])
-                    identities = {self.resolve(p, missing=True)[0] for p in cached}
-                    require(len(identities) <= 1, f'ambiguous cache library: {name}')
-                    candidates = [normalized(p + '/' + name) for p in search] + cached + [normalized(p + '/' + name) for p in self.library_dirs]
-                found = None
-                for candidate in candidates:
-                    target, links = self.resolve(candidate, missing=True)
-                    for link in links:
-                        link_target, _ = self.resolve(link, missing=True)
-                        require(self.at(link_target).exists(), f'broken link for shared library {needed}: {candidate}')
-                    if self.at(target).exists():
-                        found = candidate
-                        break
-                require(found is not None, f'unresolved shared library {needed} for {physical}')
-                canonical, _ = self.resolve(found)
-                require(self.at(canonical).is_file(), f'shared library is not a file: {found}')
-                require(self.at(canonical).read_bytes().startswith(b'\x7fELF'), f'shared library is not ELF: {found}')
-                if '/' not in name:
-                    require(name not in self.bindings or self.bindings[name] == canonical, f'ambiguous library {name}: {canonical}')
-                    self.bindings[name] = canonical
-                self.add(found, f'DT_NEEDED {needed} of {physical}', inherited=ancestors)
+            entry = context is None
+            if entry:
+                context = {'loaded': {}, 'seen': set(), 'queue': deque()}
+            # Retention is global; loader discovery and first context are per entry.
+            for name in (requested, info['soname']):
+                if name is not None:
+                    if '/' not in name:
+                        require(name not in self.bindings or self.bindings[name] == physical,
+                                f'ambiguous library {name}: {physical}')
+                        self.bindings[name] = physical
+                    require(name not in context['loaded'] or context['loaded'][name] == physical,
+                            f'ambiguous library {name}: {physical}')
+                    context['loaded'][name] = physical
+            if physical not in context['seen']:
+                context['seen'].add(physical)
+                context['queue'].append((physical, info, inherited, scripts))
+            if entry:
+                self.elf_dependencies(context)
         elif data.startswith(b'#!'):
             line = data.split(b'\n', 1)[0]
             require(len(line) < 256, f'oversized shebang: {physical}')
@@ -387,6 +371,44 @@ class Selector:
                 raise Refusal(f'script interpreter of {physical}: {error}') from None
         elif executable:
             raise Refusal(f'unsupported executable format: {physical}')
+
+    def elf_dependencies(self, context: dict) -> None:
+        while context['queue']:
+            physical, info, inherited, scripts = context['queue'].popleft()
+            if info['interp']:
+                try:
+                    self.add(info['interp'], f'ELF interpreter of {physical}', True,
+                             scripts=(*scripts, physical), context=context)
+                except Refusal as error:
+                    raise Refusal(f'ELF interpreter of {physical}: {error}') from None
+            rpath = tuple(self.search_dirs(info['rpath'], physical)) if info['runpath'] is None else ()
+            runpath = self.search_dirs(info['runpath'], physical)
+            ancestors = tuple(dict.fromkeys(rpath + inherited))
+            search = (list(ancestors) if info['runpath'] is None else []) + runpath
+            for needed in info['needed']:
+                name = self.expand(needed, physical)
+                if '/' in name:
+                    candidates = [normalized(name)]
+                else:
+                    cached = self.cache.get(name, [])
+                    identities = {self.resolve(p, missing=True)[0] for p in cached}
+                    require(len(identities) <= 1, f'ambiguous cache library: {name}')
+                    candidates = [normalized(p + '/' + name) for p in search] + cached + [normalized(p + '/' + name) for p in self.library_dirs]
+                found = context['loaded'].get(name)
+                for candidate in candidates if found is None else ():
+                    target, links = self.resolve(candidate, missing=True)
+                    for link in links:
+                        link_target, _ = self.resolve(link, missing=True)
+                        require(self.at(link_target).exists(), f'broken link for shared library {needed}: {candidate}')
+                    if self.at(target).exists():
+                        found = candidate
+                        break
+                require(found is not None, f'unresolved shared library {needed} for {physical}')
+                canonical, _ = self.resolve(found)
+                require(self.at(canonical).is_file(), f'shared library is not a file: {found}')
+                require(self.at(canonical).read_bytes().startswith(b'\x7fELF'), f'shared library is not ELF: {found}')
+                self.add(found, f'DT_NEEDED {needed} of {physical}', inherited=ancestors,
+                         context=context, requested=name)
 
     def expand(self, value: str, source: str) -> str:
         value = value.replace('${ORIGIN}', str(Path(source).parent)).replace('$ORIGIN', str(Path(source).parent))
