@@ -270,3 +270,104 @@ or other toolchain was installed there.
 
 Verdict: PASS for the scoped diff. Reported environment and future artifact rows
 remain partial and are not waived by this review.
+
+## Identity refinement and API inventory continuation
+
+L2 approved one refined immutable-child ARM64 probe and read-only access to the
+committed API suite/launcher call chain. Continue this existing claim and preserve
+all prior commits and passed/failed gate evidence. No product edits, upstream
+merge, actual API/guest operation or heavy job is authorized by this handoff.
+The plan records the exact identity/cleanup boundary before execution.
+
+## Refined ARM64 probe result
+
+Evidence root: `/tmp/mos-b7-refinement.vaDgut`; software source remains
+`178a1ee1d285221546127865517ac30829ef9e86`, tree
+`3c932de591c777d98374c4e8e3d6e4a43bca7752`. The only working-file changes during
+this probe are the two owned tracking records. Original continuation logs,
+geometry/consumer commits and offline shutdown success are preserved unchanged.
+
+The read-only pinned index/child byte SHA checks and actual stopped-container
+inspection passed before execution. Index:
+`sha256:d7e12182ce18b85b93007c1dedf31f2d29e01ccf3182cc4017c709b6259bc132`;
+linux/arm64/v8 child manifest:
+`sha256:7215f78f35ffe58fe13f244fac9c4f21326d55187271fbb3e1a8aa5cc7e387ab`;
+config descriptor:
+`sha256:7e3898f7b011a107d0ef7393d5f604a6e0c0ff05ac4f2476630a8af21059ec9b`.
+The daemon's actual container/image ID maps to the child manifest, not the config
+digest; both identities are explicitly recorded. Registry config architecture
+and rootfs diff IDs match the inspected arm64 image. The saved inline config's
+466 bytes were additionally checksummed after execution; that timestamp is kept
+separate in `config-verification.json`.
+
+Before starting the single owned container, only these harmless ELF files were
+copied out and verified as ELF64 little-endian with e_machine=183:
+
+| Executable | Bytes | SHA-256 |
+| --- | --- | --- |
+| `/usr/bin/dash` | 199256 | `367967c823a0c391e5049b15a67c6a0a629c88b9b6dcdca75ef13ac9d65334b1` |
+| `/usr/bin/dpkg` | 396184 | `d8878dcd8949b2d18359b98082e18b2c3bb77f4cbe14e7a90f58b3fad2670e79` |
+
+Container `ai-agent-b7-arm64-75btxdqb-vadgut`, ID
+`44fc7b0f66d734c99eddc14334a20d3f9c54d7eabacb8d148fb7ced9d34e5d96`,
+used the immutable child reference, ai-agent=true and traefik, no mounts/devices,
+no privileged setting and no shared tag mutation. It was retained only to inspect
+its exit state and removed afterward. The once-only executable argv was:
+`/usr/bin/dash -ec 'uname -m; dpkg --print-architecture; test "$(dpkg
+--print-architecture)" = arm64'` (the actual command is one line in metadata).
+
+`timeout 30 docker start -a CONTAINER_ID` started at
+2026-09-11T02:28:39.616972+00:00 and completed at
+2026-09-11T02:28:39.831504+00:00, exit 255. Exact stderr:
+`exec /usr/bin/dash: exec format error`. Docker state independently records
+exited, Running=false, Pid=0, ExitCode=255 and OOMKilled=false. Removal exited 0
+at 2026-09-11T02:28:40.057474+00:00. There was one execution attempt; no repetition,
+forced-stop cleanup, host emulation, binfmt, device or shared-builder change.
+
+The outer gates are `timeout 240 python3 /tmp/mos-b7-refinement.vaDgut/identity.py`
+(exit 0) and `timeout 90 python3 /tmp/mos-b7-refinement.vaDgut/execute.py`
+(exit 255), run in persistent shell `75btxdqb-7e0f1b`. Per-step exact argv,
+source/UTC/log/hash/exit metadata is in identity.json, execution.json and their
+outer gate JSON records. Actual config/ELF identity is now proved; execution is
+still failed. This is Docker launch evidence, not a BuildKit execution result or
+a root-build verdict. L2/L1 must supply a working, identified ARM64 build route
+before the cold/image milestone can start. No further probe is self-scheduled.
+
+## API inventory handoff
+
+The newly allowed committed registration/launcher chain was read without editing
+or running it. `api-inventory.json` binds 29 source file identities and the exact
+eight registered phases to the current source. The plan now records their order,
+prerequisites, authoritative command shape, output paths and explicit no-skip
+acceptance condition. All eight statuses and every check must pass with positive
+counts and skip=0; a summary PASS alone cannot close the selected-feature matrix.
+
+Concrete remaining limitations are not product failures inferred from fixtures:
+
+- Phase 03 enables SSH/MQTT/container settings and checks task results, but the
+  registry has no actual SSH/SFTP, DNS/time, MQTT traffic or container-network
+  phase. Those original B7 rows require controlled peer/key/image inputs and
+  separate actual operation evidence.
+- `run.sh:461-470` does not forward the optional SSH port supported by
+  `src/qemu.ts:114-120`; an external variable alone cannot create that route.
+  Any edit of this read-only launcher/phase tree needs a precise L2 write handoff.
+- `run.sh:777-795` records image name/mtime/length, not SHA-256. B7's independent
+  artifact evidence must bind the immutable factory image, seeded disk, public
+  boot certificate, sources/tools, endpoint/container and all logs/results.
+- Phase 07 retires the running deployment without reboot; phase 08 stages reset
+  without applying it. Harness teardown stops QEMU and cannot prove graceful
+  reboot/poweroff/halt or reset isolation. Existing physical and fresh runtime
+  rows remain open.
+- Historical HARNESS.md latest-image/shared-output/kernel-append text is not the
+  current executable input contract. It stays untouched; explicit image/cert and
+  DATA seeding in current run.sh/qemu.ts govern the future allocated job.
+
+No API host/address, credential, container peer, root/package/kernel/trust input
+or heavy job was fabricated. This documentation checkpoint remains partial and
+uses the same PMA claim; no historical/global status or product file changes.
+
+Tracking review confirms the phase list against the actual registry/imports and
+separates settings, fixture, protocol, guest-action and physical evidence.
+PMA-CR: PASS, no introduced source changes or findings. Documentation verification
+and whitespace checks pass; final per-command metadata is retained beside the
+probe. Existing successful software matrices were not replayed for this update.

@@ -338,3 +338,120 @@ selected package pools, native/BSP/support/tool/trust identities and per-job
 capacity/output allocation. The two virt-arm64 cold roots must use that same
 future source and pool. All fresh lifecycle/API/storage/historical rows and A's
 physical rows remain outstanding as listed above.
+
+## Approved identity refinement and API read-only handoff
+
+L2's 2026-09-11 continuation preserves the reviewed caller and completed geometry/
+consumer checkpoints. Source remains clean commit
+`178a1ee1d285221546127865517ac30829ef9e86` before this tracking update;
+no upstream merge or implementation retry is needed. Heavy=0 remains in force.
+
+L2 explicitly authorizes reading the committed `pkgs/mosd/tests/apid-api/`
+registration, phase imports, configuration, guest support and launchers to derive
+the complete selected-feature command/conditions. Record actual gaps and current
+source identities; do not edit API/product code, contact an endpoint, seed a guest
+or run QEMU before a named allocation.
+
+L2 also schedules exactly one evidence-refined ARM64 probe. Resolve the pinned
+Debian index to its immutable arm64 child manifest/config, create one uniquely
+named labelled container with no source/host/device mounts, inspect its actual
+image/config, and copy only dash/dpkg ELF bytes into external owned evidence.
+Require e_machine=183 and record their hashes before attempting the fixed short
+program checks once. Preserve the original indexed-ref exit 255 as a separate
+failure; this result is not a BuildKit or root-build proof. Retain the stopped
+container briefly for exit-state inspection, then remove only that owned
+container after confirming it stopped. No shared tags/builders/binfmt/host
+emulation or privileged settings may change. Stop probe repetition on failure.
+
+## Current API registration and exact pending job recipe
+
+Read-only registration/launcher evidence is bound to software source
+`178a1ee1d285221546127865517ac30829ef9e86`, tree
+`3c932de591c777d98374c4e8e3d6e4a43bca7752`, in
+`/tmp/mos-b7-refinement.vaDgut/api-inventory.json`. All inspected source bytes
+match that commit. No API endpoint, guest, service port or physical interface was
+contacted. The inventory reads `src/main.ts`; it never imports that executable
+entry, whose final `await main()` would start the network suite.
+
+| Order / registered phase | Actual coverage and required state |
+| --- | --- |
+| 01-spa-boundary | Fresh setup state, built-in UI/API route separation, served application entry, HTTP-to-HTTPS redirect, public health/version endpoints and retired form refusal. |
+| 02-session | JSON setup, password floor, bearer/browser tokens, cookie attributes, CSRF logout refusal, logout and authenticated login. Leaves session/CSRF/bearer for later phases. |
+| 03-api-management | Authenticated API reads/writes, CSRF/bearer controls and distinct terminal tasks for enabling container/MQTT/SSH settings. This is not a protocol connection or container-network test. |
+| 04-network-observation | Live networkd observation and nonempty interface/state/address records; no DNS resolution, time synchronization or peer traffic. |
+| 05c-kernel-net | Seeded guest smoke requires END plus eleven explicit conclusions: real generated key readability, state mount, three module resolutions, three link kinds, network account, key readability and secrets refusal. The helper creates permission fixtures itself and identifies that origin; it cannot close untouched first-boot ownership evidence. |
+| 06-onboarding-claim | Setup claim persisted through the real API/store, no-import provisioning record, baked/operator/effective consistency and repeat-setup refusal. No provisioning-media import. |
+| 07-update-rollback | Two authenticated distinct factory deployments, health confirmation, confirm/CSRF controls, retained-fallback retirement and repeat-rollback refusal. It deliberately does not reboot or install an upgrade. |
+| 08-reset-recovery | Configuration-reset intent and refused full-factory/credential recovery without presence. It deliberately does not reboot or apply reset; physical-positive recovery remains separate. |
+
+The eight entries above are the exact full registry. `MOS_APID_PHASES` must be
+unset for final acceptance; `run.sh` then sends an empty `APID_PHASES`, which
+means all phases. `APID_NEGATIVE` must be unset for the positive candidate run.
+A selected or prerequisite-skipped phase is incomplete even if a wrapper prints
+PASS. `src/report.ts` counts skips separately and can print PASS with skips;
+B7 must require all eight phase IDs, every phase/check status pass, positive
+assertion counts, totals.fail=0 and totals.skip=0 in `result-boot1.json` and the
+merged envelope. No phase is silently removed to satisfy a missing feature.
+
+The exact supported future command shape, after L2 allocation, is:
+
+```bash
+timeout 3000 env -u MOS_APID_PHASES -u APID_PHASES -u APID_NEGATIVE \
+  MOS_BOARD=BOARD MOS_QEMU_IMAGE=FULL_FACTORY_IMAGE \
+  MOS_QEMU_BOOT_CERT=EXACT_BOOT_PUBLIC_CERT MOS_APID_KEEP_DISK=1 \
+  bash pkgs/mosd/tests/apid-api/run.sh
+```
+
+BOARD is separately x64 or virt-arm64. The image/certificate are absolute,
+immutable, task-assigned paths; no placeholder value is runnable. The certificate
+is the boot-enrollment public certificate, distinct from the metadata key used
+by the artifact verifier. The harness derives the owned QEMU container's actual
+address on the observed shared Docker network and forwards HTTP/HTTPS with
+18443/18080 defaults. Do not guess `APID_HOST`, reuse another guest, borrow `_out`
+or copy credentials into logs. Record the actual network/container/endpoint at
+job start and bind it to the exact image and captured boot console.
+
+`src/qemu.ts` enforces explicit regular image/certificate inputs and rejects
+kernel append overrides. The launcher prepares a disposable 4096 MiB copy,
+seeds DATA console/network units, and uses enrolled UEFI on q35/x64 or virt/arm64.
+Its guest command uses two virtual CPUs, default 2048 MiB, an i6300esb watchdog
+and `-no-reboot`. Readiness defaults to container discovery 240 seconds and
+listener/health 900 seconds; backstops are 2400/2700 seconds. The wrapper builds
+or resolves its lab/Bun tool images before boot, so their exact immutable IDs,
+source mapping and any required resource allocation belong in the named job.
+Its Docker containers have no explicit CPU/memory limit flags; L2 must specify
+how the awarded capacity is enforced. No runner build was started here.
+
+Outputs are task-owned `_out/BOARD/.qemu/` and `_out/BOARD/apid-api/`, including
+prepare/seed/tool logs, console-boot1.log, suite-boot1.log, result-boot1.json and
+result.json. KEEP_DISK=1 preserves the disposable disk for identity/after-state
+collection. The existing merged envelope records image path/mtime/length but no
+SHA-256 (`run.sh:777-795`), so B7 must additionally hash the input image,
+certificate, source, tool images, seeded files, prepared disk and all result/log
+artifacts. Stopping the QEMU container in `teardown()` is not completed graceful
+guest action evidence and cannot close any lifecycle row.
+
+### Concrete remaining API/service acceptance gaps
+
+The current registry has no SSH authentication/SFTP transfer, DNS resolution,
+time synchronization, MQTT publish/subscribe or real selected-container network
+operation phase. Phase 03 only enables settings and observes task outcomes;
+phase 04 observes network state. Existing `tests/file-ab-x64/runtime.sh` checks
+Podman storage paths/volumes and private mounts, not container network traffic.
+Those original B7 obligations remain independent rows and need exact controlled
+peer/key/container-image inputs plus scoped fixtures in the awarded guest job.
+
+`src/qemu.ts:114-120` supports an optional `MOS_QEMU_SSH_PORT`, but
+`run.sh:461-470` does not pass that variable through QEMU_ENV into its container.
+Setting it on the top-level command therefore does not establish an SSH route.
+Report this precise launcher limitation to L2 before any change in the read-only
+API tree; do not invent an endpoint or management-network override. Any needed
+API launcher/phase edit requires a precise L2 write handoff; no product change
+or general API phase rewrite is proposed by this inventory.
+
+`HARNESS.md:11-12,30-35,82-84` and old launcher comments retain latest-image,
+shared-_out and kernel-append instructions. Current `run.sh:42-43` and `qemu.ts`
+are authoritative for this campaign: explicit full image/public certificate,
+private DATA-seeded disk, no kernel append override. These historical docs were
+not edited. The CI job runs only `os-apid-api-spec-pins`; it is not the live API
+suite. No old published phase timing/result qualifies the future images.
