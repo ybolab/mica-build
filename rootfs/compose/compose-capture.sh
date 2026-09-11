@@ -4,6 +4,7 @@ set -eu
 [ ! -e /mos-build-inputs ]
 install -d -m 0755 /mos-build-inputs/info
 cp -a /var/lib/dpkg/info/*.list /mos-build-inputs/info/
+cp /mos-compose/source-lineage.json /mos-build-inputs/source-lineage.json
 cp /mos-compose/packages.txt /mos-build-inputs/selected.pkgs
 cp /mos-compose/upstream.tsv /mos-compose/helper.tsv /mos-build-inputs/
 cp /etc/dpkg/dpkg.cfg.d/mos-slim /mos-build-inputs/dpkg-slim.conf

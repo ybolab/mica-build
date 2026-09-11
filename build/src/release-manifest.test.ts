@@ -2,7 +2,7 @@ import { afterEach, beforeEach, expect, spyOn, test } from 'bun:test'
 import { createHash, generateKeyPairSync } from 'node:crypto'
 import { spawnSync } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { Signer } from '../../shared/update-envelope.ts'
 import { canonicalJson, componentId } from './components.ts'
 import { packArchive } from './component-archive.ts'
@@ -55,6 +55,7 @@ try:
             path.write_text(path.read_text().replace('amd64', 'arm64'))
         for directory in [case.f.db, case.inputs / 'info']:
             (directory / 'libfixture:amd64.list').rename(directory / 'libfixture:arm64.list')
+    case.lineage(arch)
     case.capture()
     app = case.f.root / 'usr/bin/app'
     data = bytearray(app.read_bytes()); data[-1] = 44; app.write_bytes(data)
@@ -105,7 +106,7 @@ beforeEach(() => {
   writeFileSync(join(work, 'notes.md'), '# Current release\n\nDevelopment evidence only.\n')
   runtimeFixture()
   inputs = { runtimeReport: join(work, 'runtime-report.json'), out: join(work, 'release'), board: 'x64', version: d.version, channel: 'development', profile: 'dev',
-    source: { commit: 'a'.repeat(40), dirty: true }, builderImages: { IMAGE_TEST: 'example@sha256:' + 'a'.repeat(64) },
+    source: { commit: 'a'.repeat(40), dirty: false }, builderImages: { IMAGE_TEST: 'example@sha256:' + 'a'.repeat(64) },
     image: join(work, IMAGE), update: join(work, 'update.mosupd'), firmware: join(work, 'firmware'),
     packages: join(work, 'packages.tsv'), meta: join(work, 'meta'), notes: join(work, 'notes.md'),
     evidence: new URL('../../boards/x64/evidence.json', import.meta.url).pathname, keys }
@@ -216,12 +217,30 @@ test('firmware and evidence must match the release board', () => {
   expect(() => assembleRelease({ ...inputs, evidence: join(work, 'evidence.json') })).toThrow('evidence')
 })
 
+// Freeze the actual CLI and its relative imports in the fixture checkout. A
+// dirty developer checkout cannot stand in for a clean composition source.
+function copyReleaseCli(root: string, destination: string) {
+  const copied = new Set<string>(), parser = new Bun.Transpiler({ loader: 'ts' })
+  const copy = (name: string) => {
+    if (copied.has(name)) return
+    copied.add(name)
+    const bytes = readFileSync(join(root, name))
+    mkdirSync(dirname(join(destination, name)), { recursive: true })
+    writeFileSync(join(destination, name), bytes)
+    if (name.endsWith('.ts')) for (const imported of parser.scanImports(bytes)) {
+      if (imported.path.startsWith('.')) copy(join(dirname(name), imported.path))
+    }
+  }
+  for (const name of ['build/src/release-cli.ts', 'Makefile', 'build/package.json', 'verify/package.json',
+    'build-env/from.sh', 'build-env/images.env', 'boards/x64/board.env', 'boards/x64/evidence.json']) copy(name)
+}
+
 test.each(['ordinary', 'linked'])('shipped release CLI and documented verification commands execute (%s checkout)', async (kind) => {
   const repo = new URL('../../', import.meta.url).pathname
   const ordinary = join(work, 'checkout')
   const linked = join(work, 'linked')
   const fixtureGit = await Toolbox.open({ key: 'release-git-fixture', imageKey: 'IMAGE_ALPINE_3_21', manager: 'apk', packages: ['git'], tools: ['git'] }, { mounts: [work] })
-  let commit: string
+  let commit: string, compositionTree = '', compositionEpoch = 0
   const checkout = kind === 'ordinary' ? ordinary : linked
   try {
     const git = async (...args: string[]) => (await fixtureGit.must(['git', '-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', ...args], {
@@ -229,7 +248,8 @@ test.each(['ordinary', 'linked'])('shipped release CLI and documented verificati
     })).stdout.trim()
     await git('init', '--initial-branch=fixture', ordinary)
     writeFileSync(join(ordinary, 'tracked.txt'), 'initial fixture\n')
-    await git('-C', ordinary, 'add', 'tracked.txt')
+    copyReleaseCli(repo, ordinary)
+    await git('-C', ordinary, 'add', '.')
     await git('-C', ordinary, 'commit', '--no-gpg-sign', '-m', 'Create isolated source fixture')
     const commonHead = await git('-C', ordinary, 'rev-parse', 'HEAD')
     await git('-C', ordinary, 'worktree', 'add', '--detach', linked, 'HEAD')
@@ -238,6 +258,8 @@ test.each(['ordinary', 'linked'])('shipped release CLI and documented verificati
       await git('-C', linked, 'commit', '-am', 'Advance isolated linked fixture', '--no-gpg-sign')
     }
     commit = await git('-C', checkout, 'rev-parse', 'HEAD')
+    compositionTree = await git('-C', checkout, 'rev-parse', 'HEAD^{tree}')
+    compositionEpoch = Number(await git('-C', checkout, 'show', '-s', '--format=%ct', 'HEAD'))
     if (kind === 'linked') expect(commit).not.toBe(commonHead)
     expect(await sourceIdentity(checkout)).toEqual({ commit, dirty: false })
     writeFileSync(join(checkout, 'tracked.txt'), 'modified fixture\n')
@@ -273,13 +295,20 @@ test.each(['ordinary', 'linked'])('shipped release CLI and documented verificati
   try {
     expect(await sourceIdentity(checkout)).toEqual({ commit, dirty: true })
   } finally { observed.mockRestore() }
+  writeFileSync(join(checkout, 'tracked.txt'), kind === 'ordinary' ? 'initial fixture\n' : 'linked fixture baseline\n')
+  expect(await sourceIdentity(checkout)).toEqual({ commit, dirty: false })
+  const report = runtime(), lineage = report.provenance.source_lineage
+  lineage.composition_source = { commit, tree: compositionTree, epoch: compositionEpoch }
+  lineage.receipt_sha256 = ['e'.repeat(64)]
+  report.provenance.capture_sha256['source-lineage.json'] = hash(Buffer.from(canonicalJson(lineage) + '\n'))
+  writeRuntime(report)
 
   const publicKey = join(work, 'metadata.pub'); writeFileSync(publicKey, keys[0]!)
   const args = ['run', 'src/release-cli.ts', 'assemble', '--board', inputs.board, '--version', inputs.version,
     '--image', inputs.image, '--update', inputs.update, '--firmware', inputs.firmware,
     '--package-manifest', inputs.packages, '--runtime-report', inputs.runtimeReport, '--baked-meta', inputs.meta, '--notes', inputs.notes,
     '--out', inputs.out, '--public-key', publicKey]
-  const result = spawnSync(process.execPath, args, { cwd: join(repo, 'build'), encoding: 'utf8' })
+  const result = spawnSync(process.execPath, args, { cwd: join(checkout, 'build'), encoding: 'utf8' })
   expect(result.status, `${result.stdout}${result.stderr}`).toBe(0)
   expect(result.stdout).toContain('RELEASE_GATE_PASS')
   const doc = readFileSync(join(repo, 'docs/design/release-artifacts.md'), 'utf8')
@@ -329,7 +358,7 @@ test('runtime report joins actual file owners, sources, licenses and build-only 
   const provenance = read('provenance.json').runtime
   expect(provenance.buildPackages.map((p: { package: string }) => p.package)).toContain('unused')
   expect(provenance.shippedPackages.map((p: { package: string }) => p.package)).not.toContain('unused')
-  expect(provenance.files['/usr/bin/app'].archives[0].source).toEqual({ package: 'mos-system', version: '1' })
+  expect(provenance.files['/usr/bin/app'].archives[0].source).toEqual({ package: 'mos-system', version: '0.1.0+git' + 'a'.repeat(12) + '-1' })
   expect(read('licenses.json').packages.find((p: { name: string }) => p.name === 'libfixture').resources[0].sha256).toMatch(/^[a-f0-9]{64}$/)
   expect(provenance.files['/usr/bin/app'].debug.path).toBe('.build-id/ab/cd.debug')
   expect(provenance.files['/usr/bin/app'].configured.sha256).not.toBe(provenance.files['/usr/bin/app'].final.sha256)
@@ -410,17 +439,16 @@ test('runtime report keeps runtime measurement claims pending their separate evi
   expect(existsSync(inputs.out)).toBe(false)
 })
 
-test('runtime report preserves nanoseconds and refuses one-nanosecond divergence', () => {
+test('runtime report preserves epoch nanoseconds and refuses one-nanosecond divergence', () => {
   const text = readFileSync(inputs.runtimeReport, 'utf8')
   expect(text).toContain('"mtime_ns": 1000000000000000000')
-  writeFileSync(inputs.runtimeReport, text.replaceAll('"mtime_ns": 1000000000000000000', '"mtime_ns": 1000000000000000001'))
   assembleRelease(inputs)
-  expect(read('provenance.json').runtime.files['/usr/bin/app'].final.mtime_ns).toBe('1000000000000000001')
+  expect(read('provenance.json').runtime.files['/usr/bin/app'].final.mtime_ns).toBe('1000000000000000000')
   const path = join(inputs.out, 'rootfs-report.runtime.json')
   const exported = readFileSync(path, 'utf8')
   const filesAt = exported.indexOf('"files": [')
   expect(filesAt).toBeGreaterThan(0)
-  writeFileSync(path, exported.slice(0, filesAt) + exported.slice(filesAt).replace('"mtime_ns": 1000000000000000001', '"mtime_ns": 1000000000000000002'))
+  writeFileSync(path, exported.slice(0, filesAt) + exported.slice(filesAt).replace('"mtime_ns": 1000000000000000000', '"mtime_ns": 1000000000000000001'))
   repin('rootfs-report.runtime.json')
   expect(() => gateRelease(inputs.out, keys)).toThrow('runtime final file metadata')
 })
@@ -434,6 +462,7 @@ async function virtAcceptanceFixture() {
   for (const path of ['boards/virt-arm64/board.env', 'boards/virt-arm64/evidence.json', 'build-env/images.env']) {
     writeFileSync(join(checkout, path), readFileSync(join(repo, path)))
   }
+  let compositionTree = '', compositionEpoch = 0
   const tb = await Toolbox.open({ key: 'release-git-fixture', imageKey: 'IMAGE_ALPINE_3_21', manager: 'apk', packages: ['git'], tools: ['git'] }, { mounts: [checkout] })
   try {
     const git = (...args: string[]) => tb.must(['git', '-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', '-C', checkout, ...args], {
@@ -442,6 +471,8 @@ async function virtAcceptanceFixture() {
     await git('init', '--initial-branch=fixture')
     await git('add', '.')
     await git('commit', '--no-gpg-sign', '-m', 'Freeze isolated acceptance fixture')
+    compositionTree = (await git('rev-parse', 'HEAD^{tree}')).stdout.trim()
+    compositionEpoch = Number((await git('show', '-s', '--format=%ct', 'HEAD')).stdout.trim())
   } finally { await tb.close() }
   inputs.source = await sourceIdentity(checkout)
   inputs.builderImages = Object.fromEntries(readFileSync(join(checkout, 'build-env/images.env'), 'utf8').split('\n')
@@ -465,6 +496,12 @@ async function virtAcceptanceFixture() {
   renameSync(inputs.image, image)
   Object.assign(inputs, { board: 'virt-arm64', image, evidence: join(checkout, 'boards/virt-arm64/evidence.json') })
   runtimeFixture('arm64')
+  const report = runtime(), lineage = report.provenance.source_lineage
+  const commit = inputs.source.commit
+  lineage.composition_source = { commit, tree: compositionTree, epoch: compositionEpoch }
+  lineage.receipt_sha256 = ['e'.repeat(64)]
+  report.provenance.capture_sha256['source-lineage.json'] = hash(Buffer.from(canonicalJson(lineage) + '\n'))
+  writeRuntime(report)
   return checkout
 }
 
@@ -551,3 +588,34 @@ test('non-publication acceptance retains runtime and repinned artifact tamper re
   writeFileSync(join(inputs.out, 'mos-virt-arm64-20260911-020000.img'), 'tampered image')
   expect(() => gateRelease(inputs.out, keys)).toThrow('digest or length')
 }, OPEN_TIMEOUT_MS)
+
+
+test('runtime source lineage preserves package identity and derives composition provenance', () => {
+  const r = runtime(), lineage = r.provenance.source_lineage
+  lineage.composition_source = { commit: 'b'.repeat(40), tree: 'c'.repeat(40), epoch: 1000000001 }
+  lineage.receipt_sha256 = ['d'.repeat(64)]
+  lineage.delta = [{ path: 'rootfs/runtime/compose.py', before: { mode: '100644', blob: 'a'.repeat(40) }, after: { mode: '100644', blob: 'b'.repeat(40) } }]
+  r.provenance.capture_sha256['source-lineage.json'] = hash(Buffer.from(canonicalJson(lineage) + '\n'))
+  inputs.source = { commit: 'b'.repeat(40), dirty: false }; writeRuntime(r)
+  assembleRelease(inputs); gateRelease(inputs.out, keys)
+  expect(read('provenance.json').runtime.sourceLineage).toEqual(lineage)
+  expect(lineage.package_source.commit).toBe('a'.repeat(40))
+})
+
+test.each(['missing', 'unknown', 'source', 'receipt', 'pool', 'stamp', 'epoch', 'delta', 'mode', 'capture', 'dirty'])('runtime source lineage refuses %s even with a recomputed report hash', mutation => {
+  const r = runtime(), lineage = r.provenance.source_lineage
+  if (mutation === 'missing') delete r.provenance.source_lineage
+  if (mutation === 'unknown') lineage.waiver = true
+  if (mutation === 'source') lineage.composition_source.commit = 'b'.repeat(40)
+  if (mutation === 'receipt') { lineage.composition_source.commit = 'b'.repeat(40); inputs.source.commit = 'b'.repeat(40) }
+  if (mutation === 'pool') lineage.pool.files.Packages = 'b'.repeat(64)
+  if (mutation === 'stamp') lineage.package_source.version = '0.1.0+git' + 'b'.repeat(12) + '-1'
+  if (mutation === 'epoch') lineage.root_epoch++
+  if (mutation === 'delta') lineage.delta = [{ path: 'pkgs/mosd/Cargo.lock', before: null, after: { mode: '100644', blob: 'b'.repeat(40) } }]
+  if (mutation === 'mode') lineage.delta = [{ path: 'rootfs/runtime/compose.py', before: { mode: '100644', blob: 'a'.repeat(40) }, after: { mode: '120000', blob: 'b'.repeat(40) } }]
+  if (mutation === 'capture') r.provenance.capture_sha256['source-lineage.json'] = '0'.repeat(64)
+  else if (mutation !== 'missing') r.provenance.capture_sha256['source-lineage.json'] = hash(Buffer.from(canonicalJson(lineage) + '\n'))
+  if (mutation === 'dirty') inputs.source.dirty = true
+  writeRuntime(r)
+  expect(() => assembleRelease(inputs)).toThrow()
+})

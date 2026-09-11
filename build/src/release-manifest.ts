@@ -226,10 +226,73 @@ function readRuntime(path: string): Record<string, unknown> {
   }
   return object(value, ['architecture', 'consumers', 'inputs', 'files', 'external_inputs', 'provenance', 'measurements'])
 }
-function shippedRuntime(path: string, inventory: string, arch: string, root: VerityImage, meta: string, marker: string) {
+function sourceLineage(value: unknown, source: Source, arch: string, capture: Record<string, unknown>) {
+  const l = object(value, ['schema', 'package_source', 'composition_source', 'architecture', 'root_epoch', 'pool', 'receipt_sha256', 'delta'])
+  requireValue(l.schema === 'mos/source-lineage/v1' && l.architecture === arch, 'runtime lineage schema/architecture')
+  const p = object(l.package_source, ['commit', 'tree', 'epoch', 'version'])
+  const c = object(l.composition_source, ['commit', 'tree', 'epoch'])
+  for (const identity of [p, c]) {
+    for (const key of ['commit', 'tree']) requireValue(typeof identity[key] === 'string' && /^[a-f0-9]{40}$/.test(identity[key] as string), 'runtime lineage Git identity')
+    natural(identity.epoch); requireValue((identity.epoch as number) <= 0xffffffff, 'runtime lineage source epoch')
+  }
+  natural(l.root_epoch); requireValue((l.root_epoch as number) <= 0xffffffff, 'runtime lineage root epoch')
+  requireValue(c.commit === source.commit && !source.dirty, 'runtime lineage composition source')
+  requireValue(typeof p.version === 'string' && new RegExp('^[0-9][A-Za-z0-9.~-]*\\+git' + (p.commit as string).slice(0, 12) + '-[1-9][0-9]*$').test(p.version), 'runtime lineage package version/source')
+  requireValue(Array.isArray(l.receipt_sha256) && new Set(l.receipt_sha256).size === l.receipt_sha256.length, 'runtime lineage receipt set')
+  for (const sha of l.receipt_sha256) digest(sha)
+  requireValue(p.commit === c.commit || l.receipt_sha256.length > 0, 'runtime lineage missing frozen receipt')
+  const allowed = new Set([
+    'rootfs/build.sh', 'rootfs/runtime/source-lineage.py', 'rootfs/runtime/compose.py', 'rootfs/compose/90-pack.Dockerfile',
+    'rootfs/compose/compose-capture.sh', 'rootfs/compose/compose-install.sh',
+    'build/src/release-manifest.ts', 'build/src/release-manifest.test.ts',
+    'tests/rootfs-runtime/source_lineage_test.py', 'tests/rootfs-runtime/composition_test.py',
+    'docs/task/20260911-0145-b7-fresh-lifecycle-acceptance.md', 'docs/plan/20260911-0145-b7-fresh-lifecycle-acceptance.md',
+  ])
+  requireValue(Array.isArray(l.delta), 'runtime lineage delta')
+  const paths: string[] = []
+  for (const value of l.delta) {
+    const row = object(value, ['path', 'before', 'after'])
+    requireValue(typeof row.path === 'string' && allowed.has(row.path), 'runtime lineage package-relevant delta')
+    paths.push(row.path)
+    for (const value of [row.before, row.after]) if (value !== null) {
+      const entry = object(value, ['mode', 'blob'])
+      requireValue(['100644', '100755', '120000'].includes(entry.mode as string)
+        && typeof entry.blob === 'string' && /^[a-f0-9]{40}$/.test(entry.blob), 'runtime lineage delta identity')
+    }
+    requireValue(row.after !== null, 'runtime lineage deleted consumer')
+    const after = row.after as Record<string, unknown>, before = row.before as Record<string, unknown> | null
+    requireValue(['100644', '100755'].includes(after.mode as string) && (before === null || before.mode === after.mode), 'runtime lineage consumer type/mode')
+    requireValue(canonicalJson(row.before) !== canonicalJson(row.after), 'runtime lineage empty delta')
+  }
+  same(paths, [...new Set(paths)].sort(), 'runtime lineage delta order/set')
+  if (p.commit === c.commit) requireValue(p.tree === c.tree && p.epoch === c.epoch && paths.length === 0, 'runtime lineage same-source mismatch')
+  const pool = object(l.pool, ['files', 'packages']), files = record(pool.files)
+  for (const [name, sha] of Object.entries(files)) {
+    requireValue(['Packages', 'SHA256SUMS', 'manifest.txt'].includes(name) || /^pool\/[^/]+\.deb$/.test(name), 'runtime lineage pool path')
+    digest(sha)
+  }
+  const expected = new Set(['Packages', 'SHA256SUMS', 'manifest.txt']), names = new Set<string>()
+  requireValue(Array.isArray(pool.packages) && pool.packages.length > 0, 'runtime lineage empty pool')
+  const packages = pool.packages.map(value => {
+    const row = object(value, ['package', 'version', 'architecture', 'archive', 'sha256', 'control_sha256'])
+    requireValue(typeof row.package === 'string' && /^[a-z0-9][a-z0-9+.-]+$/.test(row.package) && !names.has(row.package), 'runtime lineage package name/set')
+    names.add(row.package)
+    requireValue([arch, 'all'].includes(row.architecture as string) && typeof row.version === 'string'
+      && row.version.split('+').at(-1) === (p.version as string).split('+').at(-1), 'runtime lineage package stamp/architecture')
+    requireValue(typeof row.archive === 'string' && /^pool\/[^/]+\.deb$/.test(row.archive) && !expected.has(row.archive), 'runtime lineage archive')
+    expected.add(row.archive); digest(row.sha256); digest(row.control_sha256)
+    same(files[row.archive], row.sha256, 'runtime lineage archive digest')
+    return row
+  })
+  same(Object.keys(files).sort(), [...expected].sort(), 'runtime lineage pool membership')
+  for (const name of ['Packages', 'SHA256SUMS', 'manifest.txt']) same(capture[name], files[name], 'runtime lineage pool capture')
+  same(capture['source-lineage.json'], createHash('sha256').update(canonicalJson(value) + '\n').digest('hex'), 'runtime lineage capture bytes')
+  return { record: value, packages, rootEpoch: l.root_epoch as number }
+}
+function shippedRuntime(path: string, inventory: string, arch: string, root: VerityImage, meta: string, marker: string, source: Source) {
   const report = readRuntime(path)
   requireValue(report.architecture === arch, 'runtime architecture differs')
-  const p = object(report.provenance, ['build_packages', 'shipped_packages', 'files', 'configured_sha256', 'capture_sha256'])
+  const p = object(report.provenance, ['build_packages', 'shipped_packages', 'files', 'configured_sha256', 'capture_sha256', 'source_lineage'])
   const buildPackages = array(p.build_packages).map(v => runtimePackage(v, arch))
   const byPackage = new Map(buildPackages.map(v => [v.package, v]))
   requireValue(byPackage.size === buildPackages.length && byPackage.size > 0, 'runtime duplicate or empty build packages')
@@ -249,6 +312,16 @@ function shippedRuntime(path: string, inventory: string, arch: string, root: Ver
     digest(selected[field]); same(capture[name], selected[field], `${name} capture`)
   }
   for (const name of ['sources.tsv', 'upstream.tsv', 'Packages']) digest(capture[name])
+  const lineage = sourceLineage(p.source_lineage, source, arch, capture)
+  for (const row of buildPackages) {
+    const match = lineage.packages.find(p => p.package === row.package)
+    if (match || row.archive.startsWith('pool/')) {
+      requireValue(match, 'runtime lineage missing installed package')
+      for (const key of ['version', 'architecture', 'archive'] as const) same(row[key], match[key], 'runtime lineage installed package')
+      same(row.archive_sha256, match.sha256, 'runtime lineage installed archive')
+    }
+  }
+  requireValue((report.consumers as string[]).every(name => lineage.packages.some(p => p.package === name)), 'runtime lineage selected package missing')
   const ownership = record(selected.ownership_sha256)
   for (const [name, sha] of Object.entries(ownership)) { digest(sha); same(capture[`info/${name}`], sha, 'native ownership capture') }
   for (const name of byPackage.keys()) requireValue(Object.keys(ownership).filter(f => f === `${name}.list` || f === `${name}:${arch}.list` || f === `${name}:all.list`).length === 1, 'runtime unique native ownership')
@@ -355,14 +428,15 @@ function shippedRuntime(path: string, inventory: string, arch: string, root: Ver
     VERITY_DATA_BLOCKS: String(root.verity.dataBlocks), VERITY_HASH_START_BLOCK: String(root.verity.hashOffset / root.verity.hashBlockSize),
     VERITY_DATA_SECTORS: String(root.verity.hashOffset / 512), SQUASHFS_BYTES: String(root.verity.hashOffset), IMAGE_BYTES: String(root.image.bytes) }, 'signed verity geometry')
   array(report.external_inputs)
-  return { buildPackages, shippedPackages, files: provenance, measurements, licenses }
+  for (const row of files.values()) same(row.mtime_ns, String(BigInt(lineage.rootEpoch) * 1000000000n), 'runtime lineage root epoch')
+  return { buildPackages, shippedPackages, sourceLineage: lineage.record, files: provenance, measurements, licenses }
 }
 
 function derived(dir: string, m: Omit<ReleaseManifest, 'artifacts'>, image: string, root: VerityImage) {
   const files = releaseFiles(image)
   const inventory = read(join(dir, 'package-manifest.tsv'))
   const rows = packages(inventory)
-  const runtime = shippedRuntime(join(dir, 'rootfs-report.runtime.json'), inventory, m.board === 'x64' ? 'amd64' : 'arm64', root, read(join(dir, 'baked-meta.json')), read(join(dir, 'development-marker.txt')))
+  const runtime = shippedRuntime(join(dir, 'rootfs-report.runtime.json'), inventory, m.board === 'x64' ? 'amd64' : 'arm64', root, read(join(dir, 'baked-meta.json')), read(join(dir, 'development-marker.txt')), m.source)
   const images: unknown = JSON.parse(read(join(dir, 'builder-images.json')))
   requireValue(images !== null && typeof images === 'object' && !Array.isArray(images)
     && Object.keys(images).length > 0 && Object.entries(images).every(([k, v]) => /^(IMAGE|LOCAL)_[A-Z0-9_]+$/.test(k) && typeof v === 'string' && v), 'builder image records')
@@ -372,7 +446,7 @@ function derived(dir: string, m: Omit<ReleaseManifest, 'artifacts'>, image: stri
         properties: [{ name: 'mos:source-commit', value: m.source.commit }, { name: 'mos:source-dirty', value: String(m.source.dirty) }, { name: 'mos:source-offer', value: OFFER }] },
       components: rows.map(r => ({ type: 'library', name: r.name, version: r.version, properties: [{ name: 'mos:architecture', value: r.architecture }, { name: 'mos:archive-sha256', value: runtime.shippedPackages.find(p => p.package === r.name)!.archive_sha256 }] })) },
     'licenses.json': { schemaVersion: 1, statement: OFFER, source: m.source, packages: runtime.licenses },
-    'provenance.json': { schema: 'mos/provenance/v1', source: m.source, board: m.board, version: m.version, profile: m.profile, builderImages: images, runtime: { buildPackages: runtime.buildPackages, shippedPackages: runtime.shippedPackages, files: runtime.files, measurements: runtime.measurements },
+    'provenance.json': { schema: 'mos/provenance/v1', source: m.source, board: m.board, version: m.version, profile: m.profile, builderImages: images, runtime: { sourceLineage: runtime.sourceLineage, buildPackages: runtime.buildPackages, shippedPackages: runtime.shippedPackages, files: runtime.files, measurements: runtime.measurements },
       inputs: [image, 'update.mosupd', 'firmware.json', 'firmware.bin', 'package-manifest.tsv', 'rootfs-report.runtime.json', 'baked-meta.json', 'development-marker.txt', 'board-evidence.json', 'builder-images.json', 'release-notes.md'].map(filename => measure(dir, filename, files[filename]!)) },
   }
 }
@@ -447,7 +521,7 @@ export function assembleRelease(inputs: ReleaseInputs) {
   const bootAssurance = evidence(JSON.parse(read(inputs.evidence)), inputs.board)
   const deployment = verifyArchive(inputs.update, inputs.keys)
   requireValue(deployment.board === inputs.board && deployment.version === inputs.version, 'update board or version differs')
-  shippedRuntime(inputs.runtimeReport, read(inputs.packages), inputs.board === 'x64' ? 'amd64' : 'arm64', deployment.rootfs.content, read(join(inputs.meta, 'updates/manifest.json')), marker)
+  shippedRuntime(inputs.runtimeReport, read(inputs.packages), inputs.board === 'x64' ? 'amd64' : 'arm64', deployment.rootfs.content, read(join(inputs.meta, 'updates/manifest.json')), marker, inputs.source)
   const m: ReleaseManifest = { schema: 'mos/release/v1', board: inputs.board, version: inputs.version, channel: inputs.channel,
     profile: inputs.profile, source: inputs.source, bootAssurance, developmentDomains, artifacts: [] }
   const files = { [image]: inputs.image, 'update.mosupd': inputs.update, 'firmware.json': join(inputs.firmware, 'firmware.json'),
