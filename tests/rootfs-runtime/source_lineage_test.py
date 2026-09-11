@@ -1,5 +1,6 @@
 """Real Git and Debian pool proofs for explicit composition-only reuse."""
 import hashlib
+import importlib.util
 import json
 import os
 from pathlib import Path
@@ -124,11 +125,43 @@ class SourceLineageTest(unittest.TestCase):
         self.assertEqual(self.output.read_bytes(), original)
         self.assertNotIn(str(self.work).encode(), original)
 
+    def test_exact_selector_and_fixture_delta_preserves_package_identity(self):
+        paths = ['rootfs/runtime/select.py', 'tests/rootfs-runtime/selection_test.py']
+        for name in paths:
+            path = self.composition / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(REPO / name, path)
+        self.commit(self.composition)
+        result = self.invoke()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        record = json.loads(self.output.read_bytes())
+        self.assertEqual(record['package_source'], self.source)
+        self.assertEqual([row['path'] for row in record['delta']],
+                         ['rootfs/runtime/compose.py', *paths])
+        self.assertNotEqual(record['composition_source']['commit'], self.commit_id)
+
     def test_default_requires_same_source_stamp(self):
         r = self.invoke(explicit=False)
         self.assertNotEqual(r.returncode, 0); self.assertIn('stamp', r.stderr)
         r = self.invoke(explicit=False, root=self.package)
         self.assertEqual(r.returncode, 0, r.stderr)
+
+    def test_selector_delta_cannot_enter_a_package_context(self):
+        producer = self.package / 'rootfs/packages-src/fixture/producer.env'
+        producer.parent.mkdir(parents=True)
+        producer.write_text('BUILD_CONTEXTS="runtime=rootfs/runtime"\n')
+        self.commit(self.package)
+        consumer = self.work / 'context-consumer'
+        self.must('git', 'clone', '-q', self.package, consumer)
+        shutil.copyfile(REPO / 'rootfs/runtime/select.py', consumer / 'rootfs/runtime/select.py')
+        self.commit(consumer)
+        spec = importlib.util.spec_from_file_location('source_lineage_context', HELPER)
+        helper = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(helper)
+        package, before = helper.identity(self.package)
+        composition, after = helper.identity(consumer)
+        with self.assertRaisesRegex(ValueError, 'composition path enters producer context: rootfs/runtime/select.py'):
+            helper.delta(self.package, consumer, package, composition, before, after)
 
     def test_dirty_and_hidden_checkout_changes_refuse(self):
         path = self.package / 'build-env/images.env'
