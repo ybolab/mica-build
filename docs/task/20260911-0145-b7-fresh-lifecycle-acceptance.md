@@ -144,3 +144,55 @@ fresh milestone nor any old/global record is completed. No detached gate,
 expensive job, physical disk write, main merge, push, publication or issue status
 transition is part of this checkpoint. L2 must supply the final reviewed local
 HEAD and exact named jobs after addressing the plan's prerequisites.
+
+## Approved continuation
+
+The 2026-09-11 L1 decision relayed by L2 authorizes the exact geometry invariant,
+non-publication artifact test consumer and bounded private environment preparation
+listed in the plan's approved-continuation section. The previous pending policy
+decisions are resolved by that scope; the original negative logs remain valid
+pre-fix evidence. The caller checkpoint `64387f20d29405fa34790670b2e68e76593abb0b`
+remains unchanged. Startup of this continuation verified its branch and clean
+status. The same serializer-owned task stays in progress; no new node or grant.
+
+## Geometry and environment continuation evidence
+
+The approved geometry is implemented: only the two authorized assignments in
+x64/virt-arm64 board.env, one exact 1 GiB parsed SYSTEM invariant, and the
+shared-DATA corruption offset in `tests/file-ab-x64/faults.sh` changed.
+CX/S905 board source and all reserves remain unchanged.
+
+Metadata and full logs: `/tmp/mos-b7-continuation.hEaedH/<gate>.{json,log}`;
+source is caller commit `64387f20d29405fa34790670b2e68e76593abb0b` plus the
+recorded working-file hashes. Persistent shell: `75btxdqb-7e0f1b`.
+
+| Gate | Exact command / result |
+| --- | --- |
+| geometry-red | `timeout 180 bash build/run.sh src/file-layout.test.ts`; exit 1, 9 pass / 9 fail. Wrong real geometry and contiguous smaller/larger layouts reached the new assertions. |
+| geometry-green | Same command; exit 0, typecheck / nonzero guard, 18 tests / 92 assertions. Four current boards, both backends and raw/ext4 reserve boundaries remain covered. |
+| geometry-callers | `timeout 180 bash build/run.sh src/fit-environment.test.ts src/tools/sgdisk.test.ts`; exit 0. |
+| geometry-static | `timeout 120 make os-layout-lint && timeout 30 bash -n tests/file-ab-x64/faults.sh && timeout 30 git diff --check`; exit 0. |
+| cargo-fetch | `timeout 310 bash /tmp/mos-b7-continuation.hEaedH/cargo-fetch.sh`; exit 0, one timeout-300 fetch in the unchanged pinned image with only owned registry/git caches writable. |
+| shutdown-offline-recheck | Original `timeout 120 bash tests/boot-shutdown-test.sh`; exit 0, `BOOT_SHUTDOWN_FIXTURES_PASS`. No script, lock, offline assertion or toolchain change. This is software fixture evidence. |
+| arm64-probe | `timeout 90 bash /tmp/mos-b7-continuation.hEaedH/arm64-probe.sh`; actual fixed target-command launch exited 255: `exec /bin/sh: exec format error`. No mounts/devices or host/builder mutation; no execution retry. |
+
+Rust lock SHA-256: `816a21311421587b088bc65239c1489998db43421e458d2f163a180af13a049e`;
+resolved runner `localhost/mos-build-rust-check:amd64`, actual image
+`sha256:f962663a6b90735118eb2ce954d3a457e1ba784b023fc346469927b5ecc3f0a1`.
+The original missing-anyhow exit 101 log stays environment failure evidence,
+not behavior RED. Source/lock remain unchanged after the authorized fetch.
+
+ARM64 requested platform was `linux/arm64` with source-pinned Debian index
+`sha256:d7e12182ce18b85b93007c1dedf31f2d29e01ccf3182cc4017c709b6259bc132`.
+The program never started, so expected ARM64 executable execution is not proved.
+The local Docker client rejects image-inspect `--platform` (`unknown flag:
+--platform`); ordinary image inspection reports amd64 and is not ARM64 image
+identity proof. Preserve that distinction from the requested run platform.
+BuildKit container image remains
+`sha256:28a898719c18a33f4e8000685287fa36fd0dd9560c6440227d3a732d79bb41d8`;
+`mos-arm64` advertises amd64/386 and has no configured CPU/memory cap.
+A verified working ARM64 route and bounded job allocation remain L2 inputs.
+
+PMA-CR geometry review: PASS; zero introduced findings across correctness,
+firmware protection, trust, data integrity and test meaningfulness. Only the
+approved assignments/invariant and necessary DATA fixture offset changed.

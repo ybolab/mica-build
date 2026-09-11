@@ -222,3 +222,55 @@ Service/native/reconciler defects outside B7 fixtures must name their exact
 source/hunk to L2 before any repair. No stale historical symptom authorizes
 recreating already delivered policy or removing the retained S5 shell/network
 tools. The three historical detail files and their index statuses are untouched.
+
+## Approved continuation: geometry and non-publication acceptance
+
+L1's decision relayed by L2 on 2026-09-11 resolves the two earlier source-policy
+blockers. Prior negative evidence stays preserved; no new proposal approval is
+required. Continue the existing claim from clean caller commit
+`64387f20d29405fa34790670b2e68e76593abb0b`, without any upstream/source import.
+This continuation remains heavy=0 and does not allocate final artifacts/jobs.
+
+- Sole geometry write ownership: `boards/x64/board.env` and
+  `boards/virt-arm64/board.env`, only `SYSTEM_SIZE_MIB=1024` and
+  `DATA_START_MIB=1537` in each; `build/src/file-layout.ts`, only an exact 1 GiB
+  SYSTEM invariant for every current signed-file V3 board/backend;
+  `build/src/file-layout.test.ts`, meaningful shipped-board/contiguous-small-or-
+  large negatives plus current CX/S905 and reserve boundaries. Keep all other
+  partition fields, firmware validation and capacity reserves. Commit this fix
+  separately before final source freeze; no A board changes or wrapper override.
+- Non-publication consumer: new `tests/file-ab-x64/provenance-acceptance.ts`,
+  exercised through the existing Bun acceptance harness, and focused tests in
+  `build/src/release-manifest.test.ts`. It must run the complete existing typed
+  `assembleRelease` and `gateRelease` checks for virt-arm64/development/dev,
+  deriving actual clean source identity with `sourceIdentity`, actual input
+  hashes and current board evidence. A task-owned fresh output is required;
+  a separate evidence record outside the gate's exact file set records
+  `publicationEligible=false`. Emit `NON_PUBLICATION_ARTIFACT_ACCEPTANCE`, never
+  release qualification. Normal CLI assemble and gate must both continue to
+  refuse the same otherwise-valid candidate; no board-target flip, production
+  CLI/function, sourceIdentity, Toolbox, signing or trust-policy edit. Prove
+  tamper refusal for runtime report, provenance, image, update and firmware.
+- Environment preparation: after owned cache users exit, resolve the unchanged
+  Rust-check image and require full ID
+  `sha256:f962663a6b90735118eb2ce954d3a457e1ba784b023fc346469927b5ecc3f0a1`.
+  Run one bounded `cargo fetch --locked --manifest-path
+  /src/pkgs/mos-deploy/Cargo.toml` with read-only source and only private
+  registry/git mounts writable, then the original offline shutdown fixture
+  once if fetch succeeds. Record source/lock/image/argv/UTC/log/exit identities.
+  No alternate registry/toolchain, lock mutation or repeated retries.
+- Resolve the source's pinned ARM64 Debian platform and run one short fixed
+  target executable probe without host/source/device mounts. Record image and
+  program architecture separately from builder-advertised platforms. No binfmt,
+  shared-builder, host-emulation or privileged changes.
+
+Verification order: geometry RED -> minimal GREEN plus layout/capacity callers;
+non-publication consumer RED -> GREEN with normal CLI refusals and tampering;
+owned environment checks at safe serial boundaries; scoped review/docs/diff.
+Only necessary dependent fixture geometry may change; report any additional
+production need before editing it. Final image, cold proof and physical rows
+remain pending their original source/input/job handoffs.
+
+The necessary dependent fixture is `tests/file-ab-x64/faults.sh`: its shared-DATA
+corruption offset must move from 2561 MiB to 1537 MiB with the approved geometry.
+The SYSTEM corruption offset and all fault expectations remain unchanged.
