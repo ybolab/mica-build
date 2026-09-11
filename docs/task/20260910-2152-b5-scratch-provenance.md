@@ -268,3 +268,30 @@ Final committed-source gates are pending collection before software completion.
   separate. See the plan's unchanged artifact acceptance recipe.
 - L2 D owns old/global reconciliation. No sibling or #313 statuses changed. Only
   B5 software obligations may be completed after the final relevant gates pass.
+
+
+## Final S6 software acceptance
+
+Implementation is `76616b95b42fa06868be583fc59bae29a5b9ba6f`, tree
+`a15eee587874a21a906a1ce45c43e486dcf6ab59`. Its final eight-gate run completed
+at 2026-09-11T00:57:13.758716+00:00. Metadata:
+`/tmp/mos-b5-s6-3zypj5yl/final/metadata.json`, SHA256
+`146a08942d9f05cf612bbd3d9fad5bb08b4db8583a1c3f6e1039642314618650`.
+Runtime (79 tests), manifest (46 checks), Debian (54 plus dual-architecture
+locks), host, docs and diff passed. Full `timeout 900 make os-build-test` passed
+500 tests, 1451 assertions, 27 files, no skips. All eight log hashes match.
+Shell lint exited 2 solely for the accepted UI baseline; aggregate remains 1:
+
+```text
+FAIL: pkgs/mosd/apid/ui/verify-ui-policy.sh:82: an early-exiting grep on the right of a pipe, in a file that sets pipefail: the pipeline reports failure when the pattern IS found. Use 'grep -c ... >/dev/null'
+RESULT: FAIL (159/160 files clean, 160 scanned)
+make: *** [Makefile:350: os-shell-pipefail-lint] Error 1
+```
+
+This was committed production source, but the test bridge generated one untracked
+composition_test bytecode file. That cache was inspected and moved into the owned
+external evidence directory with its digest verified; no unknown file was removed
+or committed. The fixture now disables bytecode before importing its Python helper.
+Its separate committed release-suite rerun must prove a clean checkout is retained;
+production source stays identical to the full 500-test gate. The original run is
+not described as a clean worktree, and its metadata retains the untracked status.

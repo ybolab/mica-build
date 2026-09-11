@@ -33,6 +33,7 @@ function repin(name: string) {
 function runtimeFixture(): void {
   const result = spawnSync('python3', ['-c', `
 import hashlib, json, pathlib, shutil, sys
+sys.dont_write_bytecode = True
 repo, work = map(pathlib.Path, sys.argv[1:])
 sys.path.insert(0, str(repo / 'tests/rootfs-runtime'))
 from composition_test import CompositionTest
