@@ -1,6 +1,6 @@
 # 20260910-2152-b5-scratch-provenance Wire scratch runtime composition and shipped provenance
 
-- **status**: implementing
+- **status**: completed
 - **createdAt**: 2026-09-10 21:52
 - **approvedAt**: 2026-09-10 21:52 (prior user approval)
 - **relatedTask**: 20260910-2152-b5-scratch-provenance
@@ -163,12 +163,11 @@ assertions. Clean-source docs and diff checks passed. Exact results and original
 RED are in the related task and `/tmp/mos-b5-r1-614v4f9m/`; final run metadata
 SHA256 is `65575758523bce1da13084bccce6b7e9609907116cf0c340ff86293f6f32bded`.
 Shared/TypeScript backend review passed with zero findings. Only the task/plan
-evidence changes after the tested implementation commit. The two C handoffs and
-grant-dependent B7 rows below remain open; the plan remains implementing.
+evidence changes after the tested implementation commit. At that checkpoint the two C handoffs and grant-dependent B7 rows remained
+open; the approved continuation below subsequently closed the software rows.
 
 The approved public-meta source and release-fixture boundary are now delivered.
-The declarations/report join and focused tests are implemented; collect final
-committed-source gates before software completion. No other C or main branch may be imported
+The declarations/report join and final software gates are complete. No other C or main branch may be imported
 without that exact handoff.
 
 B7 grant request: one named board/job at a time, exact approved integrated commit,
@@ -223,3 +222,21 @@ filesystem extraction or physical/runtime behavior. Per-file report/provenance
 records are bounded at 128 MiB; all filesystem/image size gates are unchanged.
 Allocation/RSS/fresh-image/boot-payload evidence stays explicitly pending B6/B7.
 No actual root/image/kernel/QEMU/cold build was authorized or run by B5.
+
+
+## B5 software completion
+
+The source transfer is 23a3414a8c82f86edbae4434cbf7dd0bd0066b7e; S6 implementation
+is 76616b95b42fa06868be583fc59bae29a5b9ba6f; fixture isolation is
+ed765333824962d74dada144c4837358490aaa89. The final runtime suite passed 79 tests;
+full build passed 500 tests/1451 assertions; manifest, Debian, host, docs and diff
+passed. Shell retains only the accepted UI baseline (159/160), so its aggregate
+is 1. The clean fixture follow-up passed 48 release tests/179 assertions and left
+no cache or untracked files. Exact source/log/hash/UTC results are in the task and
+/tmp/mos-b5-s6-3zypj5yl. Earlier RED, 104/412 corrective gates and baseline histories
+remain intact. Shared/TypeScript backend/Python review found no unresolved issue.
+
+Only B5 software scope is complete. The actual artifact/runtime acceptance recipe
+and historical residual ownership rows above stay with B6/B7 and L2 D. No heavy
+build, guest or physical evidence has been promoted from fixture results, and no
+filesystem/image size gate or publication/signature policy was relaxed.

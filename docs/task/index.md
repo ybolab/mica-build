@@ -196,4 +196,4 @@ thing about the tree. Both indexes now say the same thing.
 
 - [x] [**20260910-2100-b4-runtime-selection Select explicit runtime payloads**](20260910-2100-b4-runtime-selection.md) `P1`
 
-- [-] [**20260910-2152-b5-scratch-provenance Wire scratch runtime composition and shipped provenance**](20260910-2152-b5-scratch-provenance.md) `P1`
+- [x] [**20260910-2152-b5-scratch-provenance Wire scratch runtime composition and shipped provenance**](20260910-2152-b5-scratch-provenance.md) `P1`

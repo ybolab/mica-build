@@ -1,6 +1,6 @@
 # 20260910-2152-b5-scratch-provenance Wire scratch runtime composition and shipped provenance
 
-- **status**: in_progress
+- **status**: completed
 - **priority**: P1
 - **owner**: b5/ekh6zunh
 - **createdAt**: 2026-09-10 21:52
@@ -15,7 +15,7 @@ boot/support/debug identities. No compatibility work or heavy builds.
 
 ## ActiveForm
 
-Verifying the completed B5 software join before handing actual artifact acceptance to B6/B7.
+B5 software obligations completed; B6/B7 own the explicitly pending artifact and runtime acceptance.
 
 ## Dependencies
 
@@ -248,7 +248,7 @@ PMA-CR shared/TypeScript backend/Python review covers the new join, current publ
 closure and tests. No high-confidence unresolved finding remains in this bounded
 software review (0 critical/high/medium/low). sourceIdentity/imports, Toolbox,
 verifier, native lifecycle, storage, UI and all earlier gate histories are intact.
-Final committed-source gates are pending collection before software completion.
+Final committed-source results are collected in the acceptance section below.
 
 ## Remaining ownership and handoff
 
@@ -295,3 +295,24 @@ or committed. The fixture now disables bytecode before importing its Python help
 Its separate committed release-suite rerun must prove a clean checkout is retained;
 production source stays identical to the full 500-test gate. The original run is
 not described as a clean worktree, and its metadata retains the untracked status.
+
+
+The clean fixture follow-up source is
+`ed765333824962d74dada144c4837358490aaa89`, tree
+`dd82b52e50de77028e230d5dc51d7655c20769c9`. Its
+`timeout 300 bash build/run.sh src/release-manifest.test.ts` passed 48 tests and
+179 assertions, no skips, and ended with an empty Git status and no bytecode
+cache. Metadata `/tmp/mos-b5-s6-3zypj5yl/fixture-final/metadata.json` SHA256
+`baa654b3e68389f5ed6345658b1df2c998238a4e06d7fd334bbb9e198b0bba90`. All production files still exactly match the 500-test source;
+the only subsequent test change prevents cache pollution. Final review remains
+PASS with no unresolved software finding. The final record-only commit is checked
+by docs-verify and diff under `/tmp/mos-b5-s6-3zypj5yl/record/`.
+
+B5 software obligations are complete: both handoffs are consumed, scratch/public
+selection and mandatory per-file release provenance are implemented and verified.
+Completion does not mark actual roots, SquashFS/OCI, boot payloads, RSS, fresh
+images, cold reproduction or physical/runtime acceptance passed. Those remain
+explicit B6/B7 rows, including the historical system-unit/Quadlet, SSH and login
+accounting obligations in the plan. Corrective count remains 1.
+
+- complete: B5 software selection and release provenance passed scoped gates; B6/B7 actual artifact and runtime evidence remains pending. Corrective count stays 1.
