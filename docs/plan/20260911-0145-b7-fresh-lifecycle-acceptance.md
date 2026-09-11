@@ -1058,3 +1058,55 @@ establish reuse. Build one final image each for x64, virt-arm64 and CX; use
 disposable copies for scenarios. The independent C verifier stays pinned to
 `48acef7f1a3683b1f3bb6261911b1a5123197da2`. All earlier distinct lifecycle,
 storage, authentication, API, runtime-memory and physical limitations remain.
+
+## Installed-device capture correction (2026-09-11)
+
+L2 authorized diagnosis and one bounded integration correction after x64 W2
+refused `unsupported node: /installed/dev/console`. This uses the existing
+approved task; the prior B7 review corrective count is 1. Preserve both frozen
+J source checkouts, every successful package/cache input and all failed root
+logs. The independently completed virt cold run1 also reports this refusal at
+J; it was not interrupted or restarted and is not successor-source evidence.
+
+The immutable 10-compose OCI layers contain eight character devices in their
+first layer, before 90-pack runs. Their paths, device numbers, mode 0666 and
+root ownership match `setup_devices_simple` in the exact pinned debootstrap
+1.0.141 input. They are installation content, not devices injected into the
+capture executor. The layer and helper-source evidence is in
+`W/metadata/W2/device-capture/layer-audit.json`.
+
+Limit the correction to `rootfs/runtime/compose.py` and focused regressions in
+`tests/rootfs-runtime/composition_test.py`: record these exact bootstrap
+character-device inodes in the disposable installation snapshot and transfer
+comparison, without copying them into the selected runtime tree. Keep
+`select.py` and its strict unsupported-node refusal unchanged. Reproduce the
+old snapshot refusal first; then cover complete metadata/transfer equality,
+selected-device refusal, wrong identity/ownership/mode, and unrelated special
+nodes. Do not ignore a subtree, remove input devices, or change board/runtime
+policy. Review with PMA-CR and run the affected runtime suite and docs gate.
+
+Commit the source correction separately for L2/L1 review. It changes build
+composition inputs, so no new production root may consume it until the narrow
+successor source and truthful unchanged-package reuse are reviewed. Do not
+rename J-stamped packages or treat either failed J root as a successor result.
+
+The minimal patch and five focused fixtures passed, as did the complete
+85-test runtime suite and reproducibility contracts. No Dockerfile, selector,
+package producer, lock, trust, board or signed-artifact policy changed. The
+eight bootstrap identities are checked, not ignored; transfer metadata is
+retained and final runtime special nodes still refuse. The pending source
+checkpoint is a candidate successor to J, not permission to change frozen
+checkouts or attribute old outputs to that successor.
+
+One precise source/freshness boundary needs L2/L1 disposition with this patch:
+`rootfs/build.sh:313-317` compares the pool's Git stamp against
+`build-env/deb/version.sh` for the current checkout. The successful pools retain
+`gite176876b733d-1`; a successor checkout necessarily has a different stamp.
+Although this patch leaves package recipes and payload source unchanged, the
+driver also derives package version and source epoch from Git identity.
+Therefore complete equal-input package reuse must not be asserted merely from
+unchanged recipe files. Preserve existing package bytes and original identities;
+do not rebuild successful producers, override the check or rename stamps.
+Request a precise reviewed lineage/consumer boundary through L2 before a new
+production root. The failed virt run remains a J result and cannot be reused
+as the first half of an equal-source successor cold comparison.

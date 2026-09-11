@@ -4,6 +4,7 @@ import json
 import os
 from pathlib import Path
 import shutil
+import stat
 import subprocess
 import sys
 
@@ -58,6 +59,91 @@ class CompositionTest(unittest.TestCase):
         return self.command('compose', root=self.f.root, output=self.f.out, inputs=self.inputs,
                             rules=self.f.rules_path, arch='amd64', epoch=1000000000,
                             debug=self.debug, report=self.f.report)
+
+    def bootstrap_device(self, name='console', major=5, minor=1, mode=0o666):
+        path = self.f.root / 'dev' / name
+        path.parent.mkdir(exist_ok=True)
+        os.mknod(path, stat.S_IFCHR | mode, os.makedev(major, minor))
+        path.chmod(mode)
+        return path
+
+    def test_bootstrap_devices_are_captured_but_never_shipped(self):
+        devices = {'console': (5, 1), 'full': (1, 7), 'null': (1, 3), 'ptmx': (5, 2),
+                   'random': (1, 8), 'tty': (5, 0), 'urandom': (1, 9), 'zero': (1, 5)}
+        for name, numbers in devices.items():
+            self.bootstrap_device(name, *numbers)
+        self.capture()
+        rows = json.loads((self.inputs / 'configured.json').read_text())
+        for name, (major, minor) in devices.items():
+            row = rows['/dev/' + name]
+            self.assertEqual(row['type'], 'bootstrap-character-device')
+            self.assertEqual((row['major'], row['minor'], row['mode'], row['uid'], row['gid']),
+                             (major, minor, 0o666, 0, 0))
+            self.assertIn('mtime_ns', row)
+            self.assertIn('xattrs', row)
+        r = self.compose()
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertTrue(all(not (self.f.out / 'dev' / name).exists() for name in devices))
+        self.assertTrue(all(row['type'] in {'file', 'directory', 'symlink'}
+                            for row in json.loads(self.f.report.read_text())['files']))
+
+    def test_selected_bootstrap_device_still_refuses(self):
+        self.bootstrap_device()
+        self.capture()
+        self.f.rules['consumers']['mos-system']['roots'].append({
+            'paths': ['/dev/console'], 'kind': 'resource', 'reason': 'invalid shipped device',
+            'generated': 'fixture',
+        })
+        self.f.rules_path.write_text(json.dumps(self.f.rules))
+        r = self.compose()
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn('unsupported node:', r.stderr)
+        self.assertIn('/dev/console', r.stderr)
+        self.assertFalse(self.f.report.exists())
+
+    def test_bootstrap_device_transfer_checks_inode_metadata(self):
+        self.bootstrap_device()
+        self.capture()
+        copy = self.f.base / 'transferred'
+        copy.mkdir()
+        archive = self.f.base / 'tree.tar'
+        subprocess.run(['tar', '-C', str(self.f.root), '--numeric-owner', '--xattrs', '--xattrs-include=*', '-cf', str(archive), '.'], check=True, timeout=15)
+        subprocess.run(['tar', '-C', str(copy), '--same-owner', '--xattrs', '--xattrs-include=*', '-xf', str(archive)], check=True, timeout=15)
+        r = self.command('compare', root=copy, snapshot=self.inputs / 'configured.json')
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertTrue(stat.S_ISCHR((copy / 'dev/console').lstat().st_mode))
+        os.utime(copy / 'dev/console', ns=(1000000000, 1000000000))
+        r = self.command('compare', root=copy, snapshot=self.inputs / 'configured.json')
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn('installation transfer changed', r.stderr)
+
+    def test_snapshot_refuses_unrelated_special_nodes(self):
+        for relative in ['dev/other-device', 'var/lib/device']:
+            with self.subTest(path=relative):
+                path = self.f.root / relative
+                path.parent.mkdir(parents=True, exist_ok=True)
+                os.mknod(path, stat.S_IFCHR | 0o666, os.makedev(5, 1))
+                r = self.command('snapshot', root=self.f.root, output=self.inputs / 'refused.json')
+                self.assertNotEqual(r.returncode, 0)
+                self.assertIn('unsupported node:', r.stderr)
+                self.assertFalse((self.inputs / 'refused.json').exists())
+                path.unlink()
+        path = self.f.root / 'dev/console'
+        os.mkfifo(path)
+        r = self.command('snapshot', root=self.f.root, output=self.inputs / 'refused.json')
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn('unsupported node:', r.stderr)
+
+    def test_snapshot_refuses_changed_bootstrap_device_identity(self):
+        for major, minor, mode, uid in [(1, 3, 0o666, 0), (5, 1, 0o600, 0), (5, 1, 0o666, 123)]:
+            with self.subTest(major=major, minor=minor, mode=mode, uid=uid):
+                path = self.bootstrap_device(major=major, minor=minor, mode=mode)
+                os.chown(path, uid, 0)
+                r = self.command('snapshot', root=self.f.root, output=self.inputs / 'refused.json')
+                self.assertNotEqual(r.returncode, 0)
+                self.assertIn('bootstrap device identity', r.stderr)
+                self.assertFalse((self.inputs / 'refused.json').exists())
+                path.unlink()
 
     def test_pack_entry_selects_real_paths_and_metadata(self):
         self.capture()

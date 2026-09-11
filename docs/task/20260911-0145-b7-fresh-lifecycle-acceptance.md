@@ -763,3 +763,68 @@ recorder. No producer was repeated and frozen product source did not change.
 Public trust hashes and private-key 0600 permissions were captured without
 reading private contents; signing pairing and public-meta validation remain
 required before their consuming phases.
+
+## W1 completion and W2 capture refusal (2026-09-11)
+
+Both architecture producer sets completed at immutable J. Only native export
+and final index execution required task-local resource-envelope recovery;
+successful producers were not repeated. The amd64 and arm64 pools contain 15
+and 16 packages, respectively, and both native pairs and pools are frozen.
+Evidence is in `W/metadata/W1/recovery-x64-v1/result.json` and
+`W/metadata/W1/recovery-arm-v1/result-continue-v1.json`. Actual ARM native files
+are ELF64/AArch64; their identities are in the adjacent `native-elf.json`.
+
+Fixed Debian cache acquisition preserved the original 600-second timeout,
+HTTP/2 connection resets and private mirror-prefix errors. All 163 amd64 and
+175 ARM selected/union inputs, including the bootstrap helper, subsequently
+passed the original cache verifier. Receipts are in
+`W/metadata/W2/amd64-fixed-cache-v3/result.json` and
+`W/metadata/W2/arm64-fixed-cache-v2/result.json`. Public metadata now uses the
+exact J development template; the approved public trust identities are
+unchanged. No root/image/runtime PASS follows from package or cache success.
+
+The x64 normal root and virt-arm64 cold run1 independently failed at
+`runtime composition refused: unsupported node: /installed/dev/console`.
+Their terminal metadata is `W/metadata/W2/x64/root-resume-v5.json` and
+`W/metadata/W2/virt-arm64/cold-root-run1.json`; the latter ended on its own at
+10:58:24 UTC. No active gate or frozen source was interrupted or modified.
+L2 authorized the directly affected composition/fixture correction and requires
+reviewed successor-source identity before another changed-source root.
+
+Read-only layer inspection proves that all eight devices are already in the
+10-compose OCI and match the pinned debootstrap installation helper. The plan
+records the precise snapshot-only correction and negative acceptance boundary.
+This is a newly confirmed composition integration defect; the existing B7 R1
+review corrective count remains recorded as 1, without self-dispatching a new
+review round. The task remains open for source review and fresh acceptance.
+
+The isolated correction captures only the eight exact bootstrap character
+devices with device number, mode, owner, timestamp and xattrs. Runtime selection
+and copying remain unchanged. The actual tar transfer fixture passes; selected
+devices, unrelated devices/FIFO, wrong device numbers, owners/modes and changed
+transfer timestamps refuse. PMA-CR Python review found no introduced findings.
+
+Verification completed in persistent tmux `75btxdqb-7e0f1b`, pane `%102`:
+
+- RED: `timeout --kill-after=10s 120 python3 tests/rootfs-runtime/composition_test.py CompositionTest.test_bootstrap_devices_are_captured_but_never_shipped`
+  exited 1 with the same `unsupported node` console refusal. The log SHA256 is
+  `10ef221e912df4c376e525b92e9e926c2db8fc06e183e6a74f8a185cde1ca6b5`.
+- GREEN: five focused device tests exited 0, then
+  `timeout --kill-after=10s 120 bash tests/rootfs-runtime-test.sh` passed all
+  85 tests and `ROOTFS_REPRODUCIBILITY_PASS`, without skips. Its log SHA256 is
+  `9e1311e66aad892bd8a2e4bce21e7593745e4d569047b36c7fec99894241cc66`.
+- `timeout --kill-after=10s 120 make docs-verify` and
+  `timeout --kill-after=10s 120 git diff --check` exited 0. The final record
+  update receives a separate docs/diff check; the source suite is not replayed.
+
+`W/metadata/W2/device-capture/{red,green}.json` records exact commands, PIDs,
+UTC times and working-source/log hashes. GREEN metadata SHA256 is
+`43f33e37a5849bb3bb2a5e64345235ed41d9111f9f18aea33a0230efa804c7ae`.
+Layer audit SHA256 is
+`b556c49b4446c2df5a73523d787d38cea7de43edd35eda15bc3c71713f0d7fc2`.
+The original ARM terminal metadata SHA256 is
+`907648fdb92de16c0a26c8ee5f5ddbc1e98d5c0956b584df8dbefe0e89c608dc`;
+its root log SHA256 is
+`0370b287c113976054fc5d0e3d94d797615f49a3407017b076239126a4b68fef`.
+Neither architecture has a completed root. Root/image, cold equivalence,
+authenticated guest/API/lifecycle and physical evidence remain outstanding.
