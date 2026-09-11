@@ -636,3 +636,132 @@ artifact. Actual joint input freeze, one-time L1 source review, named heavy jobs
 full provenance/image/verifier/API/runtime/cold proof and physical bench rows
 remain pending. No passed expensive matrix was repeated and no expensive
 package/root/kernel/image/guest production was started.
+
+## Authorized API launcher continuation (2026-09-11)
+
+Campaign `mos-open-plans-20260910-100408`: L2 independently reproduced the
+missing outer-container SSH forwarding input. It authorizes only conditional
+propagation of a supplied `MOS_QEMU_SSH_PORT` into QEMU_ENV in
+`pkgs/mosd/tests/apid-api/run.sh`, plus a focused regression in
+`tests/file-ab-x64/api-launcher.test.ts` and necessary adjacent fixtures.
+Preserve unset behavior, raw supplied values, source/image/certificate/board
+arguments and all eight phases. Existing qemu.ts performs validation; do not
+add another port parser. No guest, port opening, API product/service/registry
+change or heavy job is authorized in this source phase. This is a new evidenced
+caller obligation; the B7-R1 corrective count remains one.
+
+Use byte-for-byte copies of the real launcher and qemu.ts in an owned fixture
+checkout. Isolate Docker/build boundaries and observed networking; send the
+actual launcher-generated container environment to the actual qemu.ts capture
+path on an existing tiny fixture disk. Record the planned inner Docker argv
+without executing Docker or QEMU. RED/GREEN must cover both boards, a supplied
+port, absence and existing invalid-value refusals. Commit this correction
+separately after focused tests/type/shell/docs checks and PMA-CR review. Retain
+all independent service-traffic, actual reboot/reset and physical rows.
+
+### API launcher correction evidence
+
+The source change is exactly three lines after QEMU_ENV: append the supplied
+`MOS_QEMU_SSH_PORT` verbatim when the variable is set. No default, coercion or
+additional parser is introduced; absent remains absent. The original qemu.ts,
+phase registry, service policy and image/certificate/board arguments are unchanged.
+
+Evidence: `/tmp/mos-b7-api-launcher.Uoeguq/<gate>.{json,log}`, with exact commands,
+UTC, source/tree, working-file identities and log hashes. Before implementation,
+`timeout 120 bun test tests/file-ab-x64/api-launcher.test.ts` returned 1: 2 pass,
+8 fail, each supplied value missing at the outer boundary. After the three-line
+fix it returned 0: 10 tests / 134 assertions. The same ten cases passed through
+`timeout 120 bash tests/file-ab-x64/bun.sh test tests/file-ab-x64/api-launcher.test.ts`.
+Strict TypeScript for both new fixture files, bash syntax and diff checks passed.
+
+The fixture copies real run.sh/qemu.ts and board inputs byte-for-byte and executes
+them. It isolates the expensive images.sh and Docker boundary, supplies a local
+Unix socket plus simulated network observations, and reconstructs the inner
+environment solely from actual `-e` arguments. To reach the existing forward
+validator without disk production, it invokes real qemu.ts capture on an existing
+tiny private disk. Inner Docker is recorded and deliberately exits 73. The outer
+harness deliberately fails before preparation/guest/API phases; that exit is not
+an API or boot PASS. Unset has no SSH forward; 22345 survives to both HOSTFWD and
+Docker port argv; 0/non-numeric values reach `Invalid positive integer`, 65536
+reaches `Invalid forwarding port`, and invalid values never reach inner Docker.
+The fixture Docker executable never delegates to the real daemon; the pinned
+run uses only the existing Bun tool container. No TCP listener, guest or service
+is started. Temporary fixture files/socket are removed after every case.
+
+PMA-CR inspected the three-line source hunk and complete two-file fixture;
+PASS, zero introduced findings. This is the separately authorized launcher
+obligation, not another failed R1 round. Existing R1/geometry/caller/provenance,
+ARM64 BuildKit and earlier negative evidence are retained without replay.
+
+### Service-input preparation for the eventual J manifest
+
+Preparation only; no endpoint is live and no key has been installed. Public
+input manifest: `/srv/station/work/tmp/mos/75btxdqb/service-inputs-I5cyEHJc/public-inputs.json`, SHA-256 `24a8096f4235d4168f244d281e0637a02bd8098623b0ae321597b658583dce9d`. Its exact read-only image queries
+and timeout-30 key-generation commands are in sibling `steps.json`; the parent
+source-bound `service-inputs` gate is under the API launcher evidence directory.
+The four Ed25519 keys are task-owned, separated by board and allowed/alternative
+role, with mode-0600 private files in a mode-0700 directory. Only public-file
+hashes/fingerprints enter these records; these are not boot/signing keys or
+existing system credentials. Rebind the source-key/image selection to actual J
+before allocating their use.
+
+| Board | Role | Actual public-key fingerprint |
+| --- | --- | --- |
+| x64 | allowed | `SHA256:WAkNB8+bZ0nj+ArrfNS08uIxmk/QwxeJ1+ZQSmGQcoc` |
+| x64 | alternative | `SHA256:+0eS7UcH7dnFQSiePP8tFyeLH71hCN+0bDN67m8OBMM` |
+| virt-arm64 | allowed | `SHA256:JGMexfoiWWfwYpLRWYoM0i/NJwh475uehH1QIf8lX3o` |
+| virt-arm64 | alternative | `SHA256:cWe4XWQUrx1s0DNPpVKZODZihohCRbgKsXTIKoe3VAQ` |
+
+The proposed selected-container network fixture uses the already source-pinned
+IMAGE_ALPINE_3_21 index, with architecture-specific immutable children:
+
+| Architecture | Child manifest | Config |
+| --- | --- | --- |
+| amd64 | `alpine@sha256:f27cad9117495d32d067133afff942cb2dc745dfe9163e949f6bfe8a6a245339` | `sha256:2607caa9805847fac4de202017bb1b830deb09f4c07dc9964a0157abbc604577` |
+| arm64 | `alpine@sha256:1832327faf048390adc33852575d37c7ba155e064a339e78b9bd81983a8c7a00` | `sha256:2155344e09b47f8ea09459100e050bed74b5202316318fd0ad0f7f6856089efc` |
+
+These are verified registry index/manifest identities, not proof of a pulled
+OCI archive, target executable, selected guest runtime or container network.
+The eventual named job must freeze the exact archive/image content used by the
+guest, including architecture and loaded digest, before network assertions.
+
+The SSH/SFTP command recipe, after a named guest/port/account allocation, is
+`timeout 30 ssh -o BatchMode=yes -o IdentitiesOnly=yes -o IdentityAgent=none
+-o StrictHostKeyChecking=yes -o UserKnownHostsFile=TASK_KNOWN_HOSTS
+-i TASK_BOARD_ALLOWED_KEY -p ASSIGNED_SSH_PORT ACCOUNT@OBSERVED_GUEST /usr/bin/true`.
+Use the separate alternative key with the same endpoint and options and require
+an authentication refusal, not a timeout or network failure. The positive key
+must be installed only through the selected image/managed authorization policy;
+the alternative default-location key must not grant access. Capture the host
+public key through the authenticated owned guest/console path and pin it in the
+task known-hosts file. Do not use an unverified ssh-keyscan or ignore host-key
+checks. SFTP uses `timeout 30 sftp -b TASK_BATCH -P ASSIGNED_SSH_PORT` with the
+same explicit identity and host-key options; batch put/get/remove a unique
+campaign file in the assigned writable test directory and compare both hashes.
+The placeholders are mandatory recorded job inputs, not runnable defaults or
+guessed endpoints. No SSH/SFTP command was executed during preparation.
+
+For the container network row, use only the board's frozen child/image digest
+with the selected Podman/crun runtime. A task-owned HTTP peer should return a
+unique campaign payload whose exact bytes/hash are captured in the job manifest;
+record the peer container identity, network attachment and observed address,
+then run the selected guest container against that peer and compare received
+bytes/hash. Keep HTTP success separate from DNS, storage and native-runtime
+qualification. Peer startup, guest image transfer and its exact executable
+wrapper remain job preparation inputs; no service was started here.
+
+Controlled DNS responder, NTP responder and MQTT publisher/subscriber tool
+images/configuration have not been supplied by the registered eight phases or
+an existing traffic fixture. Their exact program/image/config hashes, selected
+guest broker/authentication policy, packet/request/response capture and cleanup
+commands remain concrete missing J-job inputs. Do not invent tool digests,
+peer endpoints, credentials or a traffic PASS from phase-03 setting enables.
+The runtime-build.sh helper modifies/repackages a root and image; its earlier
+fixture results cannot qualify the joint wave's immutable final image. New
+scenario scripts must run from DATA-seeded units on disposable copies of the
+one board image, using the existing seeding path, without rebuilding an image
+per scenario. Actual rollback reboot, reset application, firstboot/Quadlet,
+accounting, lifecycle and physical rows remain separate pending evidence.
+
+Final source gates: host-toolchain lint 424/424, docs and staged diff checks
+passed in `launcher-final-gates`. No full unrelated suite was replayed.
