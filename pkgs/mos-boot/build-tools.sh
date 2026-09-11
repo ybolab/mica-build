@@ -22,6 +22,6 @@ SNAPSHOT="$(. "$REPO/rootfs/debian/sources.env"; printf '%s' "$MIRROR")"
 SNAPSHOT="${SNAPSHOT/https:\/\//http:\/\/}"
 mapfile -t BASE < <(bash "$REPO/build-env/from.sh" --arch=amd64 MOS_IMAGE_DEBIAN_TRIXIE=IMAGE_DEBIAN_TRIXIE)
 test "${#BASE[@]}" = 2
-# The producer tools run on amd64; TARGET selects the produced EFI/BusyBox ABI.
+# The producer tools run on amd64; TARGET selects the produced EFI ABI.
 docker build --platform linux/amd64 --label ai-agent=true -t "ai-agent/mos-boot-tools-$IMAGE_TARGET" \
     "${BASE[@]}" --build-arg "MOS_DEBIAN_SNAPSHOT=$SNAPSHOT" --build-arg "MOS_BOOT_TARGET=$TARGET" "$HERE"

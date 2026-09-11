@@ -68,3 +68,25 @@ The 2026-09-11 user schedule qualifies x64 source/UAPI/runtime fixtures first.
 ARM source layout is reviewed, but new ARM compilation and real acceptance are
 deferred until the actual approved main merge. Earlier ARM preflight evidence
 retains its original source identity.
+
+## Approved startup extension (2026-09-11)
+
+The explicit worker #347 dispatch approves the typed-ioctl fallback in plan
+20260911-1927-boot-artifact-size. Startup adds fixed DM_DEV_CREATE, read-only
+single-verity DM_TABLE_LOAD and DM_DEV_SUSPEND (resume), plus LOOP_CTL_GET_FREE,
+LOOP_SET_FD and read-only LOOP_SET_STATUS64 in lifecycle-sys. No arbitrary
+request number, pointer or device-mapper target API is exported. The existing
+active/read-only shutdown status, complete-table and safe removal contracts
+remain unchanged. Creation receipts permit bounded rollback of the worker's
+own inactive mapping, with fresh identity and no-open-user checks, UUID-selected
+removal and subsequent disappearance proof. Mutating requests are not retried.
+An EBUSY loop reservation race never grants ownership or permission to detach.
+
+Business crates remain unsafe-forbidden. linux-keyutils 0.2.5 supplies the safe
+USER_KEY insertion wrapper using existing libc/bitflags dependencies, with its
+Apache-2.0 OR MIT licence; no devicemapper/MPL allowance, C crypto library,
+libdevmapper or speculative toolchain is added. Signature payloads live only in
+the bounded startup worker's process keyring, are revoked after table loading,
+and are checked by the kernel's trusted-keyring policy. The B/lifecycle review
+and 2026-12-10 sunset remain; source/UAPI fixtures do not replace the mandatory
+differential, negative and guest acceptance in the startup plan.

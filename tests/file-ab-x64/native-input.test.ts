@@ -26,9 +26,11 @@ function fixture(script: string, board: string, kind: string) {
   const bytes = Buffer.alloc(128)
   bytes.set([0x7f, 69, 76, 70, 2, 1, 1]); bytes.writeUInt16LE(3, 16)
   bytes.writeUInt16LE(board === 'x64' ? 62 : 183, 18); bytes.writeUInt32LE(1, 20); bytes.writeUInt16LE(64, 52)
+  bytes.writeBigUInt64LE(64n, 32); bytes.writeUInt16LE(56, 54); bytes.writeUInt16LE(1, 56)
+  bytes.writeUInt32LE(1, 64); bytes.writeBigUInt64LE(128n, 96)
   const init = join(work, 'mos-init'), shutdown = join(work, 'mos-shutdown')
   writeFileSync(init, bytes, { mode: 0o755 })
-  bytes[100] = 7
+  bytes[120] = 7
   writeFileSync(shutdown, bytes, { mode: 0o755 })
   const cert = join(work, 'content.cert'), signingKey = join(work, 'content.key')
   const args = script === 'build.ts' ? [join(work, 'output'), board, kernel, cert, signingKey, init, root, shutdown]

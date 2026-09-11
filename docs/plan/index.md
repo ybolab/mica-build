@@ -121,6 +121,8 @@ disobeys on sight teaches a reader the wrong thing about the tree.
 
 - [x] [**20260910-0726-unlimited-application-data Unlimited application data with bounded var**](20260910-0726-unlimited-application-data.md) `2026-09-10`
 
+- [-] [**20260911-1927-boot-artifact-size Shrink the signed boot artifact: compression and early-userspace closure**](20260911-1927-boot-artifact-size.md) `2026-09-11`
+
 - [x] [**20260910-1013-b0-lifecycle-rootfs-audit Lifecycle and rootfs closure design**](20260910-1013-b0-lifecycle-rootfs-audit.md) `2026-09-10`
 
 - [x] [**20260910-1038-b1-pinned-static-busybox B1 pinned static BusyBox boot package**](20260910-1038-b1-pinned-static-busybox.md) `2026-09-10`
