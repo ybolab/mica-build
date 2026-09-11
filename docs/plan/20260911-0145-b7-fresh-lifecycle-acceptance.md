@@ -36,7 +36,8 @@ and shared resources must remain untouched.
 
 Focused `tests/file-ab-x64/`, `tests/signed-boot-lab/`, packaging/runtime closure
 acceptance fixtures, permitted final-output checks, and this tracking pair.
-No production, board, UI, compatibility, main, push or publication changes.
+The approved continuation below adds only the exact SYSTEM geometry hunk.
+No other production/board, UI, compatibility, main, push or publication changes.
 
 ## Alternatives
 
@@ -86,7 +87,14 @@ No existing image result is used as evidence for current B artifacts.
   These observations do not establish that each image embeds the final approved
   packaging source; revalidate source/tool provenance before using it.
 
-### Existing source conflicts reported to L2
+### Original source conflicts and their disposition
+
+These observations describe the pre-continuation source; preserve their negative
+logs. L1 approved the exact geometry and non-publication test-consumer boundaries
+below. Geometry is now committed as `5ead205523bdeb6a8cf0cb8dc9c35b2c9f47d56d`;
+the private Cargo fetch and original offline fixture passed. The remaining
+source work implements the bounded non-publication consumer, without a release
+policy change. Artifact production still requires final source/input/job handoff.
 
 1. `boards/x64/board.env:27` and `boards/virt-arm64/board.env:27` both declare
    `SYSTEM_SIZE_MIB=2048`; DATA starts at 2561 MiB. `parseFileLayout` consumes
@@ -166,7 +174,8 @@ use that same clean commit/tree without intervening tracking edits.
    and `--package-manifest EXTRACTED_ROOT/usr/share/mos/manifest.tsv`, plus the
    matching captured `--baked-meta`, authenticated `--update`, full `--image`,
    firmware, public key, notes, board/version and owned output. Never substitute
-   `build-inputs/manifest.tsv`. Resolve the arm64 release-policy blocker first.
+   `build-inputs/manifest.tsv`. x64 uses the unchanged formal release CLI.
+   virt-arm64 uses only the approved test consumer described below.
    Independently extract both actual SquashFS and factory OCI and run
    `python3 rootfs/runtime/select.py verify --root EXTRACTED_FACTORY --report
    BOARD_OUT/rootfs-report.runtime.json` (also for extracted SquashFS), with no
@@ -274,3 +283,58 @@ remain pending their original source/input/job handoffs.
 The necessary dependent fixture is `tests/file-ab-x64/faults.sh`: its shared-DATA
 corruption offset must move from 2561 MiB to 1537 MiB with the approved geometry.
 The SYSTEM corruption offset and all fault expectations remain unchanged.
+
+## Non-publication consumer contract and readiness
+
+`tests/file-ab-x64/provenance-acceptance.ts` is a test-only artifact consumer.
+Run it from the final frozen B checkout via the existing harness:
+
+```bash
+timeout 300 bash tests/file-ab-x64/bun.sh tests/file-ab-x64/provenance-acceptance.ts TASK_INPUTS_JSON
+```
+
+The JSON contains the existing `ReleaseInputs` fields: `out`, `board`, `version`,
+`channel`, `profile`, `source`, `builderImages`, `image`, `update`, `firmware`,
+`packages`, `meta`, `runtimeReport`, `notes`, `evidence`, and base64 public `keys`.
+Use absolute input paths and a fresh task-owned output. This file contains no
+private key. The source is the producer's exact frozen commit with dirty=false;
+the consumer independently calls the unchanged read-only `sourceIdentity` on
+its actual checkout before and after the complete typed artifact checks. There
+is no CLI commit or checkout override. Inputs must be the same-source frozen
+package/artifact handoff; this check does not reconstruct a build from bytes.
+
+Only virt-arm64/development/dev is accepted. Builder declarations and board
+evidence must match the frozen checkout byte identities. Both `assembleRelease`
+and `gateRelease` run in full, including signed update/firmware, selected-root
+manifest, shipped metadata marker, runtime image/verity and derived provenance
+checks. The output directory's exact artifact set stays unchanged. A new sibling
+`OUT.acceptance.json` exclusively records publicationEligible=false, actual
+source, manifest/artifact SHA-256 mapping, public-key fingerprints and UTC.
+The result is `NON_PUBLICATION_ARTIFACT_ACCEPTANCE`; it does not upgrade board
+qualification or claim image/guest/physical acceptance. The real CLI continues
+to refuse both assemble and gate for the same otherwise-valid virt-arm64 input.
+
+The regression's separate clean Git fixture and signed small byte objects are
+explicitly synthetic. They exercise actual source identity, ARM64 selector/
+composition, typed checks and tamper refusals, not a fresh bootable image. Its
+exported-function checkout argument is fixture injection; the operational CLI
+always checks its own repository. No normal release function, sourceIdentity,
+Toolbox, C verifier, signing/trust code or board publication flag changes.
+
+The pinned Debian index was read without execution and SHA-256 matches the
+committed index. It advertises linux/arm64/v8 manifest
+`sha256:7215f78f35ffe58fe13f244fac9c4f21326d55187271fbb3e1a8aa5cc7e387ab`.
+The actual requested ARM64 probe failed before its first program instruction;
+ordinary local inspection reports amd64. Neither advertised platforms nor that
+ordinary inspection proves target execution. Request an exact working ARM64
+platform route from L2; no binfmt, host emulation or shared builder was changed.
+`continuation-inventory.json` in the current evidence directory records that
+both package pools, root/runtime/OCI outputs and BSP kernel inputs are still
+absent. Rust fixture caches are now present, but are not release binary exports.
+
+No heavy job has started. L2 must review/merge the caller, separate geometry and
+consumer commits, then supply the exact integrated clean source, matching
+selected package pools, native/BSP/support/tool/trust identities and per-job
+capacity/output allocation. The two virt-arm64 cold roots must use that same
+future source and pool. All fresh lifecycle/API/storage/historical rows and A's
+physical rows remain outstanding as listed above.

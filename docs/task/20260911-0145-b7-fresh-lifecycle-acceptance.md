@@ -196,3 +196,77 @@ A verified working ARM64 route and bounded job allocation remain L2 inputs.
 PMA-CR geometry review: PASS; zero introduced findings across correctness,
 firmware protection, trust, data integrity and test meaningfulness. Only the
 approved assignments/invariant and necessary DATA fixture offset changed.
+
+## Non-publication acceptance checkpoint
+
+Geometry was separately committed as
+`5ead205523bdeb6a8cf0cb8dc9c35b2c9f47d56d` (tree
+`4b1ece458af066a872f8c31744de5aa766a29e24`). Geometry docs-verify also passed;
+its dependent fit/sgdisk tests passed 21 tests / 107 assertions.
+
+The new test consumer at `tests/file-ab-x64/provenance-acceptance.ts` enforces
+virt-arm64/development/dev, fresh output and sibling evidence, actual clean
+checkout identity, frozen builder declarations and byte-identical committed
+board evidence. It calls the complete unchanged typed assemble/gate functions.
+The existing harness invocation and exact input contract are in the plan.
+The CLI has no source/checkout override; regression checkout injection is confined
+to the exported test function. The external record binds source, all artifact
+hashes, manifest hash and metadata public-key fingerprints without qualifying
+publication, runtime or hardware behavior.
+
+`build/src/release-manifest.test.ts` now produces an ARM64 selector/composition
+fixture and signs matching small update/firmware byte objects. The same candidate
+passes low-level checks and is refused by normal release CLI assemble and gate.
+False source, dirty checkout, channel/profile widening, changed builder/board
+evidence and existing evidence refuse. Runtime, provenance, signed firmware,
+evidence and update tampering refuse even after outer digest repinning; changed
+factory-image bytes refuse against the recorded digest. All objects are synthetic
+fixtures, never final-image evidence.
+
+| Gate | Exact command / result |
+| --- | --- |
+| provenance-red | `timeout 180 bash build/run.sh src/release-manifest.test.ts -t non-publication`; exit 1. The initial fixture used `arch` instead of the actual `architecture` field, causing one schema-error assertion mismatch; preserve it separately from behavior failures. |
+| provenance-red-valid | Same command before consumer guards/entry implementation; exit 1, 1 pass / 2 fail. Valid signed candidate accepted a false source commit and emitted no required non-publication result. Fixture tamper checks already passed. |
+| provenance-green | Same command; exit 0, typecheck / nonzero guard, 3 tests / 45 assertions. The explicitly selected filter excludes 48 other tests. |
+| release-regression | `timeout 300 bash build/run.sh src/release-manifest.test.ts`; exit 0, complete release test file, 51 tests / 224 assertions, no test filter. No full build matrix replay. |
+| provenance-pinned | `timeout 180 bash tests/file-ab-x64/bun.sh test build/src/release-manifest.test.ts -t non-publication`; exit 1 before acceptance: all three tests reach the shared Python runtime fixture and receive `Expected: 0`, `Received: undefined` from spawn status. This is not an acceptance pass or a behavior RED. |
+
+All logs and per-command source/tree/working-file/UTC/exit/hash metadata remain
+under `/tmp/mos-b7-continuation.hEaedH`. The initial and corrected RED records are
+retained separately. The pinned fixture prerequisite is investigated with a
+read-only executable lookup and the consumer's no-input CLI refusal; no image or
+global toolchain is modified. The successful host regression is reported
+separately from the pinned fixture environment failure.
+
+PMA-CR acceptance review: PASS; zero introduced correctness/security/integrity/
+lifecycle findings. Source identity, signatures, strict production schemas and
+publication policy stay intact. Frozen package/input provenance and actual
+SquashFS/OCI/image/guest verification remain independent obligations.
+
+Readiness stays partial: both indexed pools and final artifact inputs are absent,
+ARM64 program execution failed, and no exact final-source/job allocation exists.
+The original UI shell baseline failure is retained unchanged; prior caller,
+rootfs selection, layout and offline shutdown checks are not replayed for status.
+No heavy job, new source import, physical operation, main/push/done or historical
+status update was performed. Keep this task/plan active until the existing
+acceptance milestone is actually complete; final task closure uses the serializer.
+
+The pinned prerequisite probe confirms the exact cause:
+`Executable not found in $PATH: "python3"` (`ENOENT`), with Bun 1.4.0.
+The actual consumer entry loads through `tests/file-ab-x64/bun.sh` and its
+missing-input control exits 1 with the required usage message. That command
+exits 0 only because it asserts the refusal; it does not turn the failed Python
+fixture suite into a pass. The standalone artifact consumer has no Python runtime
+dependency. A pinned route for the existing Python composition fixture remains
+an environment prerequisite if L2 requires that suite in the Bun image; no Python
+or other toolchain was installed there.
+
+| Review severity | Introduced findings |
+| --- | --- |
+| CRITICAL | 0 |
+| HIGH | 0 |
+| MEDIUM | 0 |
+| LOW | 0 |
+
+Verdict: PASS for the scoped diff. Reported environment and future artifact rows
+remain partial and are not waived by this review.
