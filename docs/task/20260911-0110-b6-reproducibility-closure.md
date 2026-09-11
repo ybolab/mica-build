@@ -1,6 +1,6 @@
 # 20260911-0110-b6-reproducibility-closure B6 reproducibility closure
 
-- **status**: in_progress
+- **status**: completed
 - **priority**: P1
 - **owner**: bkd/dmu2xs16
 - **createdAt**: 2026-09-11 01:10
@@ -115,3 +115,40 @@ batched with B7 only when L2 schedules it; the second remains an independent
 up to 8 vCPU, 16 GiB RAM and 30 GiB free workspace including both archives. No
 kernel, disk image, QEMU, cache pruning, full `_out` deletion, remote host
 assumption or physical evidence is included.
+
+## Final software verification
+
+Implementation commit `6132f256a9958007dfcab8c07628ec0606e79baa`
+(tree `2b59f8aaa4c0c72e1fd5ae7b7d1f6047cbdcc633`) was checked in persistent tmux
+session `dmu2xs16-c75690`. Exact UTC command, log SHA-256 and exit-code records
+are `/tmp/mos-b6-gates.9LK2mw/metadata.tsv`, SHA-256
+`898824268e72bdaa35ade4218e505060b4197abcc9303c3179ee4b5f8a7fdf19`.
+
+- `timeout 120 bash tests/rootfs-runtime-test.sh`: exit 0; 80 tests, no skips,
+  and `ROOTFS_REPRODUCIBILITY_PASS`.
+- `timeout 120 bash build/run.sh src/stages.test.ts`: exit 0; 104 tests and 236
+  assertions.
+- `timeout 120 make os-debian-test`: exit 0; 54 base checks plus minimal/additive
+  selection on both architectures.
+- `timeout 120 make os-host-toolchain-lint`: exit 0; 418/418 files clean.
+- `timeout 120 make docs-verify`: exit 0; 195/195 index, 510/510 links,
+  724/724 status, 249/249 translation coverage and 131/131 board checks.
+- `timeout 30 git diff --check cda293970a0e012a7e1572334bbfb6258014b752
+  HEAD`: exit 0.
+- `timeout 120 make os-shell-pipefail-lint`: exit 2 only for the pre-existing,
+  out-of-scope line: `FAIL: pkgs/mosd/apid/ui/verify-ui-policy.sh:82: an
+  early-exiting grep on the right of a pipe, in a file that sets pipefail: the
+  pipeline reports failure when the pattern IS found. Use 'grep -c ...
+  >/dev/null'`. The file is byte-identical to the approved source on both sides
+  (SHA-256
+  `fb1f28c3b7a60d53f8d203b2203198c54617e9f34f3766b5fe096da913e5ddff`)
+  and was not changed by B6.
+
+PMA local diff review covered the complete shell/Python/test/tracking change and
+its direct call chain. Verdict: PASS, zero critical/high/medium/low findings.
+No Rust, verifier, Bun product, UI, C-owned, kernel, image, QEMU, hardware or
+cold-build work ran. Software closure and the bounded cold-proof design are
+complete; artifact equality remains pending the exact L2-scheduled heavy job
+above and must not be promoted from these fixtures.
+
+- complete: B6 software closure and cold-proof design verified; artifact comparison remains an explicitly scheduled heavy gate.

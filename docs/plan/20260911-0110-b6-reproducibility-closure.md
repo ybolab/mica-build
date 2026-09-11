@@ -1,6 +1,6 @@
 # 20260911-0110-b6-reproducibility-closure B6 reproducibility closure
 
-- **status**: implementing
+- **status**: completed
 - **createdAt**: 2026-09-11 01:10
 - **approvedAt**: 2026-09-11 01:10
 - **relatedTask**: 20260911-0110-b6-reproducibility-closure
@@ -70,3 +70,6 @@ compatibility, migration, kernel, board, QEMU, or hardware changes.
   zero-sanction comparisons of full SquashFS bytes, full verity bytes/root hash,
   selected reports and unpacked content/metadata. It may share B7's first root
   build only through an explicit L2 schedule.
+- Final software gates passed at implementation commit `6132f256`, except the
+  unchanged approved-source UI shell-pipefail baseline recorded verbatim in the
+  task. PMA review found no issue in the B6 diff. No expensive job was started.
