@@ -20,8 +20,8 @@ No compatibility or migration paths are required.
 
 ## ActiveForm
 
-Awaiting B source review of the implemented five phases. Full-image input join
-and mandatory physical CX acceptance remain pending.
+Awaiting B review of the B347-R1 ownership correction and the private target-route
+integration proposal. Full-image input join and physical CX acceptance remain pending.
 
 ## Dependencies
 
@@ -317,3 +317,62 @@ Full signed-system selection/upgrades/trial fallback/reboot/poweroff and physica
 CX cold boot remain pending. Exact missing bench inputs are the board identity,
 console/device or endpoint, final reviewed image/flash target, and cold-power
 control. Broad ARM acceptance remains deferred until approved main integration.
+
+## B347-R1 review correction
+
+- B requested changes on 2026-09-11: failed loop readback must not clear a changed
+  or unknown binding. The same applies to SET_STATUS64 failure cleanup.
+- Approved focused correction: consolidate attachment and readback at the typed
+  syscall boundary, preserve same-FD and three-attempt EBUSY behavior, and clear
+  only after current identity, flags and geometry prove this attachment.
+- Preserve source 48d64990, native producer 9673af58 and all original evidence.
+  New regression tests precede the fix; a later producer requires a new identity.
+- Compare B 85c54845 single-target boot-tools changes read-only and prepare a
+  private exact overlap proposal. No B7 consumer or unrelated baseline changes.
+- Correction implemented: attachment and final status validation share the existing
+  lifecycle-sys boundary. Expected backing device/inode and loop number come from
+  the same live file descriptors; flags must be read-only, offset/size-limit zero.
+  Invalid or unavailable final status returns an error without CLR_FD. After a
+  SET_STATUS64 error, only a fresh exact status permits clear; cleanup failures
+  still propagate. SET_FD EBUSY never configures/reads/clears, and caller retry
+  remains bounded to three attempts. No shutdown teardown API was changed.
+- A private fixed-operation seam first retained both original unsafe rollback
+  decisions. RED: 2 passed / 4 failed, exit 101. Original traces include
+  left ["set_fd", "set_readonly", "status", "clear"] versus expected
+  ["set_fd", "set_readonly", "status"], and missing status before owned rollback.
+  Log SHA256 ee677fd0f6a66474374aa3615240a9c1ad14b471953c77b8f023a56d3fc089b4;
+  source diff 22b1d4a6b1d760a6518a7564242ac84c33ced6ef1b8fa1a0848b6d307c0e683e.
+- GREEN: lifecycle-sys 14 tests, native_startup 4 tests, startup 1 test, fmt and
+  workspace/all-target clippy passed. Six new tests cover changed device/inode,
+  loop number, writable/autoclear flags, offset/size-limit, absent/error status,
+  SET_FD EBUSY, exact owned rollback and clear failure. Log SHA256
+  981ecfcb397e7cfd1f4e09f7f3893e085b6212488568bbeddc7d657807b73f6f.
+- Serial resource evidence: RED container 9814bcf31849ed36dddd28bcaca5d2a27344a8276fc4bfae39b93af236460cd8,
+  host PID 2227868, 22:26:24.164069566Z to 22:26:27.779472353Z, exit 101;
+  GREEN e838930d172cad5c38a7600147cd3a37c5258d7ed5beeae45998826143832327,
+  host PID 2237227, 22:27:41.414083823Z to 22:28:18.648604721Z, exit 0.
+  Both ran in the pinned f962 check image with 2 CPU, cpuset 4-5, 4 GiB RAM and
+  equal swap limit, two workers, network none, read-only source, separate fresh
+  targets and 1200s TERM/30s kill bound verified before start. Both are removed;
+  release this focused reservation. Full records: _out/boot-size/r1/r1-{red,green}/.
+- Kernel basis: the supplied Linux 6.12 loop.c, SHA256
+  b1804545f658a69571aea1f20131ec3dfc72c8f952e0a5496c0f94cd8d7e2f51.
+  loop_change_fd can replace an open read-only binding; loop_clr_fd affects the
+  current association. Separate status/clear ioctls are not atomic compare-and-clear.
+  These are source-bound control-flow tests, not execution of a live device race.
+- Exact private target-route proposal: .tmp/boot-size/r1/target-route-integration.patch,
+  SHA256 63b227818b4ca26dfa4e90ebe64c229b99f37496eebf4f361925bf6ace6d986f.
+  It applies to this worker's packing files and reconciles committed B 85c54845:
+  keep validated single-target launcher and EFI-only loader output, retain zstd
+  and compression.sh, keep retired BusyBox/ARM helper payloads removed, and move
+  the target-routing checks into tests/boot-startup-package-test.sh. No route
+  changes were applied to tracked source or B/B7 worktrees. git apply --check and
+  15 isolated launcher/recipe cases passed, with zero builds/target executions;
+  log _out/boot-size/r1/integration-route.log SHA256
+  20c15a1acf4ff69669bb62769396f29b5b35c22bdb4437caaf289fcf7b66a52b.
+- PMA-CR focused self-review: no remaining high-confidence finding. The prior
+  full check/guest/native evidence stays tied to its original source and is not
+  requalified by this correction. Native implementation input has changed; a
+  later reviewed producer must emit a new source/recipe identity. B's bounded
+  compressed-cpio consumer and exact observer-symlink binding are still pending,
+  along with full signed-system and mandatory physical CX acceptance.

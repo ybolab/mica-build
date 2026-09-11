@@ -2,8 +2,8 @@
 
 - **status**: in_progress
 - **createdAt**: 2026-09-11 19:27
-- **revisedAt**: 2026-09-11 21:52
-- **reviewStatus**: ready for B source review; full-image and physical acceptance pending
+- **revisedAt**: 2026-09-11 22:31
+- **reviewStatus**: B347-R1 corrected; awaiting B review and pending full-image/physical acceptance
 - **approvedAt**: 2026-09-11 (explicit worker #347 dispatch)
 - **relatedTask**: [20260911-1925-boot-artifact-size](../task/20260911-1925-boot-artifact-size.md)
 
@@ -500,3 +500,22 @@ doctests/deny; real x64 producer-worker/verity/GPT/mount/cleanup and compressed
 artifact checks pass. This source-review result is not full-image or hardware
 acceptance. The unchanged shell-policy failure at
 `pkgs/mosd/apid/ui/verify-ui-policy.sh:82` remains reported.
+
+### B347-R1 approved review correction
+
+The independent review found unconditional loop rollback after failed identity
+readback, including the SET_STATUS64 error path. The focused correction requires
+current exact binding proof before CLR_FD, with source-bound negative and owned
+rollback tests. Existing native/guest/packing evidence retains its original source
+identity; changed implementation needs a later production witness. Target-routing
+overlap with reviewed B 85c54845 is prepared privately for subsequent integration.
+
+R1 source correction is ready: changed/unknown loop state refuses without clear;
+configuration failure clears only a fresh exact owned binding. Six new source-bound
+regressions have RED/GREEN evidence; lifecycle-sys 14, native_startup 4 and startup 1
+tests plus fmt/clippy passed. No live device race or new production native was run.
+Detailed command/source/resource and failure hashes are in the existing task's
+B347-R1 section. The three-file private target-route patch reconciles B 85c54845
+without restoring helpers; 15 isolated branch/launcher cases pass. B's later
+compressed-cpio/observer-symlink consumer correction and truthful successor producer
+binding remain required. Full-system and physical acceptance are still pending.
