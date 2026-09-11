@@ -15,7 +15,7 @@ without relabelling its dirty-stamped build or duplicating implementation.
 
 ## ActiveForm
 
-Completed collector and coherent kernel evidence; composition is blocked after recovery retry 2, pending L1's concrete recovery decision. Physical qualification remains blocked.
+Completed collector and coherent kernel evidence; implementing the separately L1-authorized load-adapter recovery before unchanged smoke. Physical qualification remains blocked.
 
 ## Dependencies
 
@@ -26,8 +26,10 @@ Completed collector and coherent kernel evidence; composition is blocked after r
 
 ### Authorized composition continuation — 2026-09-10
 
-Phase state: blocked pending L1's concrete recovery decision, owned by
-`bkd/1zjiu5h5`. Recovery retries 2 of 2 are exhausted. The completed task/index
+Phase state: adapter recovery authorized on 2026-09-11, owned by
+`bkd/1zjiu5h5`. Historical automatic retries remain 2 of 2; the case-specific
+`l1AuthorizedAdapterRecovery=1` is separate, with no automatic fourth recovery.
+The completed task/index
 status above preserves the earlier collector/kernel delivery; it does not claim
 that this new candidate exists or passes. The PMA serializer has no reopen
 operation, so this continuation is a content update under the explicit L1/L2
@@ -528,6 +530,85 @@ recovery is claimed. `timeout 30 make docs-verify` passed on
 `docs-terminal.log` SHA-256
 `8a05e614b6a6f3057988dc2ab915a7d38c1dca9b9fb13c021799786872185216`.
 Scoped `git diff --check` passed. This review/gate qualifies documentation only.
+
+### L1-authorized adapter recovery — 2026-09-11
+
+L1 approved the concrete `b071e6b5` / terminal `review.md` recovery proposal
+after the user's instruction to fix this original-scope adapter defect. This
+resolves the preceding decision blocker without erasing either failed gate or
+granting an automatic retry. The clean own branch fast-forwarded to exact local
+L2 `de482086b0f3edbf7f09d28648e0694dc1acddfe`, identical tree
+`55e086dc78a86c4a214a281e8b98826ffd7e6f96`. Artifact source stays `9d1218e2`;
+passed kernel, packages and emitted root must not be rebuilt for this defect.
+
+New task-owned work is isolated at
+`/srv/station/work/tmp/mos/1zjiu5h5/composition-20260910-2026-z2Ljld/adapter-recovery-20260911-edC647/`.
+The approved fix streams a new load-only OCI archive, preserving member/PAX
+semantics and content-addressed identities while changing only the two approved
+index tag annotations. The original and corrupt copies remain immutable.
+Actual large-layer RED, original positive control, reconstructed GREEN and
+pma-cr Python/shared review must precede real loading. Then run the existing
+`verify/run.sh --smoke --board cx3576 --builder mos-rauc-arm64` at the original
+source, never `make os-rootfs-cx3576`, with task-only Docker resources and
+content-digest identity. Smoke outcomes are not pre-approved.
+
+The exact C tool handoff is now supplied and checked: commit
+`48acef7f1a3683b1f3bb6261911b1a5123197da2`, tree
+`553c1e7af96203315f79e7ea61e862f7a753e3a5`, reviewed delivery manifest hash
+`380dcfacb6d366e8fd1280e21d4be74196cc2e40afad26fbb54f8cbf76c2ca3c`.
+Its two verifier blob IDs match L2's handoff. It will be used separately as a
+read-only tool, not imported into this candidate. The actual native-endpoint
+obligation scans mosd, apid and **mos-deploy**, not mos-mqttd; the earlier MQTT
+hash remains true but does not satisfy that third-file obligation. The later
+authenticated full-image scan and candidate identities are still pending.
+No C suites, sibling payload or source changes are needed for this adapter fix.
+
+Pre-load result (2026-09-11T00:38:02Z..00:39:43Z): original positive control
+`timeout 20 python3 oci_check.py ORIGINAL` exited 0. The same command on the
+preserved actual broken archive exited 1 with the large gzip layer hash
+mismatch; `actual-red.log` SHA-256
+`ce718ce16155003e922099c1d55023c96748a843094b2bf9cbb95c4debb014af`.
+`timeout 25 python3 rebuild_oci.py ORIGINAL NEW_COPY` and independent
+`timeout 20 python3 oci_check.py NEW_COPY ORIGINAL` exited 0. Seven focused
+host tests passed, including PAX metadata/size round-trip and unsafe/duplicate/
+existing-output refusal. No image binary or Docker load ran for these tests.
+
+The fresh `factory-root-load.oci` is 87,746,560 bytes, SHA-256
+`e33b3b158204161bdae4f2cce3f35da7b79f50e6f32fceacd08b8b4cb54f1f12`.
+Its seven-member GNU tar listing passes; config remains at block 171370, index
+is 520 bytes and oci-layout moves to block 171376. Original manifest/config/
+layer digests, member content and effective metadata remain exact, including
+PAX semantics. Only the two permitted index annotation values and consequent
+index bytes/size differ. `independent-green.json` SHA-256 is
+`c2b1730d149739dfc13857e699a1eb8e32f1fe8eb56cf2779cb6fac83925fdd3`;
+`unit-green.log` is `5f45df6dd67d7cf2786478bdaf3cb345190a8191bb0b3a9e9375bafdc83d9e16`.
+
+The actual required third ELF was now extracted read-only from the original
+OCI: `/usr/bin/mos-deploy` SHA-256
+`fa8b7c9e1f3732a3c9a325442f17febe982a766981efbd8fb4554ced8ded3857`,
+ELF64 AArch64, interpreter `/lib/ld-linux-aarch64.so.1`, NEEDED libc/libgcc_s.
+The mosd/apid hashes match the earlier terminal collection. Their three-file
+manifest `candidate-required-ELF-SHA256SUMS` has SHA-256
+`da73f13d3be6b3486f9019e069d221425df04de89864b3a697d1ba1291dc2499`.
+This corrects the candidate-input mapping; no C scan or loader PASS is implied.
+
+Pre-load pma-cr shared/Python review of the actual new adapter, harness,
+invocation wrapper and gate is PASS with zero outstanding findings; the old
+HIGH finding is addressed by streamed construction and actual-archive evidence.
+`pre-load-review.md` retains the review boundaries. The wrapper rechecks hashes
+and original content IDs before loading and refuses shared-tag-only identity;
+all real Docker resources are task-labeled and isolated. Syntax checks pass.
+
+Prepared next command:
+`bash /srv/station/work/tmp/mos/1zjiu5h5/composition-20260910-2026-z2Ljld/adapter-recovery-20260911-edC647/smoke-gate.sh`.
+Gate script SHA-256 `2636c6f09ec9b5bc22fb5f658ea147c146c0c506e975e8e667b6bb26e91211c8`.
+The gate directly runs unchanged `verify/run.sh --smoke` with the original
+record and pinned Bun; its own 1,800-second ceiling does not relax any existing
+per-operation timeout. Live/final `smoke-gate.json`, `smoke-gate.log` and
+`smoke.log` retain source, documentation checkpoint, PID/session, command,
+timestamps and exit. The persistent shell is reused only after an idle check.
+No root/package/kernel rebuild, signing or physical execution is claimed by
+this adapter GREEN. L2 collects the detached smoke result before continuation.
 
 ### Original collector/kernel tracking
 

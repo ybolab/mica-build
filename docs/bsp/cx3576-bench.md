@@ -952,8 +952,13 @@ Read-only extraction confirms the current layout/public defaults, private
 container paths and no-autologin getty template; it is not runtime enforcement,
 login or workload evidence. A4's linked detail records exact artifact and
 failure identities, warnings and an unimplemented adapter recovery proposal.
-Both retries are exhausted: composition is blocked pending L1's concrete
-decision through L2. Smoke, signed root/support/FIT, fresh records, full image
+Both automatic retries were exhausted. On 2026-09-11 L1 separately authorized
+one adapter-only recovery, preserving those retries and failed bytes; no
+automatic fourth recovery is allowed. Actual-archive RED/GREEN and scoped
+review precede unchanged smoke on the existing root, without rebuilding it.
+The exact C verifier tool is now handed off separately at `48acef7f`; its
+native file set is mosd, apid and mos-deploy, not mos-mqttd. Smoke,
+signed root/support/FIT, fresh records, full image
 and candidate-specific verifier checks remain open. This is not an image ready
 to flash or a physical qualification result; the two old roots remain inadmissible.
 

@@ -101,7 +101,7 @@ image, firmware, x64/virt-arm64 matrix or the passed kernel was rebuilt merely
 for documentation. This completes the bounded software/evidence deliverable,
 not exact-image composition or any of the mandatory physical rows.
 
-## Authorized composition phase — blocked pending L1 decision
+## Authorized composition phase — L1 adapter recovery in progress
 
 The subsequent exact L1/L2 source/input handoff resolves the earlier current-root
 and native-init dependency. It authorizes read-only execution of the existing
@@ -178,3 +178,18 @@ collection. Retries 2 of 2 are exhausted. Passed packages/kernel and emitted
 root are preserved, not rebuilt. Heavy usage is zero; the persistent shell is
 idle. The completed PMA status still covers only the earlier collector/kernel
 outcome; no status/index operation is made for this blocked content update.
+
+On 2026-09-11 L1 explicitly approved the adapter-only recovery above through
+L2. Preserve automatic retries=2 and separately record
+`l1AuthorizedAdapterRecovery=1`; no automatic fourth recovery. Correct only a
+new private adapter, preserve the actual corrupt archive as RED and original
+as positive control, prove streamed reconstruction GREEN and review its Python
+and shell boundaries before loading. Run unchanged smoke directly on existing
+root bytes; do not rebuild packages/root/kernel. The previous blocker/history
+remains a dated outcome, not the current authorization state.
+
+The exact C verifier tool handoff at `48acef7f` is resolved, separately from
+actual candidate execution. Its required third native ELF is mos-deploy, not
+mos-mqttd. Use only a separately identified tool snapshot for the eventual
+authenticated image scan; no C payload is imported into artifact source
+`9d1218e2`. Prior PMA completion fields and all physical blockers are unchanged.
