@@ -568,7 +568,7 @@ idle buildkitd-only, not active compile jobs; do not change those shared resourc
 B3 uses its own bounded component/fixture containers and persistent tmux, no full
 root/kernel/image/guest/cold run. All reports go only to B8t4ghqi6.
 
-Tracking issue detected before implementation: the existing serializer has no
+Historical tracking issue detected before implementation: the existing serializer has no
 reopen action; claim on this completed task returns verbatim
 `task-state: claim requires pending status, found completed`. Preserve historical
 completion and the existing owner; report this exact format gap to B, do not
@@ -646,8 +646,9 @@ record or shared resource is modified here. B must relay this schedule to B7.
 ### X64 source and artifact delivery
 
 The current x64 static implementation is ready for B independent source review.
-The tracking serializer disposition below remains open; it does not require
-another product approval or block x64 caller readiness. No new ARM execution
+The tracking limitation is resolved by the authorized same-owner reopen below.
+The task remains in progress for B independent review; x64 caller readiness and
+all existing source/artifact evidence are unchanged. No new ARM execution
 occurred after the user scheduling amendment.
 
 | Item | Measured result / identity |
@@ -726,5 +727,27 @@ remaining introduced finding. `review-source.json` binds each changed production
 and test file and unchanged startup/authentication/lock inputs. B owns independent
 review, B7 owns final combined x64 guest acceptance, and ARM is deferred-by-user.
 Main merge, push, issue done, shared resource changes and physical actions were
-not performed. Only the historical completed task marker remains because
-`task-state.sh` cannot reopen it; the exact failure was reported to B twice.
+not performed. At source delivery 36866b47, the historical completed task marker remained
+because `task-state.sh` could not reopen it; the exact preparation failure was
+reported to B twice. The authorized resolution below supersedes that limitation.
+
+
+### Tracking-only same-owner reopen (2026-09-11)
+
+B relayed explicit user/L1 authorization for the missing unsupported reopen
+operation on this SAME task. Under the serializer's exclusive docs/task directory
+inode flock, the task's completed status, b3/8ezwxfy2 owner and unique [x] index
+row were re-read and asserted. Paired detail/index changes were staged with
+rollback and committed as in_progress/[-], preserving the owner, HYBRID history
+and verbatim `/tmp/mos-b3-static.3ttniist/serializer-claim.log` preparation failure.
+No shared skill/serializer or sibling status changed. The current plan and its
+one index row remain implementing/[-]; all later supported task transitions use
+`task-state.sh`.
+
+Evidence: `/tmp/mos-b3-reopen.gc9d6pdo/reopen.json` and `reopen.log`, with before/
+after detail/index snapshots, locked directory identity and exact source/time.
+The x64 implementation commit `36866b47f2647e778ef33d7183fbba88a81a494e`, original
+source-bound gates and artifact identities remain valid and unchanged. Only
+tracking/document checks run for this follow-up. B independent review, B7 x64
+signed-image acceptance and the user-deferred post-merge ARM wave remain separate;
+this transition neither closes the static refinement nor marks the campaign done.
