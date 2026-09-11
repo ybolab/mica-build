@@ -119,7 +119,7 @@ policy change. Artifact production still requires final source/input/job handoff
    and exits 101 before compiling. L2 must allocate a matching immutable cache
    handoff or an explicit dependency-preparation step before rerunning it.
 
-## Existing-wrapper recipes for the next allocation
+## Initial B-only wrapper recipes (routing superseded by the joint wave)
 
 These are the exact supported command shapes read from B0/B6 and the committed
 wrappers, not runnable allocations: the final source, frozen packages, trust,
@@ -765,3 +765,128 @@ accounting, lifecycle and physical rows remain separate pending evidence.
 
 Final source gates: host-toolchain lint 424/424, docs and staged diff checks
 passed in `launcher-final-gates`. No full unrelated suite was replayed.
+
+## Reviewed upstream sync and pre-J input inventory (2026-09-11)
+
+Campaign `mos-open-plans-20260910-100408`: L2 accepted R1 `fa817ca9` and
+`6049df8f`, including the earlier caller, geometry and non-publication consumer.
+Corrective count remains one, resolved. At a clean boundary, verified LOCAL B
+`53fc261f66aba95b9b0b03b4edbadadfb9ffc6e6`, tree
+`bdb81b568558f272f23275f728898eb721ed13e2`, and merged it with `--no-ff` as
+`53eeee9dd2df23cc9a191e9e5d0f7b67703e11e0`. The resulting tree
+`cc020280a5f6a9855847836688480cacbbce181b` exactly equals the preceding API
+checkpoint `d691708827994a36b9f2015c503c785d61120860`; no conflict or source
+change occurred. Merge metadata: `/tmp/mos-b7-upstream.x9SubY/merge.json`,
+SHA-256 `08691ae9db26f6810845bf2067ea49157e623cd19e974d5325abfe0a8d28ac79`.
+
+The isolated API correction is still submitted for L2 review. Its original
+RED/GREEN and five-file identities remain at
+`/tmp/mos-b7-api-launcher.Uoeguq/delivery.json`, SHA-256
+`a94ea8de17cf9ae99aa20057ba8c03f32068a3cc30aafd7497f9d0e423f9d510`.
+No unchanged API, Rust, route or consumer suite was replayed after this
+tree-identical sync. Exact A/C merges remain authorized after this remaining
+source review boundary; neither is merged here and J is still absent.
+
+### Current immutable candidates and missing inputs
+
+Read-only inventory on clean `53eeee9d`:
+`/tmp/mos-b7-wave-inputs.DalRgH/readiness.json`, SHA-256
+`d1839b7c4f7526bbfed49d4e7dfdd1f72a9e7622420b81a13bf26a9f6fd65876`.
+It records 233 committed source/config/lock/selection files, actual selected
+package names and producer definitions, all six required C production blobs,
+the separately pinned C verifier blobs, tool-image IDs and exact missing paths.
+These are pre-J observations, not a frozen package manifest or J qualification.
+All files under `rootfs/debian/packages/` and the debootstrap helper pin are
+hashed; both target package records remain available in their committed JSON.
+
+| Board | Architecture/profile/radios | Selected packages | Current package/artifact availability |
+| --- | --- | --- | --- |
+| x64 | amd64 / dev / none | 11 | Indexed pool, external kernel, root report/verity/factory OCI absent |
+| virt-arm64 | arm64 / dev / none | 11 | Indexed pool, external kernel, root report/verity/factory OCI absent |
+| CX3576 | arm64 / dev / wifi, bluetooth | 14 | Indexed pool and root outputs absent; historical kernel/firmware candidates verified below |
+
+All selected features are retained; no declined feature or optional component
+was added. SYSTEM is 1024 MiB in all three definitions; DATA starts at 1537 MiB
+for x64/virt and 1042 MiB for CX3576. Publication targets remain 1/0/1.
+Actual resolver stdout hashes and per-package producer mapping are in the
+inventory. ARM64 sharing requires equal complete inputs and matching J package
+stamps; the architecture alone does not permit reusing a root or an old pool.
+
+The source resolver found both architectures' local base/C/Go/Rust/Deb images
+and the amd64 OpenSSL image. Each actual ID, architecture and RepoDigest was
+captured with bounded `build-env/from.sh --arch=ARCH --ref KEY` and Docker
+inspection. `LOCAL_MOS_BUILD_OPENSSL` for arm64 returned 1: the local image is
+absent; exact stderr is retained. `verity-tool.sh` selects its host architecture,
+so the present amd64 tool is its current route. No arm64 OpenSSL build, floating
+replacement, registry pull or toolchain installation was attempted. Local tags
+are observations; freeze the actual image/lock/config identities again for J.
+
+CX3576 compiled manifest
+`/srv/station/work/tmp/mos/1zjiu5h5/recovery-1/compiled/SHA256SUMS` matches the
+approved SHA-256 `9aab7b62df43ed349728e4f24d4041b557392d28c16a20fd7ef001eee349af0e`;
+all 42 listed files passed actual byte/hash checks, including Image, DTB,
+modules, config and debug objects. The 28 recorded kernel-source/support-input
+files are identical between compiled source `38a362cd` and approved A `e4154126`.
+Current B differs in A's kernel build/patch/fixture files because A is not yet
+merged; this is expected pending ancestry, not a newly introduced defect.
+The staged public content certificate SHA is
+`101209c31085b09853c688d64c374d899ab904d508a4f69f0ae9b676c4ea0212`.
+Preserved Buildx provenance records kernel pin `c6157104418d012823413c02f9222f3fe123dd25`,
+version 6.1.115, Ubuntu index `33ceb719...`, frontend `ecfaec9e...` and the original
+build arguments. Final J equality, actual compiler/package-version evidence and
+joint signing-anchor selection remain required before claiming reuse.
+
+The historical A image's actual firmware segment at offset 32768, length
+9394688, hashes to `1386f1ce5263fa66b04ee3cab2f40d19802dac923f477f4691968b31c6a1af05`,
+matching its preserved firmware identity. No live-main source or signing key
+was read. Firmware source/config/patch/tool/trust equality and the explicit
+joint boot-key/public-metadata mapping remain pending. This segment is historical
+source `9d1218e2`, not J; none of A's old native/root/support/image bytes qualify
+the new payload. Fresh J init/shutdown and dependent authenticated components
+must be produced even if Linux Image/DTB/modules or firmware are reused.
+
+The first inventory command completed with exit 0, retaining every command's
+UTC/argv/stdout/stderr/exit code. Its detailed inventory initially used the
+runner metadata filename and was overwritten by the runner's completion record.
+`reconstruct.py` regenerated the detailed record from those hash-checked captured
+outputs plus unchanged committed/local artifact bytes; no resolver or Docker
+command was replayed. Both scripts, original log/metadata and reconstruction
+metadata remain in the same evidence directory. This is evidence bookkeeping,
+not a package build or a new source corrective round.
+
+### Current joint job recipe boundary
+
+The earlier B-only builder/serialization recipe is historical. The approved
+route is now the private pinned BuildKit daemon, 4 CPU / 10 GiB per job with
+worker parallelism 4, at most two allocated independent jobs after fresh L2
+capacity checks. Its accepted ARM64 RUN and completed cleanup are retained;
+no daemon/state, detached gate or new production build is left running here.
+
+The actual discovered producers support a bounded package wave: build
+`ca-trust`, `profile`, `system`, `bluetooth` and `wifi` once with `--arch all`
+before parallel architecture jobs, since those invocations export to both
+pools. Build `busybox`, `deploy`, `mosd`, `mqtt` and `podman` for each required
+architecture, then `board-x64` for amd64 and `board-virt-arm64`/`board-cx3576`
+for arm64. Use the existing `bash build-env/deb/build.sh --producer NAME --arch
+ARCH` with the explicitly allocated `BUILDX_BUILDER`; index using existing
+`bash build-env/deb/repo.sh --arch ARCH`. Producer PREPARE hooks and all declared
+build contexts must be frozen from J before execution; this inventory does not
+grant an implicit kernel, toolchain or package build.
+
+Root command shape is `timeout 7200 env MOS_BOARD=BOARD MOS_PROFILE=dev
+MOS_ROOTFS_NO_CACHE=1 BUILDX_BUILDER=ALLOCATED_PRIVATE_HANDLE bash rootfs/build.sh`.
+This uses the existing root wrapper with no layout/output override. Actual
+board source snapshot, public metadata, selected package inputs and output
+paths must be bound in the named job. Exactly two independent equal-input virt
+root runs remain; run 1 supplies its single candidate image, run 2 has separate
+private state/output. No second x64 cold run or new S905 image is proposed.
+Native/component/release command contracts above remain current; runtime-build.sh
+repacking is excluded from qualification of the one final image per board.
+
+Still missing: actual reviewed J and one-time L1 cross-workstream review;
+J-stamped pools and complete selected archive/index digests; native release and
+BusyBox outputs; x64/virt kernel/firmware equality handoffs; exact public trust,
+signing input locations and shipped metadata; immutable source/output layout;
+controlled service-peer inputs and exact named L2 job allocations. Runtime,
+fresh authenticated verifier, extraction equivalence, cold and physical rows
+remain open. Only own task/plan records change at this checkpoint.

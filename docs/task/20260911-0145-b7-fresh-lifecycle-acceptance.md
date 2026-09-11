@@ -615,3 +615,51 @@ phases and independent real-traffic/reboot/reset rows remain mandatory.
 
 Final source gates: host-toolchain lint 424/424, docs and staged diff checks
 passed in `launcher-final-gates`. No full unrelated suite was replayed.
+
+## Reviewed upstream and input-readiness continuation (2026-09-11)
+
+L2 accepted the caller/geometry/consumer/R1 checkpoints and merged reviewed
+`6049df8f` into LOCAL B `53fc261f66aba95b9b0b03b4edbadadfb9ffc6e6`. At a clean
+boundary, verified that exact ref/tree and merged it with `--no-ff` as
+`53eeee9dd2df23cc9a191e9e5d0f7b67703e11e0`. Its tree
+`cc020280a5f6a9855847836688480cacbbce181b` equals the already-tested API
+checkpoint `d691708827994a36b9f2015c503c785d61120860`; no source conflict or
+test-relevant change occurred. Ancestry checks passed. Merge evidence:
+`/tmp/mos-b7-upstream.x9SubY/merge.json`, SHA-256
+`08691ae9db26f6810845bf2067ea49157e623cd19e974d5325abfe0a8d28ac79`.
+The separately committed API correction still awaits L2 review; no unchanged
+suite or accepted ARM64 probe was replayed. Corrective count remains one,
+resolved. A/C merges are authorized after this remaining review boundary;
+J remains unformed.
+
+The plan now carries the bounded joint package/root recipe and actual pre-J
+input inventory: `/tmp/mos-b7-wave-inputs.DalRgH/readiness.json`, SHA-256
+`d1839b7c4f7526bbfed49d4e7dfdd1f72a9e7622420b81a13bf26a9f6fd65876`.
+It records 233 source/config/lock files, six required C production blobs and
+separate C verifier identities; current full-feature dev resolution is 11/11/14
+packages for x64/virt/CX3576. All three selected pools and final root/native/image
+outputs are absent. Eleven local tool images were resolved to actual IDs;
+arm64 OpenSSL is absent with exact stderr retained, while the current host
+verity tool uses the available amd64 image. No tool install/build was attempted.
+
+All 42 entries of A's approved compiled kernel manifest match actual bytes.
+The 28 recorded kernel-source/support-input files match between compiled
+`38a362cd` and A-final `e4154126`; B's missing A patch/fixture differences remain
+expected until integration. Actual historical firmware bytes also match the
+reported segment hash. These are verified reuse candidates, not J-qualified
+components: actual J equality, compiler/package evidence and explicit joint
+trust/input mappings remain required. No live-main source or private signing
+key was read; no old payload was relabeled.
+
+Original bounded inventory commands/streams/exit metadata are retained. A
+filename collision caused the runner to replace the first detailed inventory
+with its own completion metadata; the final record was reconstructed from
+hash-checked captured outputs and unchanged sources/artifacts, without repeating
+Docker or resolver commands. Original and reconstruction evidence are preserved.
+
+No heavy package/root/kernel/image/guest/cold job started. The plan distinguishes
+shared `all` package production from independent architecture jobs, preserves
+two equal-input virt roots and one image per required board, and lists exact
+missing J/package/kernel/trust/service/job inputs. Full runtime, authenticated
+fresh-image scans, extraction equivalence, cold proof and physical rows remain
+open. Only the existing own task/plan are updated; no global status changes.
