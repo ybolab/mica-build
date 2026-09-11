@@ -101,7 +101,7 @@ image, firmware, x64/virt-arm64 matrix or the passed kernel was rebuilt merely
 for documentation. This completes the bounded software/evidence deliverable,
 not exact-image composition or any of the mandatory physical rows.
 
-## Authorized composition phase — blocked pending L1 decision
+## Authorized composition phase — components emitted; full candidate in progress
 
 The subsequent exact L1/L2 source/input handoff resolves the earlier current-root
 and native-init dependency. It authorizes read-only execution of the existing
@@ -178,3 +178,89 @@ collection. Retries 2 of 2 are exhausted. Passed packages/kernel and emitted
 root are preserved, not rebuilt. Heavy usage is zero; the persistent shell is
 idle. The completed PMA status still covers only the earlier collector/kernel
 outcome; no status/index operation is made for this blocked content update.
+
+On 2026-09-11 L1 explicitly approved the adapter-only recovery above through
+L2. Preserve automatic retries=2 and separately record
+`l1AuthorizedAdapterRecovery=1`; no automatic fourth recovery. Correct only a
+new private adapter, preserve the actual corrupt archive as RED and original
+as positive control, prove streamed reconstruction GREEN and review its Python
+and shell boundaries before loading. Run unchanged smoke directly on existing
+root bytes; do not rebuild packages/root/kernel. The previous blocker/history
+remains a dated outcome, not the current authorization state.
+
+The exact C verifier tool handoff at `48acef7f` is resolved, separately from
+actual candidate execution. Its required third native ELF is mos-deploy, not
+mos-mqttd. Use only a separately identified tool snapshot for the eventual
+authenticated image scan; no C payload is imported into artifact source
+`9d1218e2`. Prior PMA completion fields and all physical blockers are unchanged.
+
+The unchanged mandatory smoke passed on 2026-09-11T00:45:29Z..00:45:57Z,
+exit 0, at artifact source `9d1218e2` and documentation checkpoint `6d08754c`.
+It executed 11 PASS / 1 EXECUTOR-LIMITED (crun) / 0 failures / 0 unclaimed
+through BuildKit/qemu-user. The task preserves the exact crun diagnostic and
+unasserted-version limit; this is not native crun or physical qualification.
+Original root/OCI, source, corrected/broken copies and shared factory alias
+were revalidated unchanged. No passed input was rebuilt.
+
+Continue step 3 with the new private `components-20260911-C9sQha` gate:
+sign the existing root, then produce new support/FIT using the exact compiled
+kernel, approved source-equivalent init and existing matching development keys.
+Public derivation correspondence and fixed FIT-tool script hashes passed.
+The task records byte-preserving filename mappings, exact manifests, limits
+and detached-gate paths. Detailed loader/service/device closure, firmware-key
+authentication, fresh records/full image and C-final candidate verification
+remain following obligations, not inferred passes. Historical automatic
+retries=2 and separate authorized adapter recovery=1 remain unchanged.
+
+Component production passed on 2026-09-11T01:00:14Z..01:00:34Z, exit 0,
+documentation checkpoint `809329ab`, unchanged artifact source `9d1218e2`.
+All 16 emitted files and original inputs were revalidated. The task records
+new root/kernel/support IDs, full build-identity reconstruction with the
+selected init, and authenticated inherited firmware descriptor. This is not
+yet full FIT-under-firmware/CMS-negative or full-image acceptance.
+
+Continue with the single `candidate-20260911-4LPPCz` gate: actual embedded
+firmware trust and negative cases; separately inspect init/exitrd/root ELF
+closure; create fresh generations 2026091101/2026091102 and a timestamped full
+image; run current board offline checks and exact C-final `48acef7f` as a
+separate read-only tool. Preserve detailed failures and all successful inputs.
+No rebuild, automatic fourth recovery, source import or physical action is
+part of this continuation. D receives these phase deltas through L2 only.
+
+### Final current-A candidate evidence — 2026-09-11
+
+The original candidate gate remains RED (exit 1, 01:19:24Z..01:22:16Z), solely
+for the task-owned per-object closure model. Its trust/negative/image/offline
+subchecks and the exact C-final authenticated runner passed, the latter with
+126 checks / 0 skipped and 3 native ELFs / 19824184 scanned bytes.
+L1 separately authorized a bounded checker correction after inspecting the
+actual bytes; `historicalAutomaticRetries=2`, `l1AuthorizedAdapterRecovery=1`
+and `l1AuthorizedCheckerCorrection=1` are distinct, with no blanket retry grant.
+
+Actual original-root ARM64 loader `--list` exited 0 at 01:34:26Z..01:34:27Z.
+Its complete consumer/loaded-SONAME map and 22 OCI/packed-root file identities
+justify the private context correction without inheriting RUNPATH or adding a
+global systemd directory. Focused RED/GREEN covers the actual readelf failure,
+missing/wrong/hash-mismatched providers, transitive/version failures and
+RPATH/RUNPATH controls; 13 tests pass. Only affected static root closure was
+rerun, 01:40:13Z..01:40:24Z, exit 0, 1050/1050. All earlier 1049 successful
+rows retain exact hashes/interpreters/provider maps; initramfs/exitrd gates
+were preserved. The task detail binds all commands, reports and limitations.
+
+The new aggregate is `F/checker-correction-20260911-0v18dL/aggregate.json`,
+SHA-256 `cd8e152347765734a29b5eb4428ef05da610056ade8387aaac07fa6f0375af9e`:
+current-A software PASS with the existing crun executor limitation, not native
+or physical qualification. Exact image `mos-cx3576-20260911-012036.img` has
+SHA-256 `9939186656bd553e337237e0f4cb44584f24088e17f4e453a9d2d7032754827e`,
+fresh signed generations 2026091101/2026091102 and SYSTEM=1 GiB. Artifact source
+remains `9d1218e2`, kernel `38a362cd`, verifier tool `48acef7f`; inherited firmware
+and dirty-development init provenance are not relabelled. No passed artifact
+or gate was rebuilt, no B/C payload imported and no old RED erased.
+
+Repository changes remain the existing task/plan/bench evidence only. PMA
+completion fields preserve the earlier bounded software outcome; there is no
+reopen/index/status operation. Scoped shared/Python review and cheap docs checks
+precede the final local documentation commit and L2 review. Heavy use returns
+to 0; evidence and the idle shell are retained. All mandatory physical rows,
+NPU, S905/original-device and native crun remain unqualified; optional D5 is
+nonblocking. D alone reconciles later global history through L2's handoff.

@@ -952,10 +952,52 @@ Read-only extraction confirms the current layout/public defaults, private
 container paths and no-autologin getty template; it is not runtime enforcement,
 login or workload evidence. A4's linked detail records exact artifact and
 failure identities, warnings and an unimplemented adapter recovery proposal.
-Both retries are exhausted: composition is blocked pending L1's concrete
-decision through L2. Smoke, signed root/support/FIT, fresh records, full image
-and candidate-specific verifier checks remain open. This is not an image ready
-to flash or a physical qualification result; the two old roots remain inadmissible.
+Both automatic retries were exhausted. On 2026-09-11 L1 separately authorized
+one adapter-only recovery, preserving those retries and failed bytes; no
+automatic fourth recovery is allowed. Actual-archive RED/GREEN and scoped
+review precede unchanged smoke on the existing root, without rebuilding it.
+The exact C verifier tool is now handed off separately at `48acef7f`; its
+native file set is mosd, apid and mos-deploy, not mos-mqttd. The unchanged smoke
+subsequently passed on 2026-09-11T00:45:29Z..00:45:57Z, exit 0: 11 PASS and
+one EXECUTOR-LIMITED crun row through BuildKit/qemu-user, not native crun or
+board qualification. It used the original OCI `d23db694...` with actual
+manifest content ID `1cfe2b6a...`; source `9d1218e2`, original root,
+load-copy evidence and shared factory alias remain unchanged. The linked A4
+detail preserves the full crun diagnostic, exact hashes and retry chronology.
+New signed root/support/FIT production passed at 2026-09-11T01:00:14Z..01:00:34Z,
+exit 0, with all 16 files revalidated. The new FIT is `18810e4e...`, support
+is `66650650...` and root remains `1ff66263...`. It reused the passed
+root/kernel without rebuilding them. The linked task records exact component
+IDs and the next gate's real firmware-key/CMS checks, ELF closure, fresh
+generations 2026091101/2026091102 and separately pinned C-final verifier.
+The subsequent candidate gate produced fresh signed generations
+2026091101/2026091102 and the full image
+`mos-cx3576-20260911-012036.img` (1362100224 bytes), SHA-256
+`9939186656bd553e337237e0f4cb44584f24088e17f4e453a9d2d7032754827e`.
+Actual firmware-embedded FIT trust, CMS tamper/wrong-key cases, CX partition and
+record readback passed. The separate C-final `48acef7f` authenticated runner
+passed 126 checks / 0 skipped, scanning actual mosd/apid/mos-deploy:
+3 files / 19824184 bytes. SYSTEM is 1 GiB; only DATA grows. Source remains
+`9d1218e2`, kernel `38a362cd`; firmware/init reuse retains original provenance.
+
+The original candidate aggregate stays RED, exit 1, because its task-owned
+per-object ELF checker incorrectly treated a systemd DSO as a fresh namespace.
+Under a separate concrete L1 checker-correction decision, the actual packed
+ARM64 loader `--list` proved resolution at 01:34:26Z..01:34:27Z, exit 0.
+All 22 relevant OCI/packed-root files match, including loader and target cache.
+The corrected private consumer-context check passed 13 focused tests and
+1050/1050 static ELF rows at 01:40:13Z..01:40:24Z, exit 0. It does not globally
+search systemd's private directory or weaken missing-provider/version checks.
+The linked task records a new current-A software aggregate with the existing
+crun executor limitation; old failure evidence remains intact. No successful
+root/package/kernel/image/smoke/C gate was regenerated for this correction.
+
+This is software candidate evidence, **not physical qualification or a flash
+instruction**. Live health, login, quotas/reset isolation, display, watchdog,
+recovery, workloads and power cuts still require the named exact-image bench
+admission above. All 38 mandatory physical rows remain unqualified; historical
+D5 is optional. NPU ownership and native crun remain open; the two old roots
+remain inadmissible. No later B/C product payload is included.
 
 journald is volatile. Capture each boot's journal and serial trace before
 rebooting; a later collector invocation cannot recover the previous journal.

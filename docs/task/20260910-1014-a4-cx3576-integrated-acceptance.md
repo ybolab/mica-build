@@ -15,7 +15,7 @@ without relabelling its dirty-stamped build or duplicating implementation.
 
 ## ActiveForm
 
-Completed collector and coherent kernel evidence; composition is blocked after recovery retry 2, pending L1's concrete recovery decision. Physical qualification remains blocked.
+Completed current A-baseline candidate evidence with the recorded crun executor limitation; awaiting L2 review. Physical qualification remains blocked.
 
 ## Dependencies
 
@@ -26,10 +26,13 @@ Completed collector and coherent kernel evidence; composition is blocked after r
 
 ### Authorized composition continuation — 2026-09-10
 
-Phase state: blocked pending L1's concrete recovery decision, owned by
-`bkd/1zjiu5h5`. Recovery retries 2 of 2 are exhausted. The completed task/index
-status above preserves the earlier collector/kernel delivery; it does not claim
-that this new candidate exists or passes. The PMA serializer has no reopen
+Phase state: current A-baseline candidate software evidence completed on 2026-09-11 with the crun executor limitation, owned by
+`bkd/1zjiu5h5`. Historical automatic retries remain 2 of 2; the case-specific
+`l1AuthorizedAdapterRecovery=1` and `l1AuthorizedCheckerCorrection=1` are
+separate concrete L1 decisions, not a blanket recovery waiver.
+The completed task/index
+status above preserves the earlier collector/kernel delivery; the dated result
+below separately qualifies the new software candidate, never hardware. The PMA serializer has no reopen
 operation, so this continuation is a content update under the explicit L1/L2
 handoff, not an invented status transition or a second task. Composition began
 with recovery count 1. The subsequently authorized archive-acquisition recovery
@@ -528,6 +531,427 @@ recovery is claimed. `timeout 30 make docs-verify` passed on
 `docs-terminal.log` SHA-256
 `8a05e614b6a6f3057988dc2ab915a7d38c1dca9b9fb13c021799786872185216`.
 Scoped `git diff --check` passed. This review/gate qualifies documentation only.
+
+### L1-authorized adapter recovery — 2026-09-11
+
+L1 approved the concrete `b071e6b5` / terminal `review.md` recovery proposal
+after the user's instruction to fix this original-scope adapter defect. This
+resolves the preceding decision blocker without erasing either failed gate or
+granting an automatic retry. The clean own branch fast-forwarded to exact local
+L2 `de482086b0f3edbf7f09d28648e0694dc1acddfe`, identical tree
+`55e086dc78a86c4a214a281e8b98826ffd7e6f96`. Artifact source stays `9d1218e2`;
+passed kernel, packages and emitted root must not be rebuilt for this defect.
+
+New task-owned work is isolated at
+`/srv/station/work/tmp/mos/1zjiu5h5/composition-20260910-2026-z2Ljld/adapter-recovery-20260911-edC647/`.
+The approved fix streams a new load-only OCI archive, preserving member/PAX
+semantics and content-addressed identities while changing only the two approved
+index tag annotations. The original and corrupt copies remain immutable.
+Actual large-layer RED, original positive control, reconstructed GREEN and
+pma-cr Python/shared review must precede real loading. Then run the existing
+`verify/run.sh --smoke --board cx3576 --builder mos-rauc-arm64` at the original
+source, never `make os-rootfs-cx3576`, with task-only Docker resources and
+content-digest identity. Smoke outcomes are not pre-approved.
+
+The exact C tool handoff is now supplied and checked: commit
+`48acef7f1a3683b1f3bb6261911b1a5123197da2`, tree
+`553c1e7af96203315f79e7ea61e862f7a753e3a5`, reviewed delivery manifest hash
+`380dcfacb6d366e8fd1280e21d4be74196cc2e40afad26fbb54f8cbf76c2ca3c`.
+Its two verifier blob IDs match L2's handoff. It will be used separately as a
+read-only tool, not imported into this candidate. The actual native-endpoint
+obligation scans mosd, apid and **mos-deploy**, not mos-mqttd; the earlier MQTT
+hash remains true but does not satisfy that third-file obligation. The later
+authenticated full-image scan and candidate identities are still pending.
+No C suites, sibling payload or source changes are needed for this adapter fix.
+
+Pre-load result (2026-09-11T00:38:02Z..00:39:43Z): original positive control
+`timeout 20 python3 oci_check.py ORIGINAL` exited 0. The same command on the
+preserved actual broken archive exited 1 with the large gzip layer hash
+mismatch; `actual-red.log` SHA-256
+`ce718ce16155003e922099c1d55023c96748a843094b2bf9cbb95c4debb014af`.
+`timeout 25 python3 rebuild_oci.py ORIGINAL NEW_COPY` and independent
+`timeout 20 python3 oci_check.py NEW_COPY ORIGINAL` exited 0. Seven focused
+host tests passed, including PAX metadata/size round-trip and unsafe/duplicate/
+existing-output refusal. No image binary or Docker load ran for these tests.
+
+The fresh `factory-root-load.oci` is 87,746,560 bytes, SHA-256
+`e33b3b158204161bdae4f2cce3f35da7b79f50e6f32fceacd08b8b4cb54f1f12`.
+Its seven-member GNU tar listing passes; config remains at block 171370, index
+is 520 bytes and oci-layout moves to block 171376. Original manifest/config/
+layer digests, member content and effective metadata remain exact, including
+PAX semantics. Only the two permitted index annotation values and consequent
+index bytes/size differ. `independent-green.json` SHA-256 is
+`c2b1730d149739dfc13857e699a1eb8e32f1fe8eb56cf2779cb6fac83925fdd3`;
+`unit-green.log` is `5f45df6dd67d7cf2786478bdaf3cb345190a8191bb0b3a9e9375bafdc83d9e16`.
+
+The actual required third ELF was now extracted read-only from the original
+OCI: `/usr/bin/mos-deploy` SHA-256
+`fa8b7c9e1f3732a3c9a325442f17febe982a766981efbd8fb4554ced8ded3857`,
+ELF64 AArch64, interpreter `/lib/ld-linux-aarch64.so.1`, NEEDED libc/libgcc_s.
+The mosd/apid hashes match the earlier terminal collection. Their three-file
+manifest `candidate-required-ELF-SHA256SUMS` has SHA-256
+`da73f13d3be6b3486f9019e069d221425df04de89864b3a697d1ba1291dc2499`.
+This corrects the candidate-input mapping; no C scan or loader PASS is implied.
+
+Pre-load pma-cr shared/Python review of the actual new adapter, harness,
+invocation wrapper and gate is PASS with zero outstanding findings; the old
+HIGH finding is addressed by streamed construction and actual-archive evidence.
+`pre-load-review.md` retains the review boundaries. The wrapper rechecks hashes
+and original content IDs before loading and refuses shared-tag-only identity;
+all real Docker resources are task-labeled and isolated. Syntax checks pass.
+
+Prepared next command:
+`bash /srv/station/work/tmp/mos/1zjiu5h5/composition-20260910-2026-z2Ljld/adapter-recovery-20260911-edC647/smoke-gate.sh`.
+Gate script SHA-256 `2636c6f09ec9b5bc22fb5f658ea147c146c0c506e975e8e667b6bb26e91211c8`.
+The gate directly runs unchanged `verify/run.sh --smoke` with the original
+record and pinned Bun; its own 1,800-second ceiling does not relax any existing
+per-operation timeout. Live/final `smoke-gate.json`, `smoke-gate.log` and
+`smoke.log` retain source, documentation checkpoint, PID/session, command,
+timestamps and exit. The persistent shell is reused only after an idle check.
+No root/package/kernel rebuild, signing or physical execution is claimed by
+this adapter GREEN. L2 collects the detached smoke result before continuation.
+
+### Collected unchanged smoke and signed-component continuation — 2026-09-11
+
+The authorized adapter recovery's mandatory smoke finished successfully without
+rebuilding any package, root or kernel. Historical automatic retries remain 2;
+`l1AuthorizedAdapterRecovery=1` is separate, with no automatic fourth recovery.
+This closes the adapter/smoke blocker, not the remaining image or physical rows.
+
+The exact command was
+`MOS_BOARD=cx3576 bash verify/run.sh --smoke --board cx3576 --builder mos-rauc-arm64`,
+from immutable `P/source` at `9d1218e2689eb5e3fce99ad1736f3a1fdc8c8801`,
+tree `0a1c2b4ddd86945961da16cc6d4d268e636f2273`. Documentation checkpoint
+`6d08754c300a15d0601c69dd37abb04fbd034029` does not relabel those artifacts.
+The existing `R=adapter-recovery-20260911-edC647` gate ran
+2026-09-11T00:45:29Z..00:45:57Z, exit 0, PID 2023476 (now absent), in the
+persistent shell `1zjiu5h5-a3c184`. The exact result is 11 PASS,
+1 EXECUTOR-LIMITED, zero failures and zero unclaimed entries of 12, through
+BuildKit/qemu-user. Preserve the crun row verbatim:
+
+```text
+EXECUTOR-LIMITED crun             /usr/bin/crun                      EXECUTED under the buildkit executor and exited 1 the one way this register entry declares this executor cannot avoid: crun re-executes libcrun through a memory file descriptor (its CVE-2024-21626 mitigation) before parsing argv, and qemu-user cannot service that fexecve -- so under emulation it cannot reach its own --version handler. The emulator's limit, not the binary's. stderr="Failed to re-execute libcrun via memory file descriptor". Nothing was asserted about the version, and this is NOT a pass: on the native route the same outcome is a FAIL, and any other status or stderr is a FAIL here too.
+```
+
+Collected evidence under `P/R`:
+
+| File / identity | SHA-256 / value |
+|---|---|
+| `smoke-gate.sh` | `2636c6f09ec9b5bc22fb5f658ea147c146c0c506e975e8e667b6bb26e91211c8` |
+| `smoke-gate.log`, 4339 bytes / 32 lines, ending `GATE_EXIT_CODE=0` | `a334cc02ef29ca6e8105e21e819c9a1c3e110689c27e1059cd52e4afa21528d9` |
+| `smoke.log` | `7b4ce1ad1dac035b75aeaa467ec503c6cb7e9b648ee2d9c25df85c1d00c535ab` |
+| `loaded-content.json` | `ba1bfee46a9ef1485e02464640c62d0b041bd6f96e55792477b0166c32e35816` |
+| Actual loaded manifest content ID | `sha256:1cfe2b6af1505f84fca72a956407de0ede9ea451a687e88abdabfe6277934e5c` |
+| Equal shared factory alias before/after files | `935f34b2e8bed28b64ba25494339798dab30ed1644280aed97b2ebead5366ab6` |
+
+Original OCI `d23db694...`, verity root `1ff66263...`, the retained corrupt
+copy `83e4c61d...` and corrected load-only copy `e33b3b15...` remain unchanged.
+Both preserved-input and reviewed-code manifests passed again; source file
+manifests compare equal and tracked status remains clean. The earlier actual
+large-layer RED/positive-original/GREEN and seven focused adapter tests remain
+the behavioral evidence; they were not rerun merely for collection. Pre-load
+self-review passed; L2's independent code/diff review is not claimed complete.
+
+The next serialized gate is
+`bash /srv/station/work/tmp/mos/1zjiu5h5/composition-20260910-2026-z2Ljld/components-20260911-C9sQha/components-gate.sh`.
+Its fresh directory `G=P/components-20260911-C9sQha` owns
+`components-gate.json`, `components-gate.log`, `root-sign.log`,
+`kernel-pack.log`, `component-SHA256SUMS` and new `components/{root,kernel}`.
+It calls the unchanged `build/run.sh --components root`, then
+`--components kernel`, with 600s and 900s ceilings respectively.
+The first command signs the already emitted verity root, not a new root build.
+The second creates new support from the passed modules/current board radios
+and regdb, and a newly authenticated kernel/DTB/initramfs FIT. It does not
+rebuild the kernel or reuse old component signatures/deployment envelopes.
+
+Input staging is only byte-preserving copies: the compiled artifact's
+`Image`, `rk3576-src.dtb`, `kernel.release`, `modules.tar` and
+`regdb-certs.pem` keep their names; `.config` becomes packager-required
+`inputs/kernel/config`. Approved reused #313 native init becomes
+`inputs/mos-init`, retaining original dirty-development source equivalence
+and hash `33e66fbc...`. `G/input-SHA256SUMS` binds source and copied bytes
+(manifest hash `d418055de448004c9cefc90368ebf5b67adcb0ab16d1adc9b78a29b105b3f567`);
+`selected-input-SHA256SUMS` independently asserts the handed-off identities.
+
+The existing FIT tooling is pinned by content ID
+`sha256:d75165f107b50d2c1cc0e9d07b49802ed78cc6b066f6b63595f7b38290145380`;
+all five fit/initramfs/ELF-closure/regdb script/environment hashes still match
+the immutable source. The selected existing OpenSSL tool is
+`sha256:3ef9650dedf6b5bb032a728069029cbec9e99366fba0e61cb2ea852296e37d68`.
+Content and boot private/public correspondence and metadata Ed25519
+correspondence passed using public derivations without exposing private bytes.
+`G/trust-preflight.log` hash is
+`3d04d3bb9e54bc5fa6f4563f0dedee1f6f77b347d572fc212b8d303a8902d0e4`.
+The content certificate remains the compiled `101209c3...` anchor. No key
+generation/rotation, shared retagging or firmware rebuild is involved.
+
+The invocation-only wrapper adds task labels/names, pins existing tools by
+content ID and mounts staged kernel inputs read-only. It refuses shared-parent
+mounts and build/load/tag/push operations. A real short read-only mount probe
+passed (`wrapper-probe.log` hash
+`749129b89638b6d869694051c55bbbda802561159b917ef299588f95b3fb99f5`);
+the forbidden `/srv` mount was refused before Docker execution, exit 1
+(`wrapper-rejected-mount.log` hash
+`5efc01bccc036e490f174f15764c31ed8801f2084b13b2a7e8807f9561cc1192`).
+These are invocation checks, not additional board or smoke results.
+
+Still open: actual emitted initramfs/root loader and service/device closure,
+authenticated build-identity correspondence, signatures under the inherited
+firmware's embedded key, candidate negatives, fresh deployment generations,
+full image/record readback and separately pinned C-final `48acef7f` full-image
+verification. The required native scan files are mosd/apid/mos-deploy, with
+their actual packed hashes recorded above. No C payload is imported.
+All 38 mandatory CX physical rows, NPU ownership, S905 hardware and original
+device reboot remain unqualified; historical D5 remains optional/nonblocking.
+The short preflight containers used `--rm`; no heavy job was active before
+this gate's dispatch. Preserve the idle task shell, source, inputs and logs.
+
+### Collected components and full-candidate gate — 2026-09-11
+
+`G/components-gate.sh` completed at 2026-09-11T01:00:14Z..01:00:34Z,
+exit 0; PID 2146905 is absent. Artifact source remains `9d1218e2` /
+`0a1c2b4d...`, documentation checkpoint `809329ab4c8a77eb1c695a3dea464ef24ab88403`.
+The full 2273-byte / 17-line log ends `GATE_EXIT_CODE=0`, SHA-256
+`cf8c0fbd3451e2dce0b578af101c8c236c3574f3f083bd5cb0290704c8424514`.
+All 16 files match `G/component-SHA256SUMS`, manifest hash
+`46bc5d44d5fd570fc39023307b9b5583f583f09f1087b1c4ea81150985dc0e42`.
+Input/reviewed-code manifests and before/after source inventory also match.
+No successful build or smoke was repeated.
+
+| Emitted component / artifact | Exact ID or SHA-256 |
+|---|---|
+| Root component ID | `13862bc2b0b67bce309b0edf31c92eb704b3cddfbd1e09b59f2c94c6b4a2ab65` |
+| Kernel component ID | `fbf2fc6355907861ebe56c11844637c3b6ae56ffc5f3e2a78872070c4e330788` |
+| Support component ID | `0b3ca31c64c3541509bf4d85ea497c57495c4ef7bed2178404f96fedb3eb5318` |
+| Kernel build ID | `d25c19e3190a1efc76624309f73535353bff0d18a6083832d6d66f0e75be9750` |
+| `boot.itb`, 78590850 bytes | `18810e4e407e965d36bb1db4c83d84e003d6804392c37d92611e76fd4734463c` |
+| `support.img`, 1552384 bytes | `6665065012f9f6fd0eb6ff275d03d07fe9a76a99fbefe121c76abebcdcec5c13` |
+| `rootfs.img`, unchanged 76947456 bytes | `1ff6626307d43294aa6c01777ce1e2a8c0478e06d9630e9f890a87545f662569` |
+| `initramfs.cpio`, 33615872 bytes | `3fd8b5a921551a7ae492adfd249ea3262b1258b1e91d85b54f1b809fe860553a` |
+| Root hash CMS signature | `5d13f55678ceb710e196a98f2f6c195e8313caebba962150592208c6a18e4fb3` |
+| Support hash CMS signature | `02d47fe89acb34223590d23e4a5491dd86b54df3a7ab09f0477c0a9520abc831` |
+
+Independent identity reconstruction uses the unchanged component functions
+and all actual inputs, including selected init `33e66fbc...`, config, DTB,
+support ID, UUIDs, cmdline, public trust and packager content ID. It matches
+both kernel build ID and `boot.json`. The inherited firmware descriptor
+authenticates under the selected metadata public key, and its recorded bytes
+match the loader: ID
+`2a48a62238cf4f1e76739f32ccc3e76c87650e2e7723d4d0e3be00e7ebf1054d`,
+generation 5, original version `20260910-030156-integrated`. This does not
+relabel firmware or the reused native init as rebuilt.
+
+The next gate owns
+`F=/srv/station/work/tmp/mos/1zjiu5h5/composition-20260910-2026-z2Ljld/candidate-20260911-4LPPCz`;
+command `bash F/candidate-gate.sh`, persistent shell `1zjiu5h5-a3c184`.
+Its preflight identity evidence is `F/identity-evidence.json`, hash
+`d7d11028b2512312fdba67b4ea3271d3d6787453dbbbca477cd710612d2d7ca3`.
+The selected firmware's actual U-Boot FIT starts at loader byte 8355840;
+its default `config-1` selects `fdt-1`, at loader byte 9224192, 170435
+bytes. All five external image hashes and that configuration relation passed
+the read-only preflight; truncated FDT inputs were refused. This is a byte
+offset inside the supplied file, never an assumed bench/disk address.
+The following real signature gate uses that extracted control, not the
+packager's temporary `control.dtb`.
+
+The single serialized candidate gate will:
+
+1. Check actual new FIT payload bytes, verify it under selected firmware trust,
+   and reject kernel/DTB/initramfs tampering, absent signature and a distinct
+   existing public certificate. Independently verify root/support CMS under the
+   compiled content anchor and reject changed hashes/wrong certificates. No
+   key generation or source change is involved.
+2. Extract the actual initramfs and root; compare selected init/boot identity,
+   then inspect AArch64 ELF interpreters, NEEDED providers and symbol-version
+   closure separately for initramfs, exitrd and root. A missing-loader fixture
+   already failed with one examined ELF, not a zero-input pass. Static closure
+   is not target execution or native crun proof.
+3. Create fresh development deployment generations 2026091101/2026091102 and
+   assemble a timestamped full CX image using the unchanged A recipes. Old
+   11/12 records are not reused. Run the existing board offline image check
+   against a private filename-only namespace for these exact candidate bytes.
+4. Run the exact reviewed C-final tool command
+   `bash verify/run.sh --verify --board cx3576 --image FULL_FACTORY_IMAGE --public-key EXACT_METADATA_PUBLIC_KEY --work TASK_OWNED_DIRECTORY`.
+   The separately archived tool is `48acef7f1a3683b1f3bb6261911b1a5123197da2`,
+   tree `553c1e7af96203315f79e7ea61e862f7a753e3a5`; both reviewed verifier
+   blobs match the handoff. It is not merged into the A artifact source.
+   Original tool-file manifest and package lock are retained; local verify
+   dependencies are copied only after equal-lock comparison, not rebuilt or
+   represented as new source. Exact packed mosd/apid/mos-deploy hashes are
+   asserted before candidate scanning. Nonzero scan counts and actual results
+   must be collected; no full-image pass is inferred from an isolated sample.
+
+`F/input-SHA256SUMS` hash:
+`5a68a9b7e13ea2707c11bee7a46a5f96f4d58d622efe6895286e8dc7143d75f5`.
+`F/verifier-SHA256SUMS` hash:
+`55e5dea92aed687503aeac44590f778a3198b0269bf78a5255ccae4fe777c080`.
+Gate metadata/log are `F/candidate-gate.json` and `F/candidate-gate.log`;
+separate trust, closure, deployment, image-build, board-offline and C verifier
+logs retain actual failures. A closure/offline/verifier finding is retained
+while independent authorized checks continue; it is never downgraded to pass.
+
+Scope review and cheap checks precede dispatch. No product or earlier artifact
+is edited. Current component production is not yet a complete-image acceptance
+result. The prior crun EXECUTOR-LIMITED row, every mandatory physical row,
+NPU OPEN, S905/original-device blockers and optional D5 classification remain.
+Historical retries=2 and separately authorized adapter recovery=1 are unchanged.
+
+### Final candidate collection and authorized checker correction — 2026-09-11
+
+L1's concrete acceptance-checker decision, delivered through L2, authorizes
+non-boot loader diagnosis and a private checker correction only. Historical
+automatic retries remain 2; authorized adapter recovery remains 1; the distinct
+`l1AuthorizedCheckerCorrection=1` is recorded without authorizing another
+automatic recovery. No product, root, package, kernel, C tool or existing
+artifact was modified or rebuilt. Earlier tracking completion fields remain
+unchanged. This section supersedes only the earlier composition-pending state.
+
+Original `F/candidate-gate.sh` ran 2026-09-11T01:19:24Z..01:22:16Z,
+PID 2161134, documentation checkpoint `e8955ea01581af02111a0fc6803a1eb4c422ba1e`.
+It remains **RED, exit 1**, with its complete 19145-byte / 155-line log
+`b1d6d1b658caaacc2e523caa877f8304cd7fc94463c4588f7d6b5a4534e8f700`.
+The only failed subcheck was the per-object closure's 1049/1050 result:
+`libsystemd-core-257.so -> libsystemd-shared-257.so`. Original checker
+`27873de7ff28a6bc921645e00f4c150c836b6aa00d512e34672cfd82c6fe5f2a`
+and failure report
+`8f04c7fd83c0700f3c825dcb77d715d27f611604cdf62627ccd23ed62feef4cf`
+remain untouched. Trust, negative, image, board-offline and C126 subchecks
+actually passed in that original gate; none was rerun to collect this result.
+
+New evidence directory:
+`Q=F/checker-correction-20260911-0v18dL`.
+`Q/proof-final/loader-proof.sh` executed the **actual target loader**
+`/lib/ld-linux-aarch64.so.1 --list /usr/lib/systemd/systemd` in the original
+OCI content identity `sha256:1cfe2b6a...`, read-only and network-disabled.
+It mounted only the existing BuildKit static AArch64 emulator, SHA-256
+`239ff153cde81b6a6ab2c48eef9cff234751caa8e9d841363eace8db51e000e8`,
+read-only copied from builder image
+`sha256:28a898719c18a33f4e8000685287fa36fd0dd9560c6440227d3a732d79bb41d8`.
+No target libraries, loader/cache substitutes, `LD_LIBRARY_PATH`, PID1 or
+systemd startup were introduced. Execution at 01:34:26Z..01:34:27Z exited 0;
+PID 2171016 and the exact command are in `Q/proof-final/loader-proof.json`
+(`891a33fc1d0a3de0c4b94328c365ae318057e92a0c58eb6ef15be47f7421ba1f`).
+
+The real link map resolves both directly needed systemd DSOs from their
+private directory. `Q/bind-loader-proof.py` verifies 22 exact files, including
+the consumer, loader, target cache and 19 named providers, against both original
+OCI layer bytes and the squashfs-extracted root. Consumer/core/shared hashes
+are respectively `46044b7912af7f7087837554b186ca3ddb640c0f6646cf5e625be5078d5db80d`,
+`44786c07036c7691392d001046a1d70789e0911067c12aacce27ca68f58e5699`,
+`a62b81da3b82a87fd91e5d4a92bf611719b898b098a9327be5b441d965cdf997`.
+Binding manifest `Q/loader-bindings.json` is
+`811de5f0d2e798b0c3847e5e41e2b03d573f770efa2ee2409c0f30902dc47707`.
+This establishes loaded-SONAME reuse, **not RUNPATH inheritance** or a physical
+startup pass. The old checker incorrectly treated core as a fresh namespace.
+
+The new private checker retains independent checks outside this one evidenced
+consumer. Its breadth-first DT_NEEDED context must match the real loader map,
+exact provider paths/hashes, SONAMEs and version definitions before reuse.
+There is no global private-directory fallback, basename-tree search or DSO skip.
+`Q/context-red.log` records five failures including the actual readelf fixture;
+its preserved RED model deliberately retains the old per-object lookup.
+`PYTHONDONTWRITEBYTECODE=1 timeout 20 python3 Q/context_test.py` now passes
+13 tests (`Q/context-final-green.log`, SHA-256
+`743d986b95f922ff15e783e59063994ee1b7ec26ea8673e7612810ab7adf8a5f`).
+Controls reject absent/wrong providers, changed provider identity, unavailable
+transitive dependencies, exact version mismatch, borrowed unrelated namespaces
+and inherited RUNPATH; RPATH inheritance and RUNPATH precedence are tested.
+
+Only the affected static root closure was rerun via `bash Q/closure-check.sh`:
+01:40:13Z..01:40:24Z, PID 2174241, exit 0, **1050/1050**. Its checker hash is
+`8c32948512a2bac52a08c289754cc68e9dc61fd20858da6d106c0ca244da0f69`;
+report hash `331c1f477773199aff194df1957e7eb325c098ba3dc46c6e32bac25c5986600b`;
+log hash `3e1befc0d5b549c6f72bfd615865daae7c566f55ce6597177e1ef24f687cee69`.
+Every prior successful row retains identical file hash, interpreter and provider
+mapping. Original initramfs 27/27 and exitrd 20/20 evidence is preserved without
+rerunning it. These are static checks, not arbitrary dlopen/service coverage.
+
+#### Exact immutable candidate and independent acceptance
+
+The complete image is
+`F/assembly/image/mos-cx3576-20260911-012036.img`, 1362100224 bytes,
+SHA-256 `9939186656bd553e337237e0f4cb44584f24088e17f4e453a9d2d7032754827e`.
+It retains artifact source `9d1218e2` / tree `0a1c2b4d...`, kernel source
+`38a362cd`, and the component/build IDs above. Original firmware generation 5
+and source-equivalent dirty-development init are reused explicitly, not rebuilt
+or relabelled. No B/C product payload is included.
+
+| Fresh signed generation | Deployment ID | Envelope SHA-256 |
+|---|---|---|
+| 2026091101 | `32810045941a51f2101755c56eead3c6db3b202da5ded07433305166f46f9178` | `8557e46dac3e4783dfb665e29ccf01e0b96cd51dd041a4338dddb2dd34849678` |
+| 2026091102 | `67f2daf04c384b35ea640476ac732891b399637b21e43692e954dc3c6f49d2cd` | `cd373b6b2c1cc2e278d1521a68f71ef4087277331a68673e16a46d0f5aaa5f38` |
+
+The original trust gate verifies the new FIT under the **selected firmware's
+actual embedded key**, independently extracts its control FDT, and rejects
+kernel/DTB/initramfs tampering, no signature and a wrong public key. Root/support
+CMS verifies under the compiled content anchor, with changed-hash and
+wrong-certificate negatives. `F/trust-check.log` is
+`1376e9c476d18188217ec6fbe35e36a3ad1ade3785c9dae89414945e40ba397d`;
+individual positive/negative logs are bound in the new aggregate.
+
+The unchanged board offline check returned
+`CX3576_GPT_LOADER_COUNTERS_FILESYSTEM_PASS` (`F/board-offline.log`,
+`5b78d2a0e7e561d2120b7f2a5ef7de2f733b84b7d46019887a263be3755727ed`).
+It read actual CX partition LBAs, firmware bytes and CRC-protected attempt
+records at absolute 16/17 MiB, three attempts per fresh deployment, filesystem
+flags and DATA project quotas. This is the CX contract, not S905's record offsets.
+The full authenticated runner also checked backup GPT, clean filesystems,
+signed deployment/object readback, verity trees and firmware receipt. SYSTEM is
+1073741824 bytes; initial DATA is 268435456 bytes and remains the growable
+partition. SYSTEM contains final signed objects/records, not staging.
+
+C-final **tool only** `48acef7f1a3683b1f3bb6261911b1a5123197da2` ran the exact
+authenticated image command recorded above, returning **126 PASS / 0 skipped**
+under `F/verification/cx3576-peHhe4`. Log `F/candidate-verify.log` is
+`bde0271d6730868ab181c8e2130a7d12409e15fa14e5cf122c385eb942519175`.
+Endpoint scan counts are **3 files / 19824184 bytes**, for these actual packed
+files (also matched to the authenticated verifier's extraction):
+
+| Required ELF | SHA-256 |
+|---|---|
+| `/usr/bin/mosd` | `c51f63b2cfcd3ea385ed454d457eb3bfae2c43ba0bd7cccbfc5bf310fec570c5` |
+| `/usr/bin/apid` | `8ebf33df0f439ebcb384c2cd3f560825084e2330d1a9504b8e326fb7118d29ef` |
+| `/usr/bin/mos-deploy` | `fa8b7c9e1f3732a3c9a325442f17febe982a766981efbd8fb4554ced8ded3857` |
+
+Packed policy inspection retains layout hash `683ce083...`, zero byte/inode
+limits on projects 100/102, bounded whole `/var` on project 101, private
+DATA/var and DATA/containers binds, container storage/tmp outside `/var`,
+`NAutoVTs=0` / `ReserveVT=2`, and the authenticated getty template without
+autologin. C126 additionally covers service/device/tool/package-policy closure.
+These observations do not prove live quota/reset enforcement or login execution.
+
+`Q/aggregate.json`, SHA-256
+`cd8e152347765734a29b5eb4428ef05da610056ade8387aaac07fa6f0375af9e`,
+is a **new** current-A software result: `PASS_WITH_EXECUTOR_LIMITATION`.
+It combines the immutable candidate's prior successful gates with fresh closure
+proof, while preserving original aggregate RED. The exact 11 PASS / 1 crun
+EXECUTOR-LIMITED / 0 failures / 0 unclaimed smoke and version-unasserted
+diagnostic above remain unchanged. No root/package/kernel/image/smoke/C-suite
+regeneration occurred in this correction.
+
+Instrumentation limitations are retained: the initial loader wrapper completed
+its command but failed serializing a reserved jq field; its exit was not promoted
+to a loader pass. The separately recorded one-second proof above collected the
+real exit 0. The first aggregate collector used an unavailable Python 3.11 API
+on Python 3.10; its failure and script are retained, and only the bounded hash
+reader was corrected. Neither is a product-root or hardware failure, nor an
+additional build recovery. Full original warnings and adapter review files remain.
+
+Scoped pma-cr shared/Python review covers the private checker/context, regression
+fixtures, loader evidence, aggregate collector and this three-document delta.
+The prior adapter review remains under `P/adapter-recovery-20260911-edC647/` for
+L2's independent review. Final review/gate identities are in `Q/review.md` and
+`Q/final-docs.json`; no sibling/index/global-history status is changed.
+
+No owned Docker container or detached gate remains; heavy use is 0. The original
+idle persistent shell and all source, cache, package, kernel, root, successful
+and failed archive/log evidence are retained. Shared factory alias is unchanged.
+All 38 mandatory CX physical rows, NPU ownership/workloads, native crun, S905
+and original-device reboot remain unqualified. A coordinates and A4 integrates;
+bench/operator/device/API/media/flashed-image/power/BLE-peer/MQTT-workload inputs
+are still missing. Historical optional D5 is nonblocking. D receives this exact
+current-A composition delta through L2; it is not final combined B/C acceptance
+or authorization to flash, publish or mark hardware complete.
 
 ### Original collector/kernel tracking
 
