@@ -1150,3 +1150,24 @@ RESULT: FAIL (161/162 files clean, 162 scanned)
 ```
 
 Both changed shell files pass syntax and the pipefail scan; the aggregate is not a PASS. The UI source is unchanged. `final-docs` passed, and final scoped whitespace is recorded separately because the shell aggregate exits before its chained diff command. After final review, the 20-case policy/capture gate includes the additional consumer mode/deletion refusal; the 12-case release lineage gate includes the corresponding symlink-mode refusal. The later CLI fixture uses the pinned Toolbox Git route for its actual commit/tree/epoch rather than requiring a host Git tool inside the Bun container.
+
+### Reviewed J2 production root start (2026-09-11)
+
+L2 reviewed and integrated f183a35d4ee581ab2a73cf68ea0fcef7c2b56c25, tree 0b0c4ed62bffa0006bdf85eabff1f2fbab1f9d4f, with no unresolved bounded findings. The local integration label 9ba74ee9a48c9c737e000fec9588382c88d21178 does not change the frozen composition identity. `J2_DIR` is `W/J2-f183a35d4ee581ab2a73cf68ea0fcef7c2b56c25`. The existing automatic W2-W4 authorization now applies after the completed source/input review.
+
+Both production commands passed real clean-source, frozen pool/receipt/tool/native, deterministic lineage, wrapper boundary and fresh resource checks. They run in separate full Git checkouts and output directories; no fixture environment injection is present. Original J packages, native exports and both successful kernels retain their original identity. Fixed Debian cache copies preserve verified bytes; no acquisition or producer was repeated.
+
+- x64: 2026-09-11T13:09:43.034922+00:00, orchestrator 2484332, root timeout 2485260, pane %102; `timeout --signal=TERM --kill-after=30s 10800 bash rootfs/build.sh`; `MOS_ROOTFS_NO_CACHE=0`. Metadata `J2_DIR/metadata/W2/x64-run1.json`, log `J2_DIR/logs/W2/x64-run1/root-build.log`.
+- virt-arm64: 2026-09-11T13:09:43.035742+00:00, orchestrator 2484334, root timeout 2485261, pane %103; `timeout --signal=TERM --kill-after=30s 10800 bash rootfs/build.sh`; `MOS_ROOTFS_NO_CACHE=1`. Metadata `J2_DIR/metadata/W2/virt-arm64-run1.json`, log `J2_DIR/logs/W2/virt-arm64-run1/root-build.log`.
+
+Each owned slot retains aggregate 4 CPU / 10 GiB with MemorySwap equal to Memory, x64 cpuset 0-3 and ARM cpuset 4-7. Direct children use the verified 3 CPU / 5 GiB allocation alongside the idle 1 CPU / 5 GiB daemon; positive-headroom refusal and owned-state preservation remain enforced. BuildKit stages use the full bounded slot. Source/output/tag/log changes exist only in versioned task-local root-v1 wrappers; original wrappers and evidence remain unchanged.
+
+`J2_DIR/metadata/W2/initial-running-snapshot.json`, SHA256 `55404e5b591fbcafca4bb610b1a988995ea003660d1200a7a1ac180c7bed6bf7`, binds actual PIDs, commands, UTC, per-step logs, public trust, lineage and resource identities. Gate-pending was acknowledged by L2 with HTTP 200 and success=true. These are running production gates, not successful root, cold comparison, image or guest results. The two successful equal-input virt cold roots, independent CX root/firmware reuse checks and dependent signed image/runtime/API gates remain outstanding.
+
+The x64 J2 gate subsequently ended at 2026-09-11T13:10:57.364923+00:00, exit 1, after passing the original bootstrap-device capture boundary. The exact new 90-pack pack-step 11/19 refusal is:
+
+```text
+runtime composition refused: missing path: /usr/lib/systemd/system/sysinit.target.wants/systemd-hwdb-update.service
+```
+
+`J2_DIR/metadata/W2/x64-run1-terminal-collection.json`, SHA256 `0abe1634e9fbf66bade6f7520383951beda01080f50ffb6e97ec984366574f92`, verifies every completed step-log digest and absence of both terminated x64 PIDs. The root log SHA256 is `69453e946350d26da34d4444419844bed27fe37eae79596c967ce9395ec692a6`. The frozen source remains clean f183a35d. The independent ARM cold1 gate remains active; it was not interrupted. L2 acknowledged the terminal report with HTTP 200 and success=true. No root success, cold equivalence or new source correction is claimed; successful original packages/native/kernels and both failed original J roots remain unchanged.
