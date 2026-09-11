@@ -223,6 +223,24 @@ class CompositionTest(unittest.TestCase):
         check = subprocess.run([sys.executable, str(REPO / 'rootfs/runtime/select.py'), 'verify', '--root', str(self.f.out), '--report', str(self.f.report)], capture_output=True, text=True)
         self.assertEqual(check.returncode, 0, check.stderr)
 
+    def test_accounting_link_capture_preserves_producer_identity(self):
+        links = self.f.accounting_links()
+        self.f.rules_path.write_text(json.dumps(self.f.rules))
+        shutil.copyfile(self.f.db / 'mos-system.list', self.inputs / 'info/mos-system.list')
+        self.capture()
+        result = self.compose()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        report = json.loads(self.f.report.read_text())
+        rows = {row['path']: row for row in report['files']}
+        snapshot = json.loads((self.inputs / 'configured.json').read_text())
+        for link in links:
+            self.assertEqual(rows[link['path']]['runtime_link'], link)
+            for path in link['requires']:
+                self.assertEqual(rows[path]['sha256'], snapshot[path]['sha256'])
+                self.assertIn({'package': 'mos-system', 'version': PACKAGE_VERSION, 'architecture': 'all'}, rows[path]['origins'])
+        self.assertEqual(report['provenance']['capture_sha256']['configured.json'],
+                         hashlib.sha256((self.inputs / 'configured.json').read_bytes()).hexdigest())
+
     def test_optimizer_cache_is_excluded_while_loader_state_survives(self):
         cache = loader_cache([('libfirst.so', '/usr/lib/libfirst.so')])
         self.f.write('/etc/ld.so.cache', cache)

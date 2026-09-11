@@ -283,6 +283,53 @@ class SelectionTest(unittest.TestCase):
     def test_runtime_link_requires_generator(self):
         (self.root / 'etc/tmpfiles.d/mos-var.conf').unlink(); self.refuse('/etc/tmpfiles.d/mos-var.conf')
 
+    def accounting_links(self):
+        repo = SELECTOR.parents[2]
+        policy = json.loads((repo / 'rootfs/runtime/consumers.json').read_text())
+        paths = {'/var/log/wtmp', '/var/log/btmp', '/var/log/lastlog'}
+        links = [link for link in policy['consumers']['mos-system']['runtime_links'] if link['path'] in paths]
+        self.assertEqual({link['path'] for link in links}, paths)
+        (self.root / 'usr/lib/systemd/systemd-tmpfiles').unlink()
+        (self.root / 'etc/systemd/system/systemd-tmpfiles-setup.service').unlink()
+        self.write('/usr/bin/systemd-tmpfiles', elf(needed=['libfirst.so'], interp='/lib/loader.so'), 0o755)
+        self.write('/usr/lib/systemd/system/systemd-tmpfiles-setup.service', b'[Service]\nExecStart=systemd-tmpfiles --create --remove --boot\n')
+        self.write('/etc/tmpfiles.d/mos-var.conf', (repo / 'rootfs/overlay/etc/tmpfiles.d/mos-var.conf').read_bytes())
+        declared = self.rules['consumers']['mos-system']['runtime_links']
+        declared[:] = [link for link in declared if link['path'] not in paths]
+        declared.extend(links)
+        for link in links:
+            if link['path'] != '/var/log/wtmp':
+                self.link(link['path'], link['target'])
+        self.capture_ownership()
+        return links
+
+    def test_accounting_links_retain_generator_and_resources(self):
+        links = self.accounting_links()
+        rows = {row['path']: row for row in self.selected()['files']}
+        for link in links:
+            self.assertEqual(rows[link['path']]['runtime_link'], link)
+            self.assertEqual(rows[link['path']]['target'], link['target'])
+            for required in link['requires']:
+                self.assertEqual(rows[required]['type'], 'file')
+                self.assertTrue(rows[required]['origins'])
+        for dependency in ['/usr/lib/libfirst.so', '/usr/lib/libsecond.so', '/usr/lib/loader.so']:
+            self.assertIn(dependency, rows)
+        self.assertEqual(rows['/usr/bin/systemd-tmpfiles']['mode'], 0o755)
+        self.assertEqual(self.command('verify').returncode, 0)
+
+    def test_accounting_links_refuse_missing_dependencies(self):
+        self.accounting_links()
+        for path in ['/usr/bin/systemd-tmpfiles', '/usr/lib/systemd/system/systemd-tmpfiles-setup.service',
+                     '/etc/tmpfiles.d/mos-var.conf', '/etc/license']:
+            with self.subTest(path=path):
+                at = self.root / path[1:]
+                saved = self.base / 'held-resource'
+                at.rename(saved)
+                try:
+                    self.refuse(path)
+                finally:
+                    saved.rename(at)
+
     def test_declared_runtime_links_reject_file_and_directory_substitutions(self):
         for path in ['/etc/systemd/system-generators/systemd-ssh-generator', '/var/log/wtmp']:
             at = self.root / path[1:]
