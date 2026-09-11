@@ -828,3 +828,25 @@ its root log SHA256 is
 `0370b287c113976054fc5d0e3d94d797615f49a3407017b076239126a4b68fef`.
 Neither architecture has a completed root. Root/image, cold equivalence,
 authenticated guest/API/lifecycle and physical evidence remain outstanding.
+
+The subsequent L1 bounded-composition disposition and L2 ARM terminal relay
+refer to this same defect; they do not create another corrective round. Source
+candidate `165f2fbd595e4c44c5ada9de273ca6f0936c5d66` and its passed code gates
+remain unchanged. `W/metadata/W2/device-capture/terminal-classification.json`
+separately retains the nonfatal systemd-resolved `/etc/resolv.conf` busy errors,
+the subsequent successful installation of 173 packages, and the fatal 90-pack
+capture refusal in each original root log. Its SHA256 is
+`bde5a5360b3b9885900077be2b6a15fbeba7c73de63e431e283805d2ecded256`.
+
+The exact unchanged stamp guard was extracted for a read-only reproduction,
+using real frozen manifests and each actual checkout's `version.sh`. Both
+architecture cases pass against original J and refuse against clean candidate
+`165f2fbd` with `gite176876b733d-1` versus `git165f2fbd595e-1`. This tests only
+the identity guard, not a full pool or root gate. Commands, script/source/input
+hashes, PIDs, UTC and four logs are recorded in
+`W/metadata/W2/device-capture/stamp-guard.json`, SHA256
+`36abcc1604ec8d16897e004fddf21a3eb9a7f0dbb697fe4af211c0a56ccce372`.
+No package, frozen source, producer or prior gate was changed or replayed.
+The source candidate still awaits the already-required L2 review and precise
+component-identity disposition. Two successful equal-input virt cold roots
+remain required; the failed J attempt qualifies neither half.
