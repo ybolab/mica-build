@@ -11,8 +11,8 @@ import { parseFileLayout } from '../../build/src/file-layout.ts'
 import { packBootFirmware, packKernel } from '../../build/src/kernel-package.ts'
 import { Toolbox } from '../../build/src/toolbox.ts'
 
-const [workArg, baselineArg, initArg, oldCertArg, oldKeyArg] = Bun.argv.slice(2)
-if (!workArg || !baselineArg || !initArg || !oldCertArg || !oldKeyArg) throw new Error('Usage: trust-rotation.ts KERNEL_WORK BASELINE MOS_INIT CONTENT_CERT CONTENT_KEY')
+const [workArg, baselineArg, initArg, oldCertArg, oldKeyArg, shutdownArg] = Bun.argv.slice(2)
+if (!workArg || !baselineArg || !initArg || !oldCertArg || !oldKeyArg || !shutdownArg) throw new Error('Usage: trust-rotation.ts KERNEL_WORK BASELINE MOS_INIT CONTENT_CERT CONTENT_KEY MOS_SHUTDOWN')
 const work = resolve(workArg)
 const baseline = resolve(baselineArg)
 const output = join(work, 'boot')
@@ -32,7 +32,7 @@ try {
   await tb.must(['openssl', 'req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-sha256', '-days', '1', '-subj', '/CN=MOS-boot-rotation-lab', '-keyout', newBoot.key, '-out', newBoot.certificate])
   const kernel = async (name: string, source: string, trust: string[], contentSigning: typeof oldContent, bootSigning: typeof oldBoot) => {
     const directory = join(output, name)
-    await packKernel({ board: 'x64', kernelDirectory: join(work, source, 'kernel'), init: resolve(initArg),
+    await packKernel({ board: 'x64', kernelDirectory: join(work, source, 'kernel'), init: resolve(initArg), shutdown: resolve(shutdownArg),
       publicKeys: trust, systemPartUuid: layout.partitions[1]!.guid, dataPartUuid: layout.partitions[2]!.guid,
       output: directory, contentSigning, bootSigning }, tb)
     return directory

@@ -1,6 +1,6 @@
 # MOS tasks
 
-> Updated: 2026-09-10
+> Updated: 2026-09-11
 
 ## Usage
 
@@ -193,3 +193,34 @@ thing about the tree. Both indexes now say the same thing.
 - [x] [**20260910-1142-b2-busybox-startup B2 explicit BusyBox startup semantics**](20260910-1142-b2-busybox-startup.md) `P1`
 
 - [x] [**20260910-1206-b3-bounded-exitrd-teardown B3 bounded exitrd teardown**](20260910-1206-b3-bounded-exitrd-teardown.md) `P1`
+
+- [x] [**20260910-2100-b4-runtime-selection Select explicit runtime payloads**](20260910-2100-b4-runtime-selection.md) `P1`
+
+- [x] [**20260910-2152-b5-scratch-provenance Wire scratch runtime composition and shipped provenance**](20260910-2152-b5-scratch-provenance.md) `P1`
+
+- [x] [**20260911-0110-b6-reproducibility-closure B6 reproducibility closure**](20260911-0110-b6-reproducibility-closure.md) `P1`
+
+- [-] [**20260911-0145-b7-fresh-lifecycle-acceptance B7 fresh lifecycle and rootfs acceptance**](20260911-0145-b7-fresh-lifecycle-acceptance.md) `P1`
+
+- [x] [**20260910-1014-a1-cx3576-resource-repairs CX3576 accelerator and resource repairs**](20260910-1014-a1-cx3576-resource-repairs.md) `P1`
+
+- [x] [**20260910-1014-a2-cx3576-acceptance-matrix Current CX3576 acceptance matrix and evidence baseline**](20260910-1014-a2-cx3576-acceptance-matrix.md) `P1`
+
+- [x] [**20260910-1014-a3-cx3576-late-hdmi-logo CX3576 late HDMI and return-to-logo repair**](20260910-1014-a3-cx3576-late-hdmi-logo.md) `P1`
+
+- [x] [**20260910-1014-a4-cx3576-integrated-acceptance CX3576 integrated artifact and board acceptance**](20260910-1014-a4-cx3576-integrated-acceptance.md) `P1`
+
+- [x] [**20260910-1012-c-fleet-app-trust-obligations Classify fleet application and trust obligations**](20260910-1012-c-fleet-app-trust-obligations.md) `P1`
+
+- [x] [**20260910-1012-c-config-update-obligations Classify configuration and update policy obligations**](20260910-1012-c-config-update-obligations.md) `P1`
+- [x] [**20260910-1046-c-provisioning-resolution-tests Verify provisioning resolution through the API route**](20260910-1046-c-provisioning-resolution-tests.md) `P1`
+
+- [x] [**20260910-1910-fleet-device-plane-protocol Design the fleet device-to-plane protocol**](20260910-1910-fleet-device-plane-protocol.md) `P1`
+- [x] [**20260910-1046-c-public-defaults-guide Update the public defaults guide**](20260910-1046-c-public-defaults-guide.md) `P1`
+
+- [x] [**20260910-1050-c-public-meta-source-validation Validate public metadata before root staging**](20260910-1050-c-public-meta-source-validation.md) `P1`
+- [x] [**20260910-1050-c-packed-public-meta-validation Validate packed public metadata independently**](20260910-1050-c-packed-public-meta-validation.md) `P1`
+
+- [x] [**20260910-1221-c-offline-fleet-config Project offline fleet desired configuration**](20260910-1221-c-offline-fleet-config.md) `P1`
+
+- [x] [**20260910-1050-c-native-endpoint-verification Verify native binaries contain no default update endpoints**](20260910-1050-c-native-endpoint-verification.md) `P1`

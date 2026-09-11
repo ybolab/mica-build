@@ -8,7 +8,7 @@ ln -sf ../run/systemd/resolve/stub-resolv.conf /rootfs/etc/resolv.conf
 printf 'mos\n' > /rootfs/etc/hostname
 printf '127.0.1.1 mos\n' >> /rootfs/etc/hosts
 : > /rootfs/etc/machine-id
-rm /rootfs/var/cache/ldconfig/aux-cache
+rm -f /rootfs/var/cache/ldconfig/aux-cache
 mkdir -p /rootfs/var/lib/dbus /rootfs/var/lib/systemd
 for name in timesync network timers linger; do mkdir -p "/rootfs/var/lib/systemd/$name"; done
 rm -f /rootfs/var/lib/systemd/random-seed

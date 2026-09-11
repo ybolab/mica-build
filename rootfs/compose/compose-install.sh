@@ -242,6 +242,9 @@ else
     echo "compose: no kernel in /boot; this board's bootloader is given its kernel by the BSP build"
 fi
 
+# Capture native ownership and archive identities before build-state disposal.
+sh /mos-scripts/compose-capture.sh
+
 # Everything the composition brought in that the device must not carry. The
 # package-manager purge in the finalizer takes /etc/apt wholesale, so the
 # source file below is belt and braces; policy-rc.d lives in /usr/sbin, which
