@@ -125,6 +125,178 @@ class SourceLineageTest(unittest.TestCase):
         self.assertEqual(self.output.read_bytes(), original)
         self.assertNotIn(str(self.work).encode(), original)
 
+    def joined_validation_fixture(self):
+        """Small real-pool fixture; only the approved policy anchors are replaced.
+
+        The actual immutable production anchors are exercised by the separate
+        recorded CLI/input gate, not authorized by these fixture constants.
+        """
+        from unittest.mock import patch
+        spec = importlib.util.spec_from_file_location('joined_validation', HELPER)
+        h = importlib.util.module_from_spec(spec); spec.loader.exec_module(h)
+        original = h.pool_identity(self.pool, 'amd64', self.version)
+        old_deploy = dict(original['packages'][0], package='mos-deploy', archive='pool/old-deploy.deb')
+        original['packages'].append(old_deploy); original['files'][old_deploy['archive']] = old_deploy['sha256']
+        rebuilt = dict(commit='b' * 40, tree='c' * 40, epoch=1577923300, version='0.1.0+git' + 'b' * 12 + '-1')
+        new_deploy = dict(old_deploy, version=rebuilt['version'], archive='pool/mos-deploy_' + rebuilt['version'] + '_amd64.deb', sha256='d' * 64)
+        pool = json.loads(json.dumps(original)); pool['packages'][-1] = new_deploy
+        del pool['files']['pool/old-deploy.deb']; pool['files'][new_deploy['archive']] = new_deploy['sha256']
+        proofs = {name: dict(source_commit=rebuilt['commit'] if name == 'deploy' else self.commit_id,
+                            before_sha256='1' * 64, after_sha256=('2' if name == 'deploy' else '1') * 64)
+                  for name in ['deploy', *['fixture' + str(i) for i in range(14)]]}
+        receipts = dict(original='3' * 64, native='4' * 64, deploy='5' * 64)
+        native = {name: dict(bytes=len(data), sha256=hashlib.sha256(data).hexdigest())
+                  for name, data in [('mos-init', self.native.read_bytes()), ('mos-shutdown', self.shutdown.read_bytes())]}
+        canonical_sha = lambda v: hashlib.sha256(h.canonical(v)).hexdigest()
+        join = dict(schema='mos/producer-join/v1', rebuilt_source=rebuilt, approved_delta=[], producer_inputs=proofs,
+                    original_pool=original, witnesses=receipts, mapping={'mos-fixture': self.commit_id, 'mos-deploy': rebuilt['commit']}, native=native, production={'fixture': True})
+        record = dict(schema='mos/source-lineage/join-v1', package_source=self.source,
+                      composition_source=dict(commit='e' * 40, tree='f' * 40, epoch=1577923400),
+                      architecture='amd64', root_epoch=1577836800, pool=pool, receipt_sha256=sorted(receipts.values()), delta=[], producer_join=join)
+        fixture_policy = patch.multiple(h, JOIN_ORIGINAL=self.source, JOIN_REBUILT=rebuilt,
+            JOIN_PRODUCTION_SHA=canonical_sha({'fixture': True}), JOIN_POOL_SHA=canonical_sha(original), JOIN_INPUTS_SHA=canonical_sha(proofs), JOIN_DELTA_SHA=canonical_sha([]),
+            JOIN_RECEIPTS=receipts, JOIN_DEPLOY_SHA=new_deploy['sha256'], JOIN_DEPLOY_CONTROL=new_deploy['control_sha256'], JOIN_NATIVE=native)
+        return h, json.loads(json.dumps(record)), fixture_policy
+
+    def test_join_record_keeps_separate_sources_pool_shape_and_native(self):
+        h, record, policy = self.joined_validation_fixture()
+        with policy:
+            self.assertEqual(h.validate(record, 'amd64', 1577836800), record)
+            self.assertEqual(set(record['pool']), {'files', 'packages'})
+            self.assertNotEqual(record['package_source'], record['producer_join']['rebuilt_source'])
+            self.assertEqual(set(record['producer_join']['native']), {'mos-init', 'mos-shutdown'})
+            self.assertNotIn(str(self.work).encode(), h.canonical(record))
+
+    def test_join_record_refuses_mapping_witness_source_and_byte_mutations(self):
+        mutations = {
+            'wrong-source': lambda r: r['producer_join']['mapping'].__setitem__('mos-fixture', 'b' * 40),
+            'missing-mapping': lambda r: r['producer_join']['mapping'].pop('mos-deploy'),
+            'extra-mapping': lambda r: r['producer_join']['mapping'].__setitem__('mos-extra', 'b' * 40),
+            'old-archive': lambda r: r['pool']['packages'][0].__setitem__('sha256', '9' * 64),
+            'old-control': lambda r: r['pool']['packages'][0].__setitem__('control_sha256', '9' * 64),
+            'deploy-control': lambda r: r['pool']['packages'][-1].__setitem__('control_sha256', '9' * 64),
+            'deploy-version': lambda r: r['pool']['packages'][-1].__setitem__('version', self.version),
+            'duplicate-archive': lambda r: r['pool']['packages'].append(r['pool']['packages'][0]),
+            'wrong-architecture': lambda r: r.__setitem__('architecture', 'arm64'),
+            'missing-native': lambda r: r['producer_join']['native'].pop('mos-shutdown'),
+            'native-bytes': lambda r: r['producer_join']['native']['mos-init'].__setitem__('sha256', '9' * 64),
+            'receipt': lambda r: r['producer_join']['witnesses'].__setitem__('deploy', '9' * 64),
+            'failed-witness': lambda r: r['producer_join']['witnesses'].__setitem__('status', 'failure'),
+            'epoch': lambda r: r['producer_join']['rebuilt_source'].__setitem__('epoch', 1),
+            'delta': lambda r: r['producer_join']['approved_delta'].append(dict(path='pkgs/mosd/Cargo.lock', before=None, after=None)),
+            'tool': lambda r: r['producer_join']['production'].__setitem__('tool', 'wrong'),
+            'prepare': lambda r: r['producer_join']['producer_inputs']['fixture0'].__setitem__('after_sha256', '9' * 64),
+            'unknown': lambda r: r['producer_join'].__setitem__('approved', True),
+            'consumer': lambda r: r['delta'].append(dict(path='rootfs/runtime/consumers.json', before=None, after=dict(mode='100644', blob='1' * 40))),
+            'root-epoch': lambda r: r.__setitem__('root_epoch', 1),
+        }
+        for name, mutate in mutations.items():
+            with self.subTest(name=name):
+                h, record, policy = self.joined_validation_fixture(); mutate(record)
+                with policy, self.assertRaises((ValueError, KeyError)):
+                    h.validate(record, record['architecture'], record['root_epoch'])
+
+    def test_join_input_json_rejects_duplicate_and_unknown_schema_keys(self):
+        h, record, policy = self.joined_validation_fixture()
+        at = self.work / 'duplicate.json'; at.write_text('{"schema":1,"schema":2}')
+        with self.assertRaisesRegex(ValueError, 'duplicate key'):
+            h.load(at)
+        record['ignored'] = True
+        with policy, self.assertRaisesRegex(ValueError, 'unknown or missing'):
+            h.validate(record, 'amd64', 1577836800)
+
+    def test_join_witness_rejects_failed_incomplete_and_missing_native(self):
+        from unittest.mock import patch
+        h, _, _ = self.joined_validation_fixture()
+        log = self.work / 'build.log'; log.write_text('producer completed\n')
+        log_sha = hashlib.sha256(log.read_bytes()).hexdigest()
+        for path in (self.native, self.shutdown):
+            path.chmod(0o755)
+        outputs = [dict(path=str(p), bytes=p.stat().st_size, sha256=hashlib.sha256(p.read_bytes()).hexdigest())
+                   for p in (self.native, self.shutdown)]
+        native = {Path(p['path']).name: {k: p[k] for k in ('bytes', 'sha256')} for p in outputs}
+        witness = dict(status='success', exitCode=0, finishedAt='recorded', activePid=None, activeStep=None,
+                       verifiedSource={k: h.JOIN_REBUILT[k] for k in ('commit', 'tree', 'epoch')},
+                       sourceCommit=h.JOIN_REBUILT['commit'], sourceTree=h.JOIN_REBUILT['tree'],
+                       sourceEpoch=h.JOIN_REBUILT['epoch'], version=h.JOIN_REBUILT['version'],
+                       environment={'SOURCE_DATE_EPOCH': str(h.JOIN_REBUILT['epoch'])}, outputDirectory=str(self.work),
+                       runner=dict(path=str(log), sha256=log_sha), wrapper=dict(path=str(log), sha256=log_sha),
+                       toolIdentity=dict(id='sha256:' + 'a' * 64, architecture='amd64'), outputs=outputs,
+                       steps=[dict(name='native-build', exitCode=0, log=str(log), logSha256=log_sha,
+                                   argv=['bash', 'pkgs/mos-deploy/hack/build-deb.sh', '--producer', 'boot', '--bins',
+                                         'mos-init mos-shutdown', '--arch', 'amd64', '--stage', str(self.work)])])
+        cases = {
+            'valid': lambda w: None,
+            'failed': lambda w: w.__setitem__('status', 'failure'),
+            'exit': lambda w: w.__setitem__('exitCode', 1),
+            'incomplete': lambda w: w.__setitem__('activePid', 123),
+            'missing-native': lambda w: w['outputs'].pop(),
+            'wrong-command': lambda w: w['steps'][0]['argv'].__setitem__(6, 'mos-init'),
+            'wrong-output': lambda w: w['outputs'][0].__setitem__('sha256', '9' * 64),
+            'wrong-tool': lambda w: w['toolIdentity'].__setitem__('architecture', 'arm64'),
+        }
+        for name, mutate in cases.items():
+            with self.subTest(name=name):
+                value = json.loads(json.dumps(witness)); mutate(value)
+                path = self.work / (name + '.json'); path.write_text(json.dumps(value))
+                # Trust this fixture receipt only; exercise validation beyond its digest.
+                with patch.multiple(h, JOIN_RECEIPTS={'native': hashlib.sha256(path.read_bytes()).hexdigest()}, JOIN_NATIVE=native), \
+                        patch.dict(os.environ, PATH=self.env['PATH']):
+                    if name == 'valid':
+                        self.assertEqual(h.rebuilt_witness(path, 'native', self.package, {}), value)
+                    else:
+                        with self.assertRaises(ValueError):
+                            h.rebuilt_witness(path, 'native', self.package, {})
+
+    def test_joined_package_gate_refuses_duplicate_options_before_work(self):
+        result = run('bash', str(REPO / 'tests/deb-package-gate.sh'), '--joined-inputs', 'one',
+                     '--joined-inputs', 'two', '--receipt', 'three', '--receipt-sha256', 'four',
+                     '--package-source', 'five', '--pool', str(self.pool), '--work', str(self.work / 'gate'))
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('duplicate or empty', result.stderr)
+        self.assertFalse((self.work / 'gate').exists())
+
+    def test_package_gate_consumer_cannot_enter_a_prepare_context(self):
+        producer = self.package / 'rootfs/packages-src/fixture/producer.env'
+        producer.parent.mkdir(parents=True)
+        producer.write_text('BUILD_CONTEXTS="checks=tests"\nPREPARE="prepare.sh"\n')
+        self.commit(self.package)
+        consumer = self.work / 'gate-consumer'; self.must('git', 'clone', '-q', self.package, consumer)
+        path = consumer / 'tests/deb-package-gate.sh'; path.parent.mkdir(parents=True)
+        shutil.copyfile(REPO / 'tests/deb-package-gate.sh', path); self.commit(consumer)
+        spec = importlib.util.spec_from_file_location('gate_context', HELPER)
+        h = importlib.util.module_from_spec(spec); spec.loader.exec_module(h)
+        before_source, before = h.identity(self.package); after_source, after = h.identity(consumer)
+        with self.assertRaisesRegex(ValueError, 'composition path enters producer context'):
+            h.delta(self.package, consumer, before_source, after_source, before, after)
+
+    def test_joined_pool_checks_each_witness_version_without_changing_default(self):
+        spec = importlib.util.spec_from_file_location('joined_pool', HELPER)
+        helper = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(helper)
+        versions = {'mos-fixture': self.version}
+        with (self.pool / 'Packages').open('a') as stream:
+            stream.write('Maintainer: Fixture <fixture@example.invalid>\nDescription: isolated package\n')
+        # The fields belong to the same paragraph, as in a real APT index.
+        index = self.pool / 'Packages'
+        index.write_text(index.read_text().replace('\n\nMaintainer:', '\nMaintainer:'))
+        result = helper.pool_identity(self.pool, 'amd64', versions)
+        self.assertEqual(result['packages'][0]['version'], self.version)
+        with self.assertRaisesRegex(ValueError, 'stamp'):
+            helper.pool_identity(self.pool, 'amd64', {'mos-fixture': '0.1.0+git' + 'b' * 12 + '-1'})
+        with self.assertRaisesRegex(ValueError, 'membership'):
+            helper.pool_identity(self.pool, 'amd64', {})
+        with self.assertRaisesRegex(ValueError, 'membership'):
+            helper.pool_identity(self.pool, 'amd64', {**versions, 'mos-extra': self.version})
+        with self.assertRaisesRegex(ValueError, 'stamp'):
+            helper.pool_identity(self.pool, 'amd64', '0.1.0+git' + 'b' * 12 + '-1')
+        original = index.read_text()
+        for addition in ('Depends: mos-system (= forged)\n', ' description mutation\n'):
+            index.write_text(original.rstrip() + '\n' + addition + '\n')
+            with self.assertRaisesRegex(ValueError, 'control/index'):
+                helper.pool_identity(self.pool, 'amd64', versions)
+        index.write_text(original)
+
     def test_exact_selector_and_fixture_delta_preserves_package_identity(self):
         paths = ['rootfs/runtime/select.py', 'tests/rootfs-runtime/selection_test.py']
         for name in paths:

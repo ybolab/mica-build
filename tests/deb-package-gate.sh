@@ -93,6 +93,40 @@ FROM_SH="${REPO_ROOT}/build-env/from.sh"
 PRODUCERS_SH="${REPO_ROOT}/build-env/deb/producers.sh"
 BUILD_SH="${REPO_ROOT}/build-env/deb/build.sh"
 DIST="${REPO_ROOT}/_out/debs"
+# An explicit, already witnessed x64 input check; the default remains the full
+# two-architecture/rebuild gate below. No implicit skip environment switch.
+JOIN_MODE=0
+JOIN_ARGS=()
+JOIN_WORK=""
+JOIN_POOL=""
+if [ "$#" -gt 0 ]; then
+    [ "$1" = --joined-inputs ] && [ "$#" -eq 14 ] || { echo "error: invalid joined-input arguments" >&2; exit 1; }
+    JOIN_MODE=1
+    declare -A JOIN_SEEN=()
+    while [ "$#" -gt 0 ]; do
+        [ -n "$2" ] && [ -z "${JOIN_SEEN[$1]:-}" ] || { echo "error: duplicate or empty joined-input argument" >&2; exit 1; }
+        JOIN_SEEN[$1]=1
+        case "$1" in
+            --joined-inputs) JOIN_ARGS+=(--producer-join "$2") ;;
+            --joined-inputs-sha256) JOIN_ARGS+=(--producer-join-sha256 "$2") ;;
+            --package-source|--receipt|--receipt-sha256) JOIN_ARGS+=("$1" "$2") ;;
+            --pool) JOIN_POOL="$2" ;;
+            --work) JOIN_WORK="$2" ;;
+            *) echo "error: unknown joined-input argument: $1" >&2; exit 1 ;;
+        esac
+        shift 2
+    done
+    [ -n "$JOIN_WORK" ] && [ ! -e "$JOIN_WORK" ] && [ "$(basename "$JOIN_POOL")" = amd64 ] || {
+        echo "error: joined inputs require a fresh work directory and an amd64 pool" >&2; exit 1;
+    }
+    mkdir -p "$JOIN_WORK"
+    JOIN_WORK="$(cd "$JOIN_WORK" && pwd)"
+    JOIN_POOL="$(cd "$JOIN_POOL" && pwd)"
+    python3 "$REPO_ROOT/rootfs/runtime/source-lineage.py" --composition-source "$REPO_ROOT" \
+        --pool "$JOIN_POOL" --arch amd64 --epoch 1577836800 --output "$JOIN_WORK/source-lineage.json" "${JOIN_ARGS[@]}"
+    DIST="$(dirname "$JOIN_POOL")"
+fi
+
 for p in "${FROM_SH}" "${PRODUCERS_SH}" "${BUILD_SH}"; do
     [ -e "${p}" ] || {
         echo "error: ${p} does not exist. This gate derives the repository as two levels above itself; if this file moved, that arithmetic moved with it" >&2
@@ -125,6 +159,7 @@ mapfile -t ROWS < <(bash "${PRODUCERS_SH}")
 # gate that checks one architecture and reports green. NOT the producers'
 # ARCHES: those say what each producer builds, and this says what must exist.
 ARCHES=(amd64 arm64)
+[ "$JOIN_MODE" = 0 ] || ARCHES=(amd64)
 for arch in "${ARCHES[@]}"; do
     [ -d "${DIST}/${arch}/pool" ] || {
         echo "error: ${DIST}/${arch}/pool does not exist, so there is nothing to check for ${arch}. Build it with \`make os-debs\`; a gate that skipped the missing architecture would report on half a pool" >&2
@@ -151,8 +186,7 @@ mapfile -t FROM_ARGS < <(bash "${FROM_SH}" --arch="${IMAGE_ARCH}" MOS_BUILD_DEB=
 IMAGE="${FROM_ARGS[1]#MOS_BUILD_DEB=}"
 
 WORK="${REPO_ROOT}/tmp/deb-package-gate"
-rm -rf "${WORK}"
-mkdir -p "${WORK}"
+if [ "$JOIN_MODE" = 1 ]; then WORK="$JOIN_WORK"; else rm -rf "${WORK}"; mkdir -p "${WORK}"; fi
 
 # The producers' own declarations, staged into one tree the container is handed:
 # the discovery rows, and each producer's control templates beside them. Staged
@@ -176,6 +210,15 @@ done
 # One container reading both pools. The producers' declarations come in beside
 # them so every expectation is the producers' own statement of it.
 
+if [ "$JOIN_MODE" = 1 ]; then
+    python3 - "$WORK/source-lineage.json" >"$TMPL/joined-witness.tsv" <<'JOIN_ROWS'
+import json, sys
+record = json.load(open(sys.argv[1]))
+assert record['schema'] == 'mos/source-lineage/join-v1'
+for row in record['pool']['packages']:
+    print(row['package'], row['version'], row['sha256'], row['architecture'], sep='\t')
+JOIN_ROWS
+fi
 STATIC_LOG="${WORK}/static.log"
 static_status=0
 docker run --rm -i \
@@ -200,6 +243,17 @@ mutually_conflicting() {
 }
 
 ARCHES=("$@")
+JOIN_MODE=0
+declare -A JOIN_VERSION=() JOIN_SHA=()
+if [ -f /tmpl/joined-witness.tsv ]; then
+    JOIN_MODE=1
+    [ "$*" = amd64 ] || exit 1
+    while IFS=$'\t' read -r name version digest architecture; do
+        [ -z "${JOIN_VERSION[$name]:-}" ] || exit 1
+        JOIN_VERSION[$name]="$version"; JOIN_SHA[$name]="$digest"
+    done </tmpl/joined-witness.tsv
+    [ "${#JOIN_VERSION[@]}" -gt 0 ] || exit 1
+fi
 
 mapfile -t ROWS < /tmpl/producers.tsv
 [ "${#ROWS[@]}" -gt 0 ] || {
@@ -418,6 +472,14 @@ for arch in "${ARCHES[@]}"; do
     # `+`, and its shape is asserted per archive first: a version with no
     # recognisable stamp would otherwise contribute a garbage "stamp" that
     # merely has to collide with another garbage one to pass.
+    if [ "$JOIN_MODE" = 1 ]; then
+        [ "${#got_names[@]}" -eq "${#JOIN_VERSION[@]}" ] || fail "joined witness package count differs"
+        for name in "${got_names[@]}"; do
+            if [ "${POOL_PKG_VER[$name]}" = "${JOIN_VERSION[$name]:-}" ]; then
+                pass "${name}: exact witnessed producer version"
+            else fail "${name}: joined producer version differs"; fi
+        done
+    else
     pool_stamps=()
     for v in "${pool_versions[@]}"; do
         stamp="${v##*+}"
@@ -437,6 +499,7 @@ for arch in "${ARCHES[@]}"; do
         pass "${arch}: one git stamp across the pool (${pool_stamp% }, ${#pool_versions[@]} archive(s))"
     else
         fail "${arch}: the pool holds more than one git stamp [${pool_stamp% }]. Rebuild it whole with \`make os-debs\`"
+    fi
     fi
 
     # LOCAL-VIRTUAL names: what the archives of this pool declare in Provides.
@@ -715,6 +778,13 @@ done
 # ever stops being true a device's package set depends on which pool it was
 # installed from, under one filename and one version.
 for pkg in ${ALL_PKGS}; do
+    if [ "$JOIN_MODE" = 1 ]; then
+        ALL_COMPARED_N=$((ALL_COMPARED_N + 1))
+        if [ "${ALL_SHA[${pkg}|amd64]:-}" = "${JOIN_SHA[$pkg]:-}" ]; then
+            pass "${pkg}: Architecture: all bytes match original frozen witness"
+        else fail "${pkg}: frozen all-architecture bytes differ"; fi
+        continue
+    fi
     seen=""
     where=""
     for arch in "${ARCHES[@]}"; do
@@ -742,11 +812,13 @@ done
 # commit than its neighbour ships an image whose packages come from two trees.
 # The per-archive stamp SHAPE was already asserted inside each pool's loop, so
 # this only compares; a shapeless version has already failed there.
+if [ "$JOIN_MODE" = 0 ]; then
 all_stamps="$(printf '%s\n' "${VERSIONS[@]}" | sed 's/^.*+//' | LC_ALL=C sort -u | tr '\n' ' ')"
 if [ "$(printf '%s\n' "${VERSIONS[@]}" | sed 's/^.*+//' | LC_ALL=C sort -u | wc -l)" -eq 1 ]; then
     pass "one git stamp across every pool (${all_stamps% })"
 else
     fail "the pools hold more than one git stamp [${all_stamps% }]: they were not built from one commit"
+fi
 fi
 
 echo "note: local virtual dependencies satisfied by a Provides in the pool: $(printf '%s\n' ${VIRTUALS[@]+"${VIRTUALS[@]}"} | LC_ALL=C sort -u | tr '\n' ' ')"
@@ -767,6 +839,18 @@ if [ "${static_status}" != 0 ] || [ "${STATIC_FAIL}" != 0 ]; then
     echo "note: the reproducibility check was not run; fix the failures above first"
     echo "RESULT: FAIL ($((STATIC_PASS))/$((STATIC_PASS + STATIC_FAIL)) checks passed, ${ARCHIVES_N} archives, ${PATHS_N} payload paths, ${SCRIPTS_N} maintainer scripts, ${ALL_COMPARED_N} all-architecture archives compared, ${VIRTUAL_RESOLVED_N} local-virtual dependencies resolved)"
     exit 1
+fi
+
+if [ "$JOIN_MODE" = 1 ]; then
+    python3 - "$WORK/source-lineage.json" "$JOIN_POOL" <<'JOIN_FINAL'
+import hashlib, json, pathlib, sys
+record = json.load(open(sys.argv[1])); pool = pathlib.Path(sys.argv[2])
+for name, expected in record['pool']['files'].items():
+    assert hashlib.sha256((pool / name).read_bytes()).hexdigest() == expected, name
+JOIN_FINAL
+    echo "JOINED-INPUT-RESULT: PASS ($STATIC_PASS checks, $ARCHIVES_N archives, $PATHS_N paths, $SCRIPTS_N scripts, $ALL_COMPARED_N frozen all-architecture witnesses)"
+    echo "note: cross-architecture comparison and producer repeat-build evidence were not executed by this x64 input mode"
+    exit 0
 fi
 
 # ------------------------------------------------------------------- c

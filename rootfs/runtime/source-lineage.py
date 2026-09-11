@@ -19,9 +19,38 @@ COMPOSITION_PATHS = frozenset({
     'rootfs/compose/compose-capture.sh', 'rootfs/compose/compose-install.sh',
     'build/src/release-manifest.ts', 'build/src/release-manifest.test.ts',
     'tests/rootfs-runtime/source_lineage_test.py', 'tests/rootfs-runtime/composition_test.py',
+    'tests/deb-package-gate.sh',
     'rootfs/runtime/select.py', 'tests/rootfs-runtime/selection_test.py',
     'rootfs/runtime/consumers.json',
     'rootfs/debian/packages/dmsetup.json', 'rootfs/debian/packages/libdevmapper1.02.1.json',
+    'docs/task/20260911-0145-b7-fresh-lifecycle-acceptance.md',
+    'docs/plan/20260911-0145-b7-fresh-lifecycle-acceptance.md',
+})
+
+# One reviewed producer transition, not a caller-extensible reuse policy.
+JOIN_ORIGINAL = dict(commit='e176876b733d675d1e20b40b42628cd4e18b197d',
+                     tree='7e8e8bc62b52f3d78263d717e186a07f0d3430a1', epoch=1789097968,
+                     version='0.1.0+gite176876b733d-1')
+JOIN_REBUILT = dict(commit='fb6c4597bb902f69d528bcdc3c8372f310c322b1',
+                    tree='cbf2fa8ff2c8fc03534b218c952a511b6a6ba392', epoch=1789157855,
+                    version='0.1.0+gitfb6c4597bb90-1')
+JOIN_DELTA_SHA = '25a8aa2051a6c6cc968554828a50a875781f9d5076f48127e2d295ab2110cbf1'
+JOIN_POOL_SHA = 'de26c7fd9d4e5b76ae10aa166659e2d047ede56088a79fd46024fb419a5b4087'
+JOIN_PRODUCTION_SHA = '3f1fe46df0aa7d686616288b655119baeccba12589951e121321388aa45f3f58'
+JOIN_INPUTS_SHA = '3fa9b2060d685c5e4f0beeed48ef4045621ccf1fb94344f800aab0e2ea4cae3e'
+JOIN_RECEIPTS = dict(original='fc79903fcd6dc8bf40191c5f4cdf4979d664dfd0315a53521d57af821f80d166',
+                     native='175f2dbe31b08bde91f8cf5a15680c9ec7fb38d6c2e0bda46edff5f24e558d09',
+                     deploy='267dff5433d4bc2b2a409a06e3019fd0f680f449c4866d60f8b3353b237a4683')
+JOIN_NATIVE = {
+    'mos-init': dict(bytes=1673848, sha256='738391aa650a58fb3819f52831f6affd57ddd17e357c2a161faaf39d800ec642'),
+    'mos-shutdown': dict(bytes=2047144, sha256='d2c5c9a6e2473c0125670031c79014c6ee946b834e2e26f32a65f38939e68b35'),
+}
+JOIN_DEPLOY_SHA = '5c86a35df5ce3a495fdd8390f40a6e3d099fac4f10346e53783481ccda281168'
+JOIN_DEPLOY_CONTROL = '43440d0b43a9e2ab31b1a9940dc072d5f83cc088bd5e0675089e61dd141f84b2'
+JOIN_CONSUMERS = frozenset({
+    'rootfs/runtime/source-lineage.py', 'rootfs/build.sh', 'build/src/release-manifest.ts',
+    'tests/deb-package-gate.sh', 'tests/rootfs-runtime/source_lineage_test.py',
+    'tests/rootfs-runtime/composition_test.py', 'build/src/release-manifest.test.ts',
     'docs/task/20260911-0145-b7-fresh-lifecycle-acceptance.md',
     'docs/plan/20260911-0145-b7-fresh-lifecycle-acceptance.md',
 })
@@ -140,7 +169,7 @@ def delta(package_root: Path, composition_root: Path, package: dict, composition
     return changes
 
 
-def pool_identity(pool: Path, arch: str, version: str) -> dict:
+def pool_identity(pool: Path, arch: str, version: str | dict) -> dict:
     require(arch in ('amd64', 'arm64'), 'invalid architecture')
     files = {p.relative_to(pool).as_posix(): sha(p) for p in sorted(pool.glob('pool/*.deb'))}
     require(files, 'empty pool')
@@ -157,8 +186,12 @@ def pool_identity(pool: Path, arch: str, version: str) -> dict:
     indexed = {}
     for paragraph in (pool / 'Packages').read_text().strip().split('\n\n'):
         fields = {}
+        key = None
         for line in paragraph.splitlines():
             if line.startswith((' ', '\t')):
+                if isinstance(version, dict):
+                    require(key is not None, 'joined index continuation')
+                    fields[key] += '\n' + line
                 continue
             key, value = line.split(': ', 1)
             require(key not in fields, 'duplicate package index field')
@@ -179,12 +212,35 @@ def pool_identity(pool: Path, arch: str, version: str) -> dict:
         fields = command(['dpkg-deb', '-f', str(archive), 'Package', 'Version', 'Architecture']).decode().splitlines()
         parsed = dict(line.split(': ', 1) for line in fields)
         p, v, a = (parsed[k] for k in ('Package', 'Version', 'Architecture'))
-        require(a in (arch, 'all') and v.rsplit('+', 1)[-1] == version.rsplit('+', 1)[-1], 'architecture or package stamp')
+        expected_version = version
+        if isinstance(version, dict):
+            require(p in version, 'unwitnessed package membership')
+            expected_version = version[p]
+        require(a in (arch, 'all') and v.rsplit('+', 1)[-1] == expected_version.rsplit('+', 1)[-1], 'architecture or package stamp')
         require(all(indexed[name][k] == parsed[k] for k in parsed), 'archive control/index mismatch')
+        if isinstance(version, dict):
+            # A forged Depends in Packages must not disagree with the real
+            # archive merely because Package/Version/Architecture still agree.
+            raw_control = command(['dpkg-deb', '-f', str(archive)]).decode()
+            actual_fields = {}
+            key = None
+            for line in raw_control.splitlines():
+                if line.startswith((' ', '\t')):
+                    require(key is not None, 'joined control continuation')
+                    actual_fields[key] += '\n' + line
+                elif line:
+                    key, value = line.split(': ', 1)
+                    require(key not in actual_fields, 'duplicate joined archive control field')
+                    actual_fields[key] = value
+            index_fields = {k: v for k, v in indexed[name].items() if k not in ('Filename', 'Size', 'MD5sum', 'SHA1', 'SHA256')}
+            require(index_fields == actual_fields, 'joined archive control/index fields')
+
         require(sum(len(row) == 6 and row[:3] == [p, v, a] and row[4:] == [sums[name], name] for row in manifest) == 1, 'manifest/control membership')
         packages.append(dict(package=p, version=v, architecture=a, archive=name, sha256=sums[name],
                              control_sha256=hashlib.sha256(control).hexdigest()))
     require(len(manifest) == len(packages) and len({p['package'] for p in packages}) == len(packages), 'mixed/duplicate pool')
+    if isinstance(version, dict):
+        require({p['package'] for p in packages} == set(version), 'witness package membership')
     return dict(files=dict(sorted(files.items())), packages=packages)
 
 
@@ -250,9 +306,194 @@ def frozen_receipt(path: Path | None, expected: str | None, root: Path, source: 
     return [expected]
 
 
+def producer_inputs(root: Path, entries: dict) -> dict:
+    """The reviewed primary/named contexts plus native PREPARE call chains."""
+    hooks = {'deploy': 'pkgs/mos-deploy', 'mosd': 'pkgs/mosd', 'mqtt': 'pkgs/mosd',
+             'podman': 'pkgs/podman', 's905x5m-bluetooth': 'boards/s905x5m'}
+    result = {}
+    for path in sorted(entries):
+        if not path.endswith('/producer.env'):
+            continue
+        producer = Path(path).parent.name
+        text = (root / path).read_text()
+        contexts = [str(Path(path).parent), 'build-env', 'Makefile']
+        for value in re.findall(r'^BUILD_CONTEXTS="([^"\n]*)"$', text, re.M):
+            contexts.extend(relative(token.split('=', 1)[1]) for token in value.split())
+        prepare = re.findall(r'^PREPARE="([^"\n]*)"$', text, re.M)
+        require(len(prepare) <= 1, 'duplicate PREPARE')
+        if prepare:
+            require(producer in hooks and prepare == ['prepare.sh'], 'unreviewed PREPARE hook')
+            contexts.append(hooks[producer])
+        inputs = {name: row for name, row in entries.items()
+                  if any(c == '.' or name == c or name.startswith(c + '/') for c in contexts)
+                  or (name.startswith('pkgs/mosd/') and name.endswith('/Cargo.toml'))}
+        require(inputs and path in inputs, 'empty producer inputs')
+        result[producer] = dict(contexts=sorted(set(contexts)), prepare=prepare,
+                                inputs=inputs, packages=re.findall(r'^PACKAGES="([^"\n]+)"$', text, re.M))
+    require(len(result) == 15, 'reviewed producer set changed')
+    return result
+
+
+def join_delta(original_root: Path, rebuilt_root: Path, original: dict, rebuilt: dict,
+               before: dict, after: dict) -> tuple[list, dict]:
+    require(original == JOIN_ORIGINAL and rebuilt == JOIN_REBUILT, 'unreviewed producer sources')
+    command(['git', '-C', str(rebuilt_root), 'merge-base', '--is-ancestor', original['commit'], rebuilt['commit']])
+    changes = [dict(path=name, before=before.get(name), after=after.get(name))
+               for name in sorted(before.keys() | after.keys()) if before.get(name) != after.get(name)]
+    require(hashlib.sha256(canonical(changes)).hexdigest() == JOIN_DELTA_SHA, 'unreviewed producer delta')
+    old_inputs, new_inputs = producer_inputs(original_root, before), producer_inputs(rebuilt_root, after)
+    require(old_inputs.keys() == new_inputs.keys(), 'producer membership changed')
+    proofs = {}
+    changed_producers = set()
+    for name, old in old_inputs.items():
+        new = new_inputs[name]
+        if old != new:
+            changed_producers.add(name)
+        for consumer in JOIN_CONSUMERS:
+            require(consumer not in old['inputs'] and consumer not in new['inputs'], 'joined consumer enters PREPARE/context')
+        proofs[name] = dict(source_commit=rebuilt['commit'] if name == 'deploy' else original['commit'],
+                            before_sha256=hashlib.sha256(canonical(old)).hexdigest(),
+                            after_sha256=hashlib.sha256(canonical(new)).hexdigest())
+    require(changed_producers == {'deploy'}, 'unreviewed changed producer/PREPARE/context')
+    # Assembly consumers and test/history changes belong to the reviewed delta,
+    # but do not masquerade as package compiler inputs.
+    for row in changes:
+        path = row['path']
+        require(path.startswith(('pkgs/mos-deploy/', 'tests/', 'docs/')) or path in COMPOSITION_PATHS
+                or path in ('build/src/kernel-package.ts', 'build/src/kernel-payload.test.ts', 'pkgs/mos-boot/initramfs.sh'),
+                'unattributed reviewed delta')
+    return changes, proofs
+
+
+def rebuilt_witness(path: Path, kind: str, root: Path, entries: dict) -> dict:
+    # The fixed receipt digest identifies the reviewed execution; source, steps,
+    # tools, input objects and actual output bytes still have to verify below.
+    require(sha(path) == JOIN_RECEIPTS[kind], 'unreviewed or mutated producer witness')
+    value = load(path)
+    require(value['status'] == 'success' and value['exitCode'] == 0 and value['finishedAt']
+            and value['activePid'] is None and value['activeStep'] is None, 'failed/incomplete producer witness')
+    require(value['verifiedSource'] == {k: JOIN_REBUILT[k] for k in ('commit', 'tree', 'epoch')}
+            and value['sourceCommit'] == JOIN_REBUILT['commit'] and value['sourceTree'] == JOIN_REBUILT['tree']
+            and value['version'] == JOIN_REBUILT['version'] and value['sourceEpoch'] == JOIN_REBUILT['epoch'],
+            'producer witness source/version/epoch')
+    require(value['environment']['SOURCE_DATE_EPOCH'] == str(JOIN_REBUILT['epoch']), 'producer epoch input')
+    expected = (['bash', 'pkgs/mos-deploy/hack/build-deb.sh', '--producer', 'boot', '--bins',
+                 'mos-init mos-shutdown', '--arch', 'amd64', '--stage', value['outputDirectory']]
+                if kind == 'native' else ['bash', 'build-env/deb/build.sh', '--producer', 'deploy', '--arch', 'amd64'])
+    step_name = 'native-build' if kind == 'native' else 'deploy-build'
+    require(sum(s['name'] == step_name and s['argv'] == expected and s['exitCode'] == 0 for s in value['steps']) == 1,
+            'producer command/target/membership')
+    for s in value['steps']:
+        require(sha(Path(s['log'])) == hex_id(s['logSha256']), 'producer step log changed')
+    if 'preparationReceipt' in value:
+        require(sha(Path(value['preparationReceipt']['path'])) == hex_id(value['preparationReceipt']['sha256']), 'producer preparation evidence')
+    for key in ('runner', 'wrapper'):
+        require(sha(Path(value[key]['path'])) == hex_id(value[key]['sha256']), 'producer invocation bytes changed')
+    tools = [value['toolIdentity']] if kind == 'native' else [value['tool-rust'], value['tool-deb']]
+    for tool in tools:
+        actual = json.loads(command(['docker', 'image', 'inspect', tool['id']]))
+        require(len(actual) == 1 and actual[0]['Id'] == tool['id'] and actual[0]['Architecture'] == tool['architecture'] == 'amd64',
+                'producer actual tool identity')
+    for row in value.get('sourceInputs', []):
+        relative_path = Path(row['path']).relative_to(value['sourceDirectory']).as_posix()
+        require(relative_path in entries and sha(root / relative_path) == hex_id(row['sha256']), 'producer input bytes')
+    outputs = value['outputs'] if kind == 'native' else value['packageOutputs']
+    require(len(outputs) == (2 if kind == 'native' else 1), 'unexpected producer output membership')
+    for row in outputs:
+        at = Path(row['path']); info = at.lstat()
+        require(stat.S_ISREG(info.st_mode) and info.st_size == row['bytes'] and sha(at) == hex_id(row['sha256']), 'producer output bytes')
+        if kind == 'native':
+            require(at.name in JOIN_NATIVE and {k: row[k] for k in ('bytes', 'sha256')} == JOIN_NATIVE[at.name]
+                    and stat.S_IMODE(info.st_mode) == 0o755, 'native output identity/mode')
+    if kind == 'native':
+        require({Path(r['path']).name for r in outputs} == set(JOIN_NATIVE), 'missing native output')
+    else:
+        require(outputs[0]['sha256'] == JOIN_DEPLOY_SHA, 'rebuilt deploy output')
+    return value
+
+
+def production_identity(root: Path, entries: dict, native: dict, deploy: dict) -> dict:
+    names = ['pkgs/mos-deploy/hack/build-deb.sh', 'pkgs/mos-deploy/Cargo.lock', 'pkgs/mos-deploy/Cargo.toml',
+             'pkgs/mos-deploy/deb/deploy/producer.env', 'pkgs/mos-deploy/deb/deploy/prepare.sh',
+             'pkgs/mos-deploy/deb/deploy/Dockerfile', 'build-env/from.sh', 'build-env/images.env']
+    return dict(architecture='amd64', target='x86_64-unknown-linux-gnu',
+                source=JOIN_REBUILT, epoch_input=JOIN_REBUILT['epoch'],
+                inputs={name: dict(entries[name], sha256=sha(root / name)) for name in names},
+                tools={'native': native['toolIdentity']['id'], 'deploy': deploy['tool-rust']['id'], 'packaging': deploy['tool-deb']['id']},
+                native_bins=['mos-init', 'mos-shutdown'], deploy_bins=['mos-deploy'],
+                cargo_flags=['--release', '--locked', '--target', 'x86_64-unknown-linux-gnu'],
+                shutdown_target_flags=['-C', 'target-feature=+crt-static', '-C', 'strip=symbols'])
+
+
+def validate_join(join: dict, pool: dict, original: dict, arch: str) -> dict:
+    keys(join, 'schema rebuilt_source approved_delta producer_inputs original_pool witnesses mapping native production')
+    require(join['schema'] == 'mos/producer-join/v1' and arch == 'amd64'
+            and original == JOIN_ORIGINAL and join['rebuilt_source'] == JOIN_REBUILT, 'producer join source/architecture')
+    require(join['witnesses'] == JOIN_RECEIPTS, 'producer join witnesses')
+    require(hashlib.sha256(canonical(join['production'])).hexdigest() == JOIN_PRODUCTION_SHA, 'producer join tool/recipe/target/flags')
+    require(hashlib.sha256(canonical(join['approved_delta'])).hexdigest() == JOIN_DELTA_SHA, 'producer join reviewed delta')
+    require(hashlib.sha256(canonical(join['original_pool'])).hexdigest() == JOIN_POOL_SHA, 'producer join original pool')
+    proofs = join['producer_inputs']; require(isinstance(proofs, dict) and len(proofs) == 15, 'producer join inputs')
+    require(hashlib.sha256(canonical(proofs)).hexdigest() == JOIN_INPUTS_SHA, 'producer join input attribution')
+    for name, row in proofs.items():
+        keys(row, 'source_commit before_sha256 after_sha256')
+        hex_id(row['before_sha256']); hex_id(row['after_sha256'])
+        require(row['source_commit'] == (JOIN_REBUILT if name == 'deploy' else JOIN_ORIGINAL)['commit'], 'producer source attribution')
+        require((row['before_sha256'] != row['after_sha256']) == (name == 'deploy'), 'producer reuse input equality')
+    old = {r['package']: r for r in join['original_pool']['packages']}
+    current = {r['package']: r for r in pool['packages']}
+    require(len(current) == len(pool['packages']) and set(current) == set(old), 'joined package membership')
+    expected_mapping = {name: (JOIN_REBUILT if name == 'mos-deploy' else JOIN_ORIGINAL)['commit'] for name in old}
+    require(join['mapping'] == expected_mapping, 'joined package source mapping')
+    for name, row in current.items():
+        if name == 'mos-deploy':
+            require(row['sha256'] == JOIN_DEPLOY_SHA and row['version'] == JOIN_REBUILT['version']
+                    and row['architecture'] == 'amd64' and row['control_sha256'] == JOIN_DEPLOY_CONTROL
+                    and row['archive'] == 'pool/mos-deploy_' + JOIN_REBUILT['version'] + '_amd64.deb', 'joined deploy identity')
+        else:
+            require(row == old[name], 'reused archive/control identity changed')
+    require(join['native'] == JOIN_NATIVE, 'joined native exports')
+    return join
+
+
+def create_join(composition_root: Path, original_root: Path, pool: Path, arch: str, epoch: int,
+                receipt: Path | None, receipt_sha: str | None, request: Path, request_sha: str) -> dict:
+    require(sha(request) == hex_id(request_sha), 'join input digest')
+    inputs = keys(load(request), 'schema original_pool rebuilt_source native_receipt deploy_receipt pool_files')
+    require(inputs['schema'] == 'mos/producer-join-inputs/v1' and arch == 'amd64' and epoch == 1577836800, 'join input schema/architecture/epoch')
+    rebuilt_root = Path(inputs['rebuilt_source'])
+    c, after = identity(composition_root); p, before = identity(original_root); b, middle = identity(rebuilt_root)
+    p['version'] = command(['bash', str(original_root / 'build-env/deb/version.sh')]).decode().strip()
+    b['version'] = command(['bash', str(rebuilt_root / 'build-env/deb/version.sh')]).decode().strip()
+    approved_delta, proofs = join_delta(original_root, rebuilt_root, p, b, before, middle)
+    changes = delta(rebuilt_root, composition_root, b, c, middle, after)
+    require(all(row['path'] in JOIN_CONSUMERS for row in changes), 'unapproved joined consumer delta')
+    original_pool = pool_identity(Path(inputs['original_pool']), arch, p['version'])
+    require(receipt_sha == JOIN_RECEIPTS['original'], 'unreviewed original receipt')
+    frozen_receipt(receipt, receipt_sha, original_root, p, before, arch, original_pool)
+    native = rebuilt_witness(Path(inputs['native_receipt']), 'native', rebuilt_root, middle)
+    deploy = rebuilt_witness(Path(inputs['deploy_receipt']), 'deploy', rebuilt_root, middle)
+    versions = {r['package']: b['version'] if r['package'] == 'mos-deploy' else r['version'] for r in original_pool['packages']}
+    joined_pool = pool_identity(pool, arch, versions)
+    require(joined_pool['files'] == inputs['pool_files'], 'joined pool index/archive inputs changed')
+    output = Path(deploy['packageOutputs'][0]['path'])
+    actual = next(r for r in joined_pool['packages'] if r['package'] == 'mos-deploy')
+    require(actual['control_sha256'] == hashlib.sha256(command(['dpkg-deb', '--ctrl-tarfile', str(output)])).hexdigest(), 'deploy control witness')
+    join = dict(schema='mos/producer-join/v1', rebuilt_source=b, approved_delta=approved_delta,
+                producer_inputs=proofs, original_pool=original_pool, witnesses=JOIN_RECEIPTS,
+                mapping={name: (b if name == 'mos-deploy' else p)['commit'] for name in versions},
+                native={Path(r['path']).name: {k: r[k] for k in ('bytes', 'sha256')} for r in native['outputs']},
+                production=production_identity(rebuilt_root, middle, native, deploy))
+    record = dict(schema='mos/source-lineage/join-v1', package_source=p, composition_source=c,
+                  architecture=arch, root_epoch=epoch, pool=joined_pool,
+                  receipt_sha256=sorted(JOIN_RECEIPTS.values()), delta=changes, producer_join=join)
+    return validate(record, arch, epoch)
+
+
 def validate(record: dict, arch: str, epoch: int) -> dict:
-    keys(record, 'schema package_source composition_source architecture root_epoch pool receipt_sha256 delta')
-    require(record['schema'] == 'mos/source-lineage/v1' and record['architecture'] == arch, 'schema/architecture mismatch')
+    joined = record.get('schema') == 'mos/source-lineage/join-v1'
+    keys(record, 'schema package_source composition_source architecture root_epoch pool receipt_sha256 delta' + (' producer_join' if joined else ''))
+    require(record['schema'] in ('mos/source-lineage/v1', 'mos/source-lineage/join-v1') and record['architecture'] == arch, 'schema/architecture mismatch')
     require(arch in ('amd64', 'arm64'), 'invalid architecture')
     natural(record['root_epoch']); require(record['root_epoch'] == epoch, 'root epoch mismatch')
     p = keys(record['package_source'], 'commit tree epoch version')
@@ -290,12 +531,16 @@ def validate(record: dict, arch: str, epoch: int) -> dict:
         require(isinstance(row['package'], str) and re.fullmatch('[a-z0-9][a-z0-9+.-]+', row['package']) and row['package'] not in names, 'package name/duplicate')
         names.add(row['package'])
         require(row['architecture'] in (arch, 'all') and isinstance(row['version'], str)
-                and row['version'].rsplit('+', 1)[-1] == p['version'].rsplit('+', 1)[-1], 'package architecture/stamp mismatch')
+                and row['version'].rsplit('+', 1)[-1] == (JOIN_REBUILT if joined and row['package'] == 'mos-deploy' else p)['version'].rsplit('+', 1)[-1], 'package architecture/stamp mismatch')
         require(re.fullmatch(r'pool/[^/]+\.deb', row['archive']) is not None, 'archive path')
         hex_id(row['sha256']); hex_id(row['control_sha256'])
         require(pool['files'].get(row['archive']) == row['sha256'] and row['archive'] not in expected, 'pool archive mismatch')
         expected.add(row['archive'])
     require(set(pool['files']) == expected, 'lineage pool membership')
+    if joined:
+        require(record['receipt_sha256'] == sorted(JOIN_RECEIPTS.values()) and epoch == 1577836800, 'join receipt/root epoch')
+        require(all(path in JOIN_CONSUMERS for path in paths), 'unapproved joined consumer delta')
+        validate_join(record['producer_join'], pool, p, arch)
     return record
 
 
@@ -322,11 +567,19 @@ def main() -> None:
     parser.add_argument('--epoch', type=int, required=True)
     parser.add_argument('--receipt', type=Path)
     parser.add_argument('--receipt-sha256')
+    parser.add_argument('--producer-join', type=Path)
+    parser.add_argument('--producer-join-sha256')
     parser.add_argument('--output', type=Path, required=True)
     args = parser.parse_args()
     try:
-        record = create(args.composition_source, args.package_source or args.composition_source,
-                        args.pool, args.arch, args.epoch, args.receipt, args.receipt_sha256)
+        if args.producer_join is not None:
+            require(args.package_source is not None, 'join requires original package source')
+            record = create_join(args.composition_source, args.package_source, args.pool, args.arch, args.epoch,
+                                 args.receipt, args.receipt_sha256, args.producer_join, args.producer_join_sha256)
+        else:
+            require(args.producer_join_sha256 is None, 'join digest without input')
+            record = create(args.composition_source, args.package_source or args.composition_source,
+                            args.pool, args.arch, args.epoch, args.receipt, args.receipt_sha256)
         args.output.write_bytes(canonical(record))
         print(record['package_source']['version'])
     except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError) as error:

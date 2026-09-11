@@ -293,10 +293,12 @@ pool_stamps=$(grep -v '^#' "$POOL_DIR/manifest.txt" | cut -f2 | sed 's/^.*+//' |
 pool_stamp=${pool_stamps% }
 case "$pool_stamp" in
 *' '*)
-    pool_refusal "$POOL_DIR/manifest.txt carries more than one git stamp: $pool_stamp. The pool carries one stamp across every producer by rule; two stamps mean it was half-rebuilt across a tree change."
+    [ -n "${MOS_ROOTFS_PRODUCER_JOIN:-}" ] || pool_refusal "$POOL_DIR/manifest.txt carries more than one git stamp: $pool_stamp. The pool carries one stamp across every producer by rule; two stamps mean it was half-rebuilt across a tree change."
     ;;
 esac
 PACKAGE_SOURCE=${MOS_ROOTFS_PACKAGE_SOURCE:-$REPO_ROOT}
+[ -z "${MOS_ROOTFS_PRODUCER_JOIN_SHA256:-}" ] || [ -n "${MOS_ROOTFS_PRODUCER_JOIN:-}" ] ||
+    pool_refusal "producer join digest requires an explicit joined input."
 # Verify the actual clean sources and frozen receipt before executing a producer
 # version script or resolving any container. An explicit source is not a stamp override.
 LINEAGE_ARGS=()
@@ -306,12 +308,15 @@ fi
 if [ -n "${MOS_ROOTFS_PACKAGE_RECEIPT:-}" ]; then
     LINEAGE_ARGS+=(--receipt "$MOS_ROOTFS_PACKAGE_RECEIPT" --receipt-sha256 "${MOS_ROOTFS_PACKAGE_RECEIPT_SHA256:-}")
 fi
+if [ -n "${MOS_ROOTFS_PRODUCER_JOIN:-}" ]; then
+    LINEAGE_ARGS+=(--producer-join "$MOS_ROOTFS_PRODUCER_JOIN" --producer-join-sha256 "${MOS_ROOTFS_PRODUCER_JOIN_SHA256:-}")
+fi
 LINEAGE_STAGE="$OUT_DIR/source-lineage.json"
 tree_version=$(python3 "$REPO_ROOT/rootfs/runtime/source-lineage.py" \
     --composition-source "$REPO_ROOT" --pool "$POOL_DIR" --arch "$MOS_ARCH" \
     --epoch "$SQUASHFS_TIME" --output "$LINEAGE_STAGE" "${LINEAGE_ARGS[@]}")
 tree_stamp=${tree_version##*+}
-[ "$pool_stamp" = "$tree_stamp" ] ||
+[ -n "${MOS_ROOTFS_PRODUCER_JOIN:-}" ] || [ "$pool_stamp" = "$tree_stamp" ] ||
     pool_refusal "the $MOS_ARCH pool was built at stamp '$pool_stamp' and the verified package source is '$tree_stamp'."
 echo "pool: $POOL_DIR, $pool_debs archive(s) at stamp $pool_stamp"
 
