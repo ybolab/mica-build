@@ -146,6 +146,20 @@ class SourceLineageTest(unittest.TestCase):
         r = self.invoke(explicit=False, root=self.package)
         self.assertEqual(r.returncode, 0, r.stderr)
 
+    def test_exact_feature_resource_delta_preserves_package_identity(self):
+        paths = ['rootfs/runtime/consumers.json', 'rootfs/debian/packages/dmsetup.json',
+                 'rootfs/debian/packages/libdevmapper1.02.1.json']
+        for name in paths:
+            path = self.composition / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(REPO / name, path)
+        self.commit(self.composition)
+        result = self.invoke()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        record = json.loads(self.output.read_bytes())
+        self.assertEqual(record['package_source'], self.source)
+        self.assertEqual([row['path'] for row in record['delta']], sorted(['rootfs/runtime/compose.py', *paths]))
+
     def test_selector_delta_cannot_enter_a_package_context(self):
         producer = self.package / 'rootfs/packages-src/fixture/producer.env'
         producer.parent.mkdir(parents=True)
@@ -162,6 +176,30 @@ class SourceLineageTest(unittest.TestCase):
         composition, after = helper.identity(consumer)
         with self.assertRaisesRegex(ValueError, 'composition path enters producer context: rootfs/runtime/select.py'):
             helper.delta(self.package, consumer, package, composition, before, after)
+
+    def test_feature_resource_delta_cannot_enter_a_package_context(self):
+        producer = self.package / 'rootfs/packages-src/fixture/producer.env'
+        producer.parent.mkdir(parents=True)
+        producer.write_text('BUILD_CONTEXTS="runtime=rootfs/runtime locks=rootfs/debian/packages"\n')
+        self.commit(self.package)
+        consumer = self.work / 'context-consumer'
+        self.must('git', 'clone', '-q', self.package, consumer)
+        spec = importlib.util.spec_from_file_location('source_lineage_context', HELPER)
+        helper = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(helper)
+        package, before = helper.identity(self.package)
+        for name in ('rootfs/runtime/consumers.json', 'rootfs/debian/packages/dmsetup.json',
+                     'rootfs/debian/packages/libdevmapper1.02.1.json'):
+            with self.subTest(path=name):
+                path = consumer / name
+                path.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(REPO / name, path)
+                self.commit(consumer)
+                composition, after = helper.identity(consumer)
+                with self.assertRaisesRegex(ValueError, 'composition path enters producer context:'):
+                    helper.delta(self.package, consumer, package, composition, before, after)
+                path.unlink()
+                self.commit(consumer)
 
     def test_dirty_and_hidden_checkout_changes_refuse(self):
         path = self.package / 'build-env/images.env'

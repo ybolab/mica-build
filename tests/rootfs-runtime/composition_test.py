@@ -404,6 +404,34 @@ class CompositionTest(unittest.TestCase):
         for path in anchors:
             self.assertEqual(self.f.out.joinpath(path[1:]).read_bytes(), (REPO / 'rootfs/overlay' / path[1:]).read_bytes())
 
+    def readline_configuration(self):
+        policy = json.loads((REPO / 'rootfs/runtime/consumers.json').read_text())
+        rule = next(r for r in policy['consumers']['mos-wifi']['roots'] if '/etc/inputrc' in r['paths'])
+        self.f.rules['consumers']['mos-system']['roots'].append(rule)
+        self.f.rules_path.write_text(json.dumps(self.f.rules))
+        self.f.write('/etc/inputrc', b'fixture readline defaults\n')
+        self.capture()
+
+    def test_readline_generated_configuration_binds_capture_and_final_bytes(self):
+        self.readline_configuration()
+        r = self.compose()
+        self.assertEqual(r.returncode, 0, r.stderr)
+        report = json.loads(self.f.report.read_text())
+        row = report['provenance']['files']['/etc/inputrc']
+        digest = hashlib.sha256(self.f.root.joinpath('etc/inputrc').read_bytes()).hexdigest()
+        self.assertEqual(row['configured']['sha256'], digest)
+        self.assertEqual(row['final']['sha256'], digest)
+        self.assertEqual([row['final'][k] for k in ('mode', 'uid', 'gid')], [0o644, 0, 0])
+        self.assertEqual(self.f.command('verify').returncode, 0)
+
+    def test_lost_generated_readline_configuration_refuses(self):
+        self.readline_configuration()
+        self.f.root.joinpath('etc/inputrc').unlink()
+        r = self.compose()
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn('missing path: /etc/inputrc', r.stderr)
+        self.assertFalse(self.f.report.exists())
+
     def public_metadata(self, marker=None):
         producer = 'rootfs/build.sh public-meta staging; compose-install.sh meta_install'
         rules = json.loads((REPO / 'rootfs/runtime/consumers.json').read_text())
