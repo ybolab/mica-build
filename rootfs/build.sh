@@ -233,15 +233,10 @@ rm -f "$OUT_DIR/mosd-build.txt"
 # Only public update configuration belongs in the user-space root. Boot and
 # content trust anchors belong to the independent authenticated kernel package.
 META_DIR="${MOS_META_DIR:-$REPO_ROOT/meta}"
+bash "$REPO_ROOT/rootfs/scripts/validate-public-meta.sh" "$META_DIR"
 META_STAGE="$(mktemp -d "$OUT_DIR/meta-public.XXXXXX")"
 mkdir -p "$META_STAGE/usr/share/mos/meta/updates"
 manifest="$META_DIR/updates/manifest.json"
-[ -f "$manifest" ] && [ ! -L "$manifest" ] || {
-    echo "error: public update configuration is missing: $manifest" >&2; exit 1;
-}
-if grep -E 'BEGIN .*PRIVATE KEY|"privateKey"|"private_key"' "$manifest" >/dev/null; then
-    echo 'error: update configuration contains private key material' >&2; exit 1
-fi
 install -m 0644 "$manifest" "$META_STAGE/usr/share/mos/meta/updates/manifest.json"
 if [ -s "$META_DIR/GENERATED" ]; then
     install -m 0644 "$META_DIR/GENERATED" "$META_STAGE/usr/share/mos/meta/GENERATED"
