@@ -15,11 +15,11 @@ and the distinct pending runtime/physical-board rows. No new S905 image.
 
 ## ActiveForm
 
-Preparing and verifying the B7 acceptance checkpoint.
+Executing the granted joint wave; W0 shared packages are complete and collected.
 
 ## Dependencies
 
-- **blocked by**: final integrated source and exact L2 milestone job allocation
+- **blocked by**: remaining W1-W4 artifact and acceptance predecessors
 - **blocks**: L2 B final acceptance and D historical reconciliation
 
 ## Notes
@@ -615,3 +615,216 @@ phases and independent real-traffic/reboot/reset rows remain mandatory.
 
 Final source gates: host-toolchain lint 424/424, docs and staged diff checks
 passed in `launcher-final-gates`. No full unrelated suite was replayed.
+
+## Reviewed upstream and input-readiness continuation (2026-09-11)
+
+L2 accepted the caller/geometry/consumer/R1 checkpoints and merged reviewed
+`6049df8f` into LOCAL B `53fc261f66aba95b9b0b03b4edbadadfb9ffc6e6`. At a clean
+boundary, verified that exact ref/tree and merged it with `--no-ff` as
+`53eeee9dd2df23cc9a191e9e5d0f7b67703e11e0`. Its tree
+`cc020280a5f6a9855847836688480cacbbce181b` equals the already-tested API
+checkpoint `d691708827994a36b9f2015c503c785d61120860`; no source conflict or
+test-relevant change occurred. Ancestry checks passed. Merge evidence:
+`/tmp/mos-b7-upstream.x9SubY/merge.json`, SHA-256
+`08691ae9db26f6810845bf2067ea49157e623cd19e974d5325abfe0a8d28ac79`.
+The separately committed API correction still awaits L2 review; no unchanged
+suite or accepted ARM64 probe was replayed. Corrective count remains one,
+resolved. A/C merges are authorized after this remaining review boundary;
+J remains unformed.
+
+The plan now carries the bounded joint package/root recipe and actual pre-J
+input inventory: `/tmp/mos-b7-wave-inputs.DalRgH/readiness.json`, SHA-256
+`d1839b7c4f7526bbfed49d4e7dfdd1f72a9e7622420b81a13bf26a9f6fd65876`.
+It records 233 source/config/lock files, six required C production blobs and
+separate C verifier identities; current full-feature dev resolution is 11/11/14
+packages for x64/virt/CX3576. All three selected pools and final root/native/image
+outputs are absent. Eleven local tool images were resolved to actual IDs;
+arm64 OpenSSL is absent with exact stderr retained, while the current host
+verity tool uses the available amd64 image. No tool install/build was attempted.
+
+All 42 entries of A's approved compiled kernel manifest match actual bytes.
+The 28 recorded kernel-source/support-input files match between compiled
+`38a362cd` and A-final `e4154126`; B's missing A patch/fixture differences remain
+expected until integration. Actual historical firmware bytes also match the
+reported segment hash. These are verified reuse candidates, not J-qualified
+components: actual J equality, compiler/package evidence and explicit joint
+trust/input mappings remain required. No live-main source or private signing
+key was read; no old payload was relabeled.
+
+Original bounded inventory commands/streams/exit metadata are retained. A
+filename collision caused the runner to replace the first detailed inventory
+with its own completion metadata; the final record was reconstructed from
+hash-checked captured outputs and unchanged sources/artifacts, without repeating
+Docker or resolver commands. Original and reconstruction evidence are preserved.
+
+No heavy package/root/kernel/image/guest/cold job started. The plan distinguishes
+shared `all` package production from independent architecture jobs, preserves
+two equal-input virt roots and one image per required board, and lists exact
+missing J/package/kernel/trust/service/job inputs. Full runtime, authenticated
+fresh-image scans, extraction equivalence, cold proof and physical rows remain
+open. Only the existing own task/plan are updated; no global status changes.
+
+## Joint integration checkpoint (2026-09-11)
+
+L2 accepted `d6917088`; no reviewed source defect remains. Under the existing
+joint-wave grant, cleanly synchronized exact LOCAL B `c2861fdf` with no-ff merge
+`a4e48a6f`, then merged exact A `e4154126` as `6e8e6bf1` and full C `48acef7f`
+as `e176876b733d675d1e20b40b42628cd4e18b197d`. Candidate J is that final clean
+merge, tree `7e8e8bc62b52f3d78263d717e186a07f0d3430a1`, awaiting L2 review and
+the one-time L1 joint review. All original authorized ancestors remain present.
+Later task/plan commits do not relabel the payload source or package stamps.
+
+Actual conflicts: both indexes in A and C, plus C's single existing
+acceptProvenance import. Index unions retain every parent row verbatim and
+exactly once (114 task / 67 plan rows); the test file equals reviewed B7 after
+retaining its required import. No new production code or test was introduced.
+C's six mandatory production and two verifier blobs remain exact. Every one of
+1827 non-index files matches an authorized source input. Proof:
+`/tmp/mos-b7-joint.rggwkleq/joint-source-proof.json`, SHA-256
+`03e033fb6e9163d4cbaa6090a2e3a7c2027e65bb46ee34ec1ed20c019fdff4ee`.
+PMA-CR reviewed these concrete unions/source bindings with no introduced finding;
+corrective count remains one, resolved.
+
+On clean J: affected non-publication typecheck/test gate passed 3 tests / 45
+assertions (48 explicitly filtered), actual pinned sourceIdentity returned J
+and dirty=false, and docs/merge-diff checks passed. No unchanged whole suite or
+ARM64 route was repeated. A's original full staged diff check remains exit 2 on
+unchanged patch-context whitespace; index-only check passed and reviewed blob
+equality is proven. Original merge failures, conflict stages and external helper
+syntax diagnostics remain in `/tmp/mos-b7-joint.rggwkleq/`; the plan gives their
+exact classification. No failing aggregate is presented as PASS.
+
+Board-keyed candidate job manifest:
+`/tmp/mos-b7-joint.rggwkleq/J-job-inputs.json`, SHA-256
+`c8d5eacaccc4dec388e3647d4b66e450da99625691779c94e6d4587ad1aaefbc`.
+It binds J/board/profile/radios/locks/context trees/tools to commands and planned
+outputs for x64, virt-arm64 and CX3576. Selected package resolution remains
+11/11/14. Fresh package pools, selected deb/index hashes, native/root/image bytes
+are outputs of the named jobs, not fabricated prerequisites or old stamps.
+The 28 CX kernel inputs match the compiled input at J; the preserved fixed
+toolchain image also yielded GCC 13.3.0 and its complete package inventory via
+a bounded read-only metadata query. Full joint trust/firmware reuse binding is
+still pending; x64/virt external kernel/firmware handoffs are absent.
+
+The plan identifies direct Docker resource gaps at mosd/native compilation and
+boot packaging/tool-tag routing. They require exact task execution-envelope
+binding in L2's job allocation; no production scripts or shared tags were edited.
+Missing public trust/signing mappings and controlled service peers/guest inputs
+remain explicit. No private signing key, live main source or physical disk was
+accessed. No production package/root/kernel/image/guest/cold job started, and no
+global status changed. The task remains open for actual milestone acceptance.
+
+## Final execution grant and W0 collection (2026-09-11 09:04 UTC)
+
+L1 approved J `e176876b733d675d1e20b40b42628cd4e18b197d`, tree
+`7e8e8bc62b52f3d78263d717e186a07f0d3430a1`, and the automatic W0-W4
+phase DAG at 08:43 UTC. This supersedes the earlier pending review/allocation
+rows. No additional producer input/output approval is pending. L2 B remains the
+only report/collection endpoint; L1 issue `10nksom6` coordinates the campaign.
+
+W0 ran the original `build-env/deb/build.sh --producer NAME --arch all` driver
+once each for `ca-trust`, `profile`, `system`, `wifi`, and `bluetooth`, with
+`timeout --signal=TERM --kill-after=30s 3600` per producer. All five exited 0.
+Both original `build-env/deb/repo.sh --arch ARCH` invocations exited 0 under
+300-second timeouts. Seven shared packages carry the actual J-derived version
+`0.1.0+gite176876b733d-1`; both pools contain identical package bytes.
+
+The independent clean checkout is `W/sources/shared`, where
+`W=_out/wave/e176876b733d675d1e20b40b42628cd4e18b197d` in this worktree.
+It has its own Git metadata and no object alternates. The final source status
+check exited 0 with empty output. Read-only copies of both completed pools and
+indexes are at `W/frozen-pools/shared-all`; they are W1 inputs, not a completed
+selected architecture pool or root/image qualification.
+
+W0 started at 09:03:40 UTC; its first actual producer started at 09:04:21 UTC,
+PID `2401014`. It finished at 09:04:53 UTC, exit 0. Persistent tmux
+`75btxdqb-7e0f1b`, pane `%101`, shell PID `2400503`, orchestrator PID `2400556`.
+No child remained when collected. Exact step argv/PIDs/UTC/log hashes/exit codes
+and all output identities are in `W/metadata/W0.json`, SHA256
+`87d721d6af0868d235b7cc8e5726d71bef0f8fcc519da7700737db99f7d8aad4`.
+The frozen delivery is `W/metadata/W0-delivery.json`, SHA256
+`e1daa56c9314ca0df13d71837a876abb006e891edca02a96984e58313cff0213`.
+
+Only the owned remote builder `mos-wave-75btxdqb-x64` and its labelled state
+volume were created. The approved BuildKit image and emulator hashes matched.
+BuildKit runs under 4 CPU/10 GiB/no-swap and worker parallelism 4. Sequential
+direct index containers use 3 CPU/8 GiB while the idle daemon is limited to
+1 CPU/2 GiB; the aggregate stays within the same job envelope. The owned daemon
+and state are retained for W1. No shared builder, host emulation or tool tag was
+modified. Task-private wrapper forwarding checks passed for original arguments,
+read-only source mounts, writable caches, names, network and private tool tags.
+
+The first task-local recorder exited 1 before any producer/resource creation:
+`AttributeError: module 'hashlib' has no attribute 'file_digest'`. Its original
+script and log remain under `W/tools/w0-startup-original.py` and
+`W/logs/W0/orchestrator-startup-python.log`, with metadata in
+`W/metadata/W0-startup-python.json`. Streaming SHA256 corrected only this private
+recorder. No producer was repeated and frozen product source did not change.
+Public trust hashes and private-key 0600 permissions were captured without
+reading private contents; signing pairing and public-meta validation remain
+required before their consuming phases.
+
+## W1 completion and W2 capture refusal (2026-09-11)
+
+Both architecture producer sets completed at immutable J. Only native export
+and final index execution required task-local resource-envelope recovery;
+successful producers were not repeated. The amd64 and arm64 pools contain 15
+and 16 packages, respectively, and both native pairs and pools are frozen.
+Evidence is in `W/metadata/W1/recovery-x64-v1/result.json` and
+`W/metadata/W1/recovery-arm-v1/result-continue-v1.json`. Actual ARM native files
+are ELF64/AArch64; their identities are in the adjacent `native-elf.json`.
+
+Fixed Debian cache acquisition preserved the original 600-second timeout,
+HTTP/2 connection resets and private mirror-prefix errors. All 163 amd64 and
+175 ARM selected/union inputs, including the bootstrap helper, subsequently
+passed the original cache verifier. Receipts are in
+`W/metadata/W2/amd64-fixed-cache-v3/result.json` and
+`W/metadata/W2/arm64-fixed-cache-v2/result.json`. Public metadata now uses the
+exact J development template; the approved public trust identities are
+unchanged. No root/image/runtime PASS follows from package or cache success.
+
+The x64 normal root and virt-arm64 cold run1 independently failed at
+`runtime composition refused: unsupported node: /installed/dev/console`.
+Their terminal metadata is `W/metadata/W2/x64/root-resume-v5.json` and
+`W/metadata/W2/virt-arm64/cold-root-run1.json`; the latter ended on its own at
+10:58:24 UTC. No active gate or frozen source was interrupted or modified.
+L2 authorized the directly affected composition/fixture correction and requires
+reviewed successor-source identity before another changed-source root.
+
+Read-only layer inspection proves that all eight devices are already in the
+10-compose OCI and match the pinned debootstrap installation helper. The plan
+records the precise snapshot-only correction and negative acceptance boundary.
+This is a newly confirmed composition integration defect; the existing B7 R1
+review corrective count remains recorded as 1, without self-dispatching a new
+review round. The task remains open for source review and fresh acceptance.
+
+The isolated correction captures only the eight exact bootstrap character
+devices with device number, mode, owner, timestamp and xattrs. Runtime selection
+and copying remain unchanged. The actual tar transfer fixture passes; selected
+devices, unrelated devices/FIFO, wrong device numbers, owners/modes and changed
+transfer timestamps refuse. PMA-CR Python review found no introduced findings.
+
+Verification completed in persistent tmux `75btxdqb-7e0f1b`, pane `%102`:
+
+- RED: `timeout --kill-after=10s 120 python3 tests/rootfs-runtime/composition_test.py CompositionTest.test_bootstrap_devices_are_captured_but_never_shipped`
+  exited 1 with the same `unsupported node` console refusal. The log SHA256 is
+  `10ef221e912df4c376e525b92e9e926c2db8fc06e183e6a74f8a185cde1ca6b5`.
+- GREEN: five focused device tests exited 0, then
+  `timeout --kill-after=10s 120 bash tests/rootfs-runtime-test.sh` passed all
+  85 tests and `ROOTFS_REPRODUCIBILITY_PASS`, without skips. Its log SHA256 is
+  `9e1311e66aad892bd8a2e4bce21e7593745e4d569047b36c7fec99894241cc66`.
+- `timeout --kill-after=10s 120 make docs-verify` and
+  `timeout --kill-after=10s 120 git diff --check` exited 0. The final record
+  update receives a separate docs/diff check; the source suite is not replayed.
+
+`W/metadata/W2/device-capture/{red,green}.json` records exact commands, PIDs,
+UTC times and working-source/log hashes. GREEN metadata SHA256 is
+`43f33e37a5849bb3bb2a5e64345235ed41d9111f9f18aea33a0230efa804c7ae`.
+Layer audit SHA256 is
+`b556c49b4446c2df5a73523d787d38cea7de43edd35eda15bc3c71713f0d7fc2`.
+The original ARM terminal metadata SHA256 is
+`907648fdb92de16c0a26c8ee5f5ddbc1e98d5c0956b584df8dbefe0e89c608dc`;
+its root log SHA256 is
+`0370b287c113976054fc5d0e3d94d797615f49a3407017b076239126a4b68fef`.
+Neither architecture has a completed root. Root/image, cold equivalence,
+authenticated guest/API/lifecycle and physical evidence remain outstanding.

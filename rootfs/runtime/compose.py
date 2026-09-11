@@ -7,6 +7,7 @@ import json
 import os
 from pathlib import Path
 import re
+import stat
 import sys
 
 sys.dont_write_bytecode = True
@@ -17,6 +18,13 @@ selector = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(selector)
 require = selector.require
 
+# debootstrap setup_devices_simple creates these in the disposable installation.
+# Capture their identity for transfer checks; runtime selection stays strict.
+BOOTSTRAP_DEVICES = {
+    '/dev/console': (5, 1), '/dev/full': (1, 7), '/dev/null': (1, 3), '/dev/ptmx': (5, 2),
+    '/dev/random': (1, 8), '/dev/tty': (5, 0), '/dev/urandom': (1, 9), '/dev/zero': (1, 5),
+}
+
 
 def snapshot(root: Path) -> dict:
     rows = {}
@@ -25,7 +33,17 @@ def snapshot(root: Path) -> dict:
         if path == '/mos-build-inputs' or path.startswith('/mos-build-inputs/'):
             continue
         at = root / path.lstrip('/')
-        row = selector.metadata(at)
+        st = at.lstat()
+        if stat.S_ISCHR(st.st_mode) and path in BOOTSTRAP_DEVICES:
+            numbers = os.major(st.st_rdev), os.minor(st.st_rdev)
+            require(numbers == BOOTSTRAP_DEVICES[path] and stat.S_IMODE(st.st_mode) == 0o666
+                    and st.st_uid == 0 and st.st_gid == 0, f'bootstrap device identity changed: {path}')
+            row = dict(type='bootstrap-character-device', major=numbers[0], minor=numbers[1],
+                       mode=stat.S_IMODE(st.st_mode), uid=st.st_uid, gid=st.st_gid, mtime_ns=st.st_mtime_ns,
+                       xattrs={name: os.getxattr(at, name, follow_symlinks=False).hex()
+                               for name in os.listxattr(at, follow_symlinks=False)})
+        else:
+            row = selector.metadata(at)
         if row['type'] == 'file':
             st = at.stat()
             row['hardlink'] = groups.setdefault((st.st_dev, st.st_ino), path)

@@ -119,7 +119,7 @@ policy change. Artifact production still requires final source/input/job handoff
    and exits 101 before compiling. L2 must allocate a matching immutable cache
    handoff or an explicit dependency-preparation step before rerunning it.
 
-## Existing-wrapper recipes for the next allocation
+## Initial B-only wrapper recipes (routing superseded by the joint wave)
 
 These are the exact supported command shapes read from B0/B6 and the committed
 wrappers, not runnable allocations: the final source, frozen packages, trust,
@@ -765,3 +765,348 @@ accounting, lifecycle and physical rows remain separate pending evidence.
 
 Final source gates: host-toolchain lint 424/424, docs and staged diff checks
 passed in `launcher-final-gates`. No full unrelated suite was replayed.
+
+## Reviewed upstream sync and pre-J input inventory (2026-09-11)
+
+Campaign `mos-open-plans-20260910-100408`: L2 accepted R1 `fa817ca9` and
+`6049df8f`, including the earlier caller, geometry and non-publication consumer.
+Corrective count remains one, resolved. At a clean boundary, verified LOCAL B
+`53fc261f66aba95b9b0b03b4edbadadfb9ffc6e6`, tree
+`bdb81b568558f272f23275f728898eb721ed13e2`, and merged it with `--no-ff` as
+`53eeee9dd2df23cc9a191e9e5d0f7b67703e11e0`. The resulting tree
+`cc020280a5f6a9855847836688480cacbbce181b` exactly equals the preceding API
+checkpoint `d691708827994a36b9f2015c503c785d61120860`; no conflict or source
+change occurred. Merge metadata: `/tmp/mos-b7-upstream.x9SubY/merge.json`,
+SHA-256 `08691ae9db26f6810845bf2067ea49157e623cd19e974d5325abfe0a8d28ac79`.
+
+The isolated API correction is still submitted for L2 review. Its original
+RED/GREEN and five-file identities remain at
+`/tmp/mos-b7-api-launcher.Uoeguq/delivery.json`, SHA-256
+`a94ea8de17cf9ae99aa20057ba8c03f32068a3cc30aafd7497f9d0e423f9d510`.
+No unchanged API, Rust, route or consumer suite was replayed after this
+tree-identical sync. Exact A/C merges remain authorized after this remaining
+source review boundary; neither is merged here and J is still absent.
+
+### Current immutable candidates and missing inputs
+
+Read-only inventory on clean `53eeee9d`:
+`/tmp/mos-b7-wave-inputs.DalRgH/readiness.json`, SHA-256
+`d1839b7c4f7526bbfed49d4e7dfdd1f72a9e7622420b81a13bf26a9f6fd65876`.
+It records 233 committed source/config/lock/selection files, actual selected
+package names and producer definitions, all six required C production blobs,
+the separately pinned C verifier blobs, tool-image IDs and exact missing paths.
+These are pre-J observations, not a frozen package manifest or J qualification.
+All files under `rootfs/debian/packages/` and the debootstrap helper pin are
+hashed; both target package records remain available in their committed JSON.
+
+| Board | Architecture/profile/radios | Selected packages | Current package/artifact availability |
+| --- | --- | --- | --- |
+| x64 | amd64 / dev / none | 11 | Indexed pool, external kernel, root report/verity/factory OCI absent |
+| virt-arm64 | arm64 / dev / none | 11 | Indexed pool, external kernel, root report/verity/factory OCI absent |
+| CX3576 | arm64 / dev / wifi, bluetooth | 14 | Indexed pool and root outputs absent; historical kernel/firmware candidates verified below |
+
+All selected features are retained; no declined feature or optional component
+was added. SYSTEM is 1024 MiB in all three definitions; DATA starts at 1537 MiB
+for x64/virt and 1042 MiB for CX3576. Publication targets remain 1/0/1.
+Actual resolver stdout hashes and per-package producer mapping are in the
+inventory. ARM64 sharing requires equal complete inputs and matching J package
+stamps; the architecture alone does not permit reusing a root or an old pool.
+
+The source resolver found both architectures' local base/C/Go/Rust/Deb images
+and the amd64 OpenSSL image. Each actual ID, architecture and RepoDigest was
+captured with bounded `build-env/from.sh --arch=ARCH --ref KEY` and Docker
+inspection. `LOCAL_MOS_BUILD_OPENSSL` for arm64 returned 1: the local image is
+absent; exact stderr is retained. `verity-tool.sh` selects its host architecture,
+so the present amd64 tool is its current route. No arm64 OpenSSL build, floating
+replacement, registry pull or toolchain installation was attempted. Local tags
+are observations; freeze the actual image/lock/config identities again for J.
+
+CX3576 compiled manifest
+`/srv/station/work/tmp/mos/1zjiu5h5/recovery-1/compiled/SHA256SUMS` matches the
+approved SHA-256 `9aab7b62df43ed349728e4f24d4041b557392d28c16a20fd7ef001eee349af0e`;
+all 42 listed files passed actual byte/hash checks, including Image, DTB,
+modules, config and debug objects. The 28 recorded kernel-source/support-input
+files are identical between compiled source `38a362cd` and approved A `e4154126`.
+Current B differs in A's kernel build/patch/fixture files because A is not yet
+merged; this is expected pending ancestry, not a newly introduced defect.
+The staged public content certificate SHA is
+`101209c31085b09853c688d64c374d899ab904d508a4f69f0ae9b676c4ea0212`.
+Preserved Buildx provenance records kernel pin `c6157104418d012823413c02f9222f3fe123dd25`,
+version 6.1.115, Ubuntu index `33ceb719...`, frontend `ecfaec9e...` and the original
+build arguments. Final J equality, actual compiler/package-version evidence and
+joint signing-anchor selection remain required before claiming reuse.
+
+The historical A image's actual firmware segment at offset 32768, length
+9394688, hashes to `1386f1ce5263fa66b04ee3cab2f40d19802dac923f477f4691968b31c6a1af05`,
+matching its preserved firmware identity. No live-main source or signing key
+was read. Firmware source/config/patch/tool/trust equality and the explicit
+joint boot-key/public-metadata mapping remain pending. This segment is historical
+source `9d1218e2`, not J; none of A's old native/root/support/image bytes qualify
+the new payload. Fresh J init/shutdown and dependent authenticated components
+must be produced even if Linux Image/DTB/modules or firmware are reused.
+
+The first inventory command completed with exit 0, retaining every command's
+UTC/argv/stdout/stderr/exit code. Its detailed inventory initially used the
+runner metadata filename and was overwritten by the runner's completion record.
+`reconstruct.py` regenerated the detailed record from those hash-checked captured
+outputs plus unchanged committed/local artifact bytes; no resolver or Docker
+command was replayed. Both scripts, original log/metadata and reconstruction
+metadata remain in the same evidence directory. This is evidence bookkeeping,
+not a package build or a new source corrective round.
+
+### Current joint job recipe boundary
+
+The earlier B-only builder/serialization recipe is historical. The approved
+route is now the private pinned BuildKit daemon, 4 CPU / 10 GiB per job with
+worker parallelism 4, at most two allocated independent jobs after fresh L2
+capacity checks. Its accepted ARM64 RUN and completed cleanup are retained;
+no daemon/state, detached gate or new production build is left running here.
+
+The actual discovered producers support a bounded package wave: build
+`ca-trust`, `profile`, `system`, `bluetooth` and `wifi` once with `--arch all`
+before parallel architecture jobs, since those invocations export to both
+pools. Build `busybox`, `deploy`, `mosd`, `mqtt` and `podman` for each required
+architecture, then `board-x64` for amd64 and `board-virt-arm64`/`board-cx3576`
+for arm64. Use the existing `bash build-env/deb/build.sh --producer NAME --arch
+ARCH` with the explicitly allocated `BUILDX_BUILDER`; index using existing
+`bash build-env/deb/repo.sh --arch ARCH`. Producer PREPARE hooks and all declared
+build contexts must be frozen from J before execution; this inventory does not
+grant an implicit kernel, toolchain or package build.
+
+Root command shape is `timeout 7200 env MOS_BOARD=BOARD MOS_PROFILE=dev
+MOS_ROOTFS_NO_CACHE=1 BUILDX_BUILDER=ALLOCATED_PRIVATE_HANDLE bash rootfs/build.sh`.
+This uses the existing root wrapper with no layout/output override. Actual
+board source snapshot, public metadata, selected package inputs and output
+paths must be bound in the named job. Exactly two independent equal-input virt
+root runs remain; run 1 supplies its single candidate image, run 2 has separate
+private state/output. No second x64 cold run or new S905 image is proposed.
+Native/component/release command contracts above remain current; runtime-build.sh
+repacking is excluded from qualification of the one final image per board.
+
+Still missing: actual reviewed J and one-time L1 cross-workstream review;
+J-stamped pools and complete selected archive/index digests; native release and
+BusyBox outputs; x64/virt kernel/firmware equality handoffs; exact public trust,
+signing input locations and shipped metadata; immutable source/output layout;
+controlled service-peer inputs and exact named L2 job allocations. Runtime,
+fresh authenticated verifier, extraction equivalence, cold and physical rows
+remain open. Only own task/plan records change at this checkpoint.
+
+## Joint source integration and candidate J (2026-09-11)
+
+Campaign `mos-open-plans-20260910-100408`: L2 accepted API correction `d6917088`
+and dispatched immediate integration. No reviewed source defect remains;
+corrective count stays one, resolved. At a clean boundary, verified LOCAL B
+`c2861fdfa347a819092e77f33daf2391a47d6396`, tree
+`cc020280a5f6a9855847836688480cacbbce181b`. Completed these local no-ff merges,
+preserving the preceding `53fc261f` synchronization and all B7 history:
+
+| Merge | Exact incoming commit | Result |
+| --- | --- | --- |
+| Reviewed B API source | `c2861fdfa347a819092e77f33daf2391a47d6396` | `a4e48a6f568a3c44d3fc60ba5bbe0d27bd6ce634` |
+| Full reviewed A | `e4154126b7e38eb90db210adfb412b19535637a8` | `6e8e6bf1ffc1ac4551a68a0603b7525bdebf7128` |
+| Full reviewed C production source | `48acef7f1a3683b1f3bb6261911b1a5123197da2` | `e176876b733d675d1e20b40b42628cd4e18b197d` |
+
+Candidate J is the actual clean final merge
+`e176876b733d675d1e20b40b42628cd4e18b197d`, tree
+`7e8e8bc62b52f3d78263d717e186a07f0d3430a1`. This candidate awaits L2 review and
+the one-time L1 cross-workstream review. Subsequent task/plan-only commits do
+not change this payload-source identity; production must use a clean snapshot
+at J, not a later documentation HEAD or an overridden package stamp.
+
+Both merges conflicted in the task/plan indexes. The granted mechanical union
+retains every row from both parents verbatim and exactly once, with no status,
+owner, priority, title or link changes. Final indexes contain 114 task rows and
+67 plan rows. D still owns reconciliation. C also conflicted at the single
+`acceptProvenance` import in `build/src/release-manifest.test.ts`: retaining the
+required B7 import produces a file byte-identical to reviewed B7. No test or
+behavior was removed/duplicated, and no production correction was needed.
+
+`/tmp/mos-b7-joint.rggwkleq/joint-source-proof.json`, SHA-256
+`03e033fb6e9163d4cbaa6090a2e3a7c2027e65bb46ee34ec1ed20c019fdff4ee`, records
+the exact modes/blobs for 1827 non-index files, each matching an authorized
+input. All required A/C/B/API/caller/geometry/consumer/R1/#313/Git-handoff
+ancestors are present. C's six required production blobs and both independent
+verifier blobs match reviewed C exactly. The only mosd-tree difference from C
+is the reviewed API launcher correction; build/rootfs/mos-deploy remain exact B
+source. There is no new Rust integration delta requiring a repeated workspace
+matrix. PMA-CR reviewed the actual conflicts, unions and source provenance;
+no introduced finding or additional code-correction round.
+
+### Merge gates and retained diagnostics
+
+Evidence lives in `/tmp/mos-b7-joint.rggwkleq/`, with original merge streams,
+three-stage conflict snapshots, commands, UTC, source/tree, exit codes and hashes.
+The persistent shell is `75btxdqb-7e0f1b`; no production build ran in it.
+
+- `timeout 180 bash build/run.sh src/release-manifest.test.ts -t non-publication`
+  passed typecheck, nonzero-test guard and 3 tests / 45 assertions. The 48 other
+  cases are explicitly filtered; this is only the import-affected focused gate.
+- The real pinned `tests/file-ab-x64/bun.sh` sourceIdentity command returned
+  exact J and `dirty=false`. It did not assemble a real release artifact.
+- `timeout 120 make docs-verify` and `timeout 30 git diff --check HEAD^ HEAD`
+  passed on clean J. No passed ARM64 probe or unchanged full suite was replayed.
+- A's initial full staged `git diff --cached --check` returned 2 on the two
+  unchanged imported `.patch` files. Original output is preserved in
+  `A-union.json`, including `0005-mpp-rkvenc2-rk3576-fixed-rate-opp.patch:14:
+  space before tab in indent.` and
+  `0006-fbcon-retain-and-restore-board-logo.patch:150: trailing whitespace,
+  space before tab in indent.` These are original patch/context bytes;
+  every non-index A import was verified against its reviewed blob. The actual
+  index-union diff check passed. The full staged check is not labeled PASS.
+- The initial external gate launcher had a shell quoting syntax error after
+  the focused consumer completed. The original script and syntax exit 2 are
+  retained; only the remaining identity/docs commands were then launched.
+  The input-manifest helper's first invocation had an unmatched-brace syntax
+  error before any commands executed (exit 1); its original script/log remains.
+  The corrected helper completed with exit 0. These are execution/evidence
+  diagnostics, not product behavior REDs or hidden source corrective rounds.
+
+### Board-keyed job inputs bound to candidate J
+
+`/tmp/mos-b7-joint.rggwkleq/J-job-inputs.json`, SHA-256
+`c8d5eacaccc4dec388e3647d4b66e450da99625691779c94e6d4587ad1aaefbc`, binds all
+three board definitions, profile/radios/feature selections, current locks,
+producer definitions/PREPARE hooks/declared context trees and tool identities
+to actual J. Resolver outputs remain 11/11/14 selected packages. Actual local
+tool IDs were re-inspected without target execution; no ARM route probe was
+repeated. The mosd Cargo.lock SHA is
+`b128a26205660c81cd770192bc324bf4569ef46f2377d3648073ab1e323a131f`;
+the native lock remains
+`816a21311421587b088bc65239c1489998db43421e458d2f163a180af13a049e`.
+
+Planned source snapshots, frozen pools and outputs are under task-owned
+`_out/wave/e176876b733d675d1e20b40b42628cd4e18b197d/`. They are not created yet.
+Every board row records supported producer/native/root commands, source-local
+wrapper output and disjoint artifact directories, followed by package-to-root-
+native/support/signature/image/verifier/runtime dependencies. Shared package
+commands are references to one job per producer/architecture, not repeated
+invocations per board. `all` producers run once before architecture jobs because
+they export both pools. Missing pools and native/root/image hashes are explicitly
+outputs to produce, not absent immutable prerequisites or invented old stamps.
+
+All 28 recorded CX kernel inputs now equal compiled source `38a362cd` at J.
+A bounded, read-only, mount-free metadata query against preserved image
+`sha256:2da9f07e885f4ddff2f0a66493782a6f62cc241cf11de170ad0c27f5ca78d3cb`
+recorded actual cross-GCC 13.3.0 and its complete installed package inventory;
+this was not a kernel/root build or target-emulation probe. Original artifact
+hashes and compiled provenance remain in the manifest. The content certificate
+candidate is the previously verified `101209c3...` public anchor; final joint
+signing-input mapping is still required. CX firmware has verified historical
+bytes but still needs complete compiled-source/tool/trust equality. No x64/virt
+external kernel/firmware handoff has been supplied. No borrowed kernel rebuild
+or historical payload relabeling is scheduled.
+
+### Exact execution-envelope and remaining allocation requirements
+
+The private BuildKit cap does not contain siblings launched directly by
+production hooks. Read-only inspection identified these job-readiness rows:
+
+| Existing source operation | Required named-job execution boundary |
+| --- | --- |
+| `pkgs/mosd/hack/build-deb.sh:180` direct Rust Docker run | Add actual CPU/memory limits, unique task name and explicit traefik network in the task execution envelope; preserve locked compiler/source/target/cache inputs |
+| `pkgs/mos-deploy/hack/build-deb.sh:134` direct native Docker run | Enforce actual sibling CPU/memory caps; current name/network/label do not provide those limits |
+| `build/src/kernel-package.ts:25` and boot-tool build routing | Bind exact task-owned boot/FIT tool images and sibling names/caps without replacing shared fixed tags; preserve measured packager identity |
+
+These production paths were not edited. L2's concrete allocation must cover
+their execution routing, not assume BuildKit daemon limits cover direct Rust or
+packaging containers. The J boot packaging tool must contain the current static
+early-boot BusyBox and native shutdown closure; selected `mos-busybox` is a
+separate runtime Debian package. No old tool payload substitutes for the new
+closure. Existing wrapper contracts, signing checks and release policy remain.
+
+Still pending: candidate review and one-time L1 joint review; exact public
+metadata/boot/content/signing input mapping; external kernel/firmware equality;
+the task execution envelope and fresh capacity/job allocation. The prepared
+SSH public identities and Alpine child digests remain uninstalled candidates.
+Controlled DNS/NTP/MQTT peer programs/configs, guest account/host-key/port and
+container archive identity remain specific runtime job inputs. Missing peers
+did not delay source integration. Every original guest/physical/teardown/cold
+row remains open, with one final image per required board, only the second
+independent virt root, and no new S905 image or physical qualification.
+
+## Granted automatic wave and first actual outputs (2026-09-11 09:04 UTC)
+
+The 08:43 UTC L1 final review accepts J
+`e176876b733d675d1e20b40b42628cd4e18b197d` and authorizes W0-W4 without
+per-producer approval. The later recovery relay directs immediate execution.
+The earlier pending grant rows are historical. Execution uses independent J
+checkouts under `W/sources`; documentation HEAD does not label payloads.
+`W` is `_out/wave/e176876b733d675d1e20b40b42628cd4e18b197d` in this worktree.
+
+W0 is now complete: the five original all-architecture producers and both
+original index commands exited 0. Seven J-stamped packages have identical bytes
+in the amd64 and arm64 pools. Exact source/tool/script/resource/command/time/log
+and output evidence is in `W/metadata/W0.json`; immutable consumer copies and
+hashes are bound by `W/metadata/W0-delivery.json`. The task record carries both
+manifest hashes and the original recorder environment failure. The producer
+sources were unchanged and clean after execution. No architecture-specific
+package, root, signature, image, guest, API or physical result follows from W0.
+
+Continue W1 with the frozen shared packages and the existing named architecture
+producer sets. The grant permits at most two freshly capacity-checked jobs,
+each with an aggregate 4 CPU/10 GiB/no-swap envelope. Direct siblings and private
+BuildKit execution divide that same envelope. Preserve task wrapper bytes and
+actual resolved tool identities; no shared tag changes. The read-only public
+trust capture is an available input, while pairing/schema proofs precede actual
+signing/root staging. Controlled service setup does not gate package production.
+
+For W2, x64 and CX use `MOS_ROOTFS_NO_CACHE=0`; virt-arm64 run1 and its sole
+independent equal-input run2 use `MOS_ROOTFS_NO_CACHE=1`. This corrects the old
+x64 draft value. Reuse the approved unchanged CX Linux export. Required pinned
+x64/virt kernel production is authorized if complete input equality cannot
+establish reuse. Build one final image each for x64, virt-arm64 and CX; use
+disposable copies for scenarios. The independent C verifier stays pinned to
+`48acef7f1a3683b1f3bb6261911b1a5123197da2`. All earlier distinct lifecycle,
+storage, authentication, API, runtime-memory and physical limitations remain.
+
+## Installed-device capture correction (2026-09-11)
+
+L2 authorized diagnosis and one bounded integration correction after x64 W2
+refused `unsupported node: /installed/dev/console`. This uses the existing
+approved task; the prior B7 review corrective count is 1. Preserve both frozen
+J source checkouts, every successful package/cache input and all failed root
+logs. The independently completed virt cold run1 also reports this refusal at
+J; it was not interrupted or restarted and is not successor-source evidence.
+
+The immutable 10-compose OCI layers contain eight character devices in their
+first layer, before 90-pack runs. Their paths, device numbers, mode 0666 and
+root ownership match `setup_devices_simple` in the exact pinned debootstrap
+1.0.141 input. They are installation content, not devices injected into the
+capture executor. The layer and helper-source evidence is in
+`W/metadata/W2/device-capture/layer-audit.json`.
+
+Limit the correction to `rootfs/runtime/compose.py` and focused regressions in
+`tests/rootfs-runtime/composition_test.py`: record these exact bootstrap
+character-device inodes in the disposable installation snapshot and transfer
+comparison, without copying them into the selected runtime tree. Keep
+`select.py` and its strict unsupported-node refusal unchanged. Reproduce the
+old snapshot refusal first; then cover complete metadata/transfer equality,
+selected-device refusal, wrong identity/ownership/mode, and unrelated special
+nodes. Do not ignore a subtree, remove input devices, or change board/runtime
+policy. Review with PMA-CR and run the affected runtime suite and docs gate.
+
+Commit the source correction separately for L2/L1 review. It changes build
+composition inputs, so no new production root may consume it until the narrow
+successor source and truthful unchanged-package reuse are reviewed. Do not
+rename J-stamped packages or treat either failed J root as a successor result.
+
+The minimal patch and five focused fixtures passed, as did the complete
+85-test runtime suite and reproducibility contracts. No Dockerfile, selector,
+package producer, lock, trust, board or signed-artifact policy changed. The
+eight bootstrap identities are checked, not ignored; transfer metadata is
+retained and final runtime special nodes still refuse. The pending source
+checkpoint is a candidate successor to J, not permission to change frozen
+checkouts or attribute old outputs to that successor.
+
+One precise source/freshness boundary needs L2/L1 disposition with this patch:
+`rootfs/build.sh:313-317` compares the pool's Git stamp against
+`build-env/deb/version.sh` for the current checkout. The successful pools retain
+`gite176876b733d-1`; a successor checkout necessarily has a different stamp.
+Although this patch leaves package recipes and payload source unchanged, the
+driver also derives package version and source epoch from Git identity.
+Therefore complete equal-input package reuse must not be asserted merely from
+unchanged recipe files. Preserve existing package bytes and original identities;
+do not rebuild successful producers, override the check or rename stamps.
+Request a precise reviewed lineage/consumer boundary through L2 before a new
+production root. The failed virt run remains a J result and cannot be reused
+as the first half of an equal-source successor cold comparison.
