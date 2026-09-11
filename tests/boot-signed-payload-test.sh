@@ -17,6 +17,7 @@ PY
     printf '%s\n' SIGNED_UKI_COMPRESSED_BYTES_PASS
 elif [ "$mode" = fit ]; then
     bash /tools/fit.sh
+    fit_check_sign -f /output/boot.itb -k /cx-control.dtb
     for payload in kernel.zst initramfs.cpio.zst; do
         python3 - /output/boot.itb "/output/$payload" /output/tampered.itb <<'PY'
 import pathlib, sys
