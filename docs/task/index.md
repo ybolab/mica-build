@@ -1,6 +1,6 @@
 # MOS tasks
 
-> Updated: 2026-09-10
+> Updated: 2026-09-11
 
 ## Usage
 
@@ -185,3 +185,5 @@ thing about the tree. Both indexes now say the same thing.
 - [x] [**20260910-0726-unlimited-application-data Remove system, user and container data limits**](20260910-0726-unlimited-application-data.md) `P1`
 
 - [x] [**20260910-0836-apid-ui-chunk-split Split the apid console entry bundle**](20260910-0836-apid-ui-chunk-split.md) `P2`
+
+- [ ] [**20260911-1925-boot-artifact-size Shrink the signed boot artifact: compression and early-userspace closure**](20260911-1925-boot-artifact-size.md) `P1`
