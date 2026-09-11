@@ -267,7 +267,11 @@ class Selector:
 
     def excluded(self, path: str) -> bool:
         return (path.startswith(('/boot/', '/usr/lib/debug/', '/usr/lib/modules/', '/usr/lib/firmware/')) or
-                path in ('/usr/lib/udev/hwdb.bin', '/etc/udev/hwdb.bin', '/usr/lib/systemd/system/systemd-hwdb-update.service',
+                # Exact removals already performed by hwdb-remove.sh and
+                # package-manager-purge.sh, respectively. Other missing owned
+                # paths still fail; this is not a missing-path filter.
+                path in ('/usr/bin/systemd-hwdb', '/usr/sbin/pam_getenv',
+                         '/usr/lib/udev/hwdb.bin', '/etc/udev/hwdb.bin', '/usr/lib/systemd/system/systemd-hwdb-update.service',
                          '/etc/systemd/system/sysinit.target.wants/systemd-hwdb-update.service') or
                 path.startswith(('/usr/lib/udev/hwdb.d/', '/etc/udev/hwdb.d/')))
 
@@ -476,7 +480,7 @@ class Selector:
         return dict(architecture=self.arch, consumers=self.consumers, inputs=self.inputs,
                     files=[self.files[p] for p in sorted(self.files)], external_inputs=external)
 
-    def copy(self, report: dict) -> None:
+    def copy(self, report: dict, publish: bool = True) -> None:
         self.output.mkdir(exist_ok=True)
         copied_groups = {}
         for row in sorted(report['files'], key=lambda r: (r['path'].count('/'), r['path'])):
@@ -508,9 +512,10 @@ class Selector:
                 os.setxattr(target, name, bytes.fromhex(value), follow_symlinks=False)
             os.utime(target, ns=(row['mtime_ns'], row['mtime_ns']), follow_symlinks=False)
         verify(self.output, report)
-        with self.report.open('x') as stream:
-            json.dump(report, stream, indent=2, sort_keys=True)
-            stream.write('\n')
+        if publish:
+            with self.report.open('x') as stream:
+                json.dump(report, stream, indent=2, sort_keys=True)
+                stream.write('\n')
 
 
 def verify(root: Path, report: dict) -> None:

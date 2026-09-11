@@ -7,7 +7,7 @@ import { Toolbox } from './toolbox.ts'
 
 const USAGE = `Usage: build/run.sh --release assemble --board BOARD --version VERSION
   --image IMAGE --update FILE.mosupd --firmware DIR --package-manifest FILE
-  --baked-meta DIR --notes FILE --out DIR --public-key FILE (repeatable)
+  --runtime-report FILE --baked-meta DIR --notes FILE --out DIR --public-key FILE (repeatable)
   [--channel development|candidate|stable] [--profile dev|prod] [--evidence FILE]
        build/run.sh --release gate --dir DIR --public-key FILE (repeatable)
 
@@ -48,7 +48,7 @@ function releaseBoard(board: string) {
   if (!/^BOARD_RELEASE_TARGET=1$/m.test(env)) throw new Error(`Board ${board} has no release publication target`)
 }
 export async function main(argv = Bun.argv.slice(2)) {
-  const strings = ['board', 'version', 'image', 'update', 'firmware', 'package-manifest', 'baked-meta', 'notes', 'out', 'channel', 'profile', 'evidence', 'dir']
+  const strings = ['board', 'version', 'image', 'update', 'firmware', 'package-manifest', 'runtime-report', 'baked-meta', 'notes', 'out', 'channel', 'profile', 'evidence', 'dir']
   const options: Record<string, { type: 'string' | 'boolean', multiple?: boolean }> = Object.fromEntries(strings.map(name => [name, { type: 'string' }]))
   options['public-key'] = { type: 'string', multiple: true }; options.help = { type: 'boolean' }
   const { values, positionals, tokens } = parseArgs({ args: argv, options, allowPositionals: true, strict: true, tokens: true })
@@ -74,12 +74,13 @@ export async function main(argv = Bun.argv.slice(2)) {
   }
   if (mode !== 'assemble' || seen.has('dir')) throw new Error(USAGE)
   const board = value('board'); releaseBoard(board)
+  const runtimeReport = path('runtime-report')
   const builderImages = Object.fromEntries(readFileSync(join(REPO_ROOT, 'build-env/images.env'), 'utf8').split('\n')
     .flatMap(line => { const match = /^((?:IMAGE|LOCAL)_[A-Z0-9_]+)=(.+)$/.exec(line); return match ? [[match[1]!, match[2]!]] : [] }))
   const report = assembleRelease({ out: path('out'), board: board as ReleaseInputs['board'], version: value('version'),
     channel: (values.channel ?? 'development') as ReleaseInputs['channel'], profile: (values.profile ?? 'dev') as ReleaseInputs['profile'],
     source: await sourceIdentity(), builderImages,
-    image: path('image'), update: path('update'), firmware: path('firmware'), packages: path('package-manifest'), meta: path('baked-meta'), notes: path('notes'),
+    image: path('image'), update: path('update'), firmware: path('firmware'), packages: path('package-manifest'), runtimeReport, meta: path('baked-meta'), notes: path('notes'),
     evidence: values.evidence ? path('evidence') : join(REPO_ROOT, 'boards', board, 'evidence.json'), keys })
   console.log(`RELEASE_GATE_PASS board=${report.manifest.board} artifacts=${report.artifactsChecked}`)
 }
