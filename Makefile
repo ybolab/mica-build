@@ -349,6 +349,9 @@ os-install-closure-gate:
 os-shell-pipefail-lint:
 	bash tests/shell-pipefail-lint.sh
 
+os-boot-busybox-package-test:
+	bash tests/boot-busybox-package-test.sh
+
 # THE BUILD POLICY, made to fail. docs/design/build.md section 0 is the rule --
 # no toolchain on the host, no compilation on the host, no assembly on the host
 # -- and this is what goes red when a new path breaks it. That page carried the
@@ -403,6 +406,12 @@ os-bare-host-gate:
 # WAS. No docker and no pool: this reads manifests and runs producers.sh.
 os-rootfs-manifest-test:
 	bash tests/rootfs-manifest-test.sh
+
+# Explicit runtime closure and metadata preservation on small offline roots.
+.PHONY: os-rootfs-runtime-test
+os-rootfs-runtime-test:
+	bash tests/rootfs-runtime-test.sh
+
 # Negative and positive tests for the pre-flight above. Its value is a count and
 # a list, and both fail silently: a run that looked at nothing prints the same
 # shape of green line as one that looked at everything. So each case perturbs

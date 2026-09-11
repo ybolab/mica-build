@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Build the squashfs + dm-verity arm64 rootfs slot image for cx3576 (A/B layout).
-# Usage: [BOARD_DIR=...] [WITH_MOSD=0|1]
+# Usage: [BOARD_DIR=...] [WITH_MOSD=0|1] [MOS_ROOTFS_NO_CACHE=0|1]
 #        [WITH_CONTAINERS=0|1] [MOS_PROFILE=dev|prod]
 #        [MOS_ROOTFS_WITHOUT="wifi bluetooth mqtt ..."] bash rootfs/build.sh
 
@@ -124,6 +124,20 @@ case "$WITH_CONTAINERS" in
     exit 1
     ;;
 esac
+
+# Cold reproducibility checks need a cache-independent route through the same
+# stages driver as an ordinary build. The driver already implements --no-cache;
+# this explicit opt-in only bridges the rootfs entry point to that existing
+# behavior and keeps normal developer builds cached by default.
+ROOTFS_CACHE_ARGS=()
+case "${MOS_ROOTFS_NO_CACHE-0}" in
+0) ;;
+1) ROOTFS_CACHE_ARGS=(--no-cache) ;;
+*)
+    echo "error: MOS_ROOTFS_NO_CACHE is '${MOS_ROOTFS_NO_CACHE}'; it must be exactly 0 or 1" >&2
+    exit 1
+    ;;
+esac
 # The declined features, as one list. WITH_CONTAINERS and WITH_MOSD are the
 # two historical spellings and they fold into it here, so there is one answer
 # to "is this feature in the image" and every consumer below asks the same
@@ -233,15 +247,10 @@ rm -f "$OUT_DIR/mosd-build.txt"
 # Only public update configuration belongs in the user-space root. Boot and
 # content trust anchors belong to the independent authenticated kernel package.
 META_DIR="${MOS_META_DIR:-$REPO_ROOT/meta}"
+bash "$REPO_ROOT/rootfs/scripts/validate-public-meta.sh" "$META_DIR"
 META_STAGE="$(mktemp -d "$OUT_DIR/meta-public.XXXXXX")"
 mkdir -p "$META_STAGE/usr/share/mos/meta/updates"
 manifest="$META_DIR/updates/manifest.json"
-[ -f "$manifest" ] && [ ! -L "$manifest" ] || {
-    echo "error: public update configuration is missing: $manifest" >&2; exit 1;
-}
-if grep -E 'BEGIN .*PRIVATE KEY|"privateKey"|"private_key"' "$manifest" >/dev/null; then
-    echo 'error: update configuration contains private key material' >&2; exit 1
-fi
 install -m 0644 "$manifest" "$META_STAGE/usr/share/mos/meta/updates/manifest.json"
 if [ -s "$META_DIR/GENERATED" ]; then
     install -m 0644 "$META_DIR/GENERATED" "$META_STAGE/usr/share/mos/meta/GENERATED"
@@ -555,6 +564,7 @@ echo "rootfs: composing $MOS_BOARD"
 bash "$REPO_ROOT/rootfs/debian/docker.sh" cache --arch "$MOS_ARCH" \
     --packages "$COMPOSE_STAGE/packages.txt"
 if ! bash "$REPO_ROOT/build/run.sh" --build-rootfs \
+        ${ROOTFS_CACHE_ARGS[@]+"${ROOTFS_CACHE_ARGS[@]}"} \
         "${DRIVER_ARGS[@]}" 2>&1 | tee "$log"; then
     if grep -qi 'exec format error' "$log"; then
         echo >&2

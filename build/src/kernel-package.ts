@@ -1,6 +1,6 @@
 import { spawnSync } from 'node:child_process'
 import { createPrivateKey } from 'node:crypto'
-import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import { copyFileSync, existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { artifactFile, packSupport, type ContentSigning } from './component-build.ts'
 import { canonicalJson, componentId, type BootIdentity, type KernelComponent } from './components.ts'
@@ -29,10 +29,25 @@ function packageBoot(mode: 'kernel' | 'firmware' | 'fit', input: string, output:
     mode === 'fit' ? FIT_TOOLS : BOOT_TOOLS, 'bash', ...(mode === 'fit' ? ['/tools/fit.sh'] : ['/tools/kernel.sh', mode, efiArch])])
 }
 
+/** Required native executables are part of the authenticated kernel identity. */
+export function kernelExecutables(init: string, shutdown: string, arch: 'amd64' | 'arm64') {
+  const inspect = (path: string) => {
+    if (typeof path !== 'string' || !path) throw new Error('Missing required native lifecycle input')
+    const stat = lstatSync(path)
+    if (!stat.isFile() || stat.size < 64 || stat.size > 32 * 1024 * 1024 || (stat.mode & 0o7022) !== 0 || (stat.mode & 0o500) !== 0o500) throw new Error('Invalid native lifecycle file or permissions')
+    const bytes = readFileSync(path)
+    if (!bytes.subarray(0, 7).equals(Buffer.from([0x7f, 69, 76, 70, 2, 1, 1])) || ![2, 3].includes(bytes.readUInt16LE(16)) || bytes.readUInt32LE(20) !== 1 || bytes.readUInt16LE(52) !== 64) throw new Error('Invalid native lifecycle ELF')
+    if (bytes.readUInt16LE(18) !== (arch === 'amd64' ? 62 : 183)) throw new Error('Native lifecycle architecture mismatch')
+    return artifactFile(path)
+  }
+  return { init: inspect(init), shutdown: inspect(shutdown) }
+}
+
 export interface KernelInputs {
   board: 'x64' | 'virt-arm64' | 'cx3576' | 's905x5m'
   kernelDirectory: string
   init: string
+  shutdown: string
   publicKeys: string[]
   systemPartUuid: string
   dataPartUuid: string
@@ -43,8 +58,9 @@ export interface KernelInputs {
 
 /** The kernel producer never opens a user-space rootfs. */
 export async function packKernel(inputs: KernelInputs, tb: Toolbox): Promise<KernelComponent> {
-  const { board, kernelDirectory, init, publicKeys, systemPartUuid, dataPartUuid, output, contentSigning, bootSigning } = inputs
+  const { board, kernelDirectory, init, shutdown, publicKeys, systemPartUuid, dataPartUuid, output, contentSigning, bootSigning } = inputs
   const arch = board === 'x64' ? 'amd64' : 'arm64'
+  const executables = kernelExecutables(init, shutdown, arch)
   const efiArch = board === 'x64' ? 'x64' : 'aa64'
   const kernelName = board === 'x64' ? 'bzImage' : 'Image'
   const fit = fitBoard(board)
@@ -97,7 +113,7 @@ export async function packKernel(inputs: KernelInputs, tb: Toolbox): Promise<Ker
     const buildId = componentId({
       board, arch, kernel: artifactFile(join(kernelDirectory, kernelName)), config: artifactFile(join(kernelDirectory, 'config')),
       ...(fit ? { dtb: artifactFile(join(kernelDirectory, fit.dtb)), addresses: fit.addresses } : {}),
-      init: artifactFile(init), publicKeys, systemPartUuid, dataPartUuid, supportId: componentId(support), cmdline,
+      ...executables, publicKeys, systemPartUuid, dataPartUuid, supportId: componentId(support), cmdline,
       packager: docker(['image', 'inspect', '--format', '{{.Id}}', fit ? FIT_TOOLS : BOOT_TOOLS]),
       bootCertificate: artifactFile(bootSigning.certificate),
     })
@@ -112,6 +128,8 @@ export async function packKernel(inputs: KernelInputs, tb: Toolbox): Promise<Ker
     }
     copyFileSync(join(kernelDirectory, 'kernel.release'), join(input, 'kernel.release'))
     copyFileSync(init, join(input, 'mos-init'))
+    copyFileSync(shutdown, join(input, 'mos-shutdown'))
+    if (canonicalJson(kernelExecutables(join(input, 'mos-init'), join(input, 'mos-shutdown'), arch)) !== canonicalJson(executables)) throw new Error('Native lifecycle inputs changed during packaging')
     packageBoot(fit ? 'fit' : 'kernel', input, boot, bootSigning, efiArch)
     const component: KernelComponent = { schema: 'mos/kernel/v1', id: '', board, arch,
       buildId, release, boot: { format: fit ? 'fit' : 'uki', artifact: artifactFile(join(boot, bootFile)) }, support }
