@@ -548,3 +548,70 @@ artifact. Actual joint input freeze, one-time L1 source review, named heavy jobs
 full provenance/image/verifier/API/runtime/cold proof and physical bench rows
 remain pending. No passed expensive matrix was repeated and no expensive
 package/root/kernel/image/guest production was started.
+
+## Authorized API launcher continuation (2026-09-11)
+
+Campaign `mos-open-plans-20260910-100408`: L2 independently reproduced the
+missing outer-container SSH forwarding input. It authorizes only conditional
+propagation of a supplied `MOS_QEMU_SSH_PORT` into QEMU_ENV in
+`pkgs/mosd/tests/apid-api/run.sh`, plus a focused regression in
+`tests/file-ab-x64/api-launcher.test.ts` and necessary adjacent fixtures.
+Preserve unset behavior, raw supplied values, source/image/certificate/board
+arguments and all eight phases. Existing qemu.ts performs validation; do not
+add another port parser. No guest, port opening, API product/service/registry
+change or heavy job is authorized in this source phase. This is a new evidenced
+caller obligation; the B7-R1 corrective count remains one.
+
+Use byte-for-byte copies of the real launcher and qemu.ts in an owned fixture
+checkout. Isolate Docker/build boundaries and observed networking; send the
+actual launcher-generated container environment to the actual qemu.ts capture
+path on an existing tiny fixture disk. Record the planned inner Docker argv
+without executing Docker or QEMU. RED/GREEN must cover both boards, a supplied
+port, absence and existing invalid-value refusals. Commit this correction
+separately after focused tests/type/shell/docs checks and PMA-CR review. Retain
+all independent service-traffic, actual reboot/reset and physical rows.
+
+### API launcher correction evidence
+
+The source change is exactly three lines after QEMU_ENV: append the supplied
+`MOS_QEMU_SSH_PORT` verbatim when the variable is set. No default, coercion or
+additional parser is introduced; absent remains absent. The original qemu.ts,
+phase registry, service policy and image/certificate/board arguments are unchanged.
+
+Evidence: `/tmp/mos-b7-api-launcher.Uoeguq/<gate>.{json,log}`, with exact commands,
+UTC, source/tree, working-file identities and log hashes. Before implementation,
+`timeout 120 bun test tests/file-ab-x64/api-launcher.test.ts` returned 1: 2 pass,
+8 fail, each supplied value missing at the outer boundary. After the three-line
+fix it returned 0: 10 tests / 134 assertions. The same ten cases passed through
+`timeout 120 bash tests/file-ab-x64/bun.sh test tests/file-ab-x64/api-launcher.test.ts`.
+Strict TypeScript for both new fixture files, bash syntax and diff checks passed.
+
+The fixture copies real run.sh/qemu.ts and board inputs byte-for-byte and executes
+them. It isolates the expensive images.sh and Docker boundary, supplies a local
+Unix socket plus simulated network observations, and reconstructs the inner
+environment solely from actual `-e` arguments. To reach the existing forward
+validator without disk production, it invokes real qemu.ts capture on an existing
+tiny private disk. Inner Docker is recorded and deliberately exits 73. The outer
+harness deliberately fails before preparation/guest/API phases; that exit is not
+an API or boot PASS. Unset has no SSH forward; 22345 survives to both HOSTFWD and
+Docker port argv; 0/non-numeric values reach `Invalid positive integer`, 65536
+reaches `Invalid forwarding port`, and invalid values never reach inner Docker.
+The fixture Docker executable never delegates to the real daemon; the pinned
+run uses only the existing Bun tool container. No TCP listener, guest or service
+is started. Temporary fixture files/socket are removed after every case.
+
+PMA-CR inspected the three-line source hunk and complete two-file fixture;
+PASS, zero introduced findings. This is the separately authorized launcher
+obligation, not another failed R1 round. Existing R1/geometry/caller/provenance,
+ARM64 BuildKit and earlier negative evidence are retained without replay.
+
+The same plan now records task-owned, uninstalled per-board allowed/alternative
+SSH public identities and exact source-pinned Alpine amd64/arm64 child/config
+identities. Public manifest: `/srv/station/work/tmp/mos/75btxdqb/service-inputs-I5cyEHJc/public-inputs.json`; SHA-256 `24a8096f4235d4168f244d281e0637a02bd8098623b0ae321597b658583dce9d`. No private key is
+committed, no credential installed and no peer/guest/port started. Exact live
+endpoint/account/host-key, controlled DNS/NTP/MQTT tooling and frozen guest
+container archive inputs remain pending J-job allocation. All eight registered
+phases and independent real-traffic/reboot/reset rows remain mandatory.
+
+Final source gates: host-toolchain lint 424/424, docs and staged diff checks
+passed in `launcher-final-gates`. No full unrelated suite was replayed.
