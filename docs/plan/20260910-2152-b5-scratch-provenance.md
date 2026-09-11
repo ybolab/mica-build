@@ -47,6 +47,31 @@ create another package solver or infer generated origins from arbitrary files.
 
 ## Annotations
 
+- 2026-09-11: L1 approved continuation after both C handoffs, not corrective
+  round 2; corrective count remains 1. Preserve the existing claim and approval.
+  Reviewed C.D2 source `e30aebf2086c41f4b3c255de95f74ffb52fa2c62` was transferred
+  separately in `23a3414a8c82f86edbae4434cbf7dd0bd0066b7e` using the approved
+  20551-byte patch, SHA256
+  `4a71b0a527b6d2f1bea2b5d1d7796521cb6b701fd1e5f41beafd0971912566a8`.
+  Only rootfs/build.sh public-meta staging, rootfs/scripts/validate-public-meta.sh
+  and build/src/public-meta.test.ts were imported. The validator runs before
+  staging; sourceIdentity, Toolbox and verifier reservations remain unchanged.
+- Additional approved S6 interface: build/src/release-manifest.ts FILES,
+  ReleaseInputs, derived, assembleRelease and necessary typed validation join a
+  mandatory rootfs-report.runtime.json to native package/archive/source/debug
+  records. release-cli.ts USAGE/main options/assembleRelease arguments require
+  `--runtime-report FILE`; its sourceIdentity function/imports are untouched.
+  release-manifest.test.ts shared fixtures, tamper cases and shipped CLI argument
+  lists may change, preserving all Git/read-only/host-route assertions.
+- Existing rootfs/runtime declarations/composition and focused Python fixtures
+  may retain precisely the current public manifest and optional nonempty GENERATED
+  output with named staging/install producers. Unknown metadata, missing captured
+  outputs and provenance mismatches remain refusals. No compatibility fallback
+  or new package authority. RED/GREEN covers absent/malformed runtime reports,
+  inventory/archive/file/debug discrepancies, signed root identity mismatch,
+  public metadata retention and tampering. Actual tree/image/runtime evidence
+  stays with B6/B7 under future grants; this continuation has heavy=0.
+
 - Prior full-tier user approval recorded at dispatch; plan activation follows claim.
 - Preserve declined S5 tools, signed file deployment, boot/debug/support boundaries,
   bounded writable var, unlimited application quotas and private container storage.
@@ -79,8 +104,8 @@ counterpart and digest. Configured digests describe the installed/configured
 files, not unmodified archive members; archive digests are recorded separately.
 The original input manifest is retained externally and never replaced by a new
 package authority. Transform source hashes and actual pack-tool package versions
-are external build inputs. Release-level joining remains blocked as recorded in
-the task; rootfs report export itself is wired.
+are external build inputs. Release-level joining now requires the exported rootfs report and authenticates
+its root image/geometry association through the existing signed deployment gate.
 
 SquashFS and privilege inventory read /runtime. An actual unsquashfs roundtrip
 and a factory candidate COPY check compare the complete selection report.
@@ -141,9 +166,9 @@ Shared/TypeScript backend review passed with zero findings. Only the task/plan
 evidence changes after the tested implementation commit. The two C handoffs and
 grant-dependent B7 rows below remain open; the plan remains implementing.
 
-After L2 supplies the reviewed public-meta source and the precise release-fixture
-boundary, complete the missing declarations/report join and rerun focused
-composition plus affected release tests. No C or main branch may be imported
+The approved public-meta source and release-fixture boundary are now delivered.
+The declarations/report join and focused tests are implemented; collect final
+committed-source gates before software completion. No other C or main branch may be imported
 without that exact handoff.
 
 B7 grant request: one named board/job at a time, exact approved integrated commit,
@@ -172,3 +197,29 @@ owns the separate Quadlet/disabled, SSH-listen/key refusal and repeated-login
 rows above, current system/storage/reset invariants and safe lifecycle teardown.
 Physical board/power-cut evidence remains separate. The B5 worktree received no
 heavy build/guest grant, and no such job was run.
+
+
+## S6 release interface and evidence boundary
+
+`build/run.sh --release assemble` requires `--runtime-report FILE` in addition to
+its existing arguments. Use the root build's rootfs-report.runtime.json and the
+selected `/usr/share/mos/manifest.tsv`; the external build-inputs/manifest.tsv is
+not the shipped package inventory. Baked metadata must match selected manifest
+and optional marker bytes exactly. The raw report is a checksummed release
+artifact; provenance joins its per-file owners, native source/archive identities,
+configured/final metadata and debug counterparts. Licenses name actual retained
+copyright resources and hashes. SBOM components remain the shipped contributors;
+provenance separately records all build packages. Measured verity bytes/digest
+and geometry must match the authenticated update root component.
+
+The current public producer is rootfs/build.sh public-meta staging followed by
+compose-install.sh meta_install. Required manifest, conditional nonempty marker
+and their regular parent directories are retained from configured capture; lost,
+changed, uncaptured or unknown public paths refuse. Original marker bytes are
+preserved by release assembly while the existing domain/channel checks remain.
+
+The join validates report consistency and its signed root association, not actual
+filesystem extraction or physical/runtime behavior. Per-file report/provenance
+records are bounded at 128 MiB; all filesystem/image size gates are unchanged.
+Allocation/RSS/fresh-image/boot-payload evidence stays explicitly pending B6/B7.
+No actual root/image/kernel/QEMU/cold build was authorized or run by B5.

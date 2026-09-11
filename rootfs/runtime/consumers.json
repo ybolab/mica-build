@@ -4,6 +4,7 @@
   "consumers": {
     "mos-system": {
       "roots": [
+        {"paths": ["/usr/share/mos/meta/updates/manifest.json"], "kind": "resource", "reason": "validated current public metadata installed from the staged input", "generated": "rootfs/build.sh public-meta staging; compose-install.sh meta_install", "expect": {"mode": 420, "uid": 0, "gid": 0}},
         {"paths": ["/root/.bashrc", "/root/.profile"], "kind": "resource", "reason": "factory dotfiles read by mos-seed-root before root.mount", "generated": "base-files offline factory root configuration"},
         {"paths": ["/dev", "/proc", "/sys", "/run", "/boot"], "kind": "directory", "reason": "API filesystem and signed boot mount destinations", "generated": "debootstrap directory floor and pack-export-boot mountpoints"},
         {"paths": ["/tmp"], "kind": "directory", "reason": "runtime temporary filesystem mount destination", "generated": "debootstrap directory floor", "expect": {"mode": 1023}},

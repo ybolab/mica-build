@@ -241,12 +241,73 @@ class CompositionTest(unittest.TestCase):
         for path in anchors:
             self.assertEqual(self.f.out.joinpath(path[1:]).read_bytes(), (REPO / 'rootfs/overlay' / path[1:]).read_bytes())
 
+    def public_metadata(self, marker=None):
+        producer = 'rootfs/build.sh public-meta staging; compose-install.sh meta_install'
+        rules = json.loads((REPO / 'rootfs/runtime/consumers.json').read_text())
+        rule = next(r for r in rules['consumers']['mos-system']['roots'] if r.get('generated') == producer)
+        self.f.rules['consumers']['mos-system']['roots'].append(rule)
+        self.f.rules_path.write_text(json.dumps(self.f.rules))
+        self.f.write('/usr/share/mos/meta/updates/manifest.json', (REPO / 'meta.example/updates/manifest.json').read_bytes())
+        if marker is not None:
+            self.f.write('/usr/share/mos/meta/GENERATED', marker)
+
+    def test_current_public_manifest_and_conditional_marker_survive(self):
+        self.public_metadata(b'DEVELOPMENT-GRADE\nDOMAINS=boot verity updates\n')
+        self.capture()
+        r = self.compose()
+        self.assertEqual(r.returncode, 0, r.stderr)
+        report = json.loads(self.f.report.read_text())
+        for path in ['/usr/share/mos/meta/updates/manifest.json', '/usr/share/mos/meta/GENERATED']:
+            self.assertEqual(self.f.out.joinpath(path.lstrip('/')).read_bytes(), self.f.root.joinpath(path.lstrip('/')).read_bytes())
+            provenance = report['provenance']['files'][path]
+            self.assertEqual(provenance['configured']['sha256'], provenance['final']['sha256'])
+            self.assertEqual(provenance['generators'], ['rootfs/build.sh public-meta staging; compose-install.sh meta_install'])
+            self.assertEqual(provenance['final']['mode'], 0o644)
+
+    def test_absent_public_marker_stays_absent(self):
+        self.public_metadata()
+        self.capture()
+        r = self.compose()
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertFalse(self.f.out.joinpath('usr/share/mos/meta/GENERATED').exists())
+
+    def test_changed_or_lost_public_input_refuses(self):
+        self.public_metadata(b'DEVELOPMENT-GRADE\nDOMAINS=boot\n')
+        self.capture()
+        self.f.root.joinpath('usr/share/mos/meta/GENERATED').unlink()
+        r = self.compose()
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn('public metadata', r.stderr)
+
+    def test_public_manifest_tamper_refuses(self):
+        self.public_metadata()
+        self.capture()
+        self.f.write('/usr/share/mos/meta/updates/manifest.json', b'{}')
+        r = self.compose()
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn('public metadata', r.stderr)
+
+    def test_empty_installed_public_marker_refuses(self):
+        self.public_metadata(b'')
+        self.capture()
+        r = self.compose()
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn('public metadata', r.stderr)
+
     def test_uncaptured_public_metadata_refuses(self):
         self.f.write('/usr/share/mos/meta/fixture.json', b'{}')
         self.capture()
         r = self.compose()
         self.assertNotEqual(r.returncode, 0)
-        self.assertIn('public metadata declaration requires approved source handoff', r.stderr)
+        self.assertIn('undeclared public metadata: /usr/share/mos/meta/fixture.json', r.stderr)
+
+    def test_unknown_public_metadata_directory_refuses(self):
+        self.public_metadata()
+        self.f.root.joinpath('usr/share/mos/meta/unapproved').mkdir()
+        self.capture()
+        r = self.compose()
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn('undeclared public metadata: /usr/share/mos/meta/unapproved', r.stderr)
 
     def test_missing_native_producer_capture_refuses(self):
         (self.inputs / 'enablement/fixture.service.dsh-also').write_text('/etc/systemd/system/fixture.service\n')

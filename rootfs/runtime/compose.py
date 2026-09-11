@@ -76,6 +76,31 @@ def generated_rules(engine: selector.Selector, inputs: Path, configured: dict) -
     """Resolve exact native installer outputs, never select an unowned subtree."""
     rules = engine.declarations
     roots = rules['consumers']['mos-system']['roots']
+    public_producer = 'rootfs/build.sh public-meta staging; compose-install.sh meta_install'
+    public_rules = [r for r in roots if r.get('generated') == public_producer]
+    if public_rules:
+        manifest = '/usr/share/mos/meta/updates/manifest.json'
+        marker = '/usr/share/mos/meta/GENERATED'
+        require(len(public_rules) == 1 and public_rules[0]['paths'] == [manifest], 'ambiguous public metadata declaration')
+        for directory in ['/usr/share/mos/meta', '/usr/share/mos/meta/updates']:
+            require(configured.get(directory, {}).get('type') == 'directory' and engine.at(directory).is_dir()
+                    and not engine.at(directory).is_symlink(), f'public metadata directory changed: {directory}')
+        for path in [manifest, marker]:
+            original = configured.get(path)
+            at = engine.at(path)
+            if path == marker and original is None:
+                require(not at.exists() and not at.is_symlink(), 'uncaptured public metadata marker')
+                continue
+            require(original and original['type'] == 'file' and original['size'] > 0,
+                    f'public metadata capture must be a nonempty regular file: {path}')
+            require(at.is_file() and not at.is_symlink() and selector.sha256(at) == original['sha256'],
+                    f'public metadata changed after capture: {path}')
+            expected = dict(mode=0o644, uid=0, gid=0, sha256=original['sha256'])
+            if path == manifest:
+                public_rules[0]['expect'] = expected
+            else:
+                roots.append(dict(paths=[path], kind='resource', reason='captured nonempty public development marker',
+                                  generated=public_producer, expect=expected))
     for directory, manifest, pattern in [('alternatives', 'alternative-names.txt', '*'), ('enablement', 'enablement-names.txt', '*.dsh-also')]:
         names = (inputs / manifest).read_text().splitlines()
         files = list((inputs / directory).glob(pattern))
@@ -217,8 +242,9 @@ def compose(args: argparse.Namespace) -> None:
     report = engine.select()
     files = {row['path']: row for row in report['files']}
     for path in selector.tree_paths(root):
-        if path.startswith('/usr/share/mos/meta/') and not engine.at(path).is_dir():
-            require(path in files, f'public metadata declaration requires approved source handoff: {path}')
+        if path.startswith('/usr/share/mos/meta/'):
+            require(path in {'/usr/share/mos/meta/updates', '/usr/share/mos/meta/updates/manifest.json', '/usr/share/mos/meta/GENERATED'}
+                    and path in files, f'undeclared public metadata: {path}')
     for path in files:
         forbidden = ('/mos-build-inputs', '/mos-compose', '/.debian-extra', '/debootstrap',
                      '/var/lib/dpkg', '/var/lib/apt', '/var/cache/apt', '/var/cache/debconf',

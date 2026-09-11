@@ -15,7 +15,7 @@ boot/support/debug identities. No compatibility work or heavy builds.
 
 ## ActiveForm
 
-Awaiting the two reviewed C handoffs after independent corrective acceptance passed.
+Verifying the completed B5 software join before handing actual artifact acceptance to B6/B7.
 
 ## Dependencies
 
@@ -23,6 +23,17 @@ Awaiting the two reviewed C handoffs after independent corrective acceptance pas
 - **blocks**: B6 reproducibility and B7 granted image/runtime acceptance.
 
 ## Notes
+
+- 2026-09-11 continuation: both source/ownership handoffs are approved. Startup
+  confirmed working/running, clean bkd/ekh6zunh at f170b4ba, its expected tree,
+  and unchanged local B 733708c0 ancestry. The existing claim remains active;
+  corrective count is 1. See the plan annotations for the exact additional scope.
+  Separate C.D2 source transfer is 23a3414a8c82f86edbae4434cbf7dd0bd0066b7e.
+  Imported helper: 100755/5998a76095938ba667351fe372c2cfa0daec7ee8;
+  test: 100644/5f7fd4f4533b62bd0161764cd82cdb6f4005ec4b;
+  build.sh after the sole staging hunk: 100755/09bd649f04276c3bb6514eb2be8357403b77a9f0.
+  Original 104/412 successful gates, RED and accepted UI failure remain evidence;
+  no full suite is rerun merely for this handoff.
 
 - Full tier. Prior user approval explicitly covers the bounded proposal,
   implementation and local scoped commits; no repeated approval question.
@@ -53,7 +64,7 @@ Awaiting the two reviewed C handoffs after independent corrective acceptance pas
 - The report joins configured and final file hashes with archive identities and
   checked debug counterparts. Transform script hashes and pack-tool versions are
   exported beside native input captures. Rootfs-report.runtime.json is exported
-  through the existing artifact target; it is not yet joined to release metadata.
+  through the existing artifact target and joined to release metadata by the mandatory runtime-report input.
 - Native alternatives and conditional enablement supplement declarations with
   named producers and exact link targets. Preset removals carry their precise
   path/policy record. Only the already-approved systemd-hwdb and pam_getenv
@@ -192,21 +203,68 @@ test diff and the existing stage parser/export call chain. Verdict: PASS
 (0 critical, 0 high, 0 medium, 0 low). No additional production defect or scope
 need was demonstrated by these two failures. Python fixtures were not changed.
 
+## Approved handoff continuation and S6 implementation
+
+The C.D2 focused runner `timeout 300 bash build/run.sh src/public-meta.test.ts`
+passed 61 tests and 133 assertions at the separate imported-source commit.
+Evidence lives under `/tmp/mos-b5-s6-3zypj5yl/`, with source/UTC/command/log/hash
+and exitCode in each subdirectory's metadata.json. No pause-only full rerun.
+
+- `red/`: original release code accepted a missing report (exit 1 regression
+  test); five composition cases errored because the mandatory public declaration
+  did not exist. The original 73 composition tests passed.
+- `red-join/`: 18 new runtime-report cases failed against the old release join,
+  with real reports produced by the small Python composition fixture.
+- `green/`: 78 composition tests passed. Release checks exposed marker rewriting:
+  assembly sorted its domains, so release bytes differed from installed bytes.
+  The implementation now retains the validated original marker; domain parsing,
+  customer-channel refusal and signing policy are unchanged.
+- `green-release/`: 46 release tests and 171 assertions passed, including the
+  untouched ordinary/linked source-identity and read-only Git protections.
+- `red-measurement/`: a forged RSS pass was accepted before explicit evidence
+  status validation. The nanosecond negative control initially altered an external
+  input rather than a selected file; its mutation now targets the selected files
+  section, preserving the strict expected refusal.
+- `focused-final/`: 78 composition tests and 109 release/public-meta tests
+  (312 assertions) passed. Configured nanoseconds remain exact decimal strings
+  in derived provenance, with original JSON bytes retained as an artifact.
+- `red-public-directory/`: an unknown empty public metadata directory was silently
+  omitted (exit 1, `AssertionError: 0 == 0`). The final rule rejects all unknown
+  public paths, including empty directories, and requires captured regular parents.
+
+The S6 join requires the current per-file report, exact native ownership captures,
+archive/source records, contributor inventory, per-path metadata/origins, license
+resources and debug mappings. It binds the measured verity image and geometry to
+those already authenticated in update.mosupd. Build-only packages stay distinct
+from actual shipped contributors. Missing input, mismatches, malformed/duplicate
+JSON and invalid UTF-8 refuse before creating a release output. Derived records
+are regenerated and compared by the release gate even after outer digests are
+repinned. Per-file report/provenance reads have a 128 MiB bound; no root/image size
+budget changed. The report is evidence from composition, not an independent
+proof that an untrusted report describes all signed image bytes: B7 must extract
+and verify the actual image against that exact report.
+
+PMA-CR shared/TypeScript backend/Python review covers the new join, current public
+closure and tests. No high-confidence unresolved finding remains in this bounded
+software review (0 critical/high/medium/low). sourceIdentity/imports, Toolbox,
+verifier, native lifecycle, storage, UI and all earlier gate histories are intact.
+Final committed-source gates are pending collection before software completion.
+
 ## Remaining ownership and handoff
 
-- C public metadata: current source still installs the pre-handoff public set.
-  Selection explicitly refuses an installed public file without an approved
-  declaration. No old update compatibility or guessed C contract was added.
-- Release provenance needs a mandatory runtime-report input and its validation in
-  build/src/release-manifest.ts (FILES, ReleaseInputs, derived, assembleRelease)
-  plus release-cli.ts (USAGE/main options/assembleRelease arguments only).
-  This requires modifying the shared release-manifest.test.ts fixture and the
-  C-owned shipped-CLI argument list at lines 225-228. Those files were not edited.
-  L2 must obtain a precise non-overlapping boundary or reviewed C handoff before
-  this join; sourceIdentity and its imports need no change.
-- B7 owns actual install-closure, SquashFS/factory OCI roundtrip, matching signed
-  components/debug exports, newest full image comparisons and fresh runtime
-  acceptance. B6 owns cold reproducibility. Heavy grant remains zero.
-- Task and plan intentionally remain in progress while these bounded B5 rows are
-  open. No completion/close transition was bypassed. L2 D owns old-record/global
-  reconciliation; no sibling or #313 task status changed.
+- Both external source/ownership blockers are resolved by the approved handoff.
+  C.D2 source is isolated in 23a3414a; no other C source or branch was imported.
+- B6/B7 release invocation now needs `--runtime-report FILE` pointing at the
+  exact `rootfs-report.runtime.json` exported by that root build. Its matching
+  `--package-manifest FILE` is the selected root's `/usr/share/mos/manifest.tsv`,
+  not the build-inputs/manifest.tsv containing all installed build packages.
+  `--baked-meta DIR` must have byte-identical current public manifest and optional
+  nonempty marker. The report's verity image/geometry must match the signed root
+  component included by `--update FILE.mosupd`. No older-input fallback exists.
+- B7 owns actual install-closure, SquashFS/factory OCI extraction/report matching,
+  signed component/debug/boot identity, fresh full images, memory/RSS and runtime
+  historical-obligation rows. B6 owns cold reproduction. No heavy job was started;
+  the future reserved milestone slot is not a B5 grant. Physical evidence remains
+  separate. See the plan's unchanged artifact acceptance recipe.
+- L2 D owns old/global reconciliation. No sibling or #313 statuses changed. Only
+  B5 software obligations may be completed after the final relevant gates pass.
