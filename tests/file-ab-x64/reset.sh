@@ -8,6 +8,7 @@ cert=$(realpath "${3:?content certificate required}")
 key=$(realpath "${4:?content key required}")
 init=$(realpath "${5:?production init required}")
 board=${6:?board required}
+shutdown=${7:?compiled mos-shutdown required}
 case "$board" in x64) compiler=gcc;; virt-arm64) compiler=aarch64-linux-gnu-gcc;; *) exit 1;; esac
 work=$(mktemp -d "$PWD/_out/reset-runtime.XXXXXX")
 printf 'Evidence: %s\n' "$work"
@@ -51,7 +52,7 @@ RuntimeMaxSec=240
 WantedBy=multi-user.target
 UNIT
     ln -s /etc/systemd/system/reset-acceptance.service "$out/tree/etc/systemd/system/multi-user.target.wants/reset-acceptance.service"
-    timeout -k 20 900 bash tests/file-ab-x64/bun.sh tests/file-ab-x64/build.ts "$out/boot" "$board" "$kernel" "$cert" "$key" "$init" "$out/tree" > "$out/build.log" 2>&1
+    timeout -k 20 900 bash tests/file-ab-x64/bun.sh tests/file-ab-x64/build.ts "$out/boot" "$board" "$kernel" "$cert" "$key" "$init" "$out/tree" "$shutdown" > "$out/build.log" 2>&1
     truncate -s 4G "$out/boot/image/disk.img"
     for boot in 1 2 3; do
         timeout -k 15 600 docker run --rm --label ai-agent=true --network traefik \

@@ -46,3 +46,8 @@ Checking the current command contract and preparing a concrete replacement plan.
 - `git diff --check`: passed.
 - Runtime binaries were inspected only; no boot or shutdown implementation was
   changed, and no replacement image was built.
+
+- 2026-09-11 current cross-reference: the original feasibility result remains
+  complete. B3 delivered the native HYBRID scope and now owns the user-directed
+  static refinement in [its existing plan](../plan/20260910-1206-b3-bounded-exitrd-teardown.md);
+  B7 owns joint image acceptance. This does not reopen the feasibility task.

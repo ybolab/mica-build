@@ -1027,22 +1027,89 @@ describe('the assembly this tree actually ships', () => {
     expect(stages.map((s) => s.name)).toEqual(['10-compose', '90-pack'])
   })
 
-  test('90-pack defines all four of its internal targets, in the order it explains them', () => {
+  test('90-pack captures installation inputs before selecting, validating and exporting', () => {
     const pack = stages.find((s) => s.name === '90-pack')!
-    expect(pack.targets).toEqual(['closed', 'pack', 'artifact', DEFAULT_OCI_TARGET])
+    expect(pack.targets).toEqual([
+      'pack-tools',
+      'inventoried',
+      'captured',
+      'closed',
+      'pack',
+      DEFAULT_OCI_TARGET,
+      'factory-checked',
+      DEFAULT_TERMINAL_TARGET,
+    ])
   })
 
-  // WHICH tree the OCI image is of, asserted rather than trusted to the name.
-  // `closed` is the same root three edits earlier -- it still has a populated
-  // /var and a real /etc/shadow -- and an export taken from it would smoke-test
-  // binaries in a tree that never ships. The two differ by one word in one
-  // COPY, and nothing else in the file would change if that word did.
-  test('the factory-root export is taken from the PACKED tree, not from `closed`', () => {
-    const pack = stages.find((s) => s.name === '90-pack')!
-    const body = readFileSync(pack.path, 'utf8')
-    const after = body.slice(body.indexOf(`FROM scratch AS ${DEFAULT_OCI_TARGET}`))
-    expect(after).toContain('COPY --from=pack /rootfs/ /')
-    expect(after).not.toContain('--from=closed')
+  const packBody = readFileSync(stages.find((s) => s.name === '90-pack')!.path, 'utf8')
+
+  // Bound each assertion to its target. A correct COPY in a later stage or a
+  // comment must not hide an export of the disposable installation tree.
+  function targetInstructions(body: string, target: string): string[] {
+    const lines = body
+      .split('\n')
+      .filter((line) => !line.trimStart().startsWith('#'))
+      .join('\n')
+      .replace(/\\\n/g, ' ')
+      .split('\n')
+      .map((line) => line.trim().replace(/\s+/g, ' '))
+      .filter(Boolean)
+    const start = lines.findIndex((line) => line.startsWith('FROM ') && line.endsWith(` AS ${target}`))
+    if (start < 0) return []
+    const next = lines.findIndex((line, i) => i > start && line.startsWith('FROM '))
+    return lines.slice(start, next < 0 ? undefined : next)
+  }
+
+  const factoryCopy = 'COPY --from=pack /runtime/ /'
+  const factoryVerify = 'python3 /mos-runtime/select.py verify --root /factory-check --report /out/rootfs-report.runtime.json'
+
+  function expectSelectedExports(body: string): void {
+    expect(targetInstructions(body, DEFAULT_OCI_TARGET)).toEqual([
+      `FROM scratch AS ${DEFAULT_OCI_TARGET}`,
+      factoryCopy,
+    ])
+    expect(targetInstructions(body, 'factory-checked')).toEqual([
+      'FROM pack AS factory-checked',
+      'RUN --network=none '
+        + '--mount=type=bind,from=factory-root,source=/,target=/factory-check '
+        + '--mount=type=bind,source=rootfs/runtime,target=/mos-runtime '
+        + factoryVerify,
+    ])
+    expect(targetInstructions(body, DEFAULT_TERMINAL_TARGET)).toEqual([
+      `FROM scratch AS ${DEFAULT_TERMINAL_TARGET}`,
+      'COPY --from=factory-checked /out/pkg-logs/ /pkg-logs/',
+      'COPY --from=factory-checked /out/rootfs-verity.img /',
+      'COPY --from=factory-checked /out/rootfs-verity.env /',
+      'COPY --from=factory-checked /out/rootfs-report.txt /',
+      'COPY --from=factory-checked /out/rootfs-report.runtime.json /',
+      'COPY --from=factory-checked /out/build-inputs/ /build-inputs/',
+      'COPY --from=factory-checked /out/boot/ /boot/',
+      'COPY --from=factory-checked /out/debug/ /debug/',
+    ])
+  }
+
+  test('factory-root exports only the selected packed tree and artifacts require its verification', () => {
+    expectSelectedExports(packBody)
+  })
+
+  test.each([
+    ['the transformed installation root', factoryCopy, 'COPY --from=pack /rootfs/ /'],
+    ['the closed root', factoryCopy, 'COPY --from=closed / /'],
+    ['the installed root', factoryCopy, 'COPY --from=inventoried / /'],
+    ['an inherited pack root', 'FROM scratch AS factory-root', 'FROM pack AS factory-root'],
+    ['an extra installation overlay', factoryCopy, `${factoryCopy}\nCOPY --from=closed /etc/ /etc/`],
+    ['a commented correct COPY', factoryCopy, `# ${factoryCopy}\nCOPY --from=closed / /`],
+    ['a correct COPY in the next stage', factoryCopy, `FROM scratch AS unused\n${factoryCopy}`],
+    ['validation of a disposable root', 'FROM pack AS factory-checked', 'FROM closed AS factory-checked'],
+    ['validation of the source instead of its transfer', 'from=factory-root,source=/', 'from=pack,source=/runtime'],
+    ['a missing verifier', factoryVerify, 'true'],
+    ['an ignored verification failure', factoryVerify, `${factoryVerify} || true`],
+    ['an unrelated selection report', factoryVerify, factoryVerify.replace('rootfs-report.runtime.json', 'other.json')],
+    ['an unchecked artifact', 'COPY --from=factory-checked /out/rootfs-verity.img /', 'COPY --from=pack /out/rootfs-verity.img /'],
+  ])('the export contract rejects %s', (_name, from, to) => {
+    const changed = packBody.replace(from!, to!)
+    expect(changed).not.toBe(packBody)
+    expect(() => expectSelectedExports(changed)).toThrow()
   })
 
   // The finalizer is a REAL FILE beside 10-compose, not a symlink out of the

@@ -9,9 +9,9 @@ import { parseFileLayout } from '../../build/src/file-layout.ts'
 import { Toolbox } from '../../build/src/toolbox.ts'
 import { Signer } from '../../shared/update-envelope.ts'
 
-const [evidenceArg, certArg, keyArg, generationArg, kind, rootDirArg, kernelDirArg, initArg] = Bun.argv.slice(2)
-if (!evidenceArg || !certArg || !keyArg || !generationArg || !rootDirArg || !kernelDirArg || !initArg || !['root', 'kernel', 'combined', 'bad-health'].includes(kind ?? '')) {
-  throw new Error('Usage: update.ts EVIDENCE CERT KEY GENERATION root|kernel|combined|bad-health ROOT_COMPONENT KERNEL_COMPONENT MOS_INIT')
+const [evidenceArg, certArg, keyArg, generationArg, kind, rootDirArg, kernelDirArg, initArg, shutdownArg] = Bun.argv.slice(2)
+if (!evidenceArg || !certArg || !keyArg || !generationArg || !rootDirArg || !kernelDirArg || !initArg || !shutdownArg || !['root', 'kernel', 'combined', 'bad-health'].includes(kind ?? '')) {
+  throw new Error('Usage: update.ts EVIDENCE CERT KEY GENERATION root|kernel|combined|bad-health ROOT_COMPONENT KERNEL_COMPONENT MOS_INIT MOS_SHUTDOWN')
 }
 const evidence = resolve(evidenceArg)
 const generation = Number(generationArg)
@@ -34,7 +34,7 @@ try {
   if (kind === 'kernel' || kind === 'combined') {
     const extra = new Signer(generateKeyPairSync('ed25519').privateKey, true).publicKey
     kernelDirectory = join(output, 'kernel')
-    kernel = await packKernel({ board, kernelDirectory: bsp, init: resolve(initArg),
+    kernel = await packKernel({ board, kernelDirectory: bsp, init: resolve(initArg), shutdown: resolve(shutdownArg),
       publicKeys: [signer.publicKey, extra], systemPartUuid: parseFileLayout(readFileSync(`boards/${board}/board.env`, 'utf8')).partitions[1]!.guid,
       dataPartUuid: parseFileLayout(readFileSync(`boards/${board}/board.env`, 'utf8')).partitions[2]!.guid,
       output: kernelDirectory, contentSigning: signing,

@@ -107,6 +107,9 @@ for dir in ${UNIT_DIRS}; do
         src=${got#*	}
         [ "${verb}" = disable ] || continue
         rm -f "${link}"
+        if [ -d /mos-build-inputs ]; then
+            printf '%s\t%s\n' "${link}" "${src}" >> /mos-build-inputs/preset-removed.tsv
+        fi
         removed=$((removed + 1))
         echo "preset: removed ${link} (${src} says disable)"
     done

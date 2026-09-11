@@ -39,6 +39,7 @@ export function parseFileLayout(source: string): FileLayout {
     sizeSectors: fit && i === 0 ? number('FIRMWARE_SIZE_SECTORS') : number(`${name}_SIZE_MIB`) * 2048,
     guid: guid(`${name}_GUID`), type: guid(`${name}_TYPECODE`), ...(i ? { fsUuid: guid(`${name}_FS_UUID`) } : {}),
   }))
+  if (partitions[1]!.sizeSectors !== 1024 * 2048) throw new Error('SYSTEM must be exactly 1 GiB')
   let end = fit ? 64 : 2048
   for (const [i, partition] of partitions.entries()) {
     if (partition.number !== i + 1 || partition.startSector !== end || !Number.isSafeInteger(partition.sizeSectors)) throw new Error('Partition order, gap or overlap is invalid')

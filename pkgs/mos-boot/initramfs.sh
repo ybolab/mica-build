@@ -10,21 +10,25 @@ copy_elf() {
     python3 /tools/elf-closure.py "$RUNTIME" "$DEST" "$EFI_ARCH" "$1" "$2"
 }
 copy_elf /input/mos-init /init
-for name in mount blkid losetup veritysetup dmsetup switch_root; do
+copy_elf /input/mos-shutdown /sbin/mos-shutdown
+copy_elf "/usr/lib/mos/boot-busybox/$EFI_ARCH/busybox" /bin/busybox
+for name in blkid veritysetup dmsetup; do
     source=
     for directory in usr/sbin usr/bin sbin bin; do
         if [ -f "$RUNTIME/$directory/$name" ]; then source="$RUNTIME/$directory/$name"; break; fi
     done
     test -n "$source"
-    target="/sbin/$name"
-    if [ "$name" = mount ]; then target=/bin/mount; fi
-    copy_elf "$source" "$target"
+    copy_elf "$source" "/sbin/$name"
 done
 install -m 0644 /input/boot.json "$DEST/etc/mos/boot.json"
 # systemd pivots into this memory-only closure to release the file-backed root.
 python3 /tools/elf-closure.py "$RUNTIME" "$DEST/exitrd" "$EFI_ARCH" \
-    "$RUNTIME/usr/lib/systemd/systemd-shutdown" /shutdown
+    /input/mos-shutdown /shutdown
+# The ELF closure parser already validates architecture and resolves dependencies.
+# Any interpreter/library it discovers violates the single-static-file contract.
 find "$DEST/exitrd" -type f -printf '%P\n' | LC_ALL=C sort > "$DEST/exitrd.files"
+test "$(cat "$DEST/exitrd.files")" = shutdown
+test -x "$DEST/exitrd/shutdown"
 (
     cd "$DEST"
     find . -exec touch -h -d @1577836800 {} +
@@ -32,5 +36,8 @@ find "$DEST/exitrd" -type f -printf '%P\n' | LC_ALL=C sort > "$DEST/exitrd.files
 ) > /output/initramfs.cpio
 find "$DEST" -type f -printf '%P\n' | LC_ALL=C sort > /output/initramfs.files
 test ! -e "$DEST/bin/sh"
-test ! -e "$DEST/bin/busybox"
+test -x "$DEST/bin/busybox"
+test ! -e "$DEST/bin/mount"
+test ! -e "$DEST/sbin/losetup"
+test ! -e "$DEST/sbin/switch_root"
 test ! -d "$DEST/usr/lib/modules"
