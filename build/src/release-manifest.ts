@@ -267,6 +267,29 @@ function startupProducerJoin(value: unknown, pool: Record<string, unknown>, sour
   return record(record(j.production).boot_tools).image as string
 }
 
+const GPT_SOURCE = 'd2e352d0a4226f10b8b2587cd7c1bc5040b8d234'
+const GPT_REBUILT = { commit: GPT_SOURCE, tree: '190ffef0ba12ad24625456f508c5179e517ffc74', epoch: 1789196122, version: '0.1.0+gitd2e352d0a422-1' }
+const GPT_NATIVE = {
+  'mos-init': { bytes: 2403504, sha256: '9d1b164b3af709cc382e6bdbc29e222225ac76e0f8c6e9d4a948f425d7548682' },
+  'mos-shutdown': { bytes: 2043048, sha256: '28ccd8655a02d54b4229f9674e297fa7925881cf89450febe436704bfdab3f0d' },
+}
+const GPT_RECEIPTS = { original: STARTUP_RECEIPTS.original, boot_tools: STARTUP_RECEIPTS.boot_tools,
+  native: '65a4dae876b4e4c58bc4c029679998081b5d543b80668e2129a861f4a1f9370f', deploy: 'aaa082345b66961bab3b327314841226f31e19157ffde626198084759ae60d88' }
+function gptProducerJoin(value: unknown, pool: Record<string, unknown>, source: unknown, arch: string) {
+  const j = object(value, ['schema', 'rebuilt_source', 'approved_delta', 'producer_inputs', 'original_pool', 'witnesses', 'mapping', 'native', 'production'])
+  requireValue(j.schema === 'mos/producer-join/gpt-v1' && arch === 'amd64', 'GPT join schema/architecture')
+  same(source, JOIN_ORIGINAL, 'GPT original source'); same(j.rebuilt_source, GPT_REBUILT, 'GPT rebuilt source')
+  same(j.witnesses, GPT_RECEIPTS, 'GPT producer witnesses'); same(j.native, GPT_NATIVE, 'GPT native outputs')
+  same(canonicalSha(j.production), 'c1cf815d29028f92abed870925b0d2f1368d240164e67fe012b8c7b10b10b9f7', 'GPT production source/tool/flags/output roles')
+  same(canonicalSha(j.approved_delta), 'bc669939c224d936e72bda629e8e2828f18e95f44002bbb0da7bfc7950086bbd', 'GPT reviewed source delta legs')
+  same(canonicalSha(j.producer_inputs), '3a76ae8130a1107da3eaf36a950b3589352d2ec970d9b9ae3ff88adaeb0a7c65', 'GPT complete producer/PREPARE inputs')
+  same(canonicalSha(j.original_pool), 'de26c7fd9d4e5b76ae10aa166659e2d047ede56088a79fd46024fb419a5b4087', 'GPT original pool')
+  same(canonicalSha(pool), '565c0f0bf614299ad6d3a49a6d6127e2f6fc70f240a8361318a7b46b4b15c62c', 'GPT joined pool/index/control')
+  const packages = array(pool.packages).map(p => record(p).package as string)
+  same(j.mapping, Object.fromEntries(packages.map(n => [n, n === 'mos-deploy' ? GPT_SOURCE : JOIN_ORIGINAL.commit])), 'GPT package source attribution')
+  return record(record(j.production).boot_tools).image as string
+}
+
 const BOOT_RECEIPT_SHA = 'af5bc012346a99d360612a1340df58de35265b9a7cc638d2286401b2a3ab7112'
 const BOOT_ROLE_SHA = 'a893b517c2a249afed8d34d323e6f5148aa55ec353c9956f5e422766d516b664'
 function bootToolsRole(value: unknown) {
@@ -310,8 +333,9 @@ function producerJoin(value: unknown, packages: Record<string, unknown>[], sourc
 export function sourceLineage(value: unknown, source: Source, arch: string, capture: Record<string, unknown>) {
   const joined = record(value).schema === 'mos/source-lineage/join-v1'
   const startup = joined && record(record(value).producer_join).schema === 'mos/producer-join/startup-v1'
-  const consumers = startup ? new Set([...JOIN_CONSUMERS, ...STARTUP_TRACKING]) : JOIN_CONSUMERS
-  const rebuilt = startup ? STARTUP_REBUILT : JOIN_REBUILT
+  const gpt = joined && record(record(value).producer_join).schema === 'mos/producer-join/gpt-v1'
+  const rebuilt = gpt ? GPT_REBUILT : startup ? STARTUP_REBUILT : JOIN_REBUILT
+  const consumers = new Set([...JOIN_CONSUMERS, ...(startup || gpt ? STARTUP_TRACKING : [])])
   let bootToolsImage: string | undefined
   const l = object(value, ['schema', 'package_source', 'composition_source', 'architecture', 'root_epoch', 'pool', 'receipt_sha256', 'delta', ...(joined ? ['producer_join'] : [])])
   requireValue(['mos/source-lineage/v1', 'mos/source-lineage/join-v1'].includes(l.schema as string) && l.architecture === arch, 'runtime lineage schema/architecture')
@@ -342,7 +366,7 @@ export function sourceLineage(value: unknown, source: Source, arch: string, capt
   const paths: string[] = []
   for (const value of l.delta) {
     const row = object(value, ['path', 'before', 'after'])
-    requireValue(typeof row.path === 'string' && (startup ? consumers : allowed).has(row.path), 'runtime lineage package-relevant delta')
+    requireValue(typeof row.path === 'string' && (startup || gpt ? consumers : allowed).has(row.path), 'runtime lineage package-relevant delta')
     paths.push(row.path)
     for (const value of [row.before, row.after]) if (value !== null) {
       const entry = object(value, ['mode', 'blob'])
@@ -377,10 +401,11 @@ export function sourceLineage(value: unknown, source: Source, arch: string, capt
   same(Object.keys(files).sort(), [...expected].sort(), 'runtime lineage pool membership')
   if (joined) {
     const boot = record(l.producer_join).schema === 'mos/producer-join/boot-tools-v1'
-    if (!boot && !startup) same(c, JOIN_LEGACY_COMPOSITION, 'boot-tools witness omitted or downgraded')
-    same(l.receipt_sha256, [...Object.values(startup ? STARTUP_RECEIPTS : JOIN_RECEIPTS), ...(boot ? [BOOT_RECEIPT_SHA] : [])].sort(), 'producer join receipt set')
+    if (!boot && !startup && !gpt) same(c, JOIN_LEGACY_COMPOSITION, 'boot-tools witness omitted or downgraded')
+    same(l.receipt_sha256, [...Object.values(gpt ? GPT_RECEIPTS : startup ? STARTUP_RECEIPTS : JOIN_RECEIPTS), ...(boot ? [BOOT_RECEIPT_SHA] : [])].sort(), 'producer join receipt set')
     requireValue(l.root_epoch === 1577836800 && paths.every(p => consumers.has(p)), 'producer join consumer delta/epoch')
-    if (startup) bootToolsImage = startupProducerJoin(l.producer_join, pool, p, arch)
+    if (gpt) bootToolsImage = gptProducerJoin(l.producer_join, pool, p, arch)
+    else if (startup) bootToolsImage = startupProducerJoin(l.producer_join, pool, p, arch)
     else producerJoin(l.producer_join, packages, p, arch)
   }
   for (const name of ['Packages', 'SHA256SUMS', 'manifest.txt']) same(capture[name], files[name], 'runtime lineage pool capture')
@@ -645,8 +670,8 @@ function verifyStartupCpio(cpio: Buffer, expected: Record<string, { bytes: numbe
 
 /** Bind the authenticated x64 UKI's actual native bytes to the joined witness. */
 export function verifyJoinedNativePayload(boot: Buffer, expected: Record<string, { bytes: number, sha256: string }>, source = JOIN_REBUILT.commit, busybox?: { bytes: number, sha256: string }) {
-  requireValue(source === JOIN_REBUILT.commit || source === STARTUP_SOURCE, 'joined native source role')
-  const startup = source === STARTUP_SOURCE
+  requireValue(source === JOIN_REBUILT.commit || source === STARTUP_SOURCE || source === GPT_SOURCE, 'joined native source role')
+  const startup = source === STARTUP_SOURCE || source === GPT_SOURCE
   requireValue(!startup || !busybox, 'startup does not accept a legacy BusyBox witness')
   requireValue(boot.length >= 64 && boot.length <= 256 * 1048576 && boot.toString('ascii', 0, 2) === 'MZ', 'joined UKI header')
   const pe = boot.readUInt32LE(60)
@@ -715,8 +740,8 @@ export function verifyJoinedNativePayload(boot: Buffer, expected: Record<string,
 }
 
 /** Authenticate every MOSUPD01 object using bounded reads, without unpacking it. */
-export function verifyArchive(path: string, keys: readonly string[], joinedNative: boolean | typeof STARTUP_SOURCE = false, busybox?: { bytes: number, sha256: string }) {
-  requireValue(joinedNative === false || joinedNative === true || joinedNative === STARTUP_SOURCE, 'joined native source role')
+export function verifyArchive(path: string, keys: readonly string[], joinedNative: boolean | typeof STARTUP_SOURCE | typeof GPT_SOURCE = false, busybox?: { bytes: number, sha256: string }) {
+  requireValue(joinedNative === false || joinedNative === true || joinedNative === STARTUP_SOURCE || joinedNative === GPT_SOURCE, 'joined native source role')
   requireValue(!busybox || joinedNative === true, 'boot-tools require legacy joined native provenance')
   regular(path)
   const fd = openSync(path, 'r')
@@ -743,8 +768,8 @@ export function verifyArchive(path: string, keys: readonly string[], joinedNativ
       const chunks: Buffer[] = []
       for (let remaining = bytes; remaining > 0;) { const count = Math.min(65536, remaining), chunk = exact(count); hash.update(chunk); if (nativeBoot) chunks.push(chunk); remaining -= count }
       requireValue(hash.digest('hex') === sha, 'update object digest')
-      if (nativeBoot) verifyJoinedNativePayload(Buffer.concat(chunks), joinedNative === STARTUP_SOURCE ? STARTUP_NATIVE : JOIN_NATIVE,
-        joinedNative === STARTUP_SOURCE ? STARTUP_SOURCE : JOIN_REBUILT.commit, busybox)
+      if (nativeBoot) verifyJoinedNativePayload(Buffer.concat(chunks), joinedNative === GPT_SOURCE ? GPT_NATIVE : joinedNative === STARTUP_SOURCE ? STARTUP_NATIVE : JOIN_NATIVE,
+        typeof joinedNative === 'string' ? joinedNative : JOIN_REBUILT.commit, busybox)
     }
     requireValue(readSync(fd, Buffer.alloc(1)) === 0, 'trailing update archive bytes')
     return deployment
@@ -768,10 +793,11 @@ export function gateRelease(dir: string, keys: readonly string[]) {
   requireValue(evidence(JSON.parse(read(join(dir, 'board-evidence.json'))), m.board) === m.bootAssurance, 'evidence assurance differs')
   const runtime = record(readRuntime(join(dir, 'rootfs-report.runtime.json')).provenance)
   const lineage = record(runtime.source_lineage)
-  let joined: boolean | typeof STARTUP_SOURCE = false
+  let joined: boolean | typeof STARTUP_SOURCE | typeof GPT_SOURCE = false
   if (lineage.schema === 'mos/source-lineage/join-v1') {
     sourceLineage(lineage, m.source, m.board === 'x64' ? 'amd64' : 'arm64', record(runtime.capture_sha256))
-    joined = record(record(lineage.producer_join).rebuilt_source).commit === STARTUP_SOURCE ? STARTUP_SOURCE : true
+    const producer = record(record(lineage.producer_join).rebuilt_source).commit
+    joined = producer === GPT_SOURCE ? GPT_SOURCE : producer === STARTUP_SOURCE ? STARTUP_SOURCE : true
   }
   const bootTool = joinedBootTool(lineage)
   const deployment = verifyArchive(join(dir, 'update.mosupd'), keys, joined, bootTool?.busybox)

@@ -2125,3 +2125,84 @@ which still refuse changed producers under the fixed438 role. The next work
 is that bounded existing caller/lineage/release correction and its direct
 current-input proof, then affected image and complete x64 acceptance. No
 native, tool, kernel, original-J package or old guest/image replay occurred.
+
+### 2026-09-12 GPT producer join implementation
+
+The reviewed d2e352d0 GPT correction has successful native and completed-prefix
+deploy production. This consumer correction introduces one fixed gpt-v1 joined
+role: d2 native/deploy, unchanged original J14 archives, and the separately
+witnessed 438 boot tool. Original failed aggregate and successful continuation
+receipts remain distinct. No producer path enters the composition or joined
+consumer sets, and no producer/tool/kernel was rebuilt for admission.
+
+GptJoin-v1 under the existing Phase1 wave holds the independent 15-archive pool
+and newly generated indexes. Its actual repo.sh command ran 07:51:30.725288..
+07:51:35.198202 UTC, exit 0, within the unchanged daemon1CPU5GiB plus serial
+child3CPU5GiB envelope. The old and new producer pools were not overwritten.
+The proposed record is diagnostic input until final clean-source validation.
+
+Direct original-source RED shows the old lineage and release consumers refusing
+the d2 package stamp and native source role. A new witness-function absence was
+also recorded as an implementation RED. The first TypeScript edit had a duplicate
+local declaration and failed before tests; it is preserved separately. Corrected
+direct checks admit the actual native/deploy outputs and authenticated compressed
+startup payload, while rejecting changed producer roles, witnesses, inputs,
+indexes, native bytes and old-source attribution. This is source/input and signed
+fixture evidence, not a production component, image, guest or API result.
+
+The canonical creator verifies the full reviewed J/fb6/438/d2 delta legs, all
+15 producer/PREPARE maps, native49/deploy59/tool19 inputs, actual original and new
+receipts/output/control/tool bytes, and a separate consumer-only successor delta.
+The root caller derives only the validated immutable 438 tool manifest. Release
+capture, installed package identity and authenticated native payload remain
+strict. Final clean two-copy joins and affected caller/capture/package admission
+are the next required evidence before independent B review and affected x64
+production. The unchanged ED723 image and failed guest/API remain historical;
+full x64 acceptance and later physical/consolidated ARM obligations are pending.
+
+### 2026-09-12 GPT join final source and input handoff
+
+Frozen consumer correction ae40a791d763830a8e4a7cd7b0bb83a8b8945902,
+tree e2ea87818636e931117f8c7b07f5372d5cf864aa, epoch1789200301,
+changes exactly seven source/test/record paths. Producer source remains d2;
+original J14 and reused438 tools retain their own identities. The five changed
+product/test paths are outside every complete producer map. Fixed path sets are
+unchanged. Direct lineage3, context5, release2/33 assertions, type, shell syntax,
+docs and diff checks pass against the final relevant source bytes.
+
+Both actual clean 1841-entry verification copies yield canonical lineage
+SHA256a54c66c0d5b82f66389bf53ba86bcdf66e41e375341d9aa040f257e4187546a8.
+Actual root caller5 tests/eight shell invocations pass: unset/exact derive the
+witnessed af672 tool at isolated boundary79; wrong config/old tool/tag/manifest,
+unverified join and default mixed stamps refuse. Boundary79 is fixture-only.
+Each clean copy passes current pool/capture/release admission plus seven
+cross-source/capture refusals. All18 actual mixed pool files match. Kernel
+reuse rechecks all12 original relevant source inputs/modes and original output
+bytes; no kernel build occurred.
+
+The actual joined package input gate ran 08:14:18.883200..08:14:27.313904 UTC,
+exit0:140 checks,15 archives,600 paths,3 maintainer scripts and7 frozen all-
+architecture witnesses. Its exact21fb00cc child ran08:14:24.860435..
+08:14:26.828261 with create/inspect/cgroup/cleanup0 and verified absence.
+Fresh guards kept daemon1CPU5GiB plus serial child3CPU5GiB/swap0/0-3.
+Cross-architecture comparison and producer reproducibility were not replayed.
+
+Preparation history remains separate: dependency directory symlinks were
+untracked and the first clean-source check refused before any input gate;
+real ignored directories corrected only that task preparation. The next runner
+completed lineage1 and all shell cases, then could not locate Bun. Only its
+unexecuted capture and second-copy work continued via the actual Bun path.
+No successful creator/caller was rerun for that recovery. A task adapter's
+initial template-directory assumption was corrected before container execution,
+and the exact frozen J Bun reference was explicitly mapped to its known digest.
+All original attempts, logs and adapter versions remain available.
+
+Final GptJoin-ae40a791d763830a8e4a7cd7b0bb83a8b8945902/metadata/
+successor-readiness-v2.json SHA256
+623516c92679021f9486358b016a9883c702dd6762f2abc61005e283996da258
+binds the actual roles, pool, two clean copies, public input references, caller
+results, current kernel proof and unchanged resource/production-environment
+rules. Independent B source/input review is next; the corrected root, affected
+components/image and full x64 acceptance remain pending. ED723 and every old
+failed invocation retain their original identities. No main, ARM, cron, push,
+publication or completion action occurred.
