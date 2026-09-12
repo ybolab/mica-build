@@ -968,7 +968,7 @@ watchdog handoff/reset and power-cut qualification remain pending; P10 is open.
 
 ## Current cx3576 1 GiB SYSTEM image (2026-09-10)
 
-The user requested a 1 GiB SYSTEM partition. The [focused task](20260909-2358-cx3576-system-1g.md)
+The user requested a 1 GiB SYSTEM partition. The focused task (20260909-2358-cx3576-system-1g)
 updates all fixed geometry checks and rebuilds firmware, the full ARM64 package
 pool and the signed root with matching repart limits. Current full image:
 `_out/cx3576/image/mos-cx3576-20260910-001906.img` (1299 MiB), SHA-256

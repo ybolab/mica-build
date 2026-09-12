@@ -25,7 +25,7 @@ The dated investigation describes the starting point, not the current system.
 The user-approved 2026-09-10 amendment limits installation to two deployments,
 with acquisition on DATA and retirement of inactive B before replacement.
 Implementation and current acceptance are recorded in the
-[strict A/B task](../task/20260910-0040-strict-file-ab.md).
+strict A/B task (20260910-0040-strict-file-ab).
 
 ### Investigation snapshot (2026-09-08, before implementation)
 

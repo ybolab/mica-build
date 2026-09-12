@@ -4,7 +4,7 @@
 - **priority**: P1
 - **owner**: build-policy/bkd-e81lsy1j
 - **createdAt**: 2026-09-04 21:30
-- **relatedPlan**: [PLAN-080](../plan/PLAN-080.md)
+- **relatedPlan**: PLAN-080
 
 ## Description
 

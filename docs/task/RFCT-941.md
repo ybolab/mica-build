@@ -3,7 +3,7 @@
 - **status**: fixed and proven on hardware — the receipt survives the post-burn defenv and the card no longer reinstalls
 - **priority**: P1
 - **owner**: investigation/rfct-941-env-persistence-20260901
-- **plan**: [PLAN-910](../plan/PLAN-910.md)
+- **plan**: PLAN-910
 - **exposedBy**: RFCT-940
 
 ## Reconciliation

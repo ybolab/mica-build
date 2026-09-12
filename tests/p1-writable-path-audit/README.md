@@ -1,7 +1,7 @@
 # P1-B writable-path audit harness
 
 The observation harness behind
-[`docs/task/20260908-1712-p1-writable-path-audit.md`](../../docs/task/20260908-1712-p1-writable-path-audit.md).
+`docs/task/20260908-1712-p1-writable-path-audit.md`.
 It **observes** writers; it changes no layout, unit, tmpfiles rule or overlay,
 and nothing here is installed into an image — `tests/` is in no producer's
 `BUILD_CONTEXTS` and in no `rootfs/compose` Dockerfile context.

@@ -11,6 +11,72 @@ extraction and runtime closure omissions. Reused 21 frozen ARM64 packages and
 successful kernel/firmware inputs with verified composition-only lineage.
 Task and plan: `20260912-1329-arm64-board-builds`.
 
+## 2026-09-12 13:57 [progress]
+
+Revised plan `20260911-2006-split-package-repositories` against `7742a596`,
+planning only. Since its first draft the tree gained a fixed producer join
+(hard-coded commit, pool, receipt and native-executable digests in
+`source-lineage.py` and `release-manifest.ts`), which is the plan's lock
+mechanism done once by hand; the plan now retires it in Phase 1 and publishes
+`mos-init`/`mos-shutdown` as a `mos-lifecycle` archive. Probed Gitea with the
+exported token: version 1.26.1, organisation renamed `miehq` to `ybolab`,
+Debian registry enabled and empty, no target repositories yet. Coupling
+inventory re-counted at 100 files. Approval still pending.
+
+## 2026-09-12 13:45 [decision]
+
+Pruned the settled tracking records identified by the plan and task audit
+(`docs/reports/20260912-plan-task-audit.md`): 53 plan and 93 task detail
+files whose own status heads read completed, closed or rejected left the tree
+with their index rows, per the index rule that a finished record is deleted.
+Every record remains in git history
+(`git log --diff-filter=D -- docs/plan/ docs/task/`). No open record was
+closed or reclassified; the audit's remaining obligations (current ARM and
+physical-board qualification, independent cold-build comparison, Bluetooth
+peer traffic, storage power cuts, the no-radio Wi-Fi diagnostic, fleet
+runtime, managed applications and the repository split) stay with the open
+records and the audit report.
+
+- Completed plans: PLAN-078, 080, 085, 087, 088, 089, 911, 914, 917-926,
+  20260908-1702-pma-project-injection, 20260910-0047-cx3576-hdmi-fullscreen-logo,
+  20260910-0159-cx3576-uboot-console, 20260910-0517-writable-var-regdb,
+  20260910-0555-apid-spa-interaction-refactor, 20260910-0559-s905x5m-current-system,
+  20260910-0616-cx3576-storage-display-cleanup, 20260910-0726-unlimited-application-data,
+  the C slices (20260910-1012 x2, 20260910-1046 x2, 20260910-1050 x3,
+  20260910-1221-c-offline-fleet-config), 20260910-1013-b0-lifecycle-rootfs-audit,
+  A1-A4 (20260910-1014), B1 (20260910-1038), B2 (20260910-1142), B4 (20260910-2100),
+  B5 (20260910-2152), B6 (20260911-0110), 20260912-0614-development-workflow, 20260912-1113-remove-build-resource-limits
+  and 20260912-1123-clean-x64-diagnosis.
+- Rejected or closed plans: PLAN-910, 913, 915, 916 and B7
+  (20260911-0145-b7-fresh-lifecycle-acceptance, canceled; the clean-x64
+  record delivered the bounded x64 acceptance in its place).
+- 20260910-0341-minimal-boot-shutdown (draft) was rejected and deleted as
+  superseded: the native static startup/shutdown route under
+  20260911-1927-boot-artifact-size replaced the BusyBox payload, as the audit
+  records for B1/B2; reintroducing BusyBox would reverse current work.
+- Completed tasks: RFCT-334 (completed but unindexed; deleted rather than
+  re-indexed), 335, 343-360, 910-915, 917-920, 923, 924, 927-931, 933,
+  935-939, 942, 943, 946, 947, and the timestamped records paired with the
+  plans above plus 20260908-1712 P1-A/P1-B, 20260908-1727-status-gate-plan-naming,
+  20260908-2115-p2-descriptor-contracts-x64, 20260909-2358-cx3576-system-1g,
+  20260910-0040-strict-file-ab, 20260910-0254-cx3576-integrated-image,
+  20260910-0338-minimal-boot-shutdown, 20260910-0350-cx3576-latest-boot-review
+  and 20260910-0836-apid-ui-chunk-split.
+- Closed tasks: RFCT-921, 926, 932, 944, 945 and the B7 task.
+- Kept although completed: 20260910-1910-fleet-device-plane-protocol. It is
+  the only normative home of the fleet protocol design (N1-N10) and
+  `tests/fleet-protocol/fixtures.md` cites it as the contract; it stays until
+  that design moves under `docs/design/`. Its task record was deleted.
+
+Links to deleted records in `docs/changelog.md`, `docs/bsp/`, `docs/reports/`,
+`tests/` and the open records became bare names. Three `cx3576-bench.md`
+evidence citations dropped the deleted A2 and storage-cleanup records; the
+document-level line now cites `docs/bsp/cx3576-example.md` and
+`tests/cx3576-bench/collector-test.sh`. `rootfs/runtime/source-lineage.py`
+and `build/src/release-manifest.ts` still name the B7 records in their frozen
+producer-transition allowlists; those describe historical commits and were
+left unchanged. Recorded under 20260912-1341-prune-settled-records.
+
 ## 2026-09-12 13:36 [fix]
 
 ARM64 UEFI components now select the ARM64 boot-tools image for packaging and
@@ -82,7 +148,7 @@ transport errors retain evidence without requiring individual approval.
 
 ## S905X5M signed-file development images (2026-09-10)
 
-The [S905X5M port](task/20260910-0554-s905x5m-current-system.md) now produces
+The S905X5M port (20260910-0554-s905x5m-current-system) now produces
 current signed SD images using paired MOS firmware in eMMC boot0. Native records
 at 120/124 MiB, required FIT verification and independent firmware receipts
 replace the retired cfgload/raw-slot path. Root/kernel updates preserve firmware;
@@ -98,7 +164,7 @@ excluded from qualified releases. No compatibility migration is supplied.
 
 ## Split apid console chunks (2026-09-10)
 
-The [approved bundle split](task/20260910-0836-apid-ui-chunk-split.md) groups the
+The approved bundle split (20260910-0836-apid-ui-chunk-split) groups the
 console's vendor libraries into React, Base UI, router and i18n chunks that the
 browser fetches and compiles in parallel, and removes a route re-export that had
 hoisted the whole system page into the entry. The entry chunk falls from 594 kB
@@ -109,7 +175,7 @@ exports anything but its route, which is the mistake that caused the hoist.
 
 ## apid console rebuilt on the shadcn registry (2026-09-10)
 
-The [approved console refactor](task/20260910-0555-apid-spa-interaction-refactor.md)
+The approved console refactor (20260910-0555-apid-spa-interaction-refactor) (20260910-0555-apid-spa-interaction-refactor)
 replaces the hand-written component layer with shadcn `base-nova` primitives over
 `@base-ui/react` and extracts a shared composite library the feature pages
 consume. Sixteen registry primitives were added through the CLI and fifteen
@@ -140,7 +206,7 @@ rendered white on white.
 
 ## Unlimited system, user and container data (2026-09-10)
 
-The [quota correction](task/20260910-0726-unlimited-application-data.md) removes byte and inode limits
+The quota correction (20260910-0726-unlimited-application-data) removes byte and inode limits
 from /mos, /srv and container storage while retaining independent directories
 and project accounting. Only the variable-data project remains bounded. There
 is no aggregate quota-backed DATA reserve. Focused layout and real ext4 writes
@@ -148,7 +214,7 @@ verify the new policy; previously delivered flash images retain their old limits
 
 ## Independent container storage and CX3576 presentation (2026-09-10)
 
-The [approved continuation](task/20260910-0616-cx3576-storage-display-cleanup.md)
+The approved continuation (20260910-0616-cx3576-storage-display-cleanup) (20260910-0616-cx3576-storage-display-cleanup)
 gives container images, layers, volumes and download temporary files a dedicated
 DATA directory, bind and project quota. Three bounded byte/inode budgets preserve
 the system reserve without double-counting capacity. Private mount propagation
@@ -162,7 +228,7 @@ open; returning from the console does not yet redraw the kernel logo.
 
 ## Writable var and matching regulatory database (2026-09-10)
 
-The [approved storage and regdb repair](task/20260910-0517-writable-var-regdb.md)
+The approved storage and regdb repair (20260910-0517-writable-var-regdb) (20260910-0517-writable-var-regdb)
 binds all of /var to DATA/var, replacing per-systemd-state and var-tmp mounts.
 General variable data shares a project budget of one eighth of DATA, capped at
 256 MiB and 16384 inodes, with minimum limits of 32 MiB and 2048 inodes.
@@ -185,7 +251,7 @@ history a reader can scan without opening either.
 
 ## Latest CX3576 boot-log assessment (2026-09-10)
 
-The [new serial-log assessment](task/20260910-0350-cx3576-latest-boot-review.md) binds `_out/tio.log` to
+The new serial-log assessment (20260910-0350-cx3576-latest-boot-review) binds `_out/tio.log` to
 generation 8 of the integrated image and observes management/API startup and
 health completion. It identifies missing rfkill state storage and a confirmed
 regulatory-database signer mismatch; the matching upstream pair passes offline
@@ -195,8 +261,8 @@ and reboot/watchdog qualification remain open. This is analysis only.
 
 ## Minimal BusyBox boot and shutdown feasibility (2026-09-10)
 
-The [feasibility assessment](task/20260910-0338-minimal-boot-shutdown.md) records a
-[draft replacement](plan/20260910-0341-minimal-boot-shutdown.md) for generic startup tools and the
+The feasibility assessment (20260910-0338-minimal-boot-shutdown) records a
+draft replacement (20260910-0341-minimal-boot-shutdown) for generic startup tools and the
 retained shutdown environment. Signed Rust boot policy remains necessary, and
 BusyBox does not supply the device-mapper helpers. The current ARM64 shutdown
 payload is 16.45 MiB; the existing dmsetup closure alone is 4,765,416 bytes.
@@ -206,7 +272,7 @@ unchanged.
 
 ## Integrated cx3576 image and boot-log review (2026-09-10)
 
-The [integrated image task](task/20260910-0254-cx3576-integrated-image.md) combines
+The integrated image task (20260910-0254-cx3576-integrated-image) combines
 current strict A/B root/init with the centered HDMI logo and native U-Boot console
 repairs. The timestamped 1,299 MiB image preserves 1 GiB SYSTEM and passes 389
 build tests, 123 offline checks, FIT signature negatives and DATA-only growth.
@@ -218,7 +284,7 @@ explicit. Other owners' changes and the draft cleanup plan are preserved.
 
 ## Restore the standard CX3576 U-Boot console (2026-09-10)
 
-The [approved console repair](plan/20260910-0159-cx3576-uboot-console.md) restores
+The approved console repair (20260910-0159-cx3576-uboot-console) restores
 the native one-second any-key countdown in the MOS firmware. Timeout and `boot`
 execute the registered `mosboot` signed deployment command; entering the console
 does not consume a trial. The early pre-CLI bypass is removed, with native
@@ -227,12 +293,12 @@ countdown/command and firmware I/O regressions. The
 requires an explicit user request before removing this standard entry.
 The rebuilt loader and a candidate retaining the HDMI repair pass required FIT
 signature checks, all 123 offline image checks, flash geometry and checksum.
-The [delivery record](task/20260910-0159-cx3576-uboot-console.md) identifies the
+The delivery record (20260910-0159-cx3576-uboot-console) identifies the
 artifacts; physical UART/HDMI acceptance remains untested.
 
 ## Strict two-deployment file A/B replacement (2026-09-10)
 
-The [approved replacement task](task/20260910-0040-strict-file-ab.md) replaces old
+The approved replacement task (20260910-0040-strict-file-ab) replaces old
 inactive B only after authenticating the new inputs and confirming running A.
 Native records retire B before collection; shared components survive, and new B
 is activated only after durable publication. Both FIT environment copies forget
@@ -258,7 +324,7 @@ packaging and board declarations. Four regressions reproduce the original defect
 and pass after the repair; all 388 build tests pass. The rebuilt kernel contains
 the policy and its signed 1,299 MiB candidate image passes required FIT signatures,
 123 offline checks, flash geometry and checksum validation. The
-[delivery record](task/20260910-0044-cx3576-hdmi-fullscreen-logo.md) identifies the
+delivery record (20260910-0044-cx3576-hdmi-fullscreen-logo) identifies the
 image and reused root/firmware inputs. Physical HDMI display remains untested.
 
 ## cx3576 boot-log repair planning (2026-09-10)
@@ -279,7 +345,7 @@ same geometry. The full ARM64 package pool, signed root and firmware are rebuilt
 the complete image is 1299 MiB, down by 1 GiB. SYSTEM uses 197.0 MiB including
 filesystem overhead and has 827.0 MiB free. All 384 build tests, 123 offline
 checks, signature negatives, flash readback fixtures and real DATA-only growth
-pass. The [completed task](task/20260909-2358-cx3576-system-1g.md)
+pass. The completed task (20260909-2358-cx3576-system-1g) (20260909-2358-cx3576-system-1g)
 records exact artifacts, sources and the initial loop-device test failure; the
 completed plan with the same ID is consolidated there and in current layout docs.
 Physical board acceptance remains pending.

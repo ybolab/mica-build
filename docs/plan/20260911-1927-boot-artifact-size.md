@@ -20,7 +20,7 @@ The initramfs is embedded uncompressed in every signed kernel component
 That is flash per deployment on SYSTEM, bytes per kernel update download, and
 bytes hashed at boot under the FIT signature. It is **not** boot-peak RAM: the
 startup half is released at `switch_root`. The resident cost is the exitrd and
-belongs to [20260910-0341-minimal-boot-shutdown](20260910-0341-minimal-boot-shutdown.md);
+belongs to 20260910-0341-minimal-boot-shutdown;
 the two records do not overlap.
 
 ### Decisions taken before this revision
@@ -354,7 +354,7 @@ conflated when reporting results.
 Record the delivered measurements in the related task.
 
 Out of scope: the resident exitrd (owned by
-[20260910-0341-minimal-boot-shutdown](20260910-0341-minimal-boot-shutdown.md)),
+20260910-0341-minimal-boot-shutdown),
 build-time `veritysetup` use in `build/` (retained as Phase 2's reference
 implementation), board driver cleanup, main-system init replacement, partition
 changes, compatibility layers and migrations.

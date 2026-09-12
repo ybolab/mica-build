@@ -2,7 +2,7 @@
 
 This is the reusable operator procedure for the thirteen qualification rows in
 [cx3576-example.md](cx3576-example.md) and the finer current obligations in the
-[live acceptance matrix](../task/20260910-1014-a2-cx3576-acceptance-matrix.md).
+live acceptance matrix (20260910-1014-a2-cx3576-acceptance-matrix).
 It defines the order, admission gates, human observations and evidence boundary
 for a fresh complete image using signed file deployments.
 
@@ -14,7 +14,7 @@ dated run bound to the exact image, source, board, storage part and radio SKU
 may update the live matrix or dossier, and off-hardware gates remain evidence
 about their own surface rather than a hardware `pass`.
 
-> status: board-dependent — evidence: `docs/task/20260910-1014-a2-cx3576-acceptance-matrix.md`
+> status: board-dependent — evidence: `docs/bsp/cx3576-example.md`, `tests/cx3576-bench/collector-test.sh`
 
 ## 1. What the session has to produce
 
@@ -453,7 +453,7 @@ arming before eMMC access, Linux driver takeover, PID 1 ownership and configured
 timeouts; then run the early expiry and post-PID-1 expiry as separate cases.
 
 Under L1's 2026-09-10 ruling, current row D5, inherited from the historical
-[PLAN-088](../plan/PLAN-088.md) section 2.2 panic obligation (old bench D4), is
+PLAN-088 section 2.2 panic obligation (old bench D4), is
 superseded by the current console policy and is not a campaign pass criterion. The existing
 watchdog/crash tests still require authoritative serial diagnostics, reset
 cause and their independent watchdog/recovery results. If the operator elects
@@ -532,7 +532,7 @@ following stage; handle it only as the optional review in step 5:
    as `not qualified / optional observation` beside the authoritative serial
    trace. If no sink was connected then, record no D5 observation and do not
    repeat the crash. L1's 2026-09-10 ruling supersedes the inherited
-   [PLAN-088](../plan/PLAN-088.md) HDMI-panic requirement for this campaign; the
+   PLAN-088 HDMI-panic requirement for this campaign; the
    screen observation neither passes nor blocks this or any following stage and
    proves neither support nor impossibility.
 
@@ -807,7 +807,7 @@ gate instead of composing those separate software results into an image claim.
 Physical cx3576 boot, reset cause, watchdog handoff and power-cut acceptance
 remain open until measured on the named board. The collector records those
 observations; passing its own syntax or refusal tests cannot close a hardware
-row. Keep the exact evidence in the live matrix and board dossier.
+row. Keep the exact evidence in the live matrix (20260910-1014-a2-cx3576-acceptance-matrix) and board dossier.
 
 ## 7. Running the collector
 
@@ -887,7 +887,7 @@ the bench run:
 - **BusyBox ships with no applet links**: the root contains `/usr/bin/busybox`
   and its copyright file, and nothing else — so `busybox` covers no absence.
 
-> status: board-dependent — evidence: `rootfs/build.sh`, `boards/cx3576/board.env`, `docs/task/20260910-1014-a2-cx3576-acceptance-matrix.md`
+> status: board-dependent — evidence: `rootfs/build.sh`, `boards/cx3576/board.env`
 
 ## 8. Filling the dossier
 
@@ -895,7 +895,7 @@ the bench run:
 column order followed by the 39 current details. Review every cell against the
 raw evidence;
 then update both the
-[live matrix](../task/20260910-1014-a2-cx3576-acceptance-matrix.md) and
+live matrix (20260910-1014-a2-cx3576-acceptance-matrix) and
 [cx3576-example.md](cx3576-example.md) in the owning reconciliation change:
 
 - fill the **Binding** paragraph above the table with the board revision,
@@ -921,7 +921,7 @@ Collector v3 is syntax-checked and its explicit-binding, health-window,
 dry-run/refusal and 39-row report behavior has a focused host test. The active
 file-deployment task records reusable software results; earlier collector runs
 apply only to their dated source. The live matrix records the exact current
-blockers; A4's [integrated acceptance detail](../task/20260910-1014-a4-cx3576-integrated-acceptance.md)
+blockers; A4's integrated acceptance detail (20260910-1014-a4-cx3576-integrated-acceptance) (20260910-1014-a4-cx3576-integrated-acceptance)
 records subsequent collector/build deltas without rewriting that baseline.
 No current same-image physical CX3576 acceptance result has been
 captured.
@@ -1025,7 +1025,7 @@ That host evidence alone was not a coherent ARM64 kernel/object result. A4's
 but still no physical D3/D4 or kernel lock-scheduling pass;
 the exact-image HDMI/VT observations remain unqualified until a bench is named.
 
-D5 retains historical [PLAN-088](../plan/PLAN-088.md) section 2.2 and its
+D5 retains historical PLAN-088 section 2.2 and its
 `console=tty1` reasoning only for chronology. L1 ruled on 2026-09-10 that it is
 superseded by the current console policy and is not mandatory campaign
 acceptance. That policy was completed at
@@ -1045,4 +1045,4 @@ dedicated panic screen or diagnostic request needs a separate concrete
 implementation and acceptance boundary; this procedure does not claim delivery
 of such a feature.
 
-> status: board-dependent — evidence: `docs/design/display.md`, `docs/task/20260910-0616-cx3576-storage-display-cleanup.md`
+> status: board-dependent — evidence: `docs/design/display.md`

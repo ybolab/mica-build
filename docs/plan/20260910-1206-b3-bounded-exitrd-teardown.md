@@ -7,7 +7,7 @@
 
 ## Initial context (before the accepted partial delivery)
 
-Approved B0 design: [lifecycle closure](20260910-1013-b0-lifecycle-rootfs-audit.md).
+Approved B0 design: lifecycle closure (20260910-1013-b0-lifecycle-rootfs-audit).
 B1 supplies static BusyBox 1.36.1 with explicit applets; B2 preserves authenticated
 startup and validates loop associations and target init. The current exitrd still
 contains systemd-shutdown. copy_exitrd validates leaf regular files and totals,

@@ -34,7 +34,7 @@ P3-P9 software acceptance passes; P10 cleanup and cx3576 physical qualification 
   and dead-code cleanup. RAUC is removed; lode is not an OS update dependency.
 - 2026-09-08: the user resumed work after reviewing P1 and reconfirmed that
   development requires no backward compatibility. Local P2 work is tracked in
-  [20260908-2115-p2-descriptor-contracts-x64](20260908-2115-p2-descriptor-contracts-x64.md).
+  20260908-2115-p2-descriptor-contracts-x64.
   The historical execution service remains stopped; the current work proceeds
   sequentially in this checkout. Older pending-approval notes below describe
   the proposal's history, not its current authorization.

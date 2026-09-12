@@ -32,7 +32,7 @@ retain completed 438 native, deploy and x64 boot-tools producers and their witne
 
 - Full-tier proposal: it crosses FIT/UKI packaging, the authenticated init, the
   Rust dependency licence policy, and boot/shutdown acceptance.
-- Distinct from [20260910-0338-minimal-boot-shutdown](20260910-0338-minimal-boot-shutdown.md),
+- Distinct from 20260910-0338-minimal-boot-shutdown,
   which owns the **resident** exitrd. That record's scope excludes the startup
   half on the ground that it is not resident; this record takes the startup half
   on the different ground that it is permanent artifact cost. The two do not
