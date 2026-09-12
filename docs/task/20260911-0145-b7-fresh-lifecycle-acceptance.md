@@ -1773,3 +1773,53 @@ resource slot. New deploy/output witnesses and strict final joined-source
 admission remain required before affected component/image/guest successors.
 Original J packages,438 tool/kernel identities, ed723 image production and
 its failed first guest/API attempt remain immutable; none is relabeled.
+
+
+## GPT correction deploy production and prefix recovery (2026-09-12)
+
+The affected deploy PREPARE used the same frozen d2e352d0/tree190ffef0,
+epoch1789196122 and original pinned Rust image. Container70c94047de90 ran
+07:29:26.103386..07:29:55.575225 UTC, exit 0; cleanup exited 0 and the
+existing hook exported only mos-deploy. The compiled and packed payload is
+2631680 B, SHA2567135f5789cdd843a21373f5833b617a7344c4f1081aa804ac7aee9a9c7a01f7e.
+
+The first runner refused before production because its private target directory
+was absent. After that preparation correction, the original driver still ended
+07:31:10.525452 with exit 1: the task adapter rejected the existing Debian tool
+OCI index's separate provenance manifest before launching BuildKit packaging.
+Its actual fixed a6eff372 index contains one amd64 manifest721b2807 and an
+attached attestationf6b60c56. The corrected task-only validator verifies their
+exact identities, config, all seven compressed/diff layers, subject and attached
+provenance. Eleven positive/refusal checks passed. A subsequent inspect-array
+wiring error also refused before packaging; the actual corrected inspect-to-
+validator call passed separately. All original failures and the read-only
+20-second start-observation timeout during cleanup remain preserved.
+
+The completed PREPARE was reused without recompilation. Only the previously
+unexecuted package/index stages continued, through the original exact package
+arguments and repo.sh source. Their aggregate ran 07:37:06.960328..
+07:37:22.203538 UTC, exit 0. The original outer exit 1 remains unchanged.
+New mos-deploy_0.1.0+gitd2e352d0a422-1_amd64.deb is 757948 B, SHA256
+018f707b4a2322293f614ce9d909f17ad4de6256bc36f1998f98178204fe493e.
+Its control, executable mode/ownership/bytes and all three generated indexes
+match. Package dependencies remain libc6, libgcc-s1, mount and curl; the
+original dpkg-shlibdeps diversion warnings are preserved.
+
+GptProducer-d2e352d0/metadata/deploy-terminal-v1.json (under the full immutable
+GptProducer directory) SHA256a9d6333f6da9e6138b5351b3e751cdb2043c01c20a7e5d48b6f93a76e325acff
+binds 55 evidence files, actual source/argv/exits, archive and unchanged
+1841-entry before/after source. All original execution PIDs and direct children
+are absent. Packaging used only the existing bounded daemon1CPU5GiB; compiler
+and index each used serial3CPU5GiB beside it, with actual fresh resource and
+create-inspect-start/cgroup proofs. No resource expansion/recreation occurred.
+
+The new fixed per-role witness files are native.json SHA256
+65a4dae876b4e4c58bc4c029679998081b5d543b80668e2129a861f4a1f9370f
+and deploy.json SHA256
+aaa082345b66961bab3b327314841226f31e19157ffde626198084759ae60d88,
+with 49/59 exact source inputs and actual successful invocations/recovery.
+They are pending admission by the affected strict joined-source consumers,
+which still refuse changed producers under the fixed438 role. The next work
+is that bounded existing caller/lineage/release correction and its direct
+current-input proof, then affected image and complete x64 acceptance. No
+native, tool, kernel, original-J package or old guest/image replay occurred.
