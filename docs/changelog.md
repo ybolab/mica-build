@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-09-12 14:54 [completed]
+
+Completed signed virt-arm64, CX3576 and S905X5M full images and update archives,
+plus the S905X5M recovery package. Static checks passed 104/126/105 respectively
+(virt-arm64 skips its undeclared Bluetooth policy); QEMU API passed 149/149 and
+verified real ARM64 reboot, persistence, poweroff and crun execution. Physical
+board acceptance remains unexecuted. Corrected boot-tool architecture/PE
+extraction and runtime closure omissions. Reused 21 frozen ARM64 packages and
+successful kernel/firmware inputs with verified composition-only lineage.
+Task and plan: `20260912-1329-arm64-board-builds`.
+
 ## 2026-09-12 13:36 [fix]
 
 ARM64 UEFI components now select the ARM64 boot-tools image for packaging and
