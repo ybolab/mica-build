@@ -227,3 +227,5 @@ thing about the tree. Both indexes now say the same thing.
 - [-] [**20260911-1925-boot-artifact-size Shrink the signed boot artifact: compression and early-userspace closure**](20260911-1925-boot-artifact-size.md) `P1`
 
 - [x] [**20260912-0614-development-workflow Simplify development integration and acceptance workflow**](20260912-0614-development-workflow.md) `P1`
+
+- [-] [**20260911-2003-split-package-repositories Split the tree into an assembly repository and independently released package repositories**](20260911-2003-split-package-repositories.md) `P1`

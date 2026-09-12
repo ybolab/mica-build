@@ -167,3 +167,5 @@ disobeys on sight teaches a reader the wrong thing about the tree.
 - [-] [**20260911-1927-boot-artifact-size Shrink the signed boot artifact: compression and early-userspace closure**](20260911-1927-boot-artifact-size.md) `2026-09-11`
 
 - [x] [**20260912-0614-development-workflow Simplify development integration and acceptance workflow**](20260912-0614-development-workflow.md) `2026-09-12`
+
+- [ ] [**20260911-2006-split-package-repositories Split the tree into an assembly repository and independently released package repositories**](20260911-2006-split-package-repositories.md) `2026-09-11`
