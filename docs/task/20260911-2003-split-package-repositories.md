@@ -2,7 +2,7 @@
 
 - **status**: in_progress
 - **priority**: P1
-- **owner**: claude/session-9a5be4df
+- **owner**: worker/split-20260912-2100
 - **createdAt**: 2026-09-11 20:03
 
 ## Description
@@ -33,7 +33,7 @@ Acceptance:
 
 ## ActiveForm
 
-Awaiting approval of the staged proposal.
+Implementing Phase 1 (the mechanism inside this tree); approved 2026-09-12.
 
 ## Dependencies
 
@@ -51,9 +51,18 @@ Awaiting approval of the staged proposal.
 - Decided 2026-09-12: one repository per package, named for Mica OS
   (`mica-build`, `mica-build-env`, `micad`, `mica-deploy`, `mica-podman`);
   Debian archives kept as the package format. In-tree package and binary
-  names stay `mos*`. Open: builder-image publishing
-  and CI token custody (plan *Annotations*). Planning only so far; approval
-  pending.
+  names stay `mos*`. Approved 2026-09-12 21:00.
+- Phase 0 closed 2026-09-12: registry round trip done, no Actions runner is
+  registered anywhere (publishing is from the developer machine for now),
+  decisions 3 and 4 recorded in the plan.
+- Phase 1 (2026-09-12 evening): provenance fields in every archive, `VERSION`
+  + `version.sh`, `registry.env`, `fetch.sh`/`lock.sh`/`publish.sh`/`source.sh`,
+  `rootfs/packages/lock.tsv`, the composer's two-class rule in
+  `source-lineage.py` with `MOS_POOL_UNLOCKED`, the fixed producer join
+  retired from the lineage script and the release gate, the package gate
+  lock-aware, `os-pool` / `os-lock-bump`, `mosd-build.txt` from the archive's
+  field. The x64 proof (publish `mos-podman`, lock it, compose from the
+  fetched copy) is the remaining Phase 1 step.
 
 ## Findings
 
@@ -64,6 +73,15 @@ Awaiting approval of the staged proposal.
 
 ## Verification
 
-- Investigation only: file reads, git history counts, a grep of every
-  reference between `pkgs/` and the rest of the tree, and read-only Gitea API
-  probes. No build was run and no source was changed.
+- Planning: file reads, git history counts, a grep of every reference
+  between `pkgs/` and the rest of the tree, and read-only Gitea API probes.
+- Phase 0: throwaway archive uploaded, downloaded byte-identical, listed with
+  its `Mos-Source-*` fields in the component index, deleted (201/200/204).
+- Phase 1, offline: `tests/rootfs-runtime/source_lineage_test.py` (13, the
+  two-class negatives by name), `tests/rootfs-runtime-test.sh` (139 +
+  reproducibility), `build/src/release-manifest.test.ts` (71, lock and
+  unlocked-channel cases), `bun run typecheck` in `build/` and `verify/`,
+  `tests/deb-preflight-test.sh` (19), `make os-host-toolchain-lint`,
+  `make docs-verify`. `tests/shell-pipefail-lint.sh` reports two
+  pre-existing findings outside this change (`pkgs/mos-boot/init-keys.sh`,
+  `pkgs/mosd/apid/ui/verify-ui-policy.sh`).

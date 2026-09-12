@@ -1,5 +1,34 @@
 # Changelog
 
+## 2026-09-12 21:30 [progress]
+
+Implemented Phase 1 of `20260911-2006-split-package-repositories` inside this
+tree, after approval, and closed its Phase 0. Every archive now carries
+`Mos-Source-Repo` and `Mos-Source-Commit` control fields written by
+`build-env/deb/pack.sh` from values `build.sh` resolves (each producer
+Dockerfile declares the two ARGs); `version.sh` reads the new `VERSION` file
+and `pkgs/mosd/hack/check.sh` asserts the crates agree. The pool has two
+classes -- built here at this tree's stamp, or imported by
+`rootfs/packages/lock.tsv` at the locked digest and source -- implemented
+once in `rootfs/runtime/source-lineage.py`, which lost the fixed producer join
+(`join-v1`, `MOS_ROOTFS_*`, every `JOIN_*`/`STARTUP_*`/`GPT_*` constant) and
+gained `lock`/`unlocked` in the record; `build/src/release-manifest.ts` lost
+the same join and its native-payload verifier, re-checks the record's lock
+rows against the tree's lock at assembly, and refuses a `MOS_POOL_UNLOCKED`
+image outside the development channel. New `build-env/deb/{registry.env,
+registry.sh,fetch.sh,lock.sh,publish.sh,source.sh}`, `make os-pool` and
+`make os-lock-bump COMPONENT=`, `MOS_POOL_DIR`; `os-debs` skips a producer
+whose every package is locked; `tests/deb-package-gate.sh` is lock-aware
+(imports must be their row, exact pins only within a class); `mos-podman`
+depends on `mos-system` unversioned and `@SYSTEM_VERSION@` is gone; the
+composer reads `mosd-build.txt` from the archive's field and
+`_out/mosd-build-<arch>.txt` is no longer written. Phase 0 findings: the
+registry round trip works (201/200/204, custom fields in the index); no
+Actions runner is registered anywhere, so publishing is from the developer
+machine until one is. Offline suites green (lineage 13, runtime 139, release
+71, preflight 19, typechecks, host-toolchain lint, docs-verify); the x64
+proof from a fetched `mos-podman` is the next step.
+
 ## 2026-09-12 20:50 [decision]
 
 Revised `20260912-2043-unify-board-behavior` at the user's direction: updates

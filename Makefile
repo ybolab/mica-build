@@ -1,4 +1,4 @@
-.PHONY: os-trust-domain-test os-file-transaction-faults build-env docs-verify docs-verify-test help os-apid-api-spec-pins os-apid-api-test os-apid-ui-build-contract-test os-bare-host-gate os-boot-tools os-build-test os-components os-cx3576-flash-test os-dbus-policy-test os-deb-package-gate os-deb-preflight os-deb-preflight-test os-debian-cache os-debian-install os-debian-test os-debian-verify os-debs os-devkeys os-factory-root-gate os-fit-records-test os-gadget-test os-health-test os-host-toolchain-lint os-host-toolchain-lint-test os-image os-install-closure-gate os-layout-lint os-mac-test os-netavark-kernel-test os-quadlet-doc-test os-repart-test os-rootfs-cx3576 os-rootfs-manifest-test os-rootfs-virt-arm64 os-rootfs-x64 os-rust-gate os-shadow-test os-shell-pipefail-lint os-smoke-negative-test os-smoke-test os-verify os-verify-test podman podman-pins podman-pins-test
+.PHONY: os-trust-domain-test os-file-transaction-faults build-env docs-verify docs-verify-test help os-apid-api-spec-pins os-apid-api-test os-apid-ui-build-contract-test os-bare-host-gate os-boot-tools os-build-test os-components os-cx3576-flash-test os-dbus-policy-test os-deb-package-gate os-deb-preflight os-deb-preflight-test os-debian-cache os-debian-install os-debian-test os-debian-verify os-debs os-devkeys os-lock-bump os-pool os-factory-root-gate os-fit-records-test os-gadget-test os-health-test os-host-toolchain-lint os-host-toolchain-lint-test os-image os-install-closure-gate os-layout-lint os-mac-test os-netavark-kernel-test os-quadlet-doc-test os-repart-test os-rootfs-cx3576 os-rootfs-manifest-test os-rootfs-virt-arm64 os-rootfs-x64 os-rust-gate os-shadow-test os-shell-pipefail-lint os-smoke-negative-test os-smoke-test os-verify os-verify-test podman podman-pins podman-pins-test
 
 # mos top-level build entry. Heavy lifting stays in each component; this file
 # only routes. Board targets: make <board>-<component>, e.g. cx3576-kernel.
@@ -53,9 +53,11 @@ help:
 	@echo "  build-env           build the pinned builder images localhost/mos-build-{base,c,deb,go,openssl,rust,rust-check}:<arch>"
 	@echo "  os-rust-gate        run both Rust workspaces' hack/check.sh (fmt, clippy -D warnings, nextest, doctests, cargo-deny) in the pinned gate image (docker)"
 	@echo "  os-deb-<producer>   build one producer's Debian packages for the architectures it declares; \`bash build-env/deb/producers.sh\` lists them (docker)"
-	@echo "  os-deb-preflight    list every missing package-build input at once, before os-debs starts a container"
+	@echo "  os-deb-preflight    list every missing package-build input at once, and check every lock row is reachable, before os-pool starts a container"
 	@echo "  os-deb-preflight-test   drive that pre-flight red and green, and mutate each half of its hook count contract"
-	@echo "  os-debs             build every Debian package for both architectures and index both pools (docker)"
+	@echo "  os-debs             build every Debian package this tree's producers emit (locked ones skipped) for both architectures and index both pools (docker)"
+	@echo "  os-pool             the whole pool: fetch what rootfs/packages/lock.tsv imports, build the rest, index both pools (docker, network)"
+	@echo "  os-lock-bump        rewrite the lock rows of COMPONENT=<repository> from the registry index and print the diff (network)"
 	@echo "  os-deb-package-gate check the built pools: ownership, fields, reproducibility, enablement (docker)"
 	@echo "  os-install-closure-gate  apt-install both pools into clean roots: closure, ldd, accounts, versions (docker)"
 	@echo "  os-rootfs-manifest-test  resolve the rootfs package set for every board, profile and feature set; prove each refusal and that no producer package is unreachable"
@@ -64,7 +66,7 @@ help:
 	@echo "  x64-<t>             delegate target <t> to boards/x64/bsp (kernel|kernel-config|clean); no bootloader is built, the firmware is one"
 	@echo "  virt-arm64-<t>      delegate target <t> to boards/virt-arm64/bsp (kernel|kernel-config|clean); the QEMU aarch64 board, same shape as x64"
 # NEEDS THE arm64 POOL. The root is composed from _out/debs/arm64 now, so this
-# target refuses until `make os-debs` has built it -- by name, rather than by
+# target refuses until `make os-pool` has built it -- by name, rather than by
 # compiling a component on demand. That refusal is the composer's, not this
 # file's; see rootfs/build.sh.
 os-rootfs-cx3576:
@@ -268,6 +270,8 @@ os-deb-%:
 # `os-deb-package-gate` below is explicit for the same reason.
 os-deb-preflight:
 	bash build-env/deb/preflight.sh
+	bash build-env/deb/fetch.sh --arch amd64 --check
+	bash build-env/deb/fetch.sh --arch arm64 --check
 
 # THE WHOLE LOCAL POOL: every DISCOVERED producer at every architecture it
 # declares, then the index beside each pool. The composer resolves its package
@@ -300,10 +304,25 @@ os-deb-preflight:
 # own missing inputs when its turn comes -- `make os-deb-<producer>` does not
 # come through here -- but that refusal arrives after the producers ahead of it
 # have been packed and names one file; this one names them all, first.
+#
+# A PRODUCER WHOSE EVERY PACKAGE THE LOCK IMPORTS IS SKIPPED, by name: the
+# composer takes the locked archive and refuses a locally built one at another
+# digest, so building it here would only overwrite what os-pool fetched.
+# `make os-deb-<producer>` still builds it on request, for the local
+# development loop under MOS_POOL_UNLOCKED (build-env/deb/README.md).
 os-debs: os-deb-preflight
 	@set -e; \
 	rows="$$(bash build-env/deb/producers.sh)"; \
+	locked="$$(bash build-env/deb/lock.sh --rows | cut -f1 | LC_ALL=C sort -u | tr '\n' ' ')"; \
 	printf '%s\n' "$$rows" | while read -r producer dir arches packages enablement; do \
+	    unlocked_pkgs=""; \
+	    for p in $$(printf '%s' "$$packages" | tr ',' ' '); do \
+	        case " $$locked" in *" $$p "*) ;; *) unlocked_pkgs="$$unlocked_pkgs $$p" ;; esac; \
+	    done; \
+	    if [ -z "$$unlocked_pkgs" ]; then \
+	        echo "os-debs: skipping the '$$producer' producer ($$dir): rootfs/packages/lock.tsv imports $$packages; make os-deb-$$producer builds it anyway"; \
+	        continue; \
+	    fi; \
 	    for arch in $$(printf '%s' "$$arches" | tr ',' ' '); do \
 	        echo "bash build-env/deb/build.sh --producer $$producer --arch $$arch  ($$dir)"; \
 	        bash build-env/deb/build.sh --producer "$$producer" --arch "$$arch"; \
@@ -314,7 +333,26 @@ os-debs: os-deb-preflight
 	    bash build-env/deb/repo.sh --arch "$$arch"; \
 	done
 
-# The package-level gates of PLAN-036 section 6, over the pool os-debs built:
+# THE WHOLE POOL, both classes: the archives rootfs/packages/lock.tsv imports
+# are fetched from the registry and verified against their rows, then the
+# producers of this tree build the rest, then both pools are indexed. This is
+# the target rootfs/build.sh names in its refusal. The fetch comes first so
+# that a lock row the registry cannot serve stops the run before a container
+# is started; os-debs re-indexes both pools after the builds, over the fetched
+# and the built archives together.
+os-pool: os-deb-preflight
+	bash build-env/deb/fetch.sh --arch amd64
+	bash build-env/deb/fetch.sh --arch arm64
+	$(MAKE) os-debs
+
+# The lock's only writer. Reads the registry's index for COMPONENT (a package
+# repository's name), rewrites that component's rows and prints the diff; the
+# diff is the import, reviewed like any other change to this tree.
+os-lock-bump:
+	@test -n "$(COMPONENT)" || { echo "error: COMPONENT=<repository> is required, e.g. make os-lock-bump COMPONENT=mica-podman" >&2; exit 1; }
+	bash build-env/deb/lock.sh --bump "$(COMPONENT)" $(if $(LOCK_VERSION),--version "$(LOCK_VERSION)") $(foreach p,$(LOCK_PACKAGES),--package "$(p)")
+
+# The package-level gates of PLAN-036 section 6, over the pool os-pool built:
 # unique file ownership with no Replaces escape, the fields and the Depends
 # closure read back out of each archive, a non-empty copyright per package, the
 # enablement asymmetry between the mosd and MQTT packages, no conffiles, and

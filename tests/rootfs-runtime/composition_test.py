@@ -60,9 +60,10 @@ class CompositionTest(unittest.TestCase):
         record = dict(schema='mos/source-lineage/v1', architecture=arch, root_epoch=1000000000,
                       package_source=dict(commit='a' * 40, tree='b' * 40, epoch=1000000000, version=PACKAGE_VERSION),
                       composition_source=dict(commit='a' * 40, tree='b' * 40, epoch=1000000000),
-                      receipt_sha256=[], delta=[], pool=dict(files=files, packages=[dict(
+                      lock=[], unlocked=[], pool=dict(files=files, packages=[dict(
                           package='mos-system', version=PACKAGE_VERSION, architecture='all',
-                          archive='pool/mos-system.deb', sha256='c' * 64, control_sha256='d' * 64)]))
+                          archive='pool/mos-system.deb', sha256='c' * 64, control_sha256='d' * 64,
+                          source_repo='mica-build', source_commit='a' * 40)]))
         (self.inputs / 'source-lineage.json').write_text(json.dumps(record, sort_keys=True, separators=(',', ':')) + '\n')
 
     def command(self, action, **options):
@@ -161,7 +162,8 @@ class CompositionTest(unittest.TestCase):
         record = json.loads(path.read_text())
         record['pool']['files']['pool/mos-podman.deb'] = 'e' * 64
         record['pool']['packages'].append(dict(package='mos-podman', version=PACKAGE_VERSION,
-            architecture='amd64', archive='pool/mos-podman.deb', sha256='e' * 64, control_sha256='f' * 64))
+            architecture='amd64', archive='pool/mos-podman.deb', sha256='e' * 64, control_sha256='f' * 64,
+            source_repo='mica-build', source_commit='a' * 40))
         path.write_text(json.dumps(record, sort_keys=True, separators=(',', ':')) + '\n')
         self.f.rules['consumers']['mos-podman'] = dict(roots=[declared['roots'][0],
             *(row for row in declared['roots'] if row['paths'] == ['/usr/bin/docker'])], runtime_links=[])

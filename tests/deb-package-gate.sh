@@ -29,11 +29,14 @@
 #      uses, and one of them is checked at (i).
 #   b  Package, Version, Architecture and the Depends closure. Each archive
 #      declares the architecture of the pool it sits in OR `all`; the pool's
-#      package set is what the producers building for that pool declare; one
-#      `+git<commit><dirty>-<rev>` STAMP spans the whole pool, while the prefix
-#      in front of it is per package -- workspace version for first-party
-#      packages, upstream version where producer.env declares VERSION_FROM.
-#      See (i) for how a dependency is classified.
+#      package set is what the producers building for that pool declare PLUS
+#      what rootfs/packages/lock.tsv imports for it; one
+#      `+git<commit><dirty>-<rev>` STAMP spans every archive built here, while
+#      the prefix in front of it is per package -- workspace version for
+#      first-party packages, upstream version where producer.env declares
+#      VERSION_FROM. An IMPORTED archive (one the lock names) is instead
+#      required to BE its lock row: version, sha256, Mos-Source-Repo and
+#      Mos-Source-Commit. See (i) for how a dependency is classified.
 #   c  two builds under one SOURCE_DATE_EPOCH are byte-identical. See the long
 #      comment on the cache below -- this is the check that most easily passes
 #      without having run anything.
@@ -44,20 +47,23 @@
 #      unit at all, and both are correct. The symlink IS the fact under test, so
 #      the expectation cannot be derived from the archive; a package with no row
 #      is a hard failure by name, and zero is spelled out rather than inferred
-#      from a missing row.
+#      from a missing row. An imported archive whose producer is not in this
+#      tree has its row in ITS repository's gate; here it is reported, not
+#      judged.
 #   f  no package carries DEBIAN/conffiles. The root is an immutable dm-verity
 #      squashfs, so a conffile promises a three-way merge that cannot happen.
 #   g  every maintainer script that exists parses as POSIX sh. Nothing else in
 #      the tree covers them: tests/shell-pipefail-lint.sh scans files that
 #      enable pipefail, and these are #!/bin/sh and do not.
-#   h  the pool and the producer set account for each other, BOTH DIRECTIONS.
-#      Every producer that builds for a pool contributed archives to it, and
-#      every archive maps back to a discovered producer. A producer
-#      `make os-debs` silently skipped, and an archive left behind by a producer
-#      that was deleted, each fail by name -- naming the PRODUCER, which is the
-#      thing to go and look at. PACKAGES is also cross-checked against the
-#      control templates actually present, so the declaration and the templates
-#      cannot drift apart.
+#   h  the pool, the producer set and the lock account for each other, BOTH
+#      DIRECTIONS. Every producer that builds for a pool contributed archives
+#      to it (a producer whose every package the lock imports is expected to
+#      have contributed none), and every archive maps back to a discovered
+#      producer or to a lock row. A producer `make os-debs` silently skipped,
+#      and an archive left behind by a producer that was deleted, each fail by
+#      name -- naming the PRODUCER, which is the thing to go and look at.
+#      PACKAGES is also cross-checked against the control templates actually
+#      present, so the declaration and the templates cannot drift apart.
 #   i  ARCHITECTURE: ALL, and VIRTUAL PROVIDES.
 #      An `Architecture: all` archive is a legitimate member of EVERY pool: its
 #      producer runs one build and exports it into both. So it is not an
@@ -65,9 +71,13 @@
 #      that the copies are the SAME BYTES -- the composer resolves each pool
 #      independently, and two pools holding different archives under one filename
 #      is a device whose package set depends on which pool it installed from.
-#      A dependency is LOCAL-REAL when a producer emits a package of that name,
-#      and then it must be pinned to that package's exact pool version and be
-#      in the pool.
+#      A dependency is LOCAL-REAL when a producer emits a package of that name
+#      or the lock imports it, and then it must be in the pool. It must be
+#      pinned to that package's exact pool version when BOTH packages are built
+#      here (one commit, no compatibility promise between them); across the
+#      lock boundary -- either side imported -- the pin is unversioned, because
+#      the two are released from different repositories and the lock, not
+#      APT, is what pins the pair.
 #      It is LOCAL-VIRTUAL when no producer emits it but an archive in the pool
 #      declares it in `Provides` -- `mos-profile` is provided by both
 #      mos-profile-dev and mos-profile-prod and no archive of that name exists.
@@ -93,41 +103,9 @@ FROM_SH="${REPO_ROOT}/build-env/from.sh"
 PRODUCERS_SH="${REPO_ROOT}/build-env/deb/producers.sh"
 BUILD_SH="${REPO_ROOT}/build-env/deb/build.sh"
 DIST="${REPO_ROOT}/_out/debs"
-# An explicit, already witnessed x64 input check; the default remains the full
-# two-architecture/rebuild gate below. No implicit skip environment switch.
-JOIN_MODE=0
-JOIN_ARGS=()
-JOIN_WORK=""
-JOIN_POOL=""
-if [ "$#" -gt 0 ]; then
-    [ "$1" = --joined-inputs ] && [ "$#" -eq 14 ] || { echo "error: invalid joined-input arguments" >&2; exit 1; }
-    JOIN_MODE=1
-    declare -A JOIN_SEEN=()
-    while [ "$#" -gt 0 ]; do
-        [ -n "$2" ] && [ -z "${JOIN_SEEN[$1]:-}" ] || { echo "error: duplicate or empty joined-input argument" >&2; exit 1; }
-        JOIN_SEEN[$1]=1
-        case "$1" in
-            --joined-inputs) JOIN_ARGS+=(--producer-join "$2") ;;
-            --joined-inputs-sha256) JOIN_ARGS+=(--producer-join-sha256 "$2") ;;
-            --package-source|--receipt|--receipt-sha256) JOIN_ARGS+=("$1" "$2") ;;
-            --pool) JOIN_POOL="$2" ;;
-            --work) JOIN_WORK="$2" ;;
-            *) echo "error: unknown joined-input argument: $1" >&2; exit 1 ;;
-        esac
-        shift 2
-    done
-    [ -n "$JOIN_WORK" ] && [ ! -e "$JOIN_WORK" ] && [ "$(basename "$JOIN_POOL")" = amd64 ] || {
-        echo "error: joined inputs require a fresh work directory and an amd64 pool" >&2; exit 1;
-    }
-    mkdir -p "$JOIN_WORK"
-    JOIN_WORK="$(cd "$JOIN_WORK" && pwd)"
-    JOIN_POOL="$(cd "$JOIN_POOL" && pwd)"
-    python3 "$REPO_ROOT/rootfs/runtime/source-lineage.py" --composition-source "$REPO_ROOT" \
-        --pool "$JOIN_POOL" --arch amd64 --epoch 1577836800 --output "$JOIN_WORK/source-lineage.json" "${JOIN_ARGS[@]}"
-    DIST="$(dirname "$JOIN_POOL")"
-fi
-
-for p in "${FROM_SH}" "${PRODUCERS_SH}" "${BUILD_SH}"; do
+[ "$#" -eq 0 ] || { echo "usage: bash tests/deb-package-gate.sh    (no arguments; it reads the pools under _out/debs and rootfs/packages/lock.tsv)" >&2; exit 1; }
+LOCK_SH="${REPO_ROOT}/build-env/deb/lock.sh"
+for p in "${FROM_SH}" "${PRODUCERS_SH}" "${BUILD_SH}" "${LOCK_SH}"; do
     [ -e "${p}" ] || {
         echo "error: ${p} does not exist. This gate derives the repository as two levels above itself; if this file moved, that arithmetic moved with it" >&2
         exit 1
@@ -159,7 +137,6 @@ mapfile -t ROWS < <(bash "${PRODUCERS_SH}")
 # gate that checks one architecture and reports green. NOT the producers'
 # ARCHES: those say what each producer builds, and this says what must exist.
 ARCHES=(amd64 arm64)
-[ "$JOIN_MODE" = 0 ] || ARCHES=(amd64)
 for arch in "${ARCHES[@]}"; do
     [ -d "${DIST}/${arch}/pool" ] || {
         echo "error: ${DIST}/${arch}/pool does not exist, so there is nothing to check for ${arch}. Build it with \`make os-debs\`; a gate that skipped the missing architecture would report on half a pool" >&2
@@ -186,7 +163,8 @@ mapfile -t FROM_ARGS < <(bash "${FROM_SH}" --arch="${IMAGE_ARCH}" MOS_BUILD_DEB=
 IMAGE="${FROM_ARGS[1]#MOS_BUILD_DEB=}"
 
 WORK="${REPO_ROOT}/tmp/deb-package-gate"
-if [ "$JOIN_MODE" = 1 ]; then WORK="$JOIN_WORK"; else rm -rf "${WORK}"; mkdir -p "${WORK}"; fi
+rm -rf "${WORK}"
+mkdir -p "${WORK}"
 
 # The producers' own declarations, staged into one tree the container is handed:
 # the discovery rows, and each producer's control templates beside them. Staged
@@ -210,15 +188,9 @@ done
 # One container reading both pools. The producers' declarations come in beside
 # them so every expectation is the producers' own statement of it.
 
-if [ "$JOIN_MODE" = 1 ]; then
-    python3 - "$WORK/source-lineage.json" >"$TMPL/joined-witness.tsv" <<'JOIN_ROWS'
-import json, sys
-record = json.load(open(sys.argv[1]))
-assert record['schema'] == 'mos/source-lineage/join-v1'
-for row in record['pool']['packages']:
-    print(row['package'], row['version'], row['sha256'], row['architecture'], sep='\t')
-JOIN_ROWS
-fi
+# The lock's rows, validated by their one reader, staged beside the producers'
+# declarations: an imported archive's expectation is its row.
+bash "${LOCK_SH}" --rows >"${TMPL}/lock.tsv"
 STATIC_LOG="${WORK}/static.log"
 static_status=0
 docker run --rm -i \
@@ -243,17 +215,22 @@ mutually_conflicting() {
 }
 
 ARCHES=("$@")
-JOIN_MODE=0
-declare -A JOIN_VERSION=() JOIN_SHA=()
-if [ -f /tmpl/joined-witness.tsv ]; then
-    JOIN_MODE=1
-    [ "$*" = amd64 ] || exit 1
-    while IFS=$'\t' read -r name version digest architecture; do
-        [ -z "${JOIN_VERSION[$name]:-}" ] || exit 1
-        JOIN_VERSION[$name]="$version"; JOIN_SHA[$name]="$digest"
-    done </tmpl/joined-witness.tsv
-    [ "${#JOIN_VERSION[@]}" -gt 0 ] || exit 1
-fi
+# The lock rows, keyed <package>|<arch>; a row for `all` is a member of every
+# pool, the way an `all` archive is.
+declare -A LOCK_VERSION=() LOCK_SHA=() LOCK_REPO=() LOCK_COMMIT=()
+LOCKED_NAMES=" "
+while IFS=$'\t' read -r name version larch digest repo commit; do
+    [ -n "${name}" ] || continue
+    LOCK_VERSION["${name}|${larch}"]="${version}"; LOCK_SHA["${name}|${larch}"]="${digest}"
+    LOCK_REPO["${name}|${larch}"]="${repo}"; LOCK_COMMIT["${name}|${larch}"]="${commit}"
+    case "${LOCKED_NAMES}" in *" ${name} "*) ;; *) LOCKED_NAMES="${LOCKED_NAMES}${name} " ;; esac
+done </tmpl/lock.tsv
+# The lock row for a package in one pool, if any: its own architecture's, else all's.
+lock_key() {
+    if [ -n "${LOCK_VERSION[$1|$2]:-}" ]; then echo "$1|$2"
+    elif [ -n "${LOCK_VERSION[$1|all]:-}" ]; then echo "$1|all"
+    fi
+}
 
 mapfile -t ROWS < /tmpl/producers.tsv
 [ "${#ROWS[@]}" -gt 0 ] || {
@@ -367,7 +344,7 @@ SCRIPTS_N=0
 # these exist to close.
 ALL_COMPARED_N=0
 VIRTUAL_RESOLVED_N=0
-VERSIONS=()
+BUILT_VERSIONS=()
 EXTERNALS=()
 VIRTUALS=()
 # sha256 of every Architecture: all archive, per pool, keyed <package>|<pool>.
@@ -398,11 +375,22 @@ for arch in "${ARCHES[@]}"; do
         case "${PRODUCER_ARCHES[${producer}]}" in
         *" ${arch} "* | *" all "*)
             pool_producers="${pool_producers}${producer} "
-            expected="${expected}${PRODUCER_PACKAGES[${producer}]# } "
+            for pkg in ${PRODUCER_PACKAGES[${producer}]}; do
+                # A package the lock imports is expected from the LOCK, not
+                # from the producer, whatever the producer declares.
+                [ -n "$(lock_key "${pkg}" "${arch}")" ] || expected="${expected}${pkg} "
+            done
             ;;
         esac
     done
-    EXPECTED_SET="$(printf '%s\n' ${expected} | LC_ALL=C sort | tr '\n' ' ')"
+    pool_locked=""
+    for key in "${!LOCK_VERSION[@]}"; do
+        case "${key}" in
+        *"|${arch}" | *"|all") pool_locked="${pool_locked}${key%%|*} " ;;
+        esac
+    done
+    expected="${expected}${pool_locked}"
+    EXPECTED_SET="$(printf '%s\n' ${expected} | LC_ALL=C sort -u | tr '\n' ' ')"
 
     got_names=()
     pool_versions=()
@@ -418,13 +406,12 @@ for arch in "${ARCHES[@]}"; do
         pool_versions+=("${v}")
         POOL_PKG_VER["${n}"]="${v}"
     done
-    VERSIONS+=("${pool_versions[@]}")
 
     got_set="$(printf '%s\n' "${got_names[@]}" | LC_ALL=C sort | tr '\n' ' ')"
     if [ "${got_set}" = "${EXPECTED_SET}" ]; then
-        pass "${arch}: the pool holds exactly the packages its producers declare (${got_set% })"
+        pass "${arch}: the pool holds exactly the packages its producers declare and the lock imports (${got_set% })"
     else
-        fail "${arch}: the pool holds [${got_set% }], but the producers building for ${arch} declare [${EXPECTED_SET% }]. A missing package is one the composer cannot install; an extra one is an archive no producer owns"
+        fail "${arch}: the pool holds [${got_set% }], but the producers building for ${arch} declare and the lock imports [${EXPECTED_SET% }]. A missing package is one the composer cannot install; an extra one is an archive no producer owns and no lock row names. \`make os-pool\` fetches the imports and builds the rest"
     fi
 
     # h -- THE VACUITY GUARD, both directions, per producer.
@@ -433,7 +420,14 @@ for arch in "${ARCHES[@]}"; do
     # say is WHICH PRODUCER to go and look at, and with ten producers in the
     # tree that is the whole cost of the diagnosis.
     for producer in ${pool_producers}; do
-        want_pkgs="${PRODUCER_PACKAGES[${producer}]}"
+        want_pkgs=""
+        for pkg in ${PRODUCER_PACKAGES[${producer}]}; do
+            [ -n "$(lock_key "${pkg}" "${arch}")" ] || want_pkgs="${want_pkgs} ${pkg}"
+        done
+        if [ -z "${want_pkgs}" ]; then
+            pass "${arch}: the producer '${producer}' emits only packages the lock imports (${PRODUCER_PACKAGES[${producer}]# }), so nothing is expected from it here"
+            continue
+        fi
         found_n=0
         missing=""
         for pkg in ${want_pkgs}; do
@@ -457,12 +451,12 @@ for arch in "${ARCHES[@]}"; do
     done
     orphan=""
     for g in "${got_names[@]}"; do
-        [ -n "${PKG_PRODUCER[${g}]:-}" ] || orphan="${orphan} ${g}"
+        [ -n "${PKG_PRODUCER[${g}]:-}" ] || [ -n "$(lock_key "${g}" "${arch}")" ] || orphan="${orphan} ${g}"
     done
     if [ -z "${orphan}" ]; then
-        pass "${arch}: every archive in the pool maps back to a discovered producer"
+        pass "${arch}: every archive in the pool maps back to a discovered producer or a lock row"
     else
-        fail "${arch}: ${pool} holds archive(s) no discovered producer declares:${orphan}. Most likely a producer was deleted or renamed and its output was left behind; repo.sh indexes it and the composer would install it"
+        fail "${arch}: ${pool} holds archive(s) no discovered producer declares and no lock row names:${orphan}. Most likely a producer was deleted or renamed and its output was left behind; repo.sh indexes it and the composer would install it"
     fi
 
     # One STAMP across the pool, SPANNING the Architecture: all archives in it.
@@ -472,16 +466,31 @@ for arch in "${ARCHES[@]}"; do
     # `+`, and its shape is asserted per archive first: a version with no
     # recognisable stamp would otherwise contribute a garbage "stamp" that
     # merely has to collide with another garbage one to pass.
-    if [ "$JOIN_MODE" = 1 ]; then
-        [ "${#got_names[@]}" -eq "${#JOIN_VERSION[@]}" ] || fail "joined witness package count differs"
-        for name in "${got_names[@]}"; do
-            if [ "${POOL_PKG_VER[$name]}" = "${JOIN_VERSION[$name]:-}" ]; then
-                pass "${name}: exact witnessed producer version"
-            else fail "${name}: joined producer version differs"; fi
-        done
-    else
+    # IMPORTED archives first: each is its lock row, byte for byte and field
+    # for field, or it is refused by name. What the row says is what fetch.sh
+    # verified on the way in and what the composer will require again; an
+    # archive here at another digest is one somebody built over the import.
+    built_versions=()
+    for d in "${debs[@]}"; do
+        n="$(dpkg-deb --field "${pool}/${d}" Package)"
+        v="$(dpkg-deb --field "${pool}/${d}" Version)"
+        key="$(lock_key "${n}" "${arch}")"
+        if [ -z "${key}" ]; then
+            built_versions+=("${v}")
+            continue
+        fi
+        actual_sha="$(sha256sum "${pool}/${d}" | cut -d' ' -f1)"
+        actual_repo="$(dpkg-deb --field "${pool}/${d}" Mos-Source-Repo)"
+        actual_commit="$(dpkg-deb --field "${pool}/${d}" Mos-Source-Commit)"
+        if [ "${v}" = "${LOCK_VERSION[${key}]}" ] && [ "${actual_sha}" = "${LOCK_SHA[${key}]}" ] &&
+            [ "${actual_repo}" = "${LOCK_REPO[${key}]}" ] && [ "${actual_commit}" = "${LOCK_COMMIT[${key}]}" ]; then
+            pass "${n} ${arch}: imported, and is its lock row (${v} from ${actual_repo}@${actual_commit:0:12}, sha256 ${actual_sha:0:16})"
+        else
+            fail "${n} ${arch}: imported by rootfs/packages/lock.tsv as ${LOCK_VERSION[${key}]} from ${LOCK_REPO[${key}]}@${LOCK_COMMIT[${key}]:0:12} (sha256 ${LOCK_SHA[${key}]:0:16}), but the pool holds ${v} from ${actual_repo:-?}@${actual_commit:0:12} (sha256 ${actual_sha:0:16}). A locked archive is its row or it is not in the pool; \`make os-pool\` refetches it"
+        fi
+    done
     pool_stamps=()
-    for v in "${pool_versions[@]}"; do
+    for v in ${built_versions[@]+"${built_versions[@]}"}; do
         stamp="${v##*+}"
         case "${stamp}" in
         git[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]-* | \
@@ -494,13 +503,15 @@ for arch in "${ARCHES[@]}"; do
         esac
     done
     pool_stamp="$(printf '%s\n' ${pool_stamps[@]+"${pool_stamps[@]}"} | LC_ALL=C sort -u | tr '\n' ' ')"
-    if [ "${#pool_stamps[@]}" -eq "${#pool_versions[@]}" ] &&
+    if [ "${#built_versions[@]}" -eq 0 ]; then
+        pass "${arch}: every archive in the pool is imported by the lock; no built-here stamp to compare"
+    elif [ "${#pool_stamps[@]}" -eq "${#built_versions[@]}" ] &&
         [ "$(printf '%s\n' "${pool_stamps[@]}" | LC_ALL=C sort -u | wc -l)" -eq 1 ]; then
-        pass "${arch}: one git stamp across the pool (${pool_stamp% }, ${#pool_versions[@]} archive(s))"
+        pass "${arch}: one git stamp across the archives built here (${pool_stamp% }, ${#built_versions[@]} archive(s))"
     else
-        fail "${arch}: the pool holds more than one git stamp [${pool_stamp% }]. Rebuild it whole with \`make os-debs\`"
+        fail "${arch}: the archives built here carry more than one git stamp [${pool_stamp% }]. Rebuild them whole with \`make os-pool\`"
     fi
-    fi
+    BUILT_VERSIONS+=(${built_versions[@]+"${built_versions[@]}"})
 
     # LOCAL-VIRTUAL names: what the archives of this pool declare in Provides.
     # Collected before the closure below, because a dependency may name one.
@@ -594,6 +605,7 @@ for arch in "${ARCHES[@]}"; do
                 for n in "${LOCAL_NAMES[@]}"; do
                     [ "${dep_name}" != "${n}" ] || is_local=1
                 done
+                case "${LOCKED_NAMES}" in *" ${dep_name} "*) is_local=1 ;; esac
                 if [ "${is_local}" = 0 ]; then
                     # LOCAL-VIRTUAL before EXTERNAL: a name no producer emits but
                     # an archive in this pool Provides is satisfied here, and
@@ -614,12 +626,25 @@ for arch in "${ARCHES[@]}"; do
                 # version. A dependency on a local package the pool does not
                 # hold falls to the in-pool check below with an empty pin here.
                 dep_ver="${POOL_PKG_VER[${dep_name}]:-}"
+                across_lock=0
+                [ -z "$(lock_key "${name}" "${arch}")" ] && [ -z "$(lock_key "${dep_name}" "${arch}")" ] || across_lock=1
                 case "${alt}" in
                 *"(= ${dep_ver:-<not in pool>})"*)
-                    pass "${name} ${arch}: depends on ${dep_name} at its exact pool version (= ${dep_ver})"
+                    if [ "${across_lock}" = 1 ]; then
+                        fail "${name} ${arch}: depends on ${dep_name} at the exact version (= ${dep_ver}) across the lock boundary. The two are released from different repositories, so an exact pin holds only until either one moves; the dependency must be unversioned and the lock is what pins the pair"
+                    else
+                        pass "${name} ${arch}: depends on ${dep_name} at its exact pool version (= ${dep_ver})"
+                    fi
+                    ;;
+                *'('*)
+                    fail "${name} ${arch}: depends on the local package ${dep_name} as '${alt# }', which is neither unversioned nor that package's exact pool version (= ${dep_ver:-<not in pool>})"
                     ;;
                 *)
-                    fail "${name} ${arch}: depends on the local package ${dep_name} as '${alt# }', which is not that package's exact pool version (= ${dep_ver:-<not in pool>}). These are built from one commit across interfaces that carry no compatibility promise"
+                    if [ "${across_lock}" = 1 ]; then
+                        pass "${name} ${arch}: depends on ${dep_name} unversioned across the lock boundary; the lock pins the pair"
+                    else
+                        fail "${name} ${arch}: depends on the local package ${dep_name} as '${alt# }', which is not that package's exact pool version (= ${dep_ver:-<not in pool>}). These are built from one commit across interfaces that carry no compatibility promise"
+                    fi
                     ;;
                 esac
                 in_pool=0
@@ -637,7 +662,7 @@ for arch in "${ARCHES[@]}"; do
         # the claim was ever true at -- a rauc, podman or profile package has no
         # reason to speak mosd's interface, and asserting it over them would be
         # asserting something nobody believes.
-        case "${PKG_DIR[${name}]}" in
+        case "${PKG_DIR[${name}]:-}" in
         pkgs/mosd/*)
             if [ "${name}" != mosd ]; then
                 case "${local_deps}" in
@@ -739,7 +764,9 @@ for arch in "${ARCHES[@]}"; do
         links="$(awk '$1 ~ /^l/ && $6 ~ /^\.\/etc\/systemd\/system\/multi-user\.target\.wants\// { print $6 }' <<<"${listing}" | LC_ALL=C sort | tr '\n' ' ')"
         link_n="$(awk '$1 ~ /^l/ && $6 ~ /^\.\/etc\/systemd\/system\/multi-user\.target\.wants\// { n++ } END { print n + 0 }' <<<"${listing}")"
         want="${WANTS_EXPECTED[${name}]:-}"
-        if [ -z "${want}" ]; then
+        if [ -z "${want}" ] && [ -n "$(lock_key "${name}" "${arch}")" ]; then
+            pass "${name} ${arch}: imported; ships ${link_n} multi-user.target.wants symlink(s)${links:+ (${links% })}, asserted by its source repository's gate"
+        elif [ -z "${want}" ]; then
             fail "${name} ${arch}: no producer declares an ENABLEMENT row for it, so this gate has no enablement expectation for it"
         elif [ "${link_n}" = "${want}" ]; then
             pass "${name} ${arch}: ${link_n} multi-user.target.wants symlink(s), as ${PKG_DIR[${name}]}/producer.env declares${links:+ (${links% })}"
@@ -778,13 +805,6 @@ done
 # ever stops being true a device's package set depends on which pool it was
 # installed from, under one filename and one version.
 for pkg in ${ALL_PKGS}; do
-    if [ "$JOIN_MODE" = 1 ]; then
-        ALL_COMPARED_N=$((ALL_COMPARED_N + 1))
-        if [ "${ALL_SHA[${pkg}|amd64]:-}" = "${JOIN_SHA[$pkg]:-}" ]; then
-            pass "${pkg}: Architecture: all bytes match original frozen witness"
-        else fail "${pkg}: frozen all-architecture bytes differ"; fi
-        continue
-    fi
     seen=""
     where=""
     for arch in "${ARCHES[@]}"; do
@@ -812,12 +832,14 @@ done
 # commit than its neighbour ships an image whose packages come from two trees.
 # The per-archive stamp SHAPE was already asserted inside each pool's loop, so
 # this only compares; a shapeless version has already failed there.
-if [ "$JOIN_MODE" = 0 ]; then
-all_stamps="$(printf '%s\n' "${VERSIONS[@]}" | sed 's/^.*+//' | LC_ALL=C sort -u | tr '\n' ' ')"
-if [ "$(printf '%s\n' "${VERSIONS[@]}" | sed 's/^.*+//' | LC_ALL=C sort -u | wc -l)" -eq 1 ]; then
-    pass "one git stamp across every pool (${all_stamps% })"
+if [ "${#BUILT_VERSIONS[@]}" -eq 0 ]; then
+    pass "every archive in every pool is imported by the lock; no built-here stamp to compare across pools"
 else
-    fail "the pools hold more than one git stamp [${all_stamps% }]: they were not built from one commit"
+all_stamps="$(printf '%s\n' "${BUILT_VERSIONS[@]}" | sed 's/^.*+//' | LC_ALL=C sort -u | tr '\n' ' ')"
+if [ "$(printf '%s\n' "${BUILT_VERSIONS[@]}" | sed 's/^.*+//' | LC_ALL=C sort -u | wc -l)" -eq 1 ]; then
+    pass "one git stamp across the archives built here in every pool (${all_stamps% })"
+else
+    fail "the archives built here carry more than one git stamp across the pools [${all_stamps% }]: they were not built from one commit"
 fi
 fi
 
@@ -839,18 +861,6 @@ if [ "${static_status}" != 0 ] || [ "${STATIC_FAIL}" != 0 ]; then
     echo "note: the reproducibility check was not run; fix the failures above first"
     echo "RESULT: FAIL ($((STATIC_PASS))/$((STATIC_PASS + STATIC_FAIL)) checks passed, ${ARCHIVES_N} archives, ${PATHS_N} payload paths, ${SCRIPTS_N} maintainer scripts, ${ALL_COMPARED_N} all-architecture archives compared, ${VIRTUAL_RESOLVED_N} local-virtual dependencies resolved)"
     exit 1
-fi
-
-if [ "$JOIN_MODE" = 1 ]; then
-    python3 - "$WORK/source-lineage.json" "$JOIN_POOL" <<'JOIN_FINAL'
-import hashlib, json, pathlib, sys
-record = json.load(open(sys.argv[1])); pool = pathlib.Path(sys.argv[2])
-for name, expected in record['pool']['files'].items():
-    assert hashlib.sha256((pool / name).read_bytes()).hexdigest() == expected, name
-JOIN_FINAL
-    echo "JOINED-INPUT-RESULT: PASS ($STATIC_PASS checks, $ARCHIVES_N archives, $PATHS_N paths, $SCRIPTS_N scripts, $ALL_COMPARED_N frozen all-architecture witnesses)"
-    echo "note: cross-architecture comparison and producer repeat-build evidence were not executed by this x64 input mode"
-    exit 0
 fi
 
 # ------------------------------------------------------------------- c
@@ -898,11 +908,21 @@ for i in "${!ARCHES[@]}"; do
 
     # The rows that build for this pool, in discovery order.
     candidates=()
+    locked_names=" $(bash "${LOCK_SH}" --rows --arch "${arch}" | cut -f1 | tr '\n' ' ')"
     for row in "${ROWS[@]}"; do
         read -r producer dir arches packages _enablement <<<"${row}"
         case ",${arches}," in
-        *",${arch},"* | *",all,"*) candidates+=("${row}") ;;
+        *",${arch},"* | *",all,"*) ;;
+        *) continue ;;
         esac
+        # A producer whose every package the lock imports built nothing into
+        # this pool, so there is nothing of its own to rebuild and compare.
+        builds_here=0
+        for p in $(printf '%s' "${packages}" | tr ',' ' '); do
+            case "${locked_names}" in *" ${p} "*) ;; *) builds_here=1 ;; esac
+        done
+        [ "${builds_here}" = 1 ] || continue
+        candidates+=("${row}")
     done
     [ "${#candidates[@]}" -gt 0 ] || {
         echo "error: no discovered producer builds for ${arch}, yet ${DIST}/${arch}/pool was checked above. The reproducibility check would rebuild nothing" >&2

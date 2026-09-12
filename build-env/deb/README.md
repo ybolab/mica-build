@@ -288,12 +288,13 @@ itself. A producer that declares `VERSION_FROM` keeps the `+git…-1` stamp this
 script prints and replaces only the prefix in front of it, so the pool-wide
 invariant is the stamp, not the whole string.
 
-The number comes from the mosd workspace's crate manifests, which is where it
-already lived: `0.1.0` is written in the crates and must not be written a second
-time. They must all **agree**; a workspace declaring two versions has no single
-answer to give a pool that carries one, and the script names both crates rather
-than picking. `<commit>` is `git rev-parse --short=12 HEAD`, `.dirty` marks a
-tree no commit reproduces, and the `-1` is the Debian revision, which does not
+The number comes from the repository's `VERSION` file -- one line, the
+release version -- so the substrate reads it without knowing what the
+repository holds; each package repository carries its own. The mosd
+workspace's crate manifests must **agree** with it, and
+`pkgs/mosd/hack/check.sh` asserts that they do, naming the crate that is
+behind. `<commit>` is `git rev-parse --short=12 HEAD`, `.dirty` marks a tree
+no commit reproduces, and the `-1` is the Debian revision, which does not
 move because these packages have no upstream/downstream split.
 
 **`make os-debs` is not safe against a tree that changes while it runs.** The
@@ -373,6 +374,7 @@ archive is built with `dpkg-deb --build --root-owner-group`.
 | `Depends` | no | omit it for a package with no dependencies |
 | `Description` | yes | synopsis plus indented continuation lines |
 | `Installed-Size` | **must be absent** | computed by the packer |
+| `Mos-Source-Repo`, `Mos-Source-Commit` | **must be absent** | written by the packer; see *Provenance* |
 
 Two substitutions happen:
 
@@ -395,12 +397,34 @@ costs one, and `DEBIAN/` is excluded because it is not installed.
 `DEBIAN/md5sums` is generated over every regular file in the payload, with
 relative paths and no leading `./`.
 
+### Provenance
+
+Every archive says which repository and which commit produced it, in two
+control fields dpkg keeps and `dpkg-deb -f` reads back:
+
+```
+Mos-Source-Repo: mica-podman
+Mos-Source-Commit: 1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b
+```
+
+`pack.sh` takes them from the environment, like `SOURCE_DATE_EPOCH` and for
+the same reason: `build.sh` resolves both on the host, where git is, and the
+producer `Dockerfile` declares `ARG MOS_DEB_SOURCE_REPO` and
+`ARG MOS_DEB_SOURCE_COMMIT` beside `ARG SOURCE_DATE_EPOCH` so the `RUN` sees
+them. The repository is the basename of `origin` (`MOS_SOURCE_REPO`
+overrides it for a fork or mirror); the commit is `HEAD` in full, a dirty
+tree being already marked in the version stamp. Neither has a default: an
+archive with an empty source is one nothing can attribute. `repo.sh` writes
+both into `manifest.txt`, `rootfs/build.sh` reads the mosd archive's commit
+into `_out/<board>/mosd-build.txt` for the smoke runner, and the lock (below)
+names both so a fetched archive is checked against them.
+
 ### What it asserts about the archive it just wrote
 
 `pack.sh` reads the finished `.deb` back with `dpkg-deb` and fails unless:
 
-- `Package`, `Version`, `Architecture` and `Installed-Size` are the values it
-  was asked for and computed;
+- `Package`, `Version`, `Architecture`, `Installed-Size`, `Mos-Source-Repo`
+  and `Mos-Source-Commit` are the values it was asked for and computed;
 - `Depends` carries no unexpanded `${...}`;
 - every path in the payload is owned `root/root`;
 - the payload's path set equals the staged tree's path set.
@@ -434,13 +458,17 @@ _out/debs/<arch>/
   pool/<package>_<version>_<arch>.deb
   Packages       dpkg-scanpackages over the pool, pool-relative Filename:
   SHA256SUMS     sha256sum over the pool archives, pool-relative paths
-  manifest.txt   package, version, architecture, installed-size, sha256, file
+  manifest.txt   package, version, architecture, installed-size, sha256, file,
+                 source-repo, source-commit
 ```
 
-`manifest.txt` is tab-separated with a leading `#` comment header, the shape
-`pkgs/mosd/hack/build-deb.sh` writes for `_out/mosd-build-<arch>.txt`. Every
+`manifest.txt` is tab-separated with a leading `#` comment header. Every
 column of it is read out of an archive with `dpkg-deb --field` or `sha256sum`;
-nothing here is maintained by hand.
+nothing here is maintained by hand, and an archive without the two provenance
+fields is refused rather than indexed blank.
+
+`MOS_POOL_DIR=<dir>` makes `build.sh` and `repo.sh` use `<dir>/<arch>/pool`
+instead of this checkout's `_out/debs`; see *Local development* below.
 
 An empty pool is a hard failure naming the directory. A repository generated
 from nothing reports success and installs nothing.
@@ -456,3 +484,58 @@ registration cannot execute a foreign-architecture image at all -- which would
 leave the `arm64` pool unindexable on the machine that just produced it.
 `--arch` selects the pool, and each archive's declared `Architecture` is
 checked against the pool it sits in.
+
+## The pool's two classes: `fetch.sh`, `lock.sh`, `publish.sh`, `source.sh`
+
+An image is composed from one pool, and every archive in it is one of two
+things. **Built here**: a package a producer of this repository emits, at this
+tree's stamp. **Imported**: a package `rootfs/packages/lock.tsv` names, at the
+locked version, sha256, source repository and source commit, fetched from the
+package registry `registry.env` declares. Anything else -- an archive no
+producer emits and no lock row names, a locked archive at another digest, a
+built-here archive at another stamp -- is refused by name. The rule is
+implemented once, in `rootfs/runtime/source-lineage.py`; `rootfs/build.sh`,
+`tests/deb-package-gate.sh` and `build/src/release-manifest.ts` apply it to
+the pool, the gate and the release respectively.
+
+```
+rootfs/packages/lock.tsv
+#package	version	arch	sha256	source-repo	source-commit
+mos-podman	5.8.6+git1a2b3c4d5e6f-1	amd64	<sha256>	mica-podman	1a2b3c4d5e6f…
+mos-podman	5.8.6+git1a2b3c4d5e6f-1	arm64	<sha256>	mica-podman	1a2b3c4d5e6f…
+```
+
+| Script | Does | Refuses, by name |
+| --- | --- | --- |
+| `fetch.sh --arch <a> [--check]` | downloads every row for `<a>` and `all` into the pool, verifies sha256 and the five control fields, skips an archive already present at the right digest; `--check` sends one HEAD per row | a digest or field that differs from the row (the download is discarded), a row the registry does not hold, 401/403 naming the token variable |
+| `lock.sh --bump <component> [--version <v>] [--package <p> …]` | reads the registry's index for the component, rewrites that component's rows, prints the diff -- the lock's only writer | a dirty newest version, a stanza under the wrong component, an empty component |
+| `lock.sh --rows [--arch <a>]` | prints the validated rows (the one parser every reader uses) | a malformed row, a duplicate |
+| `publish.sh [--pool <dir>] [--arch <a>]` | uploads this repository's archives under its component, reads each back and compares | a `.dirty` version, an archive from another repository or another commit, a dirty checkout, a registry copy with other bytes |
+| `source.sh <component>` | checks the component's repository out at its locked commit into `_out/src/<component>/` | a component locked at two commits, an unreachable repository |
+
+The registry is declared in `registry.env` (URL, distribution, the NAME of the
+token variable, the source URL prefix); the token itself is never printed.
+`make os-pool` is `fetch.sh` for both architectures, then `make os-debs` (which
+skips a producer whose every package is locked), then `repo.sh` for both;
+`make os-deb-preflight` runs `fetch.sh --check` beside the producer inputs;
+`make os-lock-bump COMPONENT=<name>` wraps `lock.sh --bump`.
+
+### Local development
+
+A package repository under development builds straight into the assembly's
+pool, and the assembly composes from it with the digest check waived for the
+packages named:
+
+```
+cd /srv/micad
+MOS_POOL_DIR=/srv/mica-build/_out/debs make os-debs   # dirty stamp, into the assembly's pool
+cd /srv/mica-build
+bash build-env/deb/repo.sh --arch amd64
+MOS_POOL_UNLOCKED="mosd mos-apid" MOS_BOARD=x64 bash rootfs/build.sh
+```
+
+`MOS_POOL_UNLOCKED` names imported packages only (a name the lock does not
+import is refused), the waiver is announced, written into
+`rootfs-packages.txt` and the image's `/usr/share/mos/release-identity.env`
+(`UNLOCKED=…`), recorded in the lineage record, and the release gate refuses
+such an image in the `candidate` and `stable` channels.

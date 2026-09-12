@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Turn a staged filesystem tree into one binary Debian package.
 #
+#   MOS_DEB_SOURCE_REPO=<repository> MOS_DEB_SOURCE_COMMIT=<sha> SOURCE_DATE_EPOCH=<s> \
 #   pack.sh --root <dir> --control <template> --version <v> \
 #           --arch <amd64|arm64|all> --out <dir> [--maintainer-scripts <dir>]
 #
@@ -26,7 +27,6 @@ die() {
 ROOT=""
 CONTROL=""
 VERSION=""
-SYSTEM_VERSION=""
 ARCH=""
 OUT=""
 SCRIPTS=""
@@ -35,7 +35,6 @@ while [ "$#" -gt 0 ]; do
     --root) ROOT="${2-}"; [ -n "${ROOT}" ] || die "--root takes the staged tree directory"; shift 2 ;;
     --control) CONTROL="${2-}"; [ -n "${CONTROL}" ] || die "--control takes a control template"; shift 2 ;;
     --version) VERSION="${2-}"; [ -n "${VERSION}" ] || die "--version takes a Debian version"; shift 2 ;;
-    --system-version) SYSTEM_VERSION="${2-}"; [ -n "${SYSTEM_VERSION}" ] || die "--system-version takes a Debian version"; shift 2 ;;
     --arch) ARCH="${2-}"; [ -n "${ARCH}" ] || die "--arch takes amd64, arm64 or all"; shift 2 ;;
     --out) OUT="${2-}"; [ -n "${OUT}" ] || die "--out takes a directory"; shift 2 ;;
     --maintainer-scripts) SCRIPTS="${2-}"; [ -n "${SCRIPTS}" ] || die "--maintainer-scripts takes a directory"; shift 2 ;;
@@ -56,6 +55,24 @@ done
 case "${SOURCE_DATE_EPOCH}" in
 '' | *[!0-9]*) die "SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH} is not a whole number of seconds since the epoch" ;;
 esac
+
+# PROVENANCE, from the environment like SOURCE_DATE_EPOCH and for the same
+# reason: build-env/deb/build.sh resolves both on the host, where git is, and
+# the producer Dockerfile declares them as ARGs so this RUN sees them. They are
+# written into the control file as `Mos-Source-Repo:` and `Mos-Source-Commit:`
+# -- dpkg keeps fields it does not know, `dpkg-deb -f` reads them back -- so an
+# archive says which repository and which commit produced it wherever it is
+# later found: in a registry, in another repository's pool, in a lock file.
+# No default for either: an archive with an empty source is one nothing can
+# attribute, and a fallback would look exactly like a real value.
+[ -n "${MOS_DEB_SOURCE_REPO:-}" ] ||
+    die "MOS_DEB_SOURCE_REPO is unset. This packer records the source repository in the control file; build-env/deb/build.sh resolves it from the repository's origin and the producer Dockerfile must declare it as an ARG"
+[ -n "${MOS_DEB_SOURCE_COMMIT:-}" ] ||
+    die "MOS_DEB_SOURCE_COMMIT is unset. This packer records the source commit in the control file; build-env/deb/build.sh resolves it from HEAD and the producer Dockerfile must declare it as an ARG"
+[[ "${MOS_DEB_SOURCE_REPO}" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]] ||
+    die "MOS_DEB_SOURCE_REPO='${MOS_DEB_SOURCE_REPO}' is not a repository name (letters, digits, dot, underscore, minus)"
+[[ "${MOS_DEB_SOURCE_COMMIT}" =~ ^[0-9a-f]{40}$ ]] ||
+    die "MOS_DEB_SOURCE_COMMIT='${MOS_DEB_SOURCE_COMMIT}' is not a full 40-hex commit id"
 
 [ -d "${ROOT}" ] || die "--root ${ROOT} is not a directory"
 [ -n "$(ls -A "${ROOT}")" ] || die "--root ${ROOT} is empty; a package with no payload installs nothing and reports success"
@@ -108,25 +125,18 @@ case "$(control_field Architecture "${CONTROL}")" in
 *'@ARCH@'*) ;;
 *) die "--control ${CONTROL} has an Architecture: that does not contain @ARCH@, so --arch ${ARCH} would be discarded and the template's own value shipped" ;;
 esac
-
-# @SYSTEM_VERSION@ is the cross-boundary pin: an upstream-versioned package
-# (mos-podman at 5.8.6+git…) that Depends on a first-party one (mos-system at
-# 0.1.0+git…) cannot use @VERSION@, which is its OWN version. Both directions
-# are refused: a template using the token without the value would ship the
-# literal token in a Depends, and a value without a consumer means the caller
-# believes a pin exists that does not.
-if grep -c '@SYSTEM_VERSION@' "${CONTROL}" >/dev/null; then
-    [ -n "${SYSTEM_VERSION}" ] ||
-        die "--control ${CONTROL} uses @SYSTEM_VERSION@ and no --system-version was given; the literal token would ship inside a relationship field"
-else
-    [ -z "${SYSTEM_VERSION}" ] ||
-        die "--system-version ${SYSTEM_VERSION} was given and --control ${CONTROL} carries no @SYSTEM_VERSION@, so the pin the caller intended does not exist in the template"
-fi
+# The provenance fields are this packer's, computed from the build; a template
+# that wrote them would be a second statement of a fact the build already knows,
+# and the wrong one the moment the archive is built somewhere else.
+for f in Mos-Source-Repo Mos-Source-Commit; do
+    [ -z "$(control_field "${f}" "${CONTROL}")" ] ||
+        die "--control ${CONTROL} declares ${f}. That field is WRITTEN here from MOS_DEB_SOURCE_REPO and MOS_DEB_SOURCE_COMMIT; a written one is a value that stops matching the build the first time the archive is built from another checkout"
+done
 
 WORK="$(mktemp -d)"
 trap 'rm -rf "${WORK}"' EXIT
 
-sed -e "s|@VERSION@|${VERSION}|g" -e "s|@SYSTEM_VERSION@|${SYSTEM_VERSION}|g" -e "s|@ARCH@|${ARCH}|g" "${CONTROL}" >"${WORK}/control"
+sed -e "s|@VERSION@|${VERSION}|g" -e "s|@ARCH@|${ARCH}|g" "${CONTROL}" >"${WORK}/control"
 PACKAGE="$(control_field Package "${WORK}/control")"
 [[ "${PACKAGE}" =~ ^[a-z0-9][a-z0-9+.-]+$ ]] ||
     die "'${PACKAGE}' is not a Debian package name (lowercase letters, digits, plus, minus and dot, at least two characters)"
@@ -208,11 +218,17 @@ INSTALLED_SIZE="$(cd "${PKG_DIR}" && find . -mindepth 1 -path ./DEBIAN -prune -o
 ')"
 [ -n "${INSTALLED_SIZE}" ] || die "could not measure the staged tree under ${ROOT}"
 # Appended through awk rather than with >>, so that a template ending in a blank
-# line -- or in no newline at all -- does not put this field in a second stanza
-# that dpkg silently ignores.
-awk -v size="${INSTALLED_SIZE}" '
+# line -- or in no newline at all -- does not put these fields in a second
+# stanza that dpkg silently ignores. The provenance fields ride along here for
+# the same reason.
+awk -v size="${INSTALLED_SIZE}" -v repo="${MOS_DEB_SOURCE_REPO}" -v commit="${MOS_DEB_SOURCE_COMMIT}" '
     { line[NR] = $0; if (NF) last = NR }
-    END { for (i = 1; i <= last; i++) print line[i]; print "Installed-Size: " size }
+    END {
+        for (i = 1; i <= last; i++) print line[i]
+        print "Installed-Size: " size
+        print "Mos-Source-Repo: " repo
+        print "Mos-Source-Commit: " commit
+    }
 ' "${WORK}/control" >"${WORK}/control.sized"
 install -m 0644 "${WORK}/control.sized" "${PKG_DIR}/DEBIAN/control"
 
@@ -291,10 +307,14 @@ got_version="$(dpkg-deb --field "${DEB}" Version)"
 got_arch="$(dpkg-deb --field "${DEB}" Architecture)"
 got_size="$(dpkg-deb --field "${DEB}" Installed-Size)"
 got_depends="$(dpkg-deb --field "${DEB}" Depends)"
+got_repo="$(dpkg-deb --field "${DEB}" Mos-Source-Repo)"
+got_commit="$(dpkg-deb --field "${DEB}" Mos-Source-Commit)"
 [ "${got_package}" = "${PACKAGE}" ] || die "${DEB} declares Package: ${got_package}, not ${PACKAGE}"
 [ "${got_version}" = "${VERSION}" ] || die "${DEB} declares Version: ${got_version}, not the --version ${VERSION} it was built with"
 [ "${got_arch}" = "${ARCH}" ] || die "${DEB} declares Architecture: ${got_arch}, not the --arch ${ARCH} it was built with"
 [ "${got_size}" = "${INSTALLED_SIZE}" ] || die "${DEB} declares Installed-Size: ${got_size}, but the staged tree measures ${INSTALLED_SIZE}"
+[ "${got_repo}" = "${MOS_DEB_SOURCE_REPO}" ] || die "${DEB} declares Mos-Source-Repo: ${got_repo}, not ${MOS_DEB_SOURCE_REPO}"
+[ "${got_commit}" = "${MOS_DEB_SOURCE_COMMIT}" ] || die "${DEB} declares Mos-Source-Commit: ${got_commit}, not ${MOS_DEB_SOURCE_COMMIT}"
 case "${got_depends}" in
 *'${'*) die "${DEB} declares Depends: ${got_depends}, which still carries an unexpanded substitution variable. APT would refuse it, or worse, parse the literal as a package name" ;;
 esac

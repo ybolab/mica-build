@@ -9,7 +9,7 @@ done
 POOL="/mos-debs/${MOS_ARCH}"
 LIST=/mos-compose/packages.txt
 for f in Packages SHA256SUMS manifest.txt; do
-    [ -s "$POOL/$f" ] || fail "$POOL/$f is missing or empty; build the pool with make os-debs"
+    [ -s "$POOL/$f" ] || fail "$POOL/$f is missing or empty; build the pool with make os-pool"
 done
 (cd "$POOL" && sha256sum -c SHA256SUMS) >/dev/null
 [ -s "$LIST" ] || fail "$LIST is missing or empty"
@@ -194,9 +194,14 @@ install -d -m 0755 /usr/share/mos
     printf 'PROFILE=%s\n' "${MOS_PROFILE}"
     printf 'VERSION=%s\n' "${MOS_RELEASE_VERSION}"
     printf 'COMMIT_DATE=%s\n' "${MOS_RELEASE_COMMIT_DATE}"
+    # The development waiver, if any: locked packages whose digest check
+    # rootfs/build.sh skipped under MOS_POOL_UNLOCKED. Written only when set,
+    # so an image with the line is unmistakably not a release, and
+    # build/src/release-manifest.ts refuses it outside the development channel.
+    [ -z "${MOS_RELEASE_UNLOCKED:-}" ] || printf 'UNLOCKED=%s\n' "${MOS_RELEASE_UNLOCKED}"
 } >/usr/share/mos/release-identity.env
 chmod 0644 /usr/share/mos/release-identity.env
-echo "compose: release identity ${MOS_BOARD}/${MOS_PROFILE} at ${MOS_RELEASE_VERSION}, source committed ${MOS_RELEASE_COMMIT_DATE} (the version ${identity_version_owner} carries)"
+echo "compose: release identity ${MOS_BOARD}/${MOS_PROFILE} at ${MOS_RELEASE_VERSION}, source committed ${MOS_RELEASE_COMMIT_DATE} (the version ${identity_version_owner} carries)${MOS_RELEASE_UNLOCKED:+; UNLOCKED=${MOS_RELEASE_UNLOCKED}}"
 
 # NO INITRAMFS, asserted where the kernel and the root it must mount are
 # finally in one tree together.

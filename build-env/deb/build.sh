@@ -6,6 +6,8 @@
 #   bash build-env/deb/build.sh --producer mos-ca-trust --arch all
 #
 #   -> _out/debs/<arch>/pool/<package>_<version>_<arch>.deb
+#      (MOS_POOL_DIR=<dir> writes <dir>/<arch>/pool instead; see the pool
+#      section below)
 #
 # What a producer IS lives in build-env/deb/producers.sh and in
 # build-env/deb/README.md; what a producer SAYS lives in its producer.env.
@@ -128,11 +130,6 @@ VERSION="$(bash "${VERSION_SH}")"
     echo "error: ${VERSION_SH} printed no version (see its message above); the archives would be named around an empty string" >&2
     exit 1
 }
-# The workspace version, BEFORE any VERSION_FROM override: it is what
-# @SYSTEM_VERSION@ substitutes to, so an upstream-versioned package can pin a
-# first-party one (mos-podman Depends mos-system (= @SYSTEM_VERSION@)) at the
-# version that package actually carries.
-SYSTEM_VERSION="${VERSION}"
 
 # An upstream-versioned producer: VERSION_FROM names the env file and key that
 # hold the upstream tag, and the packages' version becomes that tag (leading
@@ -185,6 +182,34 @@ git -C "${REPO_ROOT}" rev-parse --git-dir >/dev/null 2>&1 || {
 SOURCE_DATE_EPOCH="$(git -C "${REPO_ROOT}" log -1 --format=%ct)"
 [ -n "${SOURCE_DATE_EPOCH}" ] || {
     echo "error: \`git log -1 --format=%ct\` produced no commit timestamp in ${REPO_ROOT}" >&2
+    exit 1
+}
+
+# PROVENANCE: which repository and which commit this archive comes from,
+# written into its control file by pack.sh as Mos-Source-Repo and
+# Mos-Source-Commit. The commit is HEAD in full; a dirty tree is already marked
+# by the `.dirty` in the version stamp, and build-env/deb/publish.sh refuses to
+# upload such an archive. The repository is the basename of `origin`, which is
+# the name the registry files archives under and the name a lock row names --
+# MOS_SOURCE_REPO overrides it for a checkout whose remote is not the canonical
+# one (a fork, a mirror), and a checkout with no origin has to say so.
+SOURCE_COMMIT="$(git -C "${REPO_ROOT}" rev-parse HEAD)"
+[[ "${SOURCE_COMMIT}" =~ ^[0-9a-f]{40}$ ]] || {
+    echo "error: \`git rev-parse HEAD\` in ${REPO_ROOT} did not name a commit; the archive's Mos-Source-Commit would be empty" >&2
+    exit 1
+}
+if [ -n "${MOS_SOURCE_REPO:-}" ]; then
+    SOURCE_REPO="${MOS_SOURCE_REPO}"
+else
+    origin_url="$(git -C "${REPO_ROOT}" remote get-url origin 2>/dev/null || true)"
+    SOURCE_REPO="$(basename "${origin_url%/}" .git)"
+    [ -n "${origin_url}" ] && [ -n "${SOURCE_REPO}" ] || {
+        echo "error: ${REPO_ROOT} has no 'origin' remote, so the archive's Mos-Source-Repo cannot be derived. Set MOS_SOURCE_REPO=<repository name> to say which repository this checkout is" >&2
+        exit 1
+    }
+fi
+[[ "${SOURCE_REPO}" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]] || {
+    echo "error: the source repository name '${SOURCE_REPO}' (from ${MOS_SOURCE_REPO:+MOS_SOURCE_REPO}${MOS_SOURCE_REPO:-origin}) is not a plain repository name" >&2
     exit 1
 }
 
@@ -411,9 +436,10 @@ done
 
 ARG_ARGS=(
     --build-arg "MOS_DEB_VERSION=${VERSION}"
-    --build-arg "MOS_DEB_SYSTEM_VERSION=${SYSTEM_VERSION}"
     --build-arg "MOS_DEB_ARCH=${DEB_ARCH}"
     --build-arg "SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH}"
+    --build-arg "MOS_DEB_SOURCE_REPO=${SOURCE_REPO}"
+    --build-arg "MOS_DEB_SOURCE_COMMIT=${SOURCE_COMMIT}"
 )
 for entry in ${BUILD_ARGS}; do
     # KEY=VALUE, never a bare KEY. `--build-arg KEY` is buildx's "take it from
@@ -434,9 +460,14 @@ done
 # clean here would delete another producer's output, while leaving the previous
 # VERSION of this one behind would have repo.sh index two versions of one
 # package.
+# MOS_POOL_DIR overrides the parent of the per-architecture pools, so a
+# package repository can build straight into the assembly's pool during local
+# development (rootfs/build.sh's MOS_POOL_UNLOCKED is the other half of that
+# loop). Unset, the pool is this checkout's own _out/debs.
+POOL_ROOT="${MOS_POOL_DIR:-${REPO_ROOT}/_out/debs}"
 OUT_ARGS=()
 for pool_arch in "${POOL_ARCHES[@]}"; do
-    pool="${REPO_ROOT}/_out/debs/${pool_arch}/pool"
+    pool="${POOL_ROOT}/${pool_arch}/pool"
     mkdir -p "${pool}"
     for p in ${PACKAGES}; do
         rm -f "${pool}/${p}"_*.deb
@@ -444,7 +475,7 @@ for pool_arch in "${POOL_ARCHES[@]}"; do
     OUT_ARGS+=(-o "type=local,dest=${pool}")
 done
 
-echo "build.sh: packing ${PACKAGES} ${VERSION} as ${DEB_ARCH} on builder '${BUILDER}' (${BUILDER_DRIVER}) into ${POOL_ARCHES[*]}"
+echo "build.sh: packing ${PACKAGES} ${VERSION} as ${DEB_ARCH} from ${SOURCE_REPO}@${SOURCE_COMMIT:0:12} on builder '${BUILDER}' (${BUILDER_DRIVER}) into ${POOL_ARCHES[*]}"
 docker buildx build --builder "${BUILDER}" \
     --platform "linux/${BUILD_PLATFORM}" \
     "${FROM_ARGS[@]}" \
@@ -459,7 +490,7 @@ docker buildx build --builder "${BUILDER}" \
 EXPORTED=()
 for pool_arch in "${POOL_ARCHES[@]}"; do
     for p in ${PACKAGES}; do
-        EXPORTED+=("${REPO_ROOT}/_out/debs/${pool_arch}/pool/${p}_${VERSION}_${DEB_ARCH}.deb")
+        EXPORTED+=("${POOL_ROOT}/${pool_arch}/pool/${p}_${VERSION}_${DEB_ARCH}.deb")
     done
 done
 
@@ -489,7 +520,7 @@ reject() {
 # pack.sh's own read-back and caught here.
 missing=""
 for deb in "${EXPORTED[@]}"; do
-    [ -f "${deb}" ] || missing="${missing} ${deb#"${REPO_ROOT}"/}"
+    [ -f "${deb}" ] || missing="${missing} ${deb#"${POOL_ROOT}"/}"
 done
 [ -z "${missing}" ] || reject "the export is missing:${missing}"
 
@@ -501,8 +532,8 @@ if [ "${#POOL_ARCHES[@]}" -gt 1 ]; then
     first="${POOL_ARCHES[0]}"
     for p in ${PACKAGES}; do
         for pool_arch in "${POOL_ARCHES[@]:1}"; do
-            a="${REPO_ROOT}/_out/debs/${first}/pool/${p}_${VERSION}_${DEB_ARCH}.deb"
-            b="${REPO_ROOT}/_out/debs/${pool_arch}/pool/${p}_${VERSION}_${DEB_ARCH}.deb"
+            a="${POOL_ROOT}/${first}/pool/${p}_${VERSION}_${DEB_ARCH}.deb"
+            b="${POOL_ROOT}/${pool_arch}/pool/${p}_${VERSION}_${DEB_ARCH}.deb"
             cmp -s "${a}" "${b}" ||
                 reject "${p} was exported to the ${first} and ${pool_arch} pools from ONE build and the two archives differ. An Architecture: all package is one archive that is a member of every pool"
         done
@@ -519,6 +550,6 @@ fi
 rm -rf "${STAGE}"
 for pool_arch in "${POOL_ARCHES[@]}"; do
     for p in ${PACKAGES}; do
-        echo "${REPO_ROOT}/_out/debs/${pool_arch}/pool/${p}_${VERSION}_${DEB_ARCH}.deb"
+        echo "${POOL_ROOT}/${pool_arch}/pool/${p}_${VERSION}_${DEB_ARCH}.deb"
     done
 done

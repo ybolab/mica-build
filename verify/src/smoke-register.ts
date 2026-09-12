@@ -80,8 +80,8 @@ export interface Artifact {
    * Two of the twelve do -- mosd and apid, which print
    * `<name> <version> (<commit>)` -- and the runner asserts that commit against
    * the one the BUILD recorded embedding, out of `_out/<board>/mosd-build.txt`,
-   * which `rootfs/build.sh` copies from the record the producer that compiled
-   * them wrote.
+   * which `rootfs/build.sh` reads from the mosd archive's `Mos-Source-Commit`
+   * control field.
    * A property of the artifact and not a second contract kind: it is orthogonal
    * to how the artifact is asked, since the argv is the same `--version` and the
    * exit status and version identity are asserted the same way. Absent means the
@@ -343,7 +343,7 @@ export function unclaimedFaults(
  * and a key a `versions.env` rename left behind. Reverse: every `*_VERSION` in
  * every `versions.env` is claimed by at least one entry, which is what makes a
  * new self-built artifact unable to arrive unchecked and is the direction a
- * forward-only check passes happily without. `docs/verify-index.sh` earned this
+ * forward-only check passes happily without. `tools/docs/verify-index.sh` earned this
  * pairing the hard way -- its forward half was a `grep -q`, equally satisfied by
  * one occurrence or five, and the tree carried a duplicated index row through a
  * reported 162/162 PASS. Run by `smokeRun` and not only by tests, since a

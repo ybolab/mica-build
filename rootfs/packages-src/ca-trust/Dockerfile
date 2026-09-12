@@ -128,6 +128,9 @@ COPY --from=generate /etc/ca-certificates.conf /stage/etc/ca-certificates.conf
 ARG MOS_DEB_VERSION
 ARG MOS_DEB_ARCH
 ARG SOURCE_DATE_EPOCH
+# Provenance, written into the control file by pack.sh; see build-env/deb/README.md.
+ARG MOS_DEB_SOURCE_REPO
+ARG MOS_DEB_SOURCE_COMMIT
 
 # What the staged tree must be before it is worth packing. Every assertion here
 # is one rootfs/scripts/ca-certificates-verify.sh makes today about the tree

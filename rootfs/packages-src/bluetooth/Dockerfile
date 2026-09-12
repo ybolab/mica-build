@@ -39,6 +39,9 @@ COPY --from=radio-hwinit hwinit-bt mos-bt.service /in/hwinit/
 ARG MOS_DEB_VERSION
 ARG MOS_DEB_ARCH
 ARG SOURCE_DATE_EPOCH
+# Provenance, written into the control file by pack.sh; see build-env/deb/README.md.
+ARG MOS_DEB_SOURCE_REPO
+ARG MOS_DEB_SOURCE_COMMIT
 
 # The attach program, its unit, that unit's enablement link and the
 # pairing-key mount.

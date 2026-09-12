@@ -41,6 +41,9 @@ COPY --from=radio-units etc-wpa_supplicant.mount etc-hostapd.mount \
 ARG MOS_DEB_VERSION
 ARG MOS_DEB_ARCH
 ARG SOURCE_DATE_EPOCH
+# Provenance, written into the control file by pack.sh; see build-env/deb/README.md.
+ARG MOS_DEB_SOURCE_REPO
+ARG MOS_DEB_SOURCE_COMMIT
 
 # mos-wifi ALSO carries the regulatory-database reload, and the unit body says
 # at length why it has to exist. In short: cfg80211 is built into every board

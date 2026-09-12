@@ -79,7 +79,7 @@ export async function main(argv = Bun.argv.slice(2)) {
     .flatMap(line => { const match = /^((?:IMAGE|LOCAL)_[A-Z0-9_]+)=(.+)$/.exec(line); return match ? [[match[1]!, match[2]!]] : [] }))
   const report = assembleRelease({ out: path('out'), board: board as ReleaseInputs['board'], version: value('version'),
     channel: (values.channel ?? 'development') as ReleaseInputs['channel'], profile: (values.profile ?? 'dev') as ReleaseInputs['profile'],
-    source: await sourceIdentity(), builderImages,
+    source: await sourceIdentity(), builderImages, lock: join(REPO_ROOT, 'rootfs/packages/lock.tsv'),
     image: path('image'), update: path('update'), firmware: path('firmware'), packages: path('package-manifest'), runtimeReport, meta: path('baked-meta'), notes: path('notes'),
     evidence: values.evidence ? path('evidence') : join(REPO_ROOT, 'boards', board, 'evidence.json'), keys })
   console.log(`RELEASE_GATE_PASS board=${report.manifest.board} artifacts=${report.artifactsChecked}`)

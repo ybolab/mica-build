@@ -36,6 +36,8 @@ export interface ReleaseInputs {
   profile: ReleaseManifest['profile'], source: Source, builderImages: Record<string, string>,
   image: string, update: string, firmware: string, packages: string, meta: string,
   runtimeReport: string, notes: string, evidence: string, keys: string[],
+  /** rootfs/packages/lock.tsv of the tree the release is assembled from; the record's lock rows must equal its rows for the board's architecture. */
+  lock?: string,
 }
 const OFFER = 'Source code for the packages in this inventory, including any modifications, is available on request from the distributor of this image; cite the source commit recorded beside this statement.'
 function requireValue(value: unknown, message: string): asserts value {
@@ -227,118 +229,34 @@ function readRuntime(path: string): Record<string, unknown> {
   }
   return object(value, ['architecture', 'consumers', 'inputs', 'files', 'external_inputs', 'provenance', 'measurements'])
 }
-const JOIN_ORIGINAL = { commit: 'e176876b733d675d1e20b40b42628cd4e18b197d', tree: '7e8e8bc62b52f3d78263d717e186a07f0d3430a1', epoch: 1789097968, version: '0.1.0+gite176876b733d-1' }
-const JOIN_REBUILT = { commit: 'fb6c4597bb902f69d528bcdc3c8372f310c322b1', tree: 'cbf2fa8ff2c8fc03534b218c952a511b6a6ba392', epoch: 1789157855, version: '0.1.0+gitfb6c4597bb90-1' }
-const JOIN_LEGACY_COMPOSITION = { commit: 'fdf8a480057b64073c9b9e15e399fca1b38d607d', tree: '7eed91c48aa9a00fc75d8661260aac78a004c00e', epoch: 1789162665 }
-const JOIN_RECEIPTS = { original: 'fc79903fcd6dc8bf40191c5f4cdf4979d664dfd0315a53521d57af821f80d166', native: '175f2dbe31b08bde91f8cf5a15680c9ec7fb38d6c2e0bda46edff5f24e558d09', deploy: '267dff5433d4bc2b2a409a06e3019fd0f680f449c4866d60f8b3353b237a4683' }
-const JOIN_NATIVE = { 'mos-init': { bytes: 1673848, sha256: '738391aa650a58fb3819f52831f6affd57ddd17e357c2a161faaf39d800ec642' }, 'mos-shutdown': { bytes: 2047144, sha256: 'd2c5c9a6e2473c0125670031c79014c6ee946b834e2e26f32a65f38939e68b35' } }
-const STARTUP_SOURCE = '438c9551ec751fcb346881541752a7596f10cb15'
-const STARTUP_NATIVE = {
-  'mos-init': { bytes: 2403504, sha256: '57c865ed0b58740faaba642cc417a0b0a3a487f3b6718a1e2fcc7e1355bdea97' },
-  'mos-shutdown': { bytes: 2047144, sha256: '77bf04b463ece3b0aaba03fa0f91fe0939faa87c5b9b81937b24636b3e2ef1ea' },
+const LOCK_COLUMNS = ['package', 'version', 'architecture', 'sha256', 'source_repo', 'source_commit'] as const
+type LockRow = Record<typeof LOCK_COLUMNS[number], string>
+const stampOf = (version: unknown) => {
+  requireValue(typeof version === 'string' && /^[0-9][A-Za-z0-9.~+-]*\+git[a-f0-9]{12}(\.dirty)?-[1-9][0-9]*$/.test(version), 'package version stamp')
+  return version.split('+').at(-1)!
 }
-const JOIN_CONSUMERS = new Set(['rootfs/runtime/consumers.json', 'rootfs/runtime/source-lineage.py', 'rootfs/build.sh', 'build/src/release-manifest.ts', 'tests/deb-package-gate.sh', 'tests/rootfs-runtime/source_lineage_test.py', 'tests/rootfs-runtime/composition_test.py', 'build/src/release-manifest.test.ts', 'docs/task/20260911-0145-b7-fresh-lifecycle-acceptance.md', 'docs/plan/20260911-0145-b7-fresh-lifecycle-acceptance.md'])
-const canonicalSha = (value: unknown) => createHash('sha256').update(canonicalJson(value) + '\n').digest('hex')
-// The fixed proof retains all 15 complete maps, including unqualified ARM maps.
-// Its hash is independent of the later deploy and boot-tools output witnesses.
-export function validateStartupInputContract(value: unknown, selectedPackages: string[]) {
-  const proof = object(value, ['schema', 'original_source', 'rebuilt_source', 'selected_packages', 'producers', 'makefile_read_contract'])
-  same(canonicalSha(proof), '93902df4c3351b3d3e2c3ca3977f6b4bbd07fb2361c2f0aedc1f0c1c3d1b87ba', 'startup reviewed complete input contract')
-  same([...selectedPackages].sort(), proof.selected_packages, 'startup selected x64 package membership')
-  return proof
-}
-
-const STARTUP_REBUILT = { commit: STARTUP_SOURCE, tree: '775874cfdce2ef40b7f51ae3090c6c6706a5deae', epoch: 1789167215, version: '0.1.0+git438c9551ec75-1' }
-const STARTUP_RECEIPTS = { original: JOIN_RECEIPTS.original, native: 'e66650563f340e0ce8f722a7812f36bba8012ee98e3e220aa2bbea5d1864afc0', deploy: '224cac3207ca49a128e6881552cdd20d8b4972d22c579f3ee41bc5c4524845b0', boot_tools: '76b65b10a72537194d08f6b18dd997067a8d06920ede0e48607fe1c35387a47d' }
-const STARTUP_TRACKING = new Set(['docs/task/20260911-1925-boot-artifact-size.md', 'docs/plan/20260911-1927-boot-artifact-size.md'])
-const STARTUP_UNSELECTED_PACKAGES = new Set(['mos-board-cx3576', 'mos-bm201-front-panel', 'mos-board-s905x5m', 'mos-s905x5m-wifi', 'mos-s905x5m-wireless', 'mos-s905x5m-bluetooth', 'mos-board-virt-arm64'])
-function startupProducerJoin(value: unknown, pool: Record<string, unknown>, source: unknown, arch: string) {
-  const j = object(value, ['schema', 'rebuilt_source', 'approved_delta', 'producer_inputs', 'original_pool', 'witnesses', 'mapping', 'native', 'production'])
-  requireValue(j.schema === 'mos/producer-join/startup-v1' && arch === 'amd64', 'startup join schema/architecture')
-  same(source, JOIN_ORIGINAL, 'startup original source'); same(j.rebuilt_source, STARTUP_REBUILT, 'startup rebuilt source')
-  same(j.witnesses, STARTUP_RECEIPTS, 'startup producer witnesses'); same(j.native, STARTUP_NATIVE, 'startup native outputs')
-  same(canonicalSha(j.production), '1d0a377f86fe3045de74c0bf327e2a61f63d7295330c1169c58e01651d14587e', 'startup producer recipe/tool/flags/outputs')
-  same(canonicalSha(j.approved_delta), '3ae7dd3f732d6c9a8dc3ca8f7abb73cac3bd20f677e3480af3c1ad0919c629d7', 'startup approved delta legs')
-  same(canonicalSha(j.original_pool), 'de26c7fd9d4e5b76ae10aa166659e2d047ede56088a79fd46024fb419a5b4087', 'startup original pool')
-  same(canonicalSha(pool), 'ad3b92fa4cc51026e4f78e423a5d75865c1e6a6b83944875742df7db261ab9a3', 'startup joined pool/index/control')
-  const packages = array(pool.packages).map(p => record(p).package as string)
-  validateStartupInputContract(j.producer_inputs, packages)
-  same(j.mapping, Object.fromEntries(packages.map(n => [n, n === 'mos-deploy' ? STARTUP_SOURCE : JOIN_ORIGINAL.commit])), 'startup source attribution')
-  return record(record(j.production).boot_tools).image as string
-}
-
-const GPT_SOURCE = 'd2e352d0a4226f10b8b2587cd7c1bc5040b8d234'
-const GPT_REBUILT = { commit: GPT_SOURCE, tree: '190ffef0ba12ad24625456f508c5179e517ffc74', epoch: 1789196122, version: '0.1.0+gitd2e352d0a422-1' }
-const GPT_NATIVE = {
-  'mos-init': { bytes: 2403504, sha256: '9d1b164b3af709cc382e6bdbc29e222225ac76e0f8c6e9d4a948f425d7548682' },
-  'mos-shutdown': { bytes: 2043048, sha256: '28ccd8655a02d54b4229f9674e297fa7925881cf89450febe436704bfdab3f0d' },
-}
-const GPT_RECEIPTS = { original: STARTUP_RECEIPTS.original, boot_tools: STARTUP_RECEIPTS.boot_tools,
-  native: '65a4dae876b4e4c58bc4c029679998081b5d543b80668e2129a861f4a1f9370f', deploy: 'aaa082345b66961bab3b327314841226f31e19157ffde626198084759ae60d88' }
-function gptProducerJoin(value: unknown, pool: Record<string, unknown>, source: unknown, arch: string) {
-  const j = object(value, ['schema', 'rebuilt_source', 'approved_delta', 'producer_inputs', 'original_pool', 'witnesses', 'mapping', 'native', 'production'])
-  requireValue(j.schema === 'mos/producer-join/gpt-v1' && arch === 'amd64', 'GPT join schema/architecture')
-  same(source, JOIN_ORIGINAL, 'GPT original source'); same(j.rebuilt_source, GPT_REBUILT, 'GPT rebuilt source')
-  same(j.witnesses, GPT_RECEIPTS, 'GPT producer witnesses'); same(j.native, GPT_NATIVE, 'GPT native outputs')
-  same(canonicalSha(j.production), 'c1cf815d29028f92abed870925b0d2f1368d240164e67fe012b8c7b10b10b9f7', 'GPT production source/tool/flags/output roles')
-  same(canonicalSha(j.approved_delta), 'bc669939c224d936e72bda629e8e2828f18e95f44002bbb0da7bfc7950086bbd', 'GPT reviewed source delta legs')
-  same(canonicalSha(j.producer_inputs), '3a76ae8130a1107da3eaf36a950b3589352d2ec970d9b9ae3ff88adaeb0a7c65', 'GPT complete producer/PREPARE inputs')
-  same(canonicalSha(j.original_pool), 'de26c7fd9d4e5b76ae10aa166659e2d047ede56088a79fd46024fb419a5b4087', 'GPT original pool')
-  same(canonicalSha(pool), '565c0f0bf614299ad6d3a49a6d6127e2f6fc70f240a8361318a7b46b4b15c62c', 'GPT joined pool/index/control')
-  const packages = array(pool.packages).map(p => record(p).package as string)
-  same(j.mapping, Object.fromEntries(packages.map(n => [n, n === 'mos-deploy' ? GPT_SOURCE : JOIN_ORIGINAL.commit])), 'GPT package source attribution')
-  return record(record(j.production).boot_tools).image as string
-}
-
-const BOOT_RECEIPT_SHA = 'af5bc012346a99d360612a1340df58de35265b9a7cc638d2286401b2a3ab7112'
-const BOOT_ROLE_SHA = 'a893b517c2a249afed8d34d323e6f5148aa55ec353c9956f5e422766d516b664'
-function bootToolsRole(value: unknown) {
-  const role = object(value, ['schema', 'source', 'approved_delta', 'inputs', 'unchanged_producers_sha256', 'source_readiness_sha256', 'receipt_sha256', 'production'])
-  same(canonicalSha(role), BOOT_ROLE_SHA, 'boot-tools reviewed producer/source/input/output witness')
-  const production = record(role.production), payload = record(production.payload)
-  const busybox = record(payload['usr/lib/mos/boot-busybox/x64/busybox'])
-  return { manifest: production.manifest as string, busybox: { bytes: busybox.bytes as number, sha256: busybox.sha256 as string } }
-}
-function joinedBootTool(value: unknown) {
-  const lineage = record(value)
-  if (lineage.schema !== 'mos/source-lineage/join-v1') return null
-  const join = record(lineage.producer_join)
-  return join.schema === 'mos/producer-join/boot-tools-v1' ? bootToolsRole(join.boot_tools) : null
-}
-function producerJoin(value: unknown, packages: Record<string, unknown>[], source: unknown, arch: string) {
-  const boot = record(value).schema === 'mos/producer-join/boot-tools-v1'
-  const j = object(value, ['schema', 'rebuilt_source', 'approved_delta', 'producer_inputs', 'original_pool', 'witnesses', 'mapping', 'native', 'production', ...(boot ? ['boot_tools'] : [])])
-  if (boot) bootToolsRole(j.boot_tools)
-  requireValue(['mos/producer-join/v1', 'mos/producer-join/boot-tools-v1'].includes(j.schema as string) && arch === 'amd64', 'producer join schema/architecture')
-  same(source, JOIN_ORIGINAL, 'producer join original source'); same(j.rebuilt_source, JOIN_REBUILT, 'producer join rebuilt source')
-  same(canonicalSha(j.production), '3f1fe46df0aa7d686616288b655119baeccba12589951e121321388aa45f3f58', 'producer join tool/recipe/target/flags')
-  same(j.witnesses, JOIN_RECEIPTS, 'producer join witnesses'); same(j.native, JOIN_NATIVE, 'producer join native')
-  same(canonicalSha(j.approved_delta), '25a8aa2051a6c6cc968554828a50a875781f9d5076f48127e2d295ab2110cbf1', 'producer join approved delta')
-  same(canonicalSha(j.producer_inputs), '3fa9b2060d685c5e4f0beeed48ef4045621ccf1fb94344f800aab0e2ea4cae3e', 'producer join PREPARE/input attribution')
-  same(canonicalSha(j.original_pool), 'de26c7fd9d4e5b76ae10aa166659e2d047ede56088a79fd46024fb419a5b4087', 'producer join original pool')
-  const original = object(j.original_pool, ['files', 'packages'])
-  const old = new Map(array(original.packages).map(value => { const row = record(value); return [row.package, row] }))
-  same(packages.map(p => p.package).sort(), [...old.keys()].sort(), 'producer join package membership')
-  const mapping = Object.fromEntries(packages.map(p => [p.package as string, p.package === 'mos-deploy' ? JOIN_REBUILT.commit : JOIN_ORIGINAL.commit]))
-  same(j.mapping, mapping, 'producer join unique source mapping')
-  for (const p of packages) {
-    if (p.package !== 'mos-deploy') same(p, old.get(p.package), 'producer join reused archive/control bytes')
-    else same(p, { package: 'mos-deploy', architecture: 'amd64', version: JOIN_REBUILT.version,
-      archive: 'pool/mos-deploy_' + JOIN_REBUILT.version + '_amd64.deb',
-      sha256: '5c86a35df5ce3a495fdd8390f40a6e3d099fac4f10346e53783481ccda281168',
-      control_sha256: '43440d0b43a9e2ab31b1a9940dc072d5f83cc088bd5e0675089e61dd141f84b2' }, 'producer join deploy archive/control bytes')
+/** rootfs/packages/lock.tsv, as the composer read it: the rows one pool holds (its architecture and `all`), sorted. */
+export function lockRows(text: string, arch: string): LockRow[] {
+  const rows: LockRow[] = []
+  const seen = new Set<string>()
+  for (const [index, line] of text.split('\n').entries()) {
+    if (!line || line.startsWith('#')) continue
+    const fields = line.split('\t')
+    requireValue(fields.length === 6, `lock line ${index + 1}: ${fields.length} fields, not 6`)
+    const row = Object.fromEntries(LOCK_COLUMNS.map((k, i) => [k, fields[i]!])) as LockRow
+    requireValue(/^[a-z0-9][a-z0-9+.-]+$/.test(row.package) && ['amd64', 'arm64', 'all'].includes(row.architecture)
+      && /^[a-f0-9]{64}$/.test(row.sha256) && /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(row.source_repo) && /^[a-f0-9]{40}$/.test(row.source_commit)
+      && !stampOf(row.version).includes('.dirty'), `lock line ${index + 1}: malformed row`)
+    requireValue(!seen.has(row.package + '\t' + row.architecture), `lock line ${index + 1}: ${row.package} locked twice`)
+    seen.add(row.package + '\t' + row.architecture)
+    if (row.architecture === arch || row.architecture === 'all') rows.push(row)
   }
+  requireValue(new Set(rows.map(r => r.package)).size === rows.length, 'lock names one package for both this architecture and all')
+  return rows.sort((a, b) => a.package.localeCompare(b.package))
 }
-
 export function sourceLineage(value: unknown, source: Source, arch: string, capture: Record<string, unknown>) {
-  const joined = record(value).schema === 'mos/source-lineage/join-v1'
-  const startup = joined && record(record(value).producer_join).schema === 'mos/producer-join/startup-v1'
-  const gpt = joined && record(record(value).producer_join).schema === 'mos/producer-join/gpt-v1'
-  const rebuilt = gpt ? GPT_REBUILT : startup ? STARTUP_REBUILT : JOIN_REBUILT
-  const consumers = new Set([...JOIN_CONSUMERS, ...(startup || gpt ? STARTUP_TRACKING : [])])
-  let bootToolsImage: string | undefined
-  const l = object(value, ['schema', 'package_source', 'composition_source', 'architecture', 'root_epoch', 'pool', 'receipt_sha256', 'delta', ...(joined ? ['producer_join'] : [])])
-  requireValue(['mos/source-lineage/v1', 'mos/source-lineage/join-v1'].includes(l.schema as string) && l.architecture === arch, 'runtime lineage schema/architecture')
+  const l = object(value, ['schema', 'package_source', 'composition_source', 'architecture', 'root_epoch', 'pool', 'lock', 'unlocked'])
+  requireValue(l.schema === 'mos/source-lineage/v1' && l.architecture === arch, 'runtime lineage schema/architecture')
   const p = object(l.package_source, ['commit', 'tree', 'epoch', 'version'])
   const c = object(l.composition_source, ['commit', 'tree', 'epoch'])
   for (const identity of [p, c]) {
@@ -347,39 +265,22 @@ export function sourceLineage(value: unknown, source: Source, arch: string, capt
   }
   natural(l.root_epoch); requireValue((l.root_epoch as number) <= 0xffffffff, 'runtime lineage root epoch')
   requireValue(c.commit === source.commit && !source.dirty, 'runtime lineage composition source')
-  requireValue(typeof p.version === 'string' && new RegExp('^[0-9][A-Za-z0-9.~-]*\\+git' + (p.commit as string).slice(0, 12) + '-[1-9][0-9]*$').test(p.version), 'runtime lineage package version/source')
-  requireValue(Array.isArray(l.receipt_sha256) && new Set(l.receipt_sha256).size === l.receipt_sha256.length, 'runtime lineage receipt set')
-  for (const sha of l.receipt_sha256) digest(sha)
-  requireValue(p.commit === c.commit || l.receipt_sha256.length > 0, 'runtime lineage missing frozen receipt')
-  const allowed = new Set([
-    'rootfs/build.sh', 'rootfs/runtime/source-lineage.py', 'rootfs/runtime/compose.py', 'rootfs/compose/90-pack.Dockerfile',
-    'rootfs/compose/compose-capture.sh', 'rootfs/compose/compose-install.sh',
-    'build/src/release-manifest.ts', 'build/src/release-manifest.test.ts',
-    'tests/rootfs-runtime/source_lineage_test.py', 'tests/rootfs-runtime/composition_test.py',
-    'tests/deb-package-gate.sh',
-    'rootfs/runtime/select.py', 'tests/rootfs-runtime/selection_test.py',
-    'rootfs/runtime/consumers.json',
-    'rootfs/debian/packages/dmsetup.json', 'rootfs/debian/packages/libdevmapper1.02.1.json',
-    'docs/task/20260911-0145-b7-fresh-lifecycle-acceptance.md', 'docs/plan/20260911-0145-b7-fresh-lifecycle-acceptance.md',
-  ])
-  requireValue(Array.isArray(l.delta), 'runtime lineage delta')
-  const paths: string[] = []
-  for (const value of l.delta) {
-    const row = object(value, ['path', 'before', 'after'])
-    requireValue(typeof row.path === 'string' && (startup || gpt ? consumers : allowed).has(row.path), 'runtime lineage package-relevant delta')
-    paths.push(row.path)
-    for (const value of [row.before, row.after]) if (value !== null) {
-      const entry = object(value, ['mode', 'blob'])
-      requireValue(['100644', '100755', '120000'].includes(entry.mode as string)
-        && typeof entry.blob === 'string' && /^[a-f0-9]{40}$/.test(entry.blob), 'runtime lineage delta identity')
-    }
-    requireValue(row.after !== null, 'runtime lineage deleted consumer')
-    const after = row.after as Record<string, unknown>, before = row.before as Record<string, unknown> | null
-    requireValue(['100644', '100755'].includes(after.mode as string) && (before === null || before.mode === after.mode), 'runtime lineage consumer type/mode')
-    requireValue(canonicalJson(row.before) !== canonicalJson(row.after), 'runtime lineage empty delta')
+  requireValue(p.commit === c.commit && p.tree === c.tree && p.epoch === c.epoch, 'runtime lineage package/composition source differ')
+  const treeStamp = stampOf(p.version)
+  requireValue(treeStamp.startsWith('git' + (p.commit as string).slice(0, 12)) && !treeStamp.includes('.dirty'), 'runtime lineage package version/source')
+  // The lock rows the composer read, and the waiver it was given.
+  const locked = new Map<string, LockRow>()
+  for (const value of array(l.lock)) {
+    const row = object(value, [...LOCK_COLUMNS])
+    for (const key of LOCK_COLUMNS) requireValue(typeof row[key] === 'string', 'runtime lineage lock row')
+    const r = row as LockRow
+    requireValue(/^[a-z0-9][a-z0-9+.-]+$/.test(r.package) && [arch, 'all'].includes(r.architecture) && !locked.has(r.package), 'runtime lineage lock row')
+    digest(r.sha256); requireValue(/^[a-f0-9]{40}$/.test(r.source_commit) && /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(r.source_repo) && !stampOf(r.version).includes('.dirty'), 'runtime lineage lock row identity')
+    locked.set(r.package, r)
   }
-  same(paths, [...new Set(paths)].sort(), 'runtime lineage delta order/set')
-  if (p.commit === c.commit) requireValue(p.tree === c.tree && p.epoch === c.epoch && paths.length === 0, 'runtime lineage same-source mismatch')
+  same(array(l.lock).map(v => record(v).package), [...locked.keys()].sort(), 'runtime lineage lock order')
+  const unlocked = array(l.unlocked).map(v => { requireValue(typeof v === 'string' && locked.has(v), 'runtime lineage unlocked name'); return v })
+  same(unlocked, [...new Set(unlocked)].sort(), 'runtime lineage unlocked order/set')
   const pool = object(l.pool, ['files', 'packages']), files = record(pool.files)
   for (const [name, sha] of Object.entries(files)) {
     requireValue(['Packages', 'SHA256SUMS', 'manifest.txt'].includes(name) || /^pool\/[^/]+\.deb$/.test(name), 'runtime lineage pool path')
@@ -388,29 +289,26 @@ export function sourceLineage(value: unknown, source: Source, arch: string, capt
   const expected = new Set(['Packages', 'SHA256SUMS', 'manifest.txt']), names = new Set<string>()
   requireValue(Array.isArray(pool.packages) && pool.packages.length > 0, 'runtime lineage empty pool')
   const packages = pool.packages.map(value => {
-    const row = object(value, ['package', 'version', 'architecture', 'archive', 'sha256', 'control_sha256'])
+    const row = object(value, ['package', 'version', 'architecture', 'archive', 'sha256', 'control_sha256', 'source_repo', 'source_commit'])
     requireValue(typeof row.package === 'string' && /^[a-z0-9][a-z0-9+.-]+$/.test(row.package) && !names.has(row.package), 'runtime lineage package name/set')
     names.add(row.package)
-    requireValue([arch, 'all'].includes(row.architecture as string) && typeof row.version === 'string'
-      && row.version.split('+').at(-1) === (joined && row.package === 'mos-deploy' ? rebuilt.version : p.version as string).split('+').at(-1), 'runtime lineage package stamp/architecture')
+    requireValue([arch, 'all'].includes(row.architecture as string), 'runtime lineage package architecture')
     requireValue(typeof row.archive === 'string' && /^pool\/[^/]+\.deb$/.test(row.archive) && !expected.has(row.archive), 'runtime lineage archive')
     expected.add(row.archive); digest(row.sha256); digest(row.control_sha256)
+    requireValue(typeof row.source_repo === 'string' && /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(row.source_repo) && typeof row.source_commit === 'string' && /^[a-f0-9]{40}$/.test(row.source_commit), 'runtime lineage package source')
     same(files[row.archive], row.sha256, 'runtime lineage archive digest')
-    return row
+    // THE TWO-CLASS RULE, re-checked over the record: an imported archive is
+    // its lock row (unless waived), anything else carries this tree's stamp.
+    const lock = locked.get(row.package)
+    if (lock) { if (!unlocked.includes(row.package)) for (const key of LOCK_COLUMNS) same(row[key], lock[key], `runtime lineage locked archive ${row.package}`) }
+    else same(stampOf(row.version), treeStamp, `runtime lineage built-here stamp ${row.package}`)
+    return row as Record<string, unknown> & LockRow & { archive: string, control_sha256: string }
   })
   same(Object.keys(files).sort(), [...expected].sort(), 'runtime lineage pool membership')
-  if (joined) {
-    const boot = record(l.producer_join).schema === 'mos/producer-join/boot-tools-v1'
-    if (!boot && !startup && !gpt) same(c, JOIN_LEGACY_COMPOSITION, 'boot-tools witness omitted or downgraded')
-    same(l.receipt_sha256, [...Object.values(gpt ? GPT_RECEIPTS : startup ? STARTUP_RECEIPTS : JOIN_RECEIPTS), ...(boot ? [BOOT_RECEIPT_SHA] : [])].sort(), 'producer join receipt set')
-    requireValue(l.root_epoch === 1577836800 && paths.every(p => consumers.has(p)), 'producer join consumer delta/epoch')
-    if (gpt) bootToolsImage = gptProducerJoin(l.producer_join, pool, p, arch)
-    else if (startup) bootToolsImage = startupProducerJoin(l.producer_join, pool, p, arch)
-    else producerJoin(l.producer_join, packages, p, arch)
-  }
+  for (const name of locked.keys()) requireValue(names.has(name), `runtime lineage locked archive missing from the pool: ${name}`)
   for (const name of ['Packages', 'SHA256SUMS', 'manifest.txt']) same(capture[name], files[name], 'runtime lineage pool capture')
   same(capture['source-lineage.json'], createHash('sha256').update(canonicalJson(value) + '\n').digest('hex'), 'runtime lineage capture bytes')
-  return { record: value, packages, rootEpoch: l.root_epoch as number, bootToolsImage }
+  return { record: value, packages, rootEpoch: l.root_epoch as number, lock: [...locked.values()], unlocked }
 }
 function shippedRuntime(path: string, inventory: string, arch: string, root: VerityImage, meta: string, marker: string, source: Source) {
   const report = readRuntime(path)
@@ -436,14 +334,12 @@ function shippedRuntime(path: string, inventory: string, arch: string, root: Ver
   }
   for (const name of ['sources.tsv', 'upstream.tsv', 'Packages']) digest(capture[name])
   const lineage = sourceLineage(p.source_lineage, source, arch, capture)
-  if (lineage.bootToolsImage) requireValue(buildPackages.every(p => !STARTUP_UNSELECTED_PACKAGES.has(p.package)), 'startup unqualified ARM package installed')
   for (const row of buildPackages) {
     const match = lineage.packages.find(p => p.package === row.package)
     if (match || row.archive.startsWith('pool/')) {
       requireValue(match, 'runtime lineage missing installed package')
       for (const key of ['version', 'architecture', 'archive'] as const) same(row[key], match[key], 'runtime lineage installed package')
       same(row.archive_sha256, match.sha256, 'runtime lineage installed archive')
-      if (record(lineage.record).schema === 'mos/source-lineage/join-v1') same(row.source, { package: match.package, version: match.version }, 'producer join installed control source')
     }
   }
   requireValue((report.consumers as string[]).every(name => lineage.packages.some(p => p.package === name)), 'runtime lineage selected package missing')
@@ -554,7 +450,7 @@ function shippedRuntime(path: string, inventory: string, arch: string, root: Ver
     VERITY_DATA_SECTORS: String(root.verity.hashOffset / 512), SQUASHFS_BYTES: String(root.verity.hashOffset), IMAGE_BYTES: String(root.image.bytes) }, 'signed verity geometry')
   array(report.external_inputs)
   for (const row of files.values()) same(row.mtime_ns, String(BigInt(lineage.rootEpoch) * 1000000000n), 'runtime lineage root epoch')
-  return { buildPackages, shippedPackages, sourceLineage: lineage.record, bootToolsImage: lineage.bootToolsImage, files: provenance, measurements, licenses }
+  return { buildPackages, shippedPackages, sourceLineage: lineage.record, lock: lineage.lock, unlocked: lineage.unlocked, files: provenance, measurements, licenses }
 }
 
 function derived(dir: string, m: Omit<ReleaseManifest, 'artifacts'>, image: string, root: VerityImage) {
@@ -565,184 +461,19 @@ function derived(dir: string, m: Omit<ReleaseManifest, 'artifacts'>, image: stri
   const images: unknown = JSON.parse(read(join(dir, 'builder-images.json')))
   requireValue(images !== null && typeof images === 'object' && !Array.isArray(images)
     && Object.keys(images).length > 0 && Object.entries(images).every(([k, v]) => /^(IMAGE|LOCAL)_[A-Z0-9_]+$/.test(k) && typeof v === 'string' && v), 'builder image records')
-  if (runtime.bootToolsImage) same(record(images).LOCAL_BOOT_TOOLS_X64, runtime.bootToolsImage, 'startup release boot-tools image')
-  const bootTool = joinedBootTool(runtime.sourceLineage)
-  if (bootTool) same(record(images).LOCAL_BOOT_TOOLS_X64, bootTool.manifest, 'joined release boot-tools image')
+  requireValue(m.channel === 'development' || runtime.unlocked.length === 0, 'unlocked packages cannot use customer channels')
   return {
     'sbom.cdx.json': { bomFormat: 'CycloneDX', specVersion: '1.5', version: 1,
       metadata: { component: { type: 'operating-system', name: `mos-${m.board}`, version: m.version },
         properties: [{ name: 'mos:source-commit', value: m.source.commit }, { name: 'mos:source-dirty', value: String(m.source.dirty) }, { name: 'mos:source-offer', value: OFFER }] },
       components: rows.map(r => ({ type: 'library', name: r.name, version: r.version, properties: [{ name: 'mos:architecture', value: r.architecture }, { name: 'mos:archive-sha256', value: runtime.shippedPackages.find(p => p.package === r.name)!.archive_sha256 }] })) },
     'licenses.json': { schemaVersion: 1, statement: OFFER, source: m.source, packages: runtime.licenses },
-    'provenance.json': { schema: 'mos/provenance/v1', source: m.source, board: m.board, version: m.version, profile: m.profile, builderImages: images, runtime: { sourceLineage: runtime.sourceLineage, buildPackages: runtime.buildPackages, shippedPackages: runtime.shippedPackages, files: runtime.files, measurements: runtime.measurements },
+    'provenance.json': { schema: 'mos/provenance/v1', source: m.source, board: m.board, version: m.version, profile: m.profile, builderImages: images, runtime: { sourceLineage: runtime.sourceLineage, lock: runtime.lock, unlocked: runtime.unlocked, buildPackages: runtime.buildPackages, shippedPackages: runtime.shippedPackages, files: runtime.files, measurements: runtime.measurements },
       inputs: [image, 'update.mosupd', 'firmware.json', 'firmware.bin', 'package-manifest.tsv', 'rootfs-report.runtime.json', 'baked-meta.json', 'development-marker.txt', 'board-evidence.json', 'builder-images.json', 'release-notes.md'].map(filename => measure(dir, filename, files[filename]!)) },
   }
 }
-const INITRD_LIMIT = 64 * 1048576
-/** Validate RFC 8878 framing before invoking the pinned Bun runtime's decoder. */
-function decodeStartupFrame(packed: Buffer): Buffer {
-  requireValue(packed.length >= 10 && packed.length <= INITRD_LIMIT && packed.readUInt32LE(0) === 0xfd2fb528, 'joined zstd frame')
-  const descriptor = packed[4]!, single = (descriptor & 32) !== 0, sizeFlag = descriptor >>> 6
-  // The file producer emits a content size, a checksum and no dictionary.
-  requireValue((descriptor & 31) === 4 && (single || sizeFlag !== 0), 'joined zstd canonical descriptor')
-  let at = 5, window = 0
-  if (!single) {
-    const w = packed[at++]!, base = 2 ** (10 + (w >>> 3))
-    window = base + (base / 8) * (w & 7)
-  }
-  const sizeBytes = sizeFlag === 0 ? 1 : 2 ** sizeFlag
-  requireValue(at + sizeBytes <= packed.length, 'joined zstd size bounds')
-  const expanded = sizeBytes === 8 ? packed.readBigUInt64LE(at) : BigInt(packed.readUIntLE(at, sizeBytes) + (sizeBytes === 2 ? 256 : 0))
-  requireValue(expanded > 0n && expanded <= BigInt(INITRD_LIMIT), 'joined zstd expanded bound')
-  if (single) window = Number(expanded)
-  requireValue(window > 0 && window <= INITRD_LIMIT, 'joined zstd window bound')
-  at += sizeBytes
-  let last = false, blocks = 0
-  while (!last) {
-    requireValue(++blocks <= 65536, 'joined zstd block count')
-    requireValue(at + 3 <= packed.length, 'joined zstd truncated block')
-    const header = packed.readUIntLE(at, 3), kind = (header >>> 1) & 3, size = header >>> 3
-    last = (header & 1) !== 0
-    requireValue(kind !== 3 && size <= Math.min(window, 128 * 1024), 'joined zstd block bound')
-    at += 3 + (kind === 1 ? 1 : size)
-    requireValue(at <= packed.length, 'joined zstd truncated payload')
-  }
-  requireValue(at + 4 === packed.length, 'joined zstd single frame/checksum extent')
-  // Use this project's pinned Bun, including its zstd library, in a bounded
-  // child. The decoder enforces output/window caps while decoding; the parent
-  // independently caps its pipe and kills a stuck decoder after ten seconds.
-  const result = spawnSync(process.execPath, ['--eval', `
-    const {zstdDecompressSync, constants} = require('node:zlib');
-    const {readFileSync, writeFileSync} = require('node:fs');
-    writeFileSync(1, zstdDecompressSync(readFileSync(0), {
-      maxOutputLength: ${INITRD_LIMIT},
-      params: {[constants.ZSTD_d_windowLogMax]: 26}
-    }));
-  `], { input: packed, maxBuffer: INITRD_LIMIT, timeout: 10000, killSignal: 'SIGKILL' })
-  requireValue(!result.error && result.status === 0 && result.signal === null && result.stdout.length === Number(expanded), 'joined zstd bounded decode/checksum')
-  return result.stdout
-}
-
-function verifyStartupCpio(cpio: Buffer, expected: Record<string, { bytes: number, sha256: string }>) {
-  const directories = new Set(['.', 'dev', 'etc', 'etc/mos', 'exitrd', 'newroot', 'proc', 'run', 'sbin', 'support', 'sys', 'system'])
-  const native: Record<string, string> = { init: 'mos-init', 'exitrd/shutdown': 'mos-shutdown' }
-  const text: Record<string, string> = { 'startup.files': 'init\n', 'exitrd.files': 'shutdown\n', 'sbin/mos-shutdown': '/exitrd/shutdown' }
-  const allowed = new Set([...directories, ...Object.keys(native), ...Object.keys(text), 'etc/mos/boot.json'])
-  const names = new Set<string>(), align = (n: number, size = 4) => Math.ceil(n / size) * size
-  let at = 0, previous = ''
-  for (let count = 0; count <= allowed.size; count++) {
-    requireValue(at + 110 <= cpio.length && cpio.toString('ascii', at, at + 6) === '070701', 'joined startup cpio header')
-    const field = (i: number) => {
-      const text = cpio.toString('ascii', at + 6 + i * 8, at + 14 + i * 8)
-      requireValue(/^[0-9a-fA-F]{8}$/.test(text), 'joined startup cpio field'); return Number.parseInt(text, 16)
-    }
-    const mode = field(1), uid = field(2), gid = field(3), links = field(4), mtime = field(5), size = field(6), nameSize = field(11)
-    requireValue(nameSize >= 2 && nameSize <= 128 && at + 110 + nameSize <= cpio.length, 'joined startup cpio name bounds')
-    const namedEnd = at + 110 + nameSize, rawName = cpio.subarray(at + 110, namedEnd)
-    requireValue(rawName.at(-1) === 0 && !rawName.subarray(0, -1).includes(0), 'joined startup cpio name terminator')
-    const name = new TextDecoder('utf-8', { fatal: true }).decode(rawName.subarray(0, -1))
-    const data = align(namedEnd), end = data + size, next = align(end)
-    requireValue(next <= cpio.length && cpio.subarray(namedEnd, data).every(b => b === 0)
-      && cpio.subarray(end, next).every(b => b === 0), 'joined startup cpio padding/bounds')
-    requireValue(uid === 0 && gid === 0 && [7, 8, 9, 10, 12].every(i => field(i) === 0), 'joined startup cpio owner/device/check')
-    at = next
-    if (name === 'TRAILER!!!') {
-      requireValue(size === 0 && mode === 0 && links === 1 && mtime === 0 && cpio.length === align(at, 512)
-        && cpio.subarray(at).every(b => b === 0), 'joined startup cpio trailer extent')
-      requireValue(names.size === allowed.size, 'joined startup missing native/manifest/directory')
-      return
-    }
-    requireValue(allowed.has(name) && !names.has(name) && name > previous, 'joined startup unexpected/duplicate/unsafe path')
-    names.add(name); previous = name
-    const directory = directories.has(name), symlink = name === 'sbin/mos-shutdown'
-    const wantedMode = directory ? 0o40755 : symlink ? 0o120777 : Object.hasOwn(native, name) ? 0o100755 : 0o100644
-    requireValue(mode === wantedMode && links === (directory ? 2 : 1) && mtime === 1577836800, 'joined startup cpio mode/link/time')
-    const bytes = cpio.subarray(data, end)
-    if (directory) requireValue(size === 0, 'joined startup directory data')
-    else if (Object.hasOwn(native, name)) {
-      const witness = expected[native[name]!]
-      requireValue(witness && size === witness.bytes && createHash('sha256').update(bytes).digest('hex') === witness.sha256, 'joined authenticated native bytes/mode')
-    } else if (Object.hasOwn(text, name)) requireValue(bytes.equals(Buffer.from(text[name]!)), 'joined startup manifest/observer target')
-    else requireValue(size > 0 && size <= 4096, 'joined startup boot config size')
-  }
-  requireValue(false, 'joined startup missing trailer')
-}
-
-/** Bind the authenticated x64 UKI's actual native bytes to the joined witness. */
-export function verifyJoinedNativePayload(boot: Buffer, expected: Record<string, { bytes: number, sha256: string }>, source = JOIN_REBUILT.commit, busybox?: { bytes: number, sha256: string }) {
-  requireValue(source === JOIN_REBUILT.commit || source === STARTUP_SOURCE || source === GPT_SOURCE, 'joined native source role')
-  const startup = source === STARTUP_SOURCE || source === GPT_SOURCE
-  requireValue(!startup || !busybox, 'startup does not accept a legacy BusyBox witness')
-  requireValue(boot.length >= 64 && boot.length <= 256 * 1048576 && boot.toString('ascii', 0, 2) === 'MZ', 'joined UKI header')
-  const pe = boot.readUInt32LE(60)
-  requireValue(pe >= 64 && pe + 24 <= boot.length && boot.toString('ascii', pe, pe + 4) === 'PE\0\0'
-    && boot.readUInt16LE(pe + 4) === 0x8664, 'joined UKI architecture')
-  const count = boot.readUInt16LE(pe + 6), optional = boot.readUInt16LE(pe + 20), start = pe + 24 + optional
-  requireValue(count > 0 && count <= 96 && optional >= 2 && start + count * 40 <= boot.length
-    && boot.readUInt16LE(pe + 24) === 0x20b, 'joined UKI sections')
-  const initrds: Buffer[] = []
-  const ranges: { offset: number, size: number, address: number, bytes: number }[] = []
-  const alignment = optional >= 64 ? boot.readUInt32LE(pe + 24 + 36) : 0
-  const imageSize = optional >= 64 ? boot.readUInt32LE(pe + 24 + 56) : 0
-  if (startup) requireValue(alignment >= 512 && alignment <= 65536 && (alignment & (alignment - 1)) === 0, 'joined PE file alignment')
-  for (let i = 0; i < count; i++) {
-    const at = start + i * 40, name = boot.toString('ascii', at, at + 8).replace(/\0.*$/, '')
-    const bytes = boot.readUInt32LE(at + 8), size = boot.readUInt32LE(at + 16), offset = boot.readUInt32LE(at + 20)
-    if (startup && (size > 0 || bytes > 0)) {
-      const address = boot.readUInt32LE(at + 12)
-      const loaded = Math.max(bytes, size)
-      requireValue((size === 0 || (offset >= start + count * 40 && offset % alignment === 0 && size % alignment === 0 && offset + size <= boot.length))
-        && address + loaded <= imageSize, 'joined PE section bounds')
-      requireValue(ranges.every(r => (size === 0 || r.size === 0 || offset + size <= r.offset || r.offset + r.size <= offset)
-        && (address + loaded <= r.address || r.address + r.bytes <= address)), 'joined PE overlapping section')
-      ranges.push({ offset, size, address, bytes: loaded })
-    }
-    if (name === '.initrd') {
-      requireValue(bytes > 0 && size >= bytes && offset >= start + count * 40 && offset + size <= boot.length, 'joined initrd bounds')
-      if (startup) requireValue(bytes <= INITRD_LIMIT && size === Math.ceil(bytes / alignment) * alignment
-        && boot.subarray(offset + bytes, offset + size).every(b => b === 0), 'joined compressed initrd load/padding bound')
-      initrds.push(boot.subarray(offset, offset + bytes))
-    }
-  }
-  requireValue(initrds.length === 1, 'joined unique initrd')
-  if (startup) return verifyStartupCpio(decodeStartupFrame(initrds[0]!), expected)
-  const cpio = initrds[0]!, names = new Set<string>(), matched = new Set<string>()
-  requireValue(cpio.length <= INITRD_LIMIT, 'joined raw initrd bound')
-  const wanted: Record<string, string> = { init: 'mos-init', 'sbin/mos-shutdown': 'mos-shutdown', 'exitrd/shutdown': 'mos-shutdown' }
-  if (busybox) wanted['bin/busybox'] = 'boot-busybox'
-  let at = 0, trailer = false
-  const align = (value: number) => Math.ceil(value / 4) * 4
-  for (let count = 0; count < 10000 && at < cpio.length; count++) {
-    requireValue(at + 110 <= cpio.length && cpio.toString('ascii', at, at + 6) === '070701', 'joined cpio header')
-    const field = (index: number) => {
-      const text = cpio.toString('ascii', at + 6 + index * 8, at + 14 + index * 8)
-      requireValue(/^[0-9a-fA-F]{8}$/.test(text), 'joined cpio field'); return Number.parseInt(text, 16)
-    }
-    const mode = field(1), uid = field(2), gid = field(3), size = field(6), nameSize = field(11)
-    requireValue(nameSize > 0 && nameSize <= 4096 && at + 110 + nameSize <= cpio.length, 'joined cpio name bounds')
-    const rawName = cpio.subarray(at + 110, at + 110 + nameSize)
-    requireValue(rawName.at(-1) === 0 && !rawName.subarray(0, -1).includes(0), 'joined cpio name terminator')
-    const name = new TextDecoder('utf-8', { fatal: true }).decode(rawName.subarray(0, -1)).replace(/^\.\//, '')
-    const data = align(at + 110 + nameSize), end = data + size
-    requireValue(end <= cpio.length, 'joined cpio data bounds')
-    at = align(end)
-    if (name === 'TRAILER!!!') { requireValue(size === 0 && cpio.subarray(at).every(b => b === 0), 'joined cpio trailer'); trailer = true; break }
-    requireValue(!/[\x00-\x1f\x7f]/.test(name) && (name === '.' || (!name.startsWith('/') && name.split('/').every(p => p && p !== '.' && p !== '..'))), 'joined cpio path')
-    requireValue(!names.has(name), 'joined duplicate cpio path'); names.add(name)
-    if (Object.hasOwn(wanted, name)) {
-      const witness = wanted[name] === 'boot-busybox' ? busybox : expected[wanted[name]!]
-      requireValue(witness && mode === 0o100755 && uid === 0 && gid === 0 && size === witness.bytes
-        && createHash('sha256').update(cpio.subarray(data, end)).digest('hex') === witness.sha256, 'joined authenticated native bytes/mode')
-      matched.add(name)
-    }
-  }
-  requireValue(trailer && matched.size === Object.keys(wanted).length, 'joined missing native/tool payload')
-}
-
 /** Authenticate every MOSUPD01 object using bounded reads, without unpacking it. */
-export function verifyArchive(path: string, keys: readonly string[], joinedNative: boolean | typeof STARTUP_SOURCE | typeof GPT_SOURCE = false, busybox?: { bytes: number, sha256: string }) {
-  requireValue(joinedNative === false || joinedNative === true || joinedNative === STARTUP_SOURCE || joinedNative === GPT_SOURCE, 'joined native source role')
-  requireValue(!busybox || joinedNative === true, 'boot-tools require legacy joined native provenance')
+export function verifyArchive(path: string, keys: readonly string[]) {
   regular(path)
   const fd = openSync(path, 'r')
   const exact = (length: number) => {
@@ -763,13 +494,9 @@ export function verifyArchive(path: string, keys: readonly string[], joinedNativ
     requireValue(exact(4).readUInt32BE() === objects.size, 'update object count')
     for (const [sha, bytes] of [...objects].sort(([a], [b]) => a.localeCompare(b))) {
       requireValue(exact(64).toString() === sha && exact(8).readBigUInt64BE() === BigInt(bytes), 'update object header')
-      const hash = createHash('sha256'), nativeBoot = joinedNative && sha === deployment.kernel.boot.artifact.sha256
-      if (nativeBoot) requireValue(deployment.board === 'x64' && deployment.kernel.boot.format === 'uki' && bytes <= 256 * 1048576, 'joined kernel artifact')
-      const chunks: Buffer[] = []
-      for (let remaining = bytes; remaining > 0;) { const count = Math.min(65536, remaining), chunk = exact(count); hash.update(chunk); if (nativeBoot) chunks.push(chunk); remaining -= count }
+      const hash = createHash('sha256')
+      for (let remaining = bytes; remaining > 0;) { const count = Math.min(65536, remaining); hash.update(exact(count)); remaining -= count }
       requireValue(hash.digest('hex') === sha, 'update object digest')
-      if (nativeBoot) verifyJoinedNativePayload(Buffer.concat(chunks), joinedNative === GPT_SOURCE ? GPT_NATIVE : joinedNative === STARTUP_SOURCE ? STARTUP_NATIVE : JOIN_NATIVE,
-        typeof joinedNative === 'string' ? joinedNative : JOIN_REBUILT.commit, busybox)
     }
     requireValue(readSync(fd, Buffer.alloc(1)) === 0, 'trailing update archive bytes')
     return deployment
@@ -792,15 +519,9 @@ export function gateRelease(dir: string, keys: readonly string[]) {
   requireValue(m.channel === 'development' || developmentDomains.length === 0, 'development keys cannot use customer channels')
   requireValue(evidence(JSON.parse(read(join(dir, 'board-evidence.json'))), m.board) === m.bootAssurance, 'evidence assurance differs')
   const runtime = record(readRuntime(join(dir, 'rootfs-report.runtime.json')).provenance)
-  const lineage = record(runtime.source_lineage)
-  let joined: boolean | typeof STARTUP_SOURCE | typeof GPT_SOURCE = false
-  if (lineage.schema === 'mos/source-lineage/join-v1') {
-    sourceLineage(lineage, m.source, m.board === 'x64' ? 'amd64' : 'arm64', record(runtime.capture_sha256))
-    const producer = record(record(lineage.producer_join).rebuilt_source).commit
-    joined = producer === GPT_SOURCE ? GPT_SOURCE : producer === STARTUP_SOURCE ? STARTUP_SOURCE : true
-  }
-  const bootTool = joinedBootTool(lineage)
-  const deployment = verifyArchive(join(dir, 'update.mosupd'), keys, joined, bootTool?.busybox)
+  const lineage = sourceLineage(runtime.source_lineage, m.source, m.board === 'x64' ? 'amd64' : 'arm64', record(runtime.capture_sha256))
+  requireValue(m.channel === 'development' || lineage.unlocked.length === 0, 'unlocked packages cannot use customer channels')
+  const deployment = verifyArchive(join(dir, 'update.mosupd'), keys)
   requireValue(deployment.board === m.board && deployment.version === m.version, 'update board or version differs')
   const firmware = authenticateFirmware(read(join(dir, 'firmware.json'), 16384), keys)
   requireValue(firmware.board === m.board, 'firmware board differs')
@@ -825,7 +546,13 @@ export function assembleRelease(inputs: ReleaseInputs) {
   const bootAssurance = evidence(JSON.parse(read(inputs.evidence)), inputs.board)
   const deployment = verifyArchive(inputs.update, inputs.keys)
   requireValue(deployment.board === inputs.board && deployment.version === inputs.version, 'update board or version differs')
-  const runtime = shippedRuntime(inputs.runtimeReport, read(inputs.packages), inputs.board === 'x64' ? 'amd64' : 'arm64', deployment.rootfs.content, read(join(inputs.meta, 'updates/manifest.json')), marker, inputs.source)
+  const arch = inputs.board === 'x64' ? 'amd64' : 'arm64'
+  const runtime = shippedRuntime(inputs.runtimeReport, read(inputs.packages), arch, deployment.rootfs.content, read(join(inputs.meta, 'updates/manifest.json')), marker, inputs.source)
+  requireValue(inputs.channel === 'development' || runtime.unlocked.length === 0, 'unlocked packages cannot use customer channels')
+  // The lock the tree holds at the source commit is the lock the composer must
+  // have read: a release whose imports differ from rootfs/packages/lock.tsv was
+  // composed from another tree's imports, whatever its stamp says.
+  if (inputs.lock !== undefined) same(runtime.lock, lockRows(read(inputs.lock), arch), 'release lock differs from the tree lock')
   const m: ReleaseManifest = { schema: 'mos/release/v1', board: inputs.board, version: inputs.version, channel: inputs.channel,
     profile: inputs.profile, source: inputs.source, bootAssurance, developmentDomains, artifacts: [] }
   const files = { [image]: inputs.image, 'update.mosupd': inputs.update, 'firmware.json': join(inputs.firmware, 'firmware.json'),
@@ -836,13 +563,7 @@ export function assembleRelease(inputs: ReleaseInputs) {
   for (const [name, path] of Object.entries(files)) copyFileSync(path, join(inputs.out, name))
   // Retain the installed marker bytes; domains() still enforces channel policy.
   writeFileSync(join(inputs.out, 'development-marker.txt'), marker)
-  const bootImage = runtime.bootToolsImage ?? joinedBootTool(runtime.sourceLineage)?.manifest
-  const builderImages = { ...inputs.builderImages }
-  if (bootImage) {
-    if (Object.hasOwn(builderImages, 'LOCAL_BOOT_TOOLS_X64')) same(builderImages.LOCAL_BOOT_TOOLS_X64, bootImage, 'joined caller boot-tools image')
-    builderImages.LOCAL_BOOT_TOOLS_X64 = bootImage
-  }
-  json(inputs.out, 'builder-images.json', builderImages)
+  json(inputs.out, 'builder-images.json', inputs.builderImages)
   for (const [name, value] of Object.entries(derived(inputs.out, m, image, deployment.rootfs.content))) json(inputs.out, name, value)
   m.artifacts = Object.entries(releaseFiles(image)).filter(([name]) => name !== 'SHA256SUMS').map(([name, role]) => measure(inputs.out, name, role))
   writeFileSync(join(inputs.out, 'SHA256SUMS'), sums(m.artifacts))

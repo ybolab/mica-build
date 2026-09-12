@@ -37,13 +37,13 @@
 #     directory it was pointed at; it records which files ran, not what the
 #     image is made of.
 #   rootfs-packages.txt: the local packages installed, with the version,
-#     architecture, archive sha256 and owning producer directory of each, read
-#     out of the pool index. PLAN-036 section 4's durable composition record,
-#     and the one that says what this image is made of.
+#     architecture, archive sha256, source (the owning producer directory, or
+#     the lock row for an imported archive), source repository and source
+#     commit of each, read out of the pool index. PLAN-036 section 4's durable
+#     composition record, and the one that says what this image is made of.
 #   mosd-build.txt: the commit mosd and apid in this root were built from,
-#     copied from _out/mosd-build-<arch>.txt, which the producer that compiled
-#     them wrote. NOT copied into the image. Not written when mosd is declined;
-#     see below.
+#     read out of the mosd archive's Mos-Source-Commit control field. NOT
+#     copied into the image. Not written when mosd is declined; see below.
 # rootfs/README.md, "Outputs to _out/<board>/", is the table version of this.
 
 # Every layout constant is read from boards/cx3576/board.env.
@@ -170,7 +170,7 @@ MOS_PROFILE=${MOS_PROFILE:-dev}
 # HOW THE ROOT IS ASSEMBLED, and there is one answer.
 #
 # rootfs/compose/*.Dockerfile: one apt transaction against the local package
-# pool `make os-debs` builds, with APT deriving the configuration order from
+# pool `make os-pool` builds, with APT deriving the configuration order from
 # `Depends`, and then the finalizer -- 90-pack.Dockerfile beside it, which
 # closes the root, does the tree surgery, runs the assertions, builds the
 # squashfs, appends the verity tree and writes both export surfaces.
@@ -249,7 +249,7 @@ POOL_DIR="$REPO_ROOT/_out/debs/$MOS_ARCH"
 pool_refusal() {
     echo "error: $1" >&2
     echo "       The rootfs composer installs from _out/debs/<arch>; it does not build a package." >&2
-    echo "       Build the pool and its index with: make os-debs" >&2
+    echo "       Fetch the locked archives, build the rest and index both with: make os-pool" >&2
     exit 1
 }
 [ -d "$POOL_DIR" ] ||
@@ -281,66 +281,55 @@ newer=$(find "$POOL_DIR/pool" -maxdepth 1 -type f -name '*.deb' -newer "$POOL_DI
 [ -z "$newer" ] ||
     pool_refusal "these archives are newer than $POOL_DIR/manifest.txt, so the pool was rebuilt without being re-indexed: $newer"
 
-# STALE, sense 3: the pool was not built from THIS tree. Versions are per
-# package -- an upstream repack carries its upstream number in front -- but
-# every archive ends in the one `+git<commit><dirty>-<rev>` STAMP
-# build-env/deb/version.sh printed when it was built, and
-# tests/deb-package-gate.sh asserts that stamp over the built pool. A pool
-# whose stamp is not this tree's resolves, installs, and composes an image out
-# of some other commit's packages while every check downstream reports on the
-# tree in front of it.
-pool_stamps=$(grep -v '^#' "$POOL_DIR/manifest.txt" | cut -f2 | sed 's/^.*+//' | sort -u | tr '\n' ' ')
-pool_stamp=${pool_stamps% }
-case "$pool_stamp" in
-*' '*)
-    [ -n "${MOS_ROOTFS_PRODUCER_JOIN:-}" ] || pool_refusal "$POOL_DIR/manifest.txt carries more than one git stamp: $pool_stamp. The pool carries one stamp across every producer by rule; two stamps mean it was half-rebuilt across a tree change."
-    ;;
-esac
-PACKAGE_SOURCE=${MOS_ROOTFS_PACKAGE_SOURCE:-$REPO_ROOT}
-[ -z "${MOS_ROOTFS_PRODUCER_JOIN_SHA256:-}" ] || [ -n "${MOS_ROOTFS_PRODUCER_JOIN:-}" ] ||
-    pool_refusal "producer join digest requires an explicit joined input."
-# Verify the actual clean sources and frozen receipt before executing a producer
-# version script or resolving any container. An explicit source is not a stamp override.
-LINEAGE_ARGS=()
-if [ -n "${MOS_ROOTFS_PACKAGE_SOURCE:-}" ]; then
-    LINEAGE_ARGS+=(--package-source "$PACKAGE_SOURCE")
-fi
-if [ -n "${MOS_ROOTFS_PACKAGE_RECEIPT:-}" ]; then
-    LINEAGE_ARGS+=(--receipt "$MOS_ROOTFS_PACKAGE_RECEIPT" --receipt-sha256 "${MOS_ROOTFS_PACKAGE_RECEIPT_SHA256:-}")
-fi
-if [ -n "${MOS_ROOTFS_PRODUCER_JOIN:-}" ]; then
-    LINEAGE_ARGS+=(--producer-join "$MOS_ROOTFS_PRODUCER_JOIN" --producer-join-sha256 "${MOS_ROOTFS_PRODUCER_JOIN_SHA256:-}")
+# STALE, sense 3, AS A TWO-CLASS RULE. Every archive in the pool is one of:
+#
+#   built here   emitted by a producer of THIS tree, and then it must carry
+#                the one `+git<commit><dirty>-<rev>` STAMP
+#                build-env/deb/version.sh prints for this tree;
+#   imported     named by rootfs/packages/lock.tsv, and then it must be the
+#                locked version and sha256, from the locked source repository
+#                and commit (its Mos-Source-* control fields);
+#
+# and anything else -- an archive no producer emits and the lock does not
+# name, a locked archive at another digest, a built-here archive at another
+# stamp -- is refused, naming the archive. The rule is implemented ONCE, in
+# rootfs/runtime/source-lineage.py, which also writes the lineage record the
+# release gate re-verifies; this script hands it the inputs and repeats
+# nothing.
+#
+# MOS_POOL_UNLOCKED="<pkg> ..." waives the digest check for named IMPORTED
+# packages -- the local development loop, where a package repository builds a
+# dirty archive straight into this pool (build-env/deb/README.md, "Local
+# development"). The waiver is announced here, recorded in the lineage
+# record and in rootfs-packages.txt, written into the image's
+# /usr/share/mos/release-identity.env, and build/src/release-manifest.ts
+# refuses such an image in the candidate and stable channels. A name that is
+# not a locked package is refused: there is nothing to waive.
+LOCAL_PACKAGES=$(bash "$REPO_ROOT/build-env/deb/producers.sh" | awk '{ n = split($4, a, ","); for (i = 1; i <= n; i++) printf "%s ", a[i] }')
+[ -n "$LOCAL_PACKAGES" ] ||
+    { echo "error: build-env/deb/producers.sh named no package, so nothing in the pool could be classified as built here" >&2; exit 1; }
+LOCK_FILE="$REPO_ROOT/rootfs/packages/lock.tsv"
+[ -f "$LOCK_FILE" ] ||
+    pool_refusal "$LOCK_FILE does not exist. It is the package lock -- every archive the assembly imports rather than builds -- and the composer reads it even when it names nothing."
+MOS_POOL_UNLOCKED=${MOS_POOL_UNLOCKED:-}
+if [ -n "$MOS_POOL_UNLOCKED" ]; then
+    echo "note: MOS_POOL_UNLOCKED waives the lock digest check for:$(printf ' %s' $MOS_POOL_UNLOCKED)"
+    echo "      this root is a development root; the release gate refuses it outside the development channel"
 fi
 LINEAGE_STAGE="$OUT_DIR/source-lineage.json"
 tree_version=$(python3 "$REPO_ROOT/rootfs/runtime/source-lineage.py" \
     --composition-source "$REPO_ROOT" --pool "$POOL_DIR" --arch "$MOS_ARCH" \
-    --epoch "$SQUASHFS_TIME" --output "$LINEAGE_STAGE" "${LINEAGE_ARGS[@]}")
+    --epoch "$SQUASHFS_TIME" --lock "$LOCK_FILE" --unlocked "$MOS_POOL_UNLOCKED" \
+    --local-packages "$LOCAL_PACKAGES" --output "$LINEAGE_STAGE") ||
+    pool_refusal "the $MOS_ARCH pool did not pass the two-class rule (see the refusal above)."
 tree_stamp=${tree_version##*+}
-# The explicit named tool witness is verified before any resolver/container.
-# Propagate its immutable manifest identity; a tag/config digest cannot replace it.
-boot_tools_image=$(python3 - "$LINEAGE_STAGE" <<'PY_BOOT_TOOL'
-import json, sys
-record = json.load(open(sys.argv[1]))
-joined = record.get('producer_join', {})
-if joined.get('schema') == 'mos/producer-join/boot-tools-v1':
-    print(joined['boot_tools']['production']['manifest'])
-elif joined.get('schema') in ('mos/producer-join/startup-v1', 'mos/producer-join/gpt-v1'):
-    print(joined['production']['boot_tools']['image'])
-PY_BOOT_TOOL
-)
-if [ -n "$boot_tools_image" ]; then
-    [ "${MOS_BOOT_TOOLS_IMAGE:-$boot_tools_image}" = "$boot_tools_image" ] ||
-        pool_refusal "boot-tools image differs from the verified producer witness."
-    export MOS_BOOT_TOOLS_IMAGE="$boot_tools_image"
-fi
-[ -n "${MOS_ROOTFS_PRODUCER_JOIN:-}" ] || [ "$pool_stamp" = "$tree_stamp" ] ||
-    pool_refusal "the $MOS_ARCH pool was built at stamp '$pool_stamp' and the verified package source is '$tree_stamp'."
-echo "pool: $POOL_DIR, $pool_debs archive(s) at stamp $pool_stamp"
+locked_n=$(python3 -c 'import json,sys; r=json.load(open(sys.argv[1])); print(len(r["lock"]))' "$LINEAGE_STAGE")
+echo "pool: $POOL_DIR, $pool_debs archive(s); built here at stamp $tree_stamp, $locked_n imported by the lock${MOS_POOL_UNLOCKED:+, unlocked:$(printf ' %s' $MOS_POOL_UNLOCKED)}"
 
 # --- the composition's inputs: the package pool, the resolution, the context ---
 #
 # The composer INSTALLS; it never compiles. Everything below either reads the
-# pool `make os-debs` wrote or asks rootfs/packages/resolve.sh which packages
+# pool `make os-pool` wrote or asks rootfs/packages/resolve.sh which packages
 # this build's inputs select, and every refusal here names the make target that
 # produces what is missing. A composer that built a component on demand would
 # make "the pool is stale" invisible -- the build would simply take longer and
@@ -377,7 +366,7 @@ commit_of_stamp=${commit_of_stamp%.dirty}
 # `^{commit}` so the argument can only resolve as a commit: a bare 12-hex
 # string is also a path a repository could hold, and `git show` would then
 # print that file and this would date the image by it.
-tree_commit_date=$(git -C "$PACKAGE_SOURCE" show -s --format=%cI "${commit_of_stamp}^{commit}" 2>/dev/null || true)
+tree_commit_date=$(git -C "$REPO_ROOT" show -s --format=%cI "${commit_of_stamp}^{commit}" 2>/dev/null || true)
 [ -n "$tree_commit_date" ] || {
     echo "error: git names no commit date for '$commit_of_stamp', the commit in this tree's stamp '$tree_stamp'." >&2
     echo "       That date is written into /usr/share/mos/release-identity.env and is the only date in a" >&2
@@ -427,8 +416,10 @@ if [ -n "$missing_pkgs" ]; then
             awk -v pkg="$p" '{ n = split($4, a, ","); for (i = 1; i <= n; i++) if (a[i] == pkg) print $1 }')
         if [ -n "$producer" ]; then
             echo "       $p is emitted by the '$producer' producer: make os-deb-$producer" >&2
+        elif bash "$REPO_ROOT/build-env/deb/lock.sh" --rows --arch "$MOS_ARCH" | cut -f1 | grep -cx -- "$p" >/dev/null; then
+            echo "       $p is imported by rootfs/packages/lock.tsv: make os-pool fetches it" >&2
         else
-            echo "       $p is emitted by NO producer in this repository, which rootfs/packages/resolve.sh should already have refused" >&2
+            echo "       $p is emitted by NO producer in this repository and imported by no lock row, which rootfs/packages/resolve.sh should already have refused" >&2
         fi
     done
     exit 1
@@ -568,6 +559,7 @@ DRIVER_ARGS=(
     --arg MOS_PROFILE="$MOS_PROFILE"
     --arg MOS_RELEASE_VERSION="$tree_version"
     --arg MOS_RELEASE_COMMIT_DATE="$tree_commit_date"
+    --arg MOS_RELEASE_UNLOCKED="$MOS_POOL_UNLOCKED"
     --arg VERITY_SALT="$VERITY_SALT"
     --arg SQUASHFS_TIME="$SQUASHFS_TIME"
     --arg SOURCE_DATE_EPOCH="$SQUASHFS_TIME"
@@ -639,18 +631,19 @@ fi
     printf '#board\t%s\n' "$MOS_BOARD"
     printf '#profile\t%s\n' "$MOS_PROFILE"
     printf '#declined\t%s\n' "${MOS_ROOTFS_WITHOUT:-(none)}"
-    printf '#pool\t_out/debs/%s at stamp %s\n' "$MOS_ARCH" "$pool_stamp"
-    printf '#package\tversion\tarchitecture\tsha256\tsource\n'
+    printf '#pool\t_out/debs/%s, built here at stamp %s, %s imported by rootfs/packages/lock.tsv\n' "$MOS_ARCH" "$tree_stamp" "$locked_n"
+    printf '#unlocked\t%s\n' "${MOS_POOL_UNLOCKED:-(none)}"
+    printf '#package\tversion\tarchitecture\tsha256\tsource\tsource-repo\tsource-commit\n'
     for p in $RESOLVED; do
         awk -F'\t' -v pkg="$p" -v prods="$PRODUCER_DIRS" '
             $1 == pkg {
                 n = split(prods, rows, ";")
-                dir = "(no producer declares it)"
+                dir = "lock"
                 for (i = 1; i <= n; i++) {
                     split(rows[i], kv, "=")
                     if (kv[1] == pkg) dir = kv[2]
                 }
-                printf "%s\t%s\t%s\t%s\t%s\n", $1, $2, $3, $5, dir
+                printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\n", $1, $2, $3, $5, dir, $7, $8
             }' "$POOL_DIR/manifest.txt"
     done
 } > "$PACKAGES_RECORD"
@@ -732,45 +725,60 @@ echo "installed size: ${total_mb} MB (budget ${SIZE_BUDGET_MB} MB)"
 
 # THE BUILD COMMIT, beside the image it describes, and written only now that
 # the image exists. The mosd and mos-apid binaries in this root came out of the
-# pool, so the record comes from the producer that compiled them --
-# pkgs/mosd/hack/build-deb.sh writes _out/mosd-build-<arch>.txt whenever it
-# does -- and not from pkgs/mosd/hack/build-target.sh, which compiles a set
-# nothing here installs and therefore no longer writes one.
+# pool, so the record comes out of the ARCHIVE that carried them: pack.sh
+# writes the commit a producer built from into every archive's
+# Mos-Source-Commit control field, and the same field is there whether the
+# archive was built here or fetched from the registry under the lock.
 #
 # WHAT THE SMOKE RUN THEN ASSERTS, said plainly because it is easy to over-read.
 # The two sides are the string COMPILED INTO the binary in the packed root, read
-# back by executing it, and the string that producer run WROTE TO DISK -- and
-# both descend from one `MOS_BUILD_COMMIT` in one build-deb.sh invocation. So it
-# is not evidence that the commit is correct. Nothing a reader of an image could
-# do would be, which is why comparing against `git rev-parse HEAD` at run time is
-# refused by name in verify/src/smoke.ts.
+# back by executing it, and the commit the producer RECORDED IN THE ARCHIVE --
+# and both descend from one HEAD in one producer run. So it is not evidence
+# that the commit is correct. Nothing a reader of an image could do would be,
+# which is why comparing against `git rev-parse HEAD` at run time is refused by
+# name in verify/src/smoke.ts.
 #
 # What it IS evidence of is the one gap the pool checks above cannot see. Those
-# refuse an archive built from another tree -- by stamp, and by SHA256SUMS over
-# the pool -- but they read the archive's NAME and its bytes, never what was
-# compiled into the binary inside it. This closes the distance between "the
-# producer was told to embed X" and "the binary in the image reports X": a
-# compile cargo did not re-run for a changed environment variable, an
-# `option_env!` that resolved to nothing so the binary says `unknown`, a stage
-# that installed a binary from somewhere other than the package. Each of those
-# ships an archive every check upstream accepts, and turns the version rows red
-# only here.
+# refuse an archive built from another tree -- by stamp, by the lock, by
+# SHA256SUMS over the pool -- but they read the archive's NAME and its bytes,
+# never what was compiled into the binary inside it. This closes the distance
+# between "the producer was told to embed X" and "the binary in the image
+# reports X": a compile cargo did not re-run for a changed environment
+# variable, an `option_env!` that resolved to nothing so the binary says
+# `unknown`, a stage that installed a binary from somewhere other than the
+# package. Each of those ships an archive every check upstream accepts, and
+# turns the version rows red only here.
+#
+# The binaries report `<commit12>[-dirty]` (pkgs/mosd/hack/build-deb.sh's
+# MOS_BUILD_COMMIT); the archive carries the full commit and marks a dirty
+# tree in its version stamp, so the record is spelled the way the binary
+# spells it.
 if declined mosd; then
     echo "mosd: declined, so this root carries no mosd or mos-apid and no build commit is recorded for it"
 else
-    MOSD_BUILD_SRC="$PACKAGE_SOURCE/_out/mosd-build-$MOS_ARCH.txt"
-    [ -s "$MOSD_BUILD_SRC" ] || {
-        echo "error: $MOSD_BUILD_SRC is missing or empty, so the commit the mosd and mos-apid in this root" >&2
-        echo "       were built from cannot be recorded beside it, and the smoke run would report that it" >&2
-        echo "       asserted nothing about the commit -- which is the state this refusal exists to end." >&2
-        echo "       pkgs/mosd/hack/build-deb.sh writes it every time it compiles them. The pool above" >&2
-        echo "       passed the stamp check, so a pool with those packages and no record beside it is one" >&2
-        echo "       that was carried in from another tree rather than built here." >&2
-        echo "       Build it with: make os-debs" >&2
-        exit 1
-    }
-    cp "$MOSD_BUILD_SRC" "$OUT_DIR/mosd-build.txt"
-    echo "mosd: build commit $(sed -n 's/^commit\t//p' "$OUT_DIR/mosd-build.txt") recorded from $MOSD_BUILD_SRC"
+    # Out of the lineage record rather than out of the archive again: the
+    # record was read from the archive's control file by source-lineage.py
+    # before the composition, and is what the release gate re-verifies.
+    read -r mosd_archive mosd_version mosd_repo mosd_commit < <(python3 - "$LINEAGE_STAGE" <<'PY_MOSD'
+import json, sys
+rows = [r for r in json.load(open(sys.argv[1]))['pool']['packages'] if r['package'] == 'mosd']
+if len(rows) == 1:
+    r = rows[0]
+    print(r['archive'], r['version'], r['source_repo'], r['source_commit'])
+PY_MOSD
+)
+    [ -n "${mosd_archive:-}" ] && [ -f "$POOL_DIR/$mosd_archive" ] ||
+        { echo "error: the lineage record names no mosd archive in $POOL_DIR, yet mosd was resolved and installed" >&2; exit 1; }
+    mosd_dirty=""
+    case "$mosd_version" in *.dirty-*) mosd_dirty="-dirty" ;; esac
+    {
+        echo "# The commit the mosd and mos-apid in this root were built from, read by"
+        echo "# rootfs/build.sh out of the mosd archive's Mos-Source-Commit control field."
+        printf 'archive\t%s\n' "$mosd_archive"
+        printf 'source-repo\t%s\n' "$mosd_repo"
+        printf 'commit\t%s\n' "${mosd_commit:0:12}${mosd_dirty}"
+    } >"$OUT_DIR/mosd-build.txt"
+    echo "mosd: build commit ${mosd_commit:0:12}${mosd_dirty} recorded from $mosd_archive ($mosd_repo)"
 fi
 
 # The smoke run, and it is part of the build. A wrong-arch, missing-soname or

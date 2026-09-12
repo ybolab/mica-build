@@ -47,6 +47,20 @@ snapshot/length/digest pinned. Composition installs the closure in one APT
 transaction and the finalizer validates and packs it. The exact packed OCI root
 is used for shipped-binary smoke checks.
 
+The pool holds two classes of archive and refuses anything else. **Built here**:
+a package a producer of this repository emits, at this tree's
+`+git<commit>-1` stamp. **Imported**: a package `rootfs/packages/lock.tsv`
+names -- version, sha256, source repository, source commit -- fetched from the
+Debian registry `build-env/deb/registry.env` declares and verified against its
+row. Every archive carries `Mos-Source-Repo` and `Mos-Source-Commit` control
+fields written by the packer, so provenance travels inside the archive.
+`make os-pool` fetches the imports, builds the rest and indexes both pools;
+`make os-lock-bump COMPONENT=<repository>` is the lock's only writer and its
+diff is the reviewable import. The lineage record the composer writes carries
+the lock rows and any `MOS_POOL_UNLOCKED` development waiver; the release gate
+re-checks the rows against the tree's lock and refuses a waived image outside
+the development channel. `build-env/deb/README.md` documents the scripts.
+
 `MOS_META_DIR` selects a directory containing current public factory defaults.
 The root composer copies its explicit public allowlist and rejects private or
 unclaimed material. It does not manufacture keys or migrate an existing
@@ -122,8 +136,9 @@ complete ARM64 machine independently of binfmt registration. A crun `fexecve`
 limitation in user-mode emulation is explicitly executor-limited, not a version
 check pass; real guest execution is separate evidence.
 
-s905x5m's independent BSP is retained. It is not a current MOS system-image
-release target and has no old-layout assembly entry point.
+s905x5m follows the same signed-FIT component contract as cx3576 and builds a
+complete SD image; it is not a release target (`BOARD_RELEASE_TARGET=0`).
+Current board status is in [support tiers](../boards/support-tiers.md#current-boards).
 
 ## 5. Verification
 
@@ -157,6 +172,6 @@ disk. Pass board, complete image and matching root image to
 `tests/repart-loader-test.sh`; it checks identities and every protected firmware,
 counter and SYSTEM byte around growth.
 
-Track exact image/component identities and limitations in the
-delivery task (20260908-2229-file-ab-delivery-x64-first). Physical
+Record exact image and component identities with the acceptance run that used
+them. Physical
 cx3576 power-cut/watchdog/USB tests cannot be replaced by sandbox or VM evidence.

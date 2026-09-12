@@ -36,6 +36,9 @@ COPY --from=overlay . /in/overlay/
 ARG MOS_DEB_VERSION
 ARG MOS_DEB_ARCH
 ARG SOURCE_DATE_EPOCH
+# Provenance, written into the control file by pack.sh; see build-env/deb/README.md.
+ARG MOS_DEB_SOURCE_REPO
+ARG MOS_DEB_SOURCE_COMMIT
 
 # Every path is named, and the modes are the ones rootfs/scripts/overlay-install.sh
 # ends up with: its explicit `chmod` where it makes one, the file's committed

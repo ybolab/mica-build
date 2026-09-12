@@ -148,10 +148,11 @@ export function versionTokens(line: string): string[] {
 /**
  * The commit half of the version contract.
  *
- * `pkgs/mosd/hack/build-deb.sh` writes the commit it handed the compiler into
- * `_out/mosd-build-<arch>.txt`, `rootfs/build.sh` copies the one for the board's
- * architecture to `_out/<board>/mosd-build.txt`, `readMosdBuildFact` reads it
- * back and `judge` compares the two; see `BuildCommitFact`. The printed-only
+ * The mosd archive carries the commit its producer built from in its
+ * `Mos-Source-Commit` control field (`build-env/deb/pack.sh`), `rootfs/build.sh`
+ * reads it into `_out/<board>/mosd-build.txt` beside the factory root,
+ * `readMosdBuildFact` reads it back and `judge` compares the two; see
+ * `BuildCommitFact`. The printed-only
  * state is a branch, not a deletion: with no record -- a hand-assembled `_out/`
  * -- the runner says so on its own first lines and the row says the commit was
  * not asserted, and the reported line is carried verbatim into every version
@@ -194,11 +195,10 @@ export function firstLine(stdout: string): string {
  * The expectation is a build fact, never `git rev-parse HEAD`: comparing the
  * reported sha against HEAD at run time passes on any freshly built tree and
  * asserts only that somebody had just rebuilt, never that the embedding works.
- * `pkgs/mosd/hack/build-deb.sh` -- the producer hook that compiles the mosd and
- * mos-apid binaries a composed root installs -- writes the commit it handed the
- * compiler into `_out/mosd-build-<arch>.txt`, `rootfs/build.sh` copies the one
- * for the board's architecture into `_out/<board>/` beside the factory root, and
- * this is what the runner reads back.
+ * The mosd archive a composed root installs carries the commit its producer
+ * built from in its `Mos-Source-Commit` control field, `rootfs/build.sh` reads
+ * it into `_out/<board>/mosd-build.txt` beside the factory root, and this is
+ * what the runner reads back.
  *
  * WHAT THAT COMPARISON IS AND IS NOT. The two sides are the string compiled
  * INTO the binary in the packed root, read back by executing it, and the string
@@ -710,7 +710,7 @@ export function readMosdBuildFact(board: string, dir: string = outDir(board)): B
   const commit = kv.get('commit')
   if (commit === undefined) {
     throw new Error(
-      `${path} carries no \`commit\` field. pkgs/mosd/hack/build-deb.sh writes one every time it `
+      `${path} carries no \`commit\` field. rootfs/build.sh writes one every time it `
       + `compiles them -- so a record without the key was written by `
       + `something else. Reading that as "nothing was recorded" would switch off the commit half of `
       + `mosd's and apid's version check without saying so.`,

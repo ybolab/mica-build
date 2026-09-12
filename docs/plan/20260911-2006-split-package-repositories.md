@@ -1,10 +1,10 @@
 # 20260911-2006-split-package-repositories Split the tree into an assembly repository and independently released package repositories
 
-- **status**: draft
+- **status**: implementing
 - **createdAt**: 2026-09-11 20:06
-- **revisedAt**: 2026-09-12 14:15
-- **approvedAt**: (pending)
-- **relatedTask**: [20260911-2003-split-package-repositories](../task/20260911-2003-split-package-repositories.md)
+- **revisedAt**: 2026-09-12 21:30
+- **approvedAt**: 2026-09-12 21:00
+- **relatedTask**: 20260911-2003-split-package-repositories
 
 ## Context
 
@@ -114,15 +114,24 @@ pins within one repository stay exact.
   were created empty and private on 2026-09-12 (default branch `main`, no
   initial commit); the other members are `km2210`, `cx3576-alpine`,
   `s905x5m-alpine`, `sdcr200`.
-- The Debian registry is enabled: `/api/packages/ybolab/debian/repository.key`
-  answers 200 and the owner's `type=debian` package list is empty. The
-  container registry is enabled (`/v2/` answers 401). `GITEA_DS_URL` and
-  `GITEA_DS_TOKEN` are exported on this development machine (API user `roy`).
-- `.github/workflows/*.yml` run on Gitea Actions with docker + buildx; the
-  arm64 emulated packaging already runs there.
+- The Debian registry is enabled and round-tripped on 2026-09-12 with a
+  throwaway archive: `PUT .../pool/mica/<component>/upload` answers 201 (409
+  for a duplicate name), the download is byte-identical and answers 401
+  without a token, the component's `Packages` index carries the custom
+  `Mos-Source-*` control fields, and
+  `DELETE .../pool/mica/<component>/<name>/<version>/<arch>` answers 204.
+  `GITEA_DS_URL` and `GITEA_DS_TOKEN` are exported on this development machine
+  (API user `roy`).
+- **No Actions runner is registered** for the organisation, for `mica-build`
+  or for the new repositories (the runner lists are empty and every recent
+  `check.yml` run on `mica-build` is `cancelled` or `queued`). Until one is,
+  nothing publishes from CI: archives are published from a developer machine
+  with `publish.sh`, which the provenance fields make visible, and the
+  repository gates run locally. The runner is a prerequisite for Phase 2's
+  "CI green", not for Phase 1.
 - `git subtree split` is available (per-directory history survives);
   `git-filter-repo` is not.
-- `docs/verify-links.sh` checks relative links only; the one relative link
+- `tools/docs/verify-links.sh` checks relative links only; the one relative link
   into `pkgs/` (`docs/README.md` to `../pkgs/mosd/apid/openapi.json`) will
   break, prose citations will not.
 
@@ -153,25 +162,34 @@ builds both architectures, runs `deb-package-gate.sh` over its own pool and
 uploads with `publish.sh`:
 
 ```sh
-# build-env/deb/publish.sh --pool _out/debs --owner ybolab --dist mica --component micad
+# build-env/deb/publish.sh [--pool _out/debs] [--arch <a>] [--package <name> ...]
 PUT https://git.ds.cc/api/packages/ybolab/debian/pool/mica/<component>/upload
 ```
 
-Distribution `mica`; component = source repository. Download is the direct
-URL `.../pool/mica/<component>/<name>_<version>_<arch>.deb`. `fetch.sh` reads
-`GITEA_DS_TOKEN` and refuses with the variable's name on 401/403.
+The registry (URL, distribution `mica`, the *name* of the token variable, the
+source URL prefix) is declared once in `build-env/deb/registry.env`; the
+component is the publishing repository, by the same rule that fills
+`Mos-Source-Repo` (`origin`'s basename, `MOS_SOURCE_REPO` overriding).
+`publish.sh` refuses a `.dirty` version, a dirty checkout, an archive from
+another repository or commit, and reads every upload back. Download is the
+direct URL `.../pool/mica/<component>/<name>_<version>_<arch>.deb`.
+`fetch.sh` reads the token variable and refuses with the variable's name on
+401/403.
 
 ### 2. Provenance inside the archive
 
-`pack.sh` gains `--source-repo <name>` and `--source-commit <sha>`, written as
-`Mos-Source-Repo:` and `Mos-Source-Commit:` control fields (dpkg keeps unknown
-fields; `dpkg-deb -f` reads them back). `build.sh` supplies them from
-`origin` and `HEAD` of the repository the producer lives in; `repo.sh` adds
-both columns to `manifest.txt`.
+`pack.sh` reads `MOS_DEB_SOURCE_REPO` and `MOS_DEB_SOURCE_COMMIT` from the
+environment (the `SOURCE_DATE_EPOCH` pattern; each producer Dockerfile
+declares the two `ARG`s) and writes them as `Mos-Source-Repo:` and
+`Mos-Source-Commit:` control fields (dpkg keeps unknown fields; `dpkg-deb -f`
+reads them back). `build.sh` supplies them from `origin` and `HEAD` of the
+repository the producer lives in; `repo.sh` adds both columns to
+`manifest.txt` and refuses an archive without them.
 
 This retires `_out/mosd-build-<arch>.txt`: the composer writes
-`_out/<board>/mosd-build.txt` from the `mosd` archive's field and
-`verify/src/smoke.ts` asserts what it asserts today.
+`_out/<board>/mosd-build.txt` from the `mosd` archive's field (through the
+lineage record, so no `dpkg-deb` runs on the host) and `verify/src/smoke.ts`
+asserts what it asserts today.
 
 ### 3. The lock
 
@@ -191,9 +209,11 @@ mosd	0.1.0+git9f8e7d6c5b4a-1	arm64	<sha256>	micad	9f8e7d6c5b4a
   archive already present at the right digest. `repo.sh` then indexes as
   today, so the composer's `Packages`/`SHA256SUMS`/`manifest.txt` contract is
   untouched.
-- `lock.sh --bump <component> [<version>]` reads the component's `Packages`
-  index from the registry, rewrites that component's rows and prints the
-  diff. It is the lock's only writer; a lock diff is the reviewable import.
+- `lock.sh --bump <component> [--version <v>] [--package <p> ...]` reads the
+  component's `Packages` index from the registry, rewrites that component's
+  rows and prints the diff. It is the lock's only writer; a lock diff is the
+  reviewable import. `lock.sh --rows [--arch <a>]` is the one parser every
+  other reader uses.
 - `source.sh <component>` checks the source repository out at the locked
   commit into `_out/src/<component>/` for the two assembly tests that need
   package *source* (the component-contract fixtures, the early-hang init).
@@ -206,11 +226,16 @@ keeping both:
 - `source-lineage.py` keeps schema `mos/source-lineage/v1` for archives the
   assembly builds. The `join-v1` schema, the three `MOS_ROOTFS_*` inputs and
   every `JOIN_*`, `STARTUP_*`, `GPT_*` constant go, with the tests that pin
-  them. No compatibility path: migration was waived on 2026-09-11.
-- The lineage record gains a `lock` array (name, version, arch, sha256,
-  source repo, source commit) that `release-manifest.ts` compares with
-  `lock.tsv` and with each archive's `Mos-Source-*` fields, replacing the
-  fixed `producerJoin()` validation with a rule any future import satisfies.
+  them; the `delta` and `receipt_sha256` fields go with the explicit package
+  source they described (package and composition source are now one). No
+  compatibility path: migration was waived on 2026-09-11.
+- The lineage record gains a `lock` array (package, version, arch, sha256,
+  source repo, source commit), an `unlocked` array, and `source_repo` /
+  `source_commit` on every pool package row. The two-class rule is
+  implemented once, in `source-lineage.py` (`--lock`, `--unlocked`,
+  `--local-packages`); `release-manifest.ts` re-checks the record and, at
+  assembly, compares its rows with the tree's `lock.tsv`, replacing the fixed
+  `producerJoin()` validation with a rule any future import satisfies.
 - Binding 5 becomes the `mos-lifecycle` archive: `kernel-package.ts` extracts
   `mos-init` and `mos-shutdown` from the fetched archive into the stage
   directory it already reads; `kernelExecutables()` keeps its ELF checks;
@@ -249,9 +274,12 @@ the mosd crate manifests. Each repository gets a `VERSION`; `micad`'s
 `hack/check.sh` asserts it equals the workspace crate version. The
 `deb-package-gate` one-stamp rule holds per repository pool.
 
-Cross-repository `Depends` lose their exact pin: `mosd`, `mos-apid` and
-`mos-podman` declare `Depends: mos-system` unversioned; `@SYSTEM_VERSION@`
-and `--system-version` in `pack.sh` are removed with their last user.
+Cross-repository `Depends` lose their exact pin: a dependency across the lock
+boundary (either side imported) is unversioned, and `deb-package-gate.sh`
+requires exactly that -- exact within a class, unversioned across. Phase 1
+unpins `mos-podman` on `mos-system` and removes `@SYSTEM_VERSION@` and
+`--system-version` with it; `mosd` and `mos-apid` stay exactly pinned on
+`mos-system` until Phase 5 moves them across the boundary.
 
 ### 7. The shared substrate as a submodule
 
@@ -315,11 +343,11 @@ lock and the gate relocation; `pkgs/README.md` says what is left
 Each phase ends with an x64 image composed, verified (`os-verify`) and
 smoke-tested from the pool as it stands.
 
-- **Phase 0 — preflight and decisions.** Done: registry and token
-  confirmed, repository renamed, the four repositories created, `origin`
-  repointed. Still open: one upload and one download of a throwaway archive,
-  the runner class available to new repositories, decisions 3 and 4 under
-  *Annotations*. Nothing merges.
+- **Phase 0 — preflight and decisions.** Closed 2026-09-12: registry and
+  token confirmed, repository renamed, the four repositories created,
+  `origin` repointed, the throwaway upload/download/delete round trip done,
+  the runner question answered (none registered; see *Forge facts*),
+  decisions 3 and 4 recorded under *Annotations*.
 - **Phase 1 — the mechanism, inside this tree.** Provenance fields, manifest
   columns, `VERSION` + `version.sh`, `fetch.sh`/`lock.sh`/`publish.sh`/`source.sh`,
   `MOS_POOL_DIR`, the composer's two-class rule, retirement of the fixed
@@ -477,11 +505,12 @@ smoke-tested from the pool as it stands.
   `mica-build-env` is the prefix rule applied to the substrate; not
   explicitly confirmed by the user. History of the earlier drafts and probes is in
   `docs/changelog.md`.
-
-Open before Phase 0 closes:
-
-3. Builder images: keep `make build-env` local in every repository (this
-   plan), or publish them to the container registry now.
-4. Token custody: `GITEA_DS_TOKEN` with package read/write exists on this
-   development machine; where it lives on the CI runners for `publish.sh`
-   and `fetch.sh` is undecided.
+- Approved 2026-09-12 21:00 ("你来做拆分计划"); Phase 1 implemented the same
+  evening inside this tree.
+- Decision 3 (2026-09-12): builder images stay locally built with
+  `make build-env` in every repository; publishing them to the container
+  registry is not part of this plan.
+- Decision 4 (2026-09-12): the token lives on the developer machine as
+  `GITEA_DS_TOKEN` (named, never printed, by `build-env/deb/registry.env`);
+  when a runner exists, the same variable is a repository Actions secret and
+  `publish.sh`/`fetch.sh` read it unchanged. No runner is registered today.

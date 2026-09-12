@@ -7,7 +7,7 @@ import { dirname, join } from 'node:path'
 import { Signer } from '../../shared/update-envelope.ts'
 import { canonicalJson, componentId } from './components.ts'
 import { packArchive } from './component-archive.ts'
-import { assembleRelease, gateRelease, sourceLineage, validateStartupInputContract, verifyArchive, verifyJoinedNativePayload, type ReleaseInputs } from './release-manifest.ts'
+import { assembleRelease, gateRelease, lockRows, sourceLineage, verifyArchive, type ReleaseInputs } from './release-manifest.ts'
 import { sourceIdentity } from './release-cli.ts'
 import { acceptProvenance } from '../../tests/file-ab-x64/provenance-acceptance.ts'
 import { Toolbox } from './toolbox.ts'
@@ -220,6 +220,14 @@ test('firmware and evidence must match the release board', () => {
 
 // Freeze the actual CLI and its relative imports in the fixture checkout. A
 // dirty developer checkout cannot stand in for a clean composition source.
+/** Make the frozen checkout the lineage's source: its packages become lock rows at their own versions, and the lock file text those rows are. */
+function lockFixture(lineage: Record<string, any>, commit: string, tree: string, epoch: number) {
+  lineage.composition_source = { commit, tree, epoch }
+  lineage.package_source = { ...lineage.composition_source, version: '0.1.0+git' + commit.slice(0, 12) + '-1' }
+  lineage.lock = lineage.pool.packages.map((p: Record<string, string>) => ({ package: p.package, version: p.version, architecture: p.architecture, sha256: p.sha256, source_repo: p.source_repo, source_commit: p.source_commit }))
+    .sort((a: { package: string }, b: { package: string }) => a.package.localeCompare(b.package))
+  return '#package\tversion\tarch\tsha256\tsource-repo\tsource-commit\n' + lineage.lock.map((r: Record<string, string>) => [r.package, r.version, r.architecture, r.sha256, r.source_repo, r.source_commit].join('\t') + '\n').join('')
+}
 function copyReleaseCli(root: string, destination: string) {
   const copied = new Set<string>(), parser = new Bun.Transpiler({ loader: 'ts' })
   const copy = (name: string) => {
@@ -250,6 +258,9 @@ test.each(['ordinary', 'linked'])('shipped release CLI and documented verificati
     await git('init', '--initial-branch=fixture', ordinary)
     writeFileSync(join(ordinary, 'tracked.txt'), 'initial fixture\n')
     copyReleaseCli(repo, ordinary)
+    // The tree's lock, which the CLI compares the record's rows against.
+    mkdirSync(join(ordinary, 'rootfs/packages'), { recursive: true })
+    writeFileSync(join(ordinary, 'rootfs/packages/lock.tsv'), lockFixture(JSON.parse(JSON.stringify(runtime().provenance.source_lineage)), 'a'.repeat(40), 'b'.repeat(40), 1))
     await git('-C', ordinary, 'add', '.')
     await git('-C', ordinary, 'commit', '--no-gpg-sign', '-m', 'Create isolated source fixture')
     const commonHead = await git('-C', ordinary, 'rev-parse', 'HEAD')
@@ -299,8 +310,7 @@ test.each(['ordinary', 'linked'])('shipped release CLI and documented verificati
   writeFileSync(join(checkout, 'tracked.txt'), kind === 'ordinary' ? 'initial fixture\n' : 'linked fixture baseline\n')
   expect(await sourceIdentity(checkout)).toEqual({ commit, dirty: false })
   const report = runtime(), lineage = report.provenance.source_lineage
-  lineage.composition_source = { commit, tree: compositionTree, epoch: compositionEpoch }
-  lineage.receipt_sha256 = ['e'.repeat(64)]
+  lockFixture(lineage, commit, compositionTree, compositionEpoch)
   report.provenance.capture_sha256['source-lineage.json'] = hash(Buffer.from(canonicalJson(lineage) + '\n'))
   writeRuntime(report)
 
@@ -498,9 +508,9 @@ async function virtAcceptanceFixture() {
   Object.assign(inputs, { board: 'virt-arm64', image, evidence: join(checkout, 'boards/virt-arm64/evidence.json') })
   runtimeFixture('arm64')
   const report = runtime(), lineage = report.provenance.source_lineage
-  const commit = inputs.source.commit
-  lineage.composition_source = { commit, tree: compositionTree, epoch: compositionEpoch }
-  lineage.receipt_sha256 = ['e'.repeat(64)]
+  // The frozen checkout is the source; the fixture's packages become imports
+  // (lock rows at their own versions), since none carries that checkout's stamp.
+  lockFixture(lineage, inputs.source.commit, compositionTree, compositionEpoch)
   report.provenance.capture_sha256['source-lineage.json'] = hash(Buffer.from(canonicalJson(lineage) + '\n'))
   writeRuntime(report)
   return checkout
@@ -591,433 +601,102 @@ test('non-publication acceptance retains runtime and repinned artifact tamper re
 }, OPEN_TIMEOUT_MS)
 
 
-test.each(['rootfs/runtime/compose.py', 'rootfs/runtime/select.py', 'tests/rootfs-runtime/selection_test.py',
-  'rootfs/runtime/consumers.json', 'rootfs/debian/packages/dmsetup.json',
-  'rootfs/debian/packages/libdevmapper1.02.1.json'])('runtime source lineage preserves package identity for %s and derives composition provenance', path => {
-  const r = runtime(), lineage = r.provenance.source_lineage
-  lineage.composition_source = { commit: 'b'.repeat(40), tree: 'c'.repeat(40), epoch: 1000000001 }
-  lineage.receipt_sha256 = ['d'.repeat(64)]
-  lineage.delta = [{ path, before: { mode: '100644', blob: 'a'.repeat(40) }, after: { mode: '100644', blob: 'b'.repeat(40) } }]
+const IMPORTED = { package: 'mos-imported', version: '2.0.0+git' + 'b'.repeat(12) + '-1', architecture: 'amd64', sha256: 'e'.repeat(64), source_repo: 'mica-imported', source_commit: 'b'.repeat(40) }
+/** Add one imported archive to the fixture's runtime report: a lock row and the pool package it names. */
+function importOne(r: ReturnType<typeof runtime>, lock = IMPORTED, pool = IMPORTED) {
+  const lineage = r.provenance.source_lineage
+  lineage.pool.files['pool/mos-imported.deb'] = pool.sha256
+  lineage.pool.packages.push({ ...pool, archive: 'pool/mos-imported.deb', control_sha256: 'f'.repeat(64) })
+  lineage.lock = [{ ...lock }]
   r.provenance.capture_sha256['source-lineage.json'] = hash(Buffer.from(canonicalJson(lineage) + '\n'))
-  inputs.source = { commit: 'b'.repeat(40), dirty: false }; writeRuntime(r)
+  return lineage
+}
+
+test('runtime source lineage records the lock rows and derives composition provenance', () => {
+  const r = runtime(), lineage = importOne(r)
+  writeRuntime(r)
   assembleRelease(inputs); gateRelease(inputs.out, keys)
-  expect(read('provenance.json').runtime.sourceLineage).toEqual(lineage)
+  const provenance = read('provenance.json').runtime
+  expect(provenance.sourceLineage).toEqual(lineage)
+  expect(provenance.lock).toEqual([IMPORTED])
+  expect(provenance.unlocked).toEqual([])
   expect(lineage.package_source.commit).toBe('a'.repeat(40))
 })
 
-test.each(['missing', 'unknown', 'source', 'receipt', 'pool', 'stamp', 'epoch', 'delta', 'mode', 'capture', 'dirty'])('runtime source lineage refuses %s even with a recomputed report hash', mutation => {
-  const r = runtime(), lineage = r.provenance.source_lineage
+test.each(['missing', 'unknown', 'source', 'split-source', 'pool', 'stamp', 'epoch', 'capture', 'dirty',
+  'lock-differs', 'lock-unsorted', 'lock-dirty', 'unlocked-unknown', 'stray-stamp', 'locked-missing', 'no-source'])('runtime source lineage refuses %s even with a recomputed report hash', mutation => {
+  const r = runtime(), lineage = importOne(r)
   if (mutation === 'missing') delete r.provenance.source_lineage
-  if (mutation === 'unknown') lineage.waiver = true
+  if (mutation === 'unknown') lineage.producer_join = { schema: 'mos/producer-join/v1' }
   if (mutation === 'source') lineage.composition_source.commit = 'b'.repeat(40)
-  if (mutation === 'receipt') { lineage.composition_source.commit = 'b'.repeat(40); inputs.source.commit = 'b'.repeat(40) }
+  if (mutation === 'split-source') { lineage.composition_source.commit = 'b'.repeat(40); inputs.source.commit = 'b'.repeat(40) }
   if (mutation === 'pool') lineage.pool.files.Packages = 'b'.repeat(64)
   if (mutation === 'stamp') lineage.package_source.version = '0.1.0+git' + 'b'.repeat(12) + '-1'
   if (mutation === 'epoch') lineage.root_epoch++
-  if (mutation === 'delta') lineage.delta = [{ path: 'pkgs/mosd/Cargo.lock', before: null, after: { mode: '100644', blob: 'b'.repeat(40) } }]
-  if (mutation === 'mode') lineage.delta = [{ path: 'rootfs/runtime/compose.py', before: { mode: '100644', blob: 'a'.repeat(40) }, after: { mode: '120000', blob: 'b'.repeat(40) } }]
+  if (mutation === 'lock-differs') lineage.lock[0].sha256 = '0'.repeat(64)
+  if (mutation === 'lock-unsorted') lineage.lock.unshift({ ...IMPORTED, package: 'zzz' })
+  if (mutation === 'lock-dirty') { lineage.lock[0].version = '2.0.0+git' + 'b'.repeat(12) + '.dirty-1'; lineage.pool.packages.at(-1).version = lineage.lock[0].version }
+  if (mutation === 'unlocked-unknown') lineage.unlocked = ['mos-system']
+  if (mutation === 'stray-stamp') { lineage.lock = []; lineage.pool.packages.at(-1).version = '2.0.0+git' + 'c'.repeat(12) + '-1' }
+  if (mutation === 'locked-missing') { lineage.pool.packages.pop(); delete lineage.pool.files['pool/mos-imported.deb'] }
+  if (mutation === 'no-source') delete lineage.pool.packages[0].source_commit
   if (mutation === 'capture') r.provenance.capture_sha256['source-lineage.json'] = '0'.repeat(64)
   else if (mutation !== 'missing') r.provenance.capture_sha256['source-lineage.json'] = hash(Buffer.from(canonicalJson(lineage) + '\n'))
   if (mutation === 'dirty') inputs.source.dirty = true
   writeRuntime(r)
   expect(() => assembleRelease(inputs)).toThrow()
+  expect(existsSync(inputs.out)).toBe(false)
 })
 
-function joinedUki(change = '', withBusybox = false) {
-  const init = Buffer.from('fixture init'), shutdown = Buffer.from('fixture static shutdown')
-  const expected = { 'mos-init': { bytes: init.length, sha256: hash(init) }, 'mos-shutdown': { bytes: shutdown.length, sha256: hash(shutdown) } }
-  const parts: Buffer[] = []
-  const entry = (name: string, bytes: Buffer, mode = 0o100755) => {
-    const fields = [1, mode, change === 'owner' ? 1 : 0, 0, 1, 1577836800, bytes.length, 0, 0, 0, 0, name.length + 1, 0]
-    const header = Buffer.from('070701' + fields.map(n => n.toString(16).padStart(8, '0')).join(''))
-    const named = Buffer.concat([header, Buffer.from(name + '\0')])
-    parts.push(named, Buffer.alloc((4 - named.length % 4) % 4), bytes, Buffer.alloc((4 - bytes.length % 4) % 4))
-  }
-  entry('./init', init)
-  entry('./sbin/mos-shutdown', change === 'bytes' ? Buffer.from('different') : shutdown, change === 'mode' ? 0o100777 : 0o100755)
-  if (change !== 'missing') entry('./exitrd/shutdown', shutdown)
-  if (change === 'duplicate') entry('./init', init)
-  if (withBusybox && change !== 'missing-busybox') entry('./bin/busybox', Buffer.from(change === 'wrong-busybox' ? 'changed busybox' : 'fixture busybox'))
-  if (change !== 'trailer') entry('TRAILER!!!', Buffer.alloc(0), 0)
-  const cpio = Buffer.concat(parts), boot = Buffer.alloc(512 + cpio.length)
-  boot.write('MZ'); boot.writeUInt32LE(64, 60); boot.write('PE\0\0', 64)
-  boot.writeUInt16LE(change === 'architecture' ? 0xaa64 : 0x8664, 68); boot.writeUInt16LE(1, 70)
-  boot.writeUInt16LE(240, 84); boot.writeUInt16LE(0x20b, 88)
-  boot.write('.initrd', 328); boot.writeUInt32LE(cpio.length, 336); boot.writeUInt32LE(cpio.length, 344)
-  boot.writeUInt32LE(change === 'bounds' ? boot.length : 512, 348); cpio.copy(boot, 512)
-  return { boot, expected }
-}
-
-test('joined native payload binds all three actual archive entries', () => {
-  const f = joinedUki()
-  expect(() => verifyJoinedNativePayload(f.boot, f.expected)).not.toThrow()
-  f.expected['mos-shutdown'].sha256 = 'f'.repeat(64)
-  expect(() => verifyJoinedNativePayload(f.boot, f.expected)).toThrow('native bytes')
-})
-
-test.each(['bytes', 'owner', 'mode', 'missing', 'duplicate', 'trailer', 'architecture', 'bounds'])('joined native payload refuses %s', change => {
-  const f = joinedUki(change)
-  expect(() => verifyJoinedNativePayload(f.boot, f.expected)).toThrow()
-})
-
-test('joined archive cannot accept an authenticated kernel lacking witnessed native payloads', () => {
-  // This archive is otherwise valid and signed. Join mode must additionally
-  // inspect the authenticated boot bytes, not only hash a claimed path list.
-  expect(() => verifyArchive(inputs.update, keys)).not.toThrow()
-  expect(() => verifyArchive(inputs.update, keys, true)).toThrow('joined UKI')
-})
-
-test.each(['missing', 'unknown', 'self-authorized'])('runtime joined lineage refuses %s producer witnesses', change => {
+test('an unlocked import is accepted on development and refused on customer channels, at assembly and at the gate', () => {
   const r = runtime()
-  r.provenance.source_lineage.schema = 'mos/source-lineage/join-v1'
-  if (change !== 'missing') r.provenance.source_lineage.producer_join = change === 'unknown' ? { schema: 'unknown' } : { approved: true }
-  r.provenance.capture_sha256['source-lineage.json'] = hash(Buffer.from(canonicalJson(r.provenance.source_lineage) + '\n'))
+  const lineage = importOne(r, IMPORTED, { ...IMPORTED, version: '2.0.0+git' + 'c'.repeat(12) + '.dirty-1', sha256: '9'.repeat(64), source_commit: 'c'.repeat(40) })
+  expect(() => { writeRuntime(r); assembleRelease(inputs) }).toThrow('runtime lineage locked archive mos-imported')
+  lineage.unlocked = ['mos-imported']
+  r.provenance.capture_sha256['source-lineage.json'] = hash(Buffer.from(canonicalJson(lineage) + '\n'))
   writeRuntime(r)
-  expect(() => assembleRelease(inputs)).toThrow()
-})
-
-const STARTUP_SOURCE = '438c9551ec751fcb346881541752a7596f10cb15'
-function startupJoinedUki(change = '', actual = false, native = process.env.MOS_TEST_STARTUP_NATIVE) {
-  const init = actual ? readFileSync(join(native!, 'mos-init')) : Buffer.from('fixture static init')
-  const shutdown = actual ? readFileSync(join(native!, 'mos-shutdown')) : Buffer.from('fixture static shutdown')
-  const expected = { 'mos-init': { bytes: init.length, sha256: hash(init) }, 'mos-shutdown': { bytes: shutdown.length, sha256: hash(shutdown) } }
-  const entries: [string, Buffer, number][] = ['.', 'dev', 'etc', 'etc/mos', 'exitrd', 'newroot', 'proc', 'run', 'sbin', 'support', 'sys', 'system'].map(n => [n, Buffer.alloc(0), 0o40755])
-  entries.push(['init', init, 0o100755], ['exitrd/shutdown', shutdown, 0o100755], ['sbin/mos-shutdown', Buffer.from('/exitrd/shutdown'), 0o120777],
-    ['startup.files', Buffer.from('init\n'), 0o100644], ['exitrd.files', Buffer.from('shutdown\n'), 0o100644], ['etc/mos/boot.json', Buffer.from('{}\n'), 0o100644])
-  if (change === 'config-oversized') entries.find(r => r[0] === 'etc/mos/boot.json')![1] = Buffer.alloc(4097, 32)
-  if (change === 'bytes') entries.find(r => r[0] === 'init')![1] = Buffer.from('mutated init')
-  if (change === 'mode') entries.find(r => r[0] === 'init')![2] = 0o100777
-  if (change === 'symlink-target') entries.find(r => r[0] === 'sbin/mos-shutdown')![1] = Buffer.from('/missing')
-  if (change === 'symlink-mode') entries.find(r => r[0] === 'sbin/mos-shutdown')![2] = 0o120755
-  if (change === 'symlink-type') entries.find(r => r[0] === 'sbin/mos-shutdown')![2] = 0o100777
-  if (change === 'manifest') entries.find(r => r[0] === 'startup.files')![1] = Buffer.from('init\nhelper\n')
-  if (change === 'omitted-manifest') entries.splice(entries.findIndex(r => r[0] === 'exitrd.files'), 1)
-  if (change === 'duplicate') entries.push(['init', init, 0o100755])
-  if (change === 'unsafe') entries.push(['../escape', init, 0o100755])
-  if (change === 'extra-executable') entries.push(['helper', init, 0o100755])
-  if (change === 'extra-library') entries.push(['lib/extra.so', init, 0o100644])
-  if (change === 'extra-symlink') entries.push(['alias', Buffer.from('/init'), 0o120777])
-  const parts: Buffer[] = []
-  for (const [name, bytes, mode] of [...entries.sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0), ['TRAILER!!!', Buffer.alloc(0), 0] as [string, Buffer, number]]) {
-    const fields = [0, mode, change === 'owner' ? 1 : 0, change === 'group' ? 1 : 0, mode === 0o40755 ? 2 : change === 'hardlink' ? 2 : 1,
-      name === 'TRAILER!!!' ? 0 : 1577836800, bytes.length, 0, 0, 0, 0, name.length + 1, 0]
-    const named = Buffer.from('070701' + fields.map(n => n.toString(16).padStart(8, '0')).join('') + name + '\0')
-    parts.push(named, Buffer.alloc((4 - named.length % 4) % 4), bytes, Buffer.alloc((4 - bytes.length % 4) % 4))
-  }
-  let cpio = Buffer.concat(parts)
-  cpio = Buffer.concat([cpio, Buffer.alloc((512 - cpio.length % 512) % 512)])
-  if (change === 'cpio-trailing') cpio = Buffer.concat([cpio, Buffer.alloc(512)])
-  if (change === 'cpio-garbage') cpio[cpio.length - 1] = 1
-  let packed = zstdCompressSync(cpio, { params: { [zstdConstants.ZSTD_c_checksumFlag]: 1 } })
-  if (change === 'checksum') packed[packed.length - 1] = packed[packed.length - 1]! ^ 1
-  if (change === 'truncated') packed = packed.subarray(0, packed.length - 1)
-  if (change === 'concatenated') packed = Buffer.concat([packed, packed])
-  if (change === 'trailing') packed = Buffer.concat([packed, Buffer.from([0])])
-  if (change === 'skippable') packed = Buffer.from('502a4d1800000000', 'hex')
-  if (change === 'checksum-missing') packed[4] = packed[4]! & ~4
-  if (change === 'reserved') packed[4] = packed[4]! | 8
-  if (change === 'oversized') packed = Buffer.from('28b52ffda40100000401000000000000', 'hex')
-  if (change === 'window') packed = Buffer.from('28b52ffd84580100000001000000000000', 'hex')
-  const payload = change === 'raw' ? cpio : packed
-  const size = Math.ceil(payload.length / 512) * 512, boot = Buffer.alloc(512 + size)
-  boot.write('MZ'); boot.writeUInt32LE(64, 60); boot.write('PE\0\0', 64)
-  boot.writeUInt16LE(0x8664, 68); boot.writeUInt16LE(change === 'duplicate-section' || change === 'overlap' || change === 'virtual-overlap' ? 2 : 1, 70)
-  boot.writeUInt16LE(240, 84); boot.writeUInt16LE(0x20b, 88)
-  boot.writeUInt32LE(4096, 120); boot.writeUInt32LE(512, 124); boot.writeUInt32LE(Math.ceil((4096 + payload.length) / 4096) * 4096, 144)
-  boot.write('.initrd', 328); boot.writeUInt32LE(payload.length, 336); boot.writeUInt32LE(4096, 340)
-  boot.writeUInt32LE(size, 344); boot.writeUInt32LE(512, 348); payload.copy(boot, 512)
-  if (change === 'padding') boot[boot.length - 1] = 1
-  if (change === 'duplicate-section' || change === 'overlap' || change === 'virtual-overlap') {
-    boot.copy(boot, 368, 328, 368)
-    if (change !== 'duplicate-section') boot.write('.other\0\0', 368)
-    if (change === 'virtual-overlap') { boot.writeUInt32LE(0, 384); boot.writeUInt32LE(0, 388) }
-  }
-  return { boot, expected, cpio }
-}
-
-test('startup joined payload accepts only the canonical compressed representation for the reviewed role', () => {
-  const f = startupJoinedUki()
-  expect(() => verifyJoinedNativePayload(f.boot, f.expected, STARTUP_SOURCE)).not.toThrow()
-  expect(() => verifyJoinedNativePayload(f.boot, f.expected, STARTUP_SOURCE, { bytes: 1, sha256: '0'.repeat(64) })).toThrow('legacy BusyBox witness')
-  expect(() => verifyJoinedNativePayload(f.boot, f.expected)).toThrow('cpio header')
-  expect(() => verifyJoinedNativePayload(f.boot, f.expected, 'f'.repeat(40))).toThrow('source')
-  expect(() => verifyJoinedNativePayload(startupJoinedUki('raw').boot, f.expected, STARTUP_SOURCE)).toThrow()
-})
-
-test('startup joined payload rejects native, manifest, owner and membership mutations', () => {
-  for (const change of ['bytes', 'mode', 'owner', 'group', 'hardlink', 'symlink-target', 'symlink-mode', 'symlink-type', 'manifest', 'omitted-manifest', 'duplicate', 'unsafe', 'extra-executable', 'extra-library', 'extra-symlink', 'cpio-trailing', 'cpio-garbage']) {
-    const f = startupJoinedUki(change)
-    expect(() => verifyJoinedNativePayload(f.boot, f.expected, STARTUP_SOURCE), change).toThrow()
+  assembleRelease(inputs); gateRelease(inputs.out, keys)
+  expect(read('provenance.json').runtime.unlocked).toEqual(['mos-imported'])
+  rmSync(inputs.out, { recursive: true })
+  // Without a development marker the channel rule is the waiver's alone: a
+  // runtime composed without the marker, the same import waived.
+  rmSync(join(work, 'meta/GENERATED'))
+  runtimeFixture()
+  const bare = runtime()
+  importOne(bare, IMPORTED, { ...IMPORTED, version: '2.0.0+git' + 'c'.repeat(12) + '.dirty-1', sha256: '9'.repeat(64), source_commit: 'c'.repeat(40) }).unlocked = ['mos-imported']
+  bare.provenance.capture_sha256['source-lineage.json'] = hash(Buffer.from(canonicalJson(bare.provenance.source_lineage) + '\n'))
+  writeRuntime(bare)
+  assembleRelease(inputs); gateRelease(inputs.out, keys)
+  const manifest = read('manifest.json'); manifest.channel = 'candidate'; write('manifest.json', manifest)
+  expect(() => gateRelease(inputs.out, keys)).toThrow('unlocked packages cannot use customer channels')
+  rmSync(inputs.out, { recursive: true })
+  for (const channel of ['candidate', 'stable'] as const) {
+    expect(() => assembleRelease({ ...inputs, channel })).toThrow('unlocked packages cannot use customer channels')
+    expect(existsSync(inputs.out)).toBe(false)
   }
 })
 
-test('startup joined payload rejects noncanonical frames and PE ranges before acceptance', () => {
-  for (const change of ['checksum', 'truncated', 'concatenated', 'trailing', 'skippable', 'checksum-missing', 'reserved', 'oversized', 'window', 'duplicate-section', 'overlap', 'padding']) {
-    const f = startupJoinedUki(change)
-    expect(() => verifyJoinedNativePayload(f.boot, f.expected, STARTUP_SOURCE), change).toThrow()
-  }
+test('the release lock must equal the tree lock for the board architecture when one is given', () => {
+  const r = runtime(); importOne(r); writeRuntime(r)
+  const lock = join(work, 'lock.tsv')
+  const row = (v: typeof IMPORTED) => [v.package, v.version, v.architecture, v.sha256, v.source_repo, v.source_commit].join('\t')
+  writeFileSync(lock, '#package\tversion\tarch\tsha256\tsource-repo\tsource-commit\n' + row(IMPORTED) + '\n' + row({ ...IMPORTED, package: 'mos-arm-only', architecture: 'arm64' }) + '\n')
+  assembleRelease({ ...inputs, lock }); rmSync(inputs.out, { recursive: true })
+  writeFileSync(lock, '#header\n' + row({ ...IMPORTED, sha256: '0'.repeat(64) }) + '\n')
+  expect(() => assembleRelease({ ...inputs, lock })).toThrow('release lock differs from the tree lock')
+  writeFileSync(lock, '#header\n')
+  expect(() => assembleRelease({ ...inputs, lock })).toThrow('release lock differs from the tree lock')
+  expect(existsSync(inputs.out)).toBe(false)
 })
 
-test('startup joined frame refuses an RLE block exceeding its window before decode', () => {
-  // The frame window is 256 bytes; the RLE block advertises 65537 bytes.
-  const f = startupJoinedUki(), boot = Buffer.from(f.boot)
-  const packed = Buffer.from('28b52ffd6400000b00082a00000000', 'hex')
-  boot.fill(0, 512); packed.copy(boot, 512); boot.writeUInt32LE(packed.length, 336)
-  expect(() => verifyJoinedNativePayload(boot, f.expected, STARTUP_SOURCE)).toThrow('block bound')
-})
-
-test('startup joined frame refusal remains bounded when the content-size claim lies', () => {
-  const packed = zstdCompressSync(Buffer.alloc(64 * 1048576 + 1), { params: { [zstdConstants.ZSTD_c_checksumFlag]: 1 } })
-  const at = (packed[4]! & 32) === 0 ? 6 : 5
-  expect(packed[4]! >>> 6).toBe(2)
-  packed.writeUInt32LE(64 * 1048576, at)
-  const f = startupJoinedUki(), boot = Buffer.alloc(512 + Math.ceil(packed.length / 512) * 512)
-  f.boot.copy(boot, 0, 0, 512)
-  boot.writeUInt32LE(packed.length, 336); boot.writeUInt32LE(boot.length - 512, 344)
-  boot.writeUInt32LE(Math.ceil((4096 + packed.length) / 4096) * 4096, 144); packed.copy(boot, 512)
-  expect(() => verifyJoinedNativePayload(boot, f.expected, STARTUP_SOURCE)).toThrow('bounded decode/checksum')
-})
-
-test.skipIf(!process.env.MOS_TEST_STARTUP_NATIVE)('startup joined signed archive validates actual 438 bytes after authentication', () => {
-  const f = startupJoinedUki('', true)
-  expect(f.expected).toEqual({
-    'mos-init': { bytes: 2403504, sha256: '57c865ed0b58740faaba642cc417a0b0a3a487f3b6718a1e2fcc7e1355bdea97' },
-    'mos-shutdown': { bytes: 2047144, sha256: '77bf04b463ece3b0aaba03fa0f91fe0939faa87c5b9b81937b24636b3e2ef1ea' },
-  })
-  const signer = new Signer(generateKeyPairSync('ed25519').privateKey, true)
-  const d = JSON.parse(readFileSync(new URL('../../tests/component-contracts/deployment.json', import.meta.url), 'utf8'))
-  const support = { bytes: 12288, sha256: hash(Buffer.alloc(12288, 42)) }
-  d.kernel.boot.artifact = { bytes: f.boot.length, sha256: hash(f.boot) }
-  d.kernel.support.image = d.kernel.support.signature = d.rootfs.content.image = d.rootfs.content.signature = support
-  d.kernel.id = componentId(d.kernel); d.rootfs.id = componentId(d.rootfs)
-  writeFileSync(join(work, 'kernel/boot.efi'), f.boot)
-  writeFileSync(join(work, 'kernel/support.img'), Buffer.alloc(12288, 42))
-  const archive = join(work, 'startup.mosupd')
-  packArchive(JSON.stringify(signer.sign(JSON.parse(canonicalJson(d)))), join(work, 'kernel'), join(work, 'root'), [signer.publicKey], archive)
-  expect(() => verifyArchive(archive, [signer.publicKey], STARTUP_SOURCE)).not.toThrow()
-  expect(() => verifyArchive(archive, [signer.publicKey], true)).toThrow('cpio header')
-  expect(() => verifyArchive(archive, keys, STARTUP_SOURCE)).toThrow()
-  const original = readFileSync(archive), changed = Buffer.from(original)
-  if (process.env.MOS_TEST_STARTUP_EVIDENCE) {
-    const out = process.env.MOS_TEST_STARTUP_EVIDENCE
-    for (const [name, bytes] of [['signed-startup.mosupd', original], ['fixture-boot.efi', f.boot], ['fixture-public.pem', Buffer.from(signer.publicKey)]] as const) {
-      writeFileSync(join(out, name), bytes, { flag: 'wx' })
-    }
-    writeFileSync(join(out, 'signed-fixture.json'), JSON.stringify({
-      scope: 'Signed metadata/native-format fixture; not production UKI, content-signature, guest or hardware acceptance',
-      source: STARTUP_SOURCE, native: f.expected, archive: { bytes: original.length, sha256: hash(original) },
-      boot: { bytes: f.boot.length, sha256: hash(f.boot) }, publicKeySha256: hash(Buffer.from(signer.publicKey)),
-    }, null, 2) + '\n', { flag: 'wx' })
-  }
-  const payload = changed.indexOf(f.boot)
-  expect(payload).toBeGreaterThan(0)
-  changed[payload + 512] = changed[payload + 512]! ^ 1
-  writeFileSync(archive, changed)
-  expect(() => verifyArchive(archive, [signer.publicKey], STARTUP_SOURCE)).toThrow('digest')
-  const envelopeLength = original.readUInt32BE(8)
-  const envelope = JSON.parse(original.toString('utf8', 12, 12 + envelopeLength))
-  const missing = { ...envelope }; delete missing.signature
-  const unsigned = Buffer.from(JSON.stringify(missing)), size = Buffer.alloc(4); size.writeUInt32BE(unsigned.length)
-  writeFileSync(archive, Buffer.concat([original.subarray(0, 8), size, unsigned, original.subarray(12 + envelopeLength)]))
-  expect(() => verifyArchive(archive, [signer.publicKey], STARTUP_SOURCE)).toThrow()
-  const badSignature = Buffer.from(original)
-  const encoded = JSON.stringify(envelope)
-  // Keep framing intact while corrupting the actual signed envelope bytes.
-  const sig = encoded.indexOf('signature')
-  expect(sig).toBeGreaterThan(0)
-  const signatureByte = original.indexOf(Buffer.from(envelope.signature))
-  expect(signatureByte).toBeGreaterThan(0)
-  badSignature[signatureByte] = badSignature[signatureByte] === 65 ? 66 : 65
-  writeFileSync(archive, badSignature)
-  expect(() => verifyArchive(archive, [signer.publicKey], STARTUP_SOURCE)).toThrow()
-})
-
-test('startup joined release refuses unreviewed lineage before inspecting native payload', () => {
-  assembleRelease(inputs)
-  const path = join(inputs.out, 'rootfs-report.runtime.json'), r = JSON.parse(readFileSync(path, 'utf8'))
-  r.provenance.source_lineage.schema = 'mos/source-lineage/join-v1'
-  r.provenance.source_lineage.producer_join = { schema: 'mos/producer-join/startup-v1', rebuilt_source: { commit: STARTUP_SOURCE } }
-  r.provenance.capture_sha256['source-lineage.json'] = hash(Buffer.from(canonicalJson(r.provenance.source_lineage) + '\n'))
-  writeFileSync(path, JSON.stringify(r)); repin('rootfs-report.runtime.json')
-  // The fixture boot bytes are not a UKI. Source/witness refusal must precede
-  // any attempt to accept or decode them as a joined startup representation.
-  expect(() => gateRelease(inputs.out, keys)).toThrow('producer join receipt set')
-})
-
-
-test('startup joined refusal includes virtual-only overlaps and unrecognized archive roles', () => {
-  const f = startupJoinedUki('virtual-overlap')
-  expect(() => verifyJoinedNativePayload(f.boot, f.expected, STARTUP_SOURCE)).toThrow('overlapping section')
-  expect(() => verifyArchive(inputs.update, keys, 'f'.repeat(40) as typeof STARTUP_SOURCE)).toThrow('source role')
-})
-
-
-test('startup joined config size cannot exceed the witnessed init reader budget', () => {
-  const f = startupJoinedUki('config-oversized')
-  expect(() => verifyJoinedNativePayload(f.boot, f.expected, STARTUP_SOURCE)).toThrow('boot config size')
-})
-
-
-test.skipIf(!process.env.MOS_TEST_STARTUP_INPUT_CONTRACT)('startup joined complete input contract binds selected packages and rejects mutations', () => {
-  const proof = JSON.parse(readFileSync(process.env.MOS_TEST_STARTUP_INPUT_CONTRACT!, 'utf8'))
-  const selected = proof.selected_packages as string[]
-  expect(validateStartupInputContract(proof, selected)).toEqual(proof)
-  const mutations: Record<string, (v: typeof proof) => void> = {
-    'reader': v => { v.makefile_read_contract.readers['build-env/deb/build.sh'].sha256 = '0'.repeat(64) },
-    'makefile': v => { v.makefile_read_contract.after.sha256 = '0'.repeat(64) },
-    'missing-map': v => { delete v.producers['board-virt-arm64'] },
-    'extra-map': v => { v.producers.extra = v.producers.wifi },
-    'prepare': v => { v.producers.mosd.after.prepare = ['other.sh'] },
-    'selected-input': v => { v.producers.wifi.after.inputs.Makefile.blob = '0'.repeat(40) },
-    'arm-qualified': v => { v.producers['board-cx3576'].qualification = 'reused-selected-with-read-contract' },
-    'false-source': v => { v.producers['board-cx3576'].source_commit = v.original_source.commit },
-    'arm-membership': v => { v.producers['board-cx3576'].after.packages = ['mos-other'] },
-    'source': v => { v.rebuilt_source.epoch++ },
-  }
-  for (const mutate of Object.values(mutations)) {
-    const changed = structuredClone(proof); mutate(changed)
-    expect(() => validateStartupInputContract(changed, selected)).toThrow('startup reviewed complete input contract')
-  }
-  for (const names of [[...selected, 'mos-board-cx3576'], [...selected, 'mosd'], selected.slice(1)]) {
-    expect(() => validateStartupInputContract(proof, names)).toThrow('startup selected x64 package membership')
-  }
-})
-
-test.skipIf(!process.env.MOS_TEST_STARTUP_RECORD)('startup actual join binds producer roles, pool capture and default refusals', async () => {
-  const { sourceLineage } = await import('./release-manifest.ts')
-  const value = JSON.parse(readFileSync(process.env.MOS_TEST_STARTUP_RECORD!, 'utf8'))
-  const source = { commit: value.composition_source.commit as string, dirty: false }
-  const captured = (v: typeof value) => ({ ...v.pool.files, 'source-lineage.json': hash(Buffer.from(canonicalJson(v) + '\n')) })
-  expect(sourceLineage(value, source, 'amd64', captured(value)).record).toEqual(value)
-  const mutations: Record<string, (v: typeof value) => void> = {
-    'source': v => { v.producer_join.rebuilt_source.epoch++ },
-    'missing-witness': v => { delete v.producer_join.witnesses.boot_tools },
-    'extra-witness': v => { v.producer_join.witnesses.extra = '0'.repeat(64) },
-    'failed-witness': v => { v.producer_join.witnesses.deploy = '0'.repeat(64) },
-    'duplicate-receipt': v => { v.receipt_sha256.push(v.receipt_sha256[0]) },
-    'native': v => { v.producer_join.native['mos-init'].bytes++ },
-    'attribution': v => { v.producer_join.mapping.mosd = STARTUP_SOURCE },
-    'prepare': v => { v.producer_join.producer_inputs.producers.deploy.after.prepare.push('other.sh') },
-    'lock': v => { v.producer_join.production.deploy.inputs_sha256 = '0'.repeat(64) },
-    'tool': v => { v.producer_join.production.boot_tools.image = 'sha256:' + '0'.repeat(64) },
-    'pool': v => { v.pool.files.Packages = '0'.repeat(64) },
-    'archive': v => { v.pool.packages[0].control_sha256 = '0'.repeat(64) },
-    'old-role': v => { v.producer_join.schema = 'mos/producer-join/v1' },
-    'default': v => { v.schema = 'mos/source-lineage/v1' },
-    'producer-delta': v => { v.delta.push({ path: 'pkgs/mos-deploy/Cargo.lock', before: null, after: { mode: '100644', blob: '0'.repeat(40) } }) },
-  }
-  for (const mutate of Object.values(mutations)) {
-    const changed = structuredClone(value); mutate(changed)
-    expect(() => sourceLineage(changed, source, 'amd64', captured(changed))).toThrow()
-  }
-  expect(() => sourceLineage(value, source, 'arm64', captured(value))).toThrow()
-  expect(() => sourceLineage(value, { ...source, dirty: true }, 'amd64', captured(value))).toThrow()
-  expect(() => sourceLineage(value, source, 'amd64', { ...captured(value), Packages: '0'.repeat(64) })).toThrow('pool capture')
-  expect(() => sourceLineage(value, source, 'amd64', { ...captured(value), 'source-lineage.json': '0'.repeat(64) })).toThrow('capture bytes')
-})
-
-test.skipIf(!process.env.MOS_TEST_STARTUP_RECORD)('startup actual join refuses an unselected ARM producer installed as all', () => {
-  const value = JSON.parse(readFileSync(process.env.MOS_TEST_STARTUP_RECORD!, 'utf8'))
-  const report = runtime(), p = report.provenance
-  p.source_lineage = value
-  p.capture_sha256 = { ...p.capture_sha256, ...value.pool.files, 'source-lineage.json': hash(Buffer.from(canonicalJson(value) + '\n')) }
-  p.build_packages.push({ ...p.build_packages[0], package: 'mos-board-cx3576', architecture: 'all', archive: 'upstream/mos-board-cx3576.deb' })
-  inputs.source = { commit: value.composition_source.commit, dirty: false }
-  writeRuntime(report)
-  expect(() => assembleRelease(inputs)).toThrow('startup unqualified ARM package installed')
-})
-
-test('joined mask consumer admission still requires the complete producer witness', () => {
-  const lineage = runtime().provenance.source_lineage
-  lineage.schema = 'mos/source-lineage/join-v1'
-  lineage.composition_source = { commit: 'b'.repeat(40), tree: 'c'.repeat(40), epoch: 1789167737 }
-  lineage.root_epoch = 1577836800
-  lineage.receipt_sha256 = [
-    'fc79903fcd6dc8bf40191c5f4cdf4979d664dfd0315a53521d57af821f80d166',
-    '175f2dbe31b08bde91f8cf5a15680c9ec7fb38d6c2e0bda46edff5f24e558d09',
-    '267dff5433d4bc2b2a409a06e3019fd0f680f449c4866d60f8b3353b237a4683',
-    'af5bc012346a99d360612a1340df58de35265b9a7cc638d2286401b2a3ab7112',
-  ].sort()
-  lineage.producer_join = { schema: 'mos/producer-join/boot-tools-v1' }
-  lineage.delta = [{ path: 'rootfs/runtime/consumers.json',
-    before: { mode: '100644', blob: 'a'.repeat(40) }, after: { mode: '100644', blob: 'b'.repeat(40) } }]
-  const validate = () => sourceLineage(lineage, { commit: 'b'.repeat(40), dirty: false }, 'amd64', {})
-  // Passing this exact path check must still reach the strict witness parser.
-  expect(validate).toThrow('unknown or missing fields')
-  lineage.delta[0].path = 'rootfs/runtime/compose.py'
-  expect(validate).toThrow('producer join consumer delta/epoch')
-  lineage.delta[0].path = 'pkgs/mos-boot/Dockerfile'
-  expect(validate).toThrow('runtime lineage package-relevant delta')
-})
-
-
-test('joined boot tool payload binds the authenticated startup BusyBox bytes', () => {
-  const f = joinedUki('', true), bytes = Buffer.from('fixture busybox')
-  const busybox = { bytes: bytes.length, sha256: hash(bytes) }
-  expect(() => verifyJoinedNativePayload(f.boot, f.expected, undefined, busybox)).not.toThrow()
-  for (const change of ['missing-busybox', 'wrong-busybox']) {
-    const bad = joinedUki(change, true)
-    expect(() => verifyJoinedNativePayload(bad.boot, bad.expected, undefined, busybox)).toThrow()
-  }
-})
-
-test.skipIf(!process.env.MOS_TEST_GPT_RECORD)('GPT actual join binds new native/deploy and reused startup tools independently', async () => {
-  const { sourceLineage } = await import('./release-manifest.ts')
-  const value = JSON.parse(readFileSync(process.env.MOS_TEST_GPT_RECORD!, 'utf8'))
-  const source = { commit: value.composition_source.commit as string, dirty: false }
-  const captured = (v: typeof value) => ({ ...v.pool.files, 'source-lineage.json': hash(Buffer.from(canonicalJson(v) + '\n')) })
-  expect(sourceLineage(value, source, 'amd64', captured(value)).bootToolsImage).toBe(value.producer_join.production.boot_tools.image)
-  const mutations: Record<string, (v: typeof value) => void> = {
-    source: v => { v.producer_join.rebuilt_source.epoch++ },
-    witness: v => { delete v.producer_join.witnesses.native },
-    native: v => { v.producer_join.native['mos-init'].bytes++ },
-    toolSource: v => { v.producer_join.production.boot_tools.source = v.producer_join.rebuilt_source },
-    tool: v => { v.producer_join.production.boot_tools.image = 'sha256:' + '0'.repeat(64) },
-    attribution: v => { v.producer_join.mapping.mosd = v.producer_join.rebuilt_source.commit },
-    prepare: v => { v.producer_join.producer_inputs.gpt.producers.deploy.prepare.push('unknown.sh') },
-    inputs: v => { v.producer_join.producer_inputs.gpt.native_inputs.pop() },
-    delta: v => { v.producer_join.approved_delta.startup_to_gpt.pop() },
-    index: v => { v.pool.files.Packages = '0'.repeat(64) },
-    control: v => { v.pool.packages[0].control_sha256 = '0'.repeat(64) },
-    downgrade: v => { v.producer_join.schema = 'mos/producer-join/startup-v1' },
-    default: v => { v.schema = 'mos/source-lineage/v1' },
-  }
-  for (const mutate of Object.values(mutations)) {
-    const changed = structuredClone(value); mutate(changed)
-    expect(() => sourceLineage(changed, source, 'amd64', captured(changed))).toThrow()
-  }
-  expect(() => sourceLineage(value, source, 'arm64', captured(value))).toThrow()
-  expect(() => sourceLineage(value, source, 'amd64', { ...captured(value), Packages: '0'.repeat(64) })).toThrow('pool capture')
-  expect(() => sourceLineage(value, source, 'amd64', { ...captured(value), 'source-lineage.json': '0'.repeat(64) })).toThrow('capture bytes')
-})
-
-test.skipIf(!process.env.MOS_TEST_GPT_NATIVE)('GPT actual native bytes remain bound through authenticated startup archive', () => {
-  const source = 'd2e352d0a4226f10b8b2587cd7c1bc5040b8d234'
-  const f = startupJoinedUki('', true, process.env.MOS_TEST_GPT_NATIVE)
-  expect(f.expected).toEqual({
-    'mos-init': { bytes: 2403504, sha256: '9d1b164b3af709cc382e6bdbc29e222225ac76e0f8c6e9d4a948f425d7548682' },
-    'mos-shutdown': { bytes: 2043048, sha256: '28ccd8655a02d54b4229f9674e297fa7925881cf89450febe436704bfdab3f0d' },
-  })
-  const signer = new Signer(generateKeyPairSync('ed25519').privateKey, true)
-  const d = JSON.parse(readFileSync(new URL('../../tests/component-contracts/deployment.json', import.meta.url), 'utf8'))
-  const support = { bytes: 12288, sha256: hash(Buffer.alloc(12288, 42)) }
-  d.kernel.boot.artifact = { bytes: f.boot.length, sha256: hash(f.boot) }
-  d.kernel.support.image = d.kernel.support.signature = d.rootfs.content.image = d.rootfs.content.signature = support
-  d.kernel.id = componentId(d.kernel); d.rootfs.id = componentId(d.rootfs)
-  writeFileSync(join(work, 'kernel/boot.efi'), f.boot)
-  writeFileSync(join(work, 'kernel/support.img'), Buffer.alloc(12288, 42))
-  const archive = join(work, 'gpt.mosupd')
-  packArchive(JSON.stringify(signer.sign(JSON.parse(canonicalJson(d)))), join(work, 'kernel'), join(work, 'root'), [signer.publicKey], archive)
-  expect(() => verifyArchive(archive, [signer.publicKey], source)).not.toThrow()
-  expect(() => verifyArchive(archive, [signer.publicKey], STARTUP_SOURCE)).toThrow('native bytes')
-  expect(() => verifyArchive(archive, [signer.publicKey], true)).toThrow('cpio header')
-  expect(() => verifyArchive(archive, keys, source)).toThrow()
-  const original = readFileSync(archive), mutated = Buffer.from(original)
-  mutated[mutated.length - 1] = mutated[mutated.length - 1]! ^ 1
-  writeFileSync(archive, mutated)
-  expect(() => verifyArchive(archive, [signer.publicKey], source)).toThrow('digest')
-  for (const change of ['bytes', 'mode', 'owner', 'symlink-target', 'omitted-manifest', 'extra-executable', 'checksum', 'raw']) {
-    const bad = startupJoinedUki(change, true, process.env.MOS_TEST_GPT_NATIVE)
-    expect(() => verifyJoinedNativePayload(bad.boot, f.expected, source)).toThrow()
-  }
+test('lock rows are parsed per pool and malformed rows are refused by line', () => {
+  const good = ['mos-a', '1.0+git' + 'a'.repeat(12) + '-1', 'all', 'a'.repeat(64), 'repo', 'a'.repeat(40)].join('\t')
+  const arm = ['mos-b', '1.0+git' + 'a'.repeat(12) + '-1', 'arm64', 'b'.repeat(64), 'repo', 'a'.repeat(40)].join('\t')
+  expect(lockRows(`# comment\n\n${arm}\n${good}\n`, 'amd64').map(r => r.package)).toEqual(['mos-a'])
+  expect(lockRows(`${arm}\n${good}\n`, 'arm64').map(r => r.package)).toEqual(['mos-a', 'mos-b'])
+  expect(() => lockRows(good.replace('a'.repeat(64), 'z'.repeat(64)), 'amd64')).toThrow('line 1')
+  expect(() => lockRows(good + '\textra', 'amd64')).toThrow('7 fields')
+  expect(() => lockRows(good.replace('-1\t', '.dirty-1\t'), 'amd64')).toThrow('malformed row')
+  expect(() => lockRows(`${good}\n${good}\n`, 'amd64')).toThrow('locked twice')
+  expect(() => lockRows(`${good}\n${good.replace('\tall\t', '\tamd64\t')}\n`, 'amd64')).toThrow('both this architecture and all')
 })

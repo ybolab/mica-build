@@ -6,6 +6,10 @@
 #   reads   _out/debs/<arch>/pool/*.deb
 #   writes  _out/debs/<arch>/{Packages,SHA256SUMS,manifest.txt}
 #
+#   MOS_POOL_DIR overrides _out/debs (the parent of the per-architecture
+#   pools), so a package repository can index straight into the assembly's
+#   pool during local development; unset, the pool is this checkout's own.
+#
 # Every column of every line it writes is read out of an archive. There is no
 # maintained list anywhere in this file, deliberately: a repository index
 # generated from a list is one that reports success while installing something
@@ -54,7 +58,7 @@ command -v docker >/dev/null 2>&1 || {
     exit 1
 }
 
-DIST="${REPO_ROOT}/_out/debs/${ARCH}"
+DIST="${MOS_POOL_DIR:-${REPO_ROOT}/_out/debs}/${ARCH}"
 POOL="${DIST}/pool"
 [ -d "${POOL}" ] || {
     echo "error: ${POOL} does not exist, so there is nothing to index. A package producer writes it; this only reads it" >&2
@@ -153,15 +157,24 @@ docker run --rm \
         {
             echo "# The local package pool for ${MOS_DEB_ARCH}, read out of the archives by build-env/deb/repo.sh."
             echo "# Regenerated whenever the pool changes; never edited by hand."
-            printf "#package\tversion\tarchitecture\tinstalled-size\tsha256\tfile\n"
+            printf "#package\tversion\tarchitecture\tinstalled-size\tsha256\tfile\tsource-repo\tsource-commit\n"
             for d in "${debs[@]}"; do
-                printf "%s\t%s\t%s\t%s\t%s\t%s\n" \
+                # The two provenance fields pack.sh writes. Every archive in a
+                # pool carries them -- built here or fetched from the registry
+                # -- so an empty one is refused rather than indexed as blank.
+                repo="$(dpkg-deb --field "pool/${d}" Mos-Source-Repo)"
+                commit="$(dpkg-deb --field "pool/${d}" Mos-Source-Commit)"
+                [ -n "${repo}" ] && [ -n "${commit}" ] || {
+                    echo "error: pool/${d} carries no Mos-Source-Repo/Mos-Source-Commit control fields. build-env/deb/pack.sh writes both into every archive; one without them was packed by something else" >&2
+                    exit 1
+                }
+                printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n" \
                     "$(dpkg-deb --field "pool/${d}" Package)" \
                     "$(dpkg-deb --field "pool/${d}" Version)" \
                     "$(dpkg-deb --field "pool/${d}" Architecture)" \
                     "$(dpkg-deb --field "pool/${d}" Installed-Size)" \
                     "$(sha256sum "pool/${d}" | cut -d" " -f1)" \
-                    "pool/${d}"
+                    "pool/${d}" "${repo}" "${commit}"
             done
         } >manifest.txt
 
