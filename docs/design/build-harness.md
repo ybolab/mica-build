@@ -101,3 +101,78 @@ Keep the catalog synchronized with the shipped design/user/website/BSP pages.
 Engineering proposals belong in plan/task tracking. Product instructions must
 describe the current contract; superseded operating procedures remain in Git
 history rather than beside current instructions.
+
+## 7. Development integration and acceptance workflow
+
+The 2026-09-12 user direction separates reviewed source integration from image
+qualification. With user authorization, a local development-main merge may proceed after source review
+and affected integration checks, while exact-image guest or board acceptance
+remains pending. A merge is neither a release nor an acceptance pass. This
+supersedes earlier campaign instructions requiring all x64 guest results before
+any source merge; authentication, signatures and release gates are unchanged.
+
+Use one integration owner and one immutable candidate per acceptance round.
+The owner continues the already-approved sequence without per-stage approval:
+
+1. Preflight the entire selected input set: package ownership, generated files,
+   symlinks and masks, ELF/interpreter closure, pinned downloads, source identity,
+   trust inputs, and executor/tool/resource availability. Report all discovered
+   input defects together before a root/image build.
+2. Produce only changed packages or boot/kernel tools. Architecture-independent
+   packages are produced once; architecture-dependent recipes share their source
+   inputs but retain separate amd64/arm64 outputs and receipts.
+3. Compose the affected root from verified packages, run its closure and binary
+   smoke checks, then sign components and assemble one candidate image.
+4. Test isolated copies of that image for boot, reboot, shutdown, update/fallback,
+   reset, storage, services and authenticated API behavior. Bind each verdict to
+   its actual source and artifact; retain the original immutable image.
+5. Review new product changes and summarize acceptance separately. Routine
+   collection and successful later stages do not trigger another source review.
+
+Generic development iterates on x64. Only a concrete ARM-specific source change
+requires a targeted ARM check. The consolidated ARM round follows the stable
+accepted x64 baseline and includes the owed equal-input virt-arm64 cold-root
+comparison. An early development source merge alone does not start that round.
+
+### Changes and invalidation
+
+| Changed input | Work that must be reconsidered |
+|---|---|
+| Documentation or tracking only | Documentation checks; preserve artifact source labels |
+| Package source, recipe, pin, toolchain or feature inputs | That producer and its consumers; preserve unrelated packages/kernels |
+| Runtime selection or root composition | Affected input/closure tests and root onward; reuse unchanged verified packages |
+| Native startup/shutdown or boot packaging | Affected native/boot outputs and dependent signing/image/guest checks |
+| Kernel, device tree, firmware or boot trust | The affected board components and their actual consumers |
+| Test transport or executor wrapper only | Prove the wrapper, then resume the failed check against the same immutable input |
+
+Reuse follows the implemented source/recipe/toolchain/configuration/trust
+contracts and byte identities. A different main commit is not evidence that
+all producers changed; matching architecture alone is not evidence of reuse.
+Do not weaken freshness checks or rename old outputs to claim new production.
+The separate package-repository proposal remains outside this workflow change.
+
+### Ownership and recovery
+
+Within the approved feature scope and existing resource grant, the execution
+owner may fix the complete evidenced call chain, run RED/GREEN checks, and
+continue. Reviewers inspect new source changes once. A corrected fixture,
+recovered transport error or successfully retried stage remains in history but
+does not require a separate coordinator approval solely because it once failed.
+Unresolved product failures remain failures. Escalate actual scope decisions,
+shared ownership conflicts, trust changes or resource expansion with concrete
+choices; do not re-request authorization already supplied.
+
+Keep one compact state record with current candidate, actual running job,
+completed stages, failed stage/reason, next action and accumulated phase times.
+Reuse verified receipts; only recompute them when their bytes or relevant inputs
+change. Recover the same issue after checking its actual process and detached
+jobs. Do not interrupt a live build because its coordinating turn is idle.
+
+The existing half-hour L1 watchdog is the only periodic campaign scan. B reviews
+real completion/failure events and continues the same B7 owner; remove its
+redundant periodic scan. Completed A/C/D work is not reactivated for unchanged
+snapshots. Background messages reach the user only for a concrete outstanding
+decision; direct progress questions still receive a concise answer.
+
+This section changes development workflow and scheduling. It does not claim
+that a new unified build driver or per-package cache-key implementation exists.

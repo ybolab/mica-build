@@ -1,5 +1,18 @@
 # Changelog
 
+
+## Development source integration and workflow (2026-09-12)
+
+Reviewed native startup/shutdown, explicit runtime composition and campaign
+cleanup are integrated into local main. Source review, signed-image production
+and full runtime qualification now have separate status. The existing x64
+candidate remains immutable while its guest acceptance continues.
+
+The development runbook batches preflight checks, reuses unchanged verified
+producers and resumes affected stages automatically. One half-hour campaign
+watchdog replaces duplicated periodic review scanning; recovered fixture or
+transport errors retain evidence without requiring individual approval.
+
 ## S905X5M signed-file development images (2026-09-10)
 
 The [S905X5M port](task/20260910-0554-s905x5m-current-system.md) now produces

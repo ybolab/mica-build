@@ -225,3 +225,5 @@ thing about the tree. Both indexes now say the same thing.
 - [-] [**20260911-0145-b7-fresh-lifecycle-acceptance B7 fresh lifecycle and rootfs acceptance**](20260911-0145-b7-fresh-lifecycle-acceptance.md) `P1`
 
 - [-] [**20260911-1925-boot-artifact-size Shrink the signed boot artifact: compression and early-userspace closure**](20260911-1925-boot-artifact-size.md) `P1`
+
+- [x] [**20260912-0614-development-workflow Simplify development integration and acceptance workflow**](20260912-0614-development-workflow.md) `P1`

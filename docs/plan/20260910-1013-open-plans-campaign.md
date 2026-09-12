@@ -5,6 +5,24 @@
 - **approvedAt**: 2026-09-10 10:13 UTC
 - **relatedTask**: 20260910-1013-open-plans-campaign
 
+
+## Current development integration decision (2026-09-12)
+
+The user authorized merging reviewed source before workflow refactoring and
+remaining runtime acceptance. Main now contains B `ecc02dfa` and D `a6251de1`
+through `5dd630c4` and `bcdcb04f`; A/C were already integrated. This supersedes
+historical pre-main x64 conditions below without converting any missing test to
+PASS. The signed x64 candidate remains bound to `ed7231cd`, with image SHA256
+`ca6bdd50cad6c3dc2e93160316316092c84cc0da995f022909014e36556037b9`.
+Image production and separate 12/12 smoke passed; full guest/lifecycle/API,
+consolidated ARM cold samples and physical-board acceptance remain open.
+
+Use the current [development workflow](../design/build-harness.md) for automatic
+in-scope continuation and affected-stage reuse. The same B7 owner continues x64;
+B reviews actual events. One half-hour L1 watchdog replaces duplicate periodic
+B scanning. This early source merge does not trigger a broad ARM rebuild before
+the stable x64 acceptance baseline. No push, publication or done is authorized.
+
 ## Context
 
 Campaign `mos-open-plans-20260910-100408` is coordinated by L1 issue `#314` /
