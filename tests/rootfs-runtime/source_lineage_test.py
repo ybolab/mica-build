@@ -595,6 +595,80 @@ class SourceLineageTest(unittest.TestCase):
         path.unlink(); self.commit(self.composition)
         r = self.invoke(); self.assertNotEqual(r.returncode, 0); self.assertIn('deletion/type/mode', r.stderr)
 
+@unittest.skipUnless(os.environ.get('MOS_TEST_ROOT_CALLER_INPUTS'), 'requires actual joined root inputs')
+class StartupRootCallerTest(unittest.TestCase):
+    """Exercise the clean production caller and verifier before its first resolver."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.inputs = json.loads(Path(os.environ['MOS_TEST_ROOT_CALLER_INPUTS']).read_text())
+        cls.source = Path(cls.inputs['source'])
+        cls.record_bytes = Path(cls.inputs['lineage']).read_bytes()
+        cls.record = json.loads(cls.record_bytes)
+        assert cls.record['producer_join']['schema'] == 'mos/producer-join/startup-v1'
+        assert subprocess.check_output(['git', '-C', str(cls.source), 'rev-parse', 'HEAD'], text=True).strip() == cls.record['composition_source']['commit']
+        assert not subprocess.check_output(['git', '-C', str(cls.source), 'status', '--porcelain'])
+        cls.results = Path(cls.inputs['results']); cls.results.mkdir()
+        boundary = cls.results / 'first-resolver.sh'
+        boundary.write_text("set -T\ntrap 'if [[ $BASH_COMMAND == RESOLVED=* ]]; then printf \"STARTUP_TOOL_BOUNDARY:%s\\n\" \"${MOS_BOOT_TOOLS_IMAGE-UNSET}\"; exit 79; fi' DEBUG\n")
+        cls.env = dict(os.environ, PYTHONDONTWRITEBYTECODE='1', BASH_ENV=str(boundary),
+                       MOS_BOARD='x64', MOS_PROFILE='dev', WITH_MOSD='1', WITH_CONTAINERS='1',
+                       MOS_ROOTFS_NO_CACHE='0', MOS_ROOTFS_WITHOUT='', MOS_META_DIR=cls.inputs['publicMeta'],
+                       MOS_ROOTFS_PACKAGE_SOURCE=cls.inputs['packageSource'],
+                       MOS_ROOTFS_PACKAGE_RECEIPT=cls.inputs['receipt'],
+                       MOS_ROOTFS_PACKAGE_RECEIPT_SHA256=hashlib.sha256(Path(cls.inputs['receipt']).read_bytes()).hexdigest(),
+                       MOS_ROOTFS_PRODUCER_JOIN=cls.inputs['join'],
+                       MOS_ROOTFS_PRODUCER_JOIN_SHA256=hashlib.sha256(Path(cls.inputs['join']).read_bytes()).hexdigest())
+        cls.env.pop('MOS_BOOT_TOOLS_IMAGE', None)
+        cls.manifest = cls.record['producer_join']['production']['boot_tools']['image']
+
+    def caller(self, case, **changes):
+        env = dict(self.env)
+        for key, value in changes.items():
+            if value is None: env.pop(key, None)
+            else: env[key] = value
+        result = run('bash', 'rootfs/build.sh', cwd=self.source, env=env)
+        (self.results / (case + '.json')).write_text(json.dumps(dict(
+            source=self.record['composition_source'], argv=['bash', 'rootfs/build.sh'],
+            tool=env.get('MOS_BOOT_TOOLS_IMAGE'), exitCode=result.returncode,
+            stdout=result.stdout, stderr=result.stderr, fixtureOnly=True), indent=2) + '\n')
+        return result
+
+    def test_unset_tool_derives_verified_manifest(self):
+        result = self.caller('unset')
+        self.assertEqual(result.returncode, 79, result.stderr)
+        self.assertIn('STARTUP_TOOL_BOUNDARY:' + self.manifest, result.stdout)
+        self.assertEqual((self.source / '_out/x64/source-lineage.json').read_bytes(), self.record_bytes)
+
+    def test_exact_manifest_reaches_boundary(self):
+        result = self.caller('exact', MOS_BOOT_TOOLS_IMAGE=self.manifest)
+        self.assertEqual(result.returncode, 79, result.stderr)
+        self.assertIn('STARTUP_TOOL_BOUNDARY:' + self.manifest, result.stdout)
+
+    def test_wrong_tool_identity_refuses_before_resolver(self):
+        tools = dict(config=self.record['producer_join']['production']['boot_tools']['config'],
+                     old_named='sha256:28164316a7d6d6c04cdbbec7c654be7b1ee83e61e680ae1872804e3f6bfb496c',
+                     tag='ai-agent/fixture-unverified:latest', manifest='sha256:' + '0' * 64)
+        for name, tool in tools.items():
+            with self.subTest(tool=name):
+                result = self.caller(name, MOS_BOOT_TOOLS_IMAGE=tool)
+                self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+                self.assertIn('boot-tools image differs', result.stderr)
+                self.assertNotIn('STARTUP_TOOL_BOUNDARY:', result.stdout)
+
+    def test_default_mixed_source_still_refuses(self):
+        result = self.caller('default', MOS_ROOTFS_PRODUCER_JOIN=None, MOS_ROOTFS_PRODUCER_JOIN_SHA256=None)
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertIn('more than one git stamp', result.stderr)
+
+    def test_join_verification_precedes_tool_extraction(self):
+        result = self.caller('unverified', MOS_ROOTFS_PRODUCER_JOIN_SHA256='0' * 64,
+                             MOS_BOOT_TOOLS_IMAGE=self.manifest)
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertNotIn('STARTUP_TOOL_BOUNDARY:', result.stdout)
+        self.assertIn('source lineage refused:', result.stderr)
+
+
 class StartupInputContractTest(unittest.TestCase):
     """Direct fixed-contract failures; real source identities have a separate gate."""
 
