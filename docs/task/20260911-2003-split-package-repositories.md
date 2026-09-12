@@ -45,18 +45,25 @@ Awaiting approval of the staged proposal.
 - Full-tier: the change crosses every top-level directory, CI, the packaging
   driver, the composer and the documentation catalog.
 - The proposal is staged so that each phase ends with a green x64 image; the
-  mechanism (provenance fields, lock, fetch, composer rule) lands and is proven
-  inside this tree before the first repository is split out.
-- Open decisions the plan puts to the user are listed under its *Annotations*.
+  mechanism (provenance fields, lock, fetch, composer rule, retirement of the
+  fixed producer join) lands and is proven inside this tree before the first
+  repository is split out.
+- Decided 2026-09-12: one repository per package, named for Mica OS
+  (`mica-build`, `mica-build-env`, `micad`, `mica-deploy`, `mica-podman`);
+  Debian archives kept as the package format. In-tree package and binary
+  names stay `mos*`. Open: builder-image publishing
+  and CI token custody (plan *Annotations*). Planning only so far; approval
+  pending.
 
 ## Findings
 
-- [Proposal](../plan/20260911-2006-split-package-repositories.md) records the coupling
-  inventory, the target repository set, the lock and fetch mechanism, the gate
-  relocation table and the phase order.
+- [Proposal](../plan/20260911-2006-split-package-repositories.md) records the six
+  bindings, the coupling inventory, the probed forge facts, the repository
+  set, the lock and join retirement, the gate relocation table and the phase
+  order.
 
 ## Verification
 
-- Investigation only: file reads, git history counts and a grep of every
-  reference between `pkgs/` and the rest of the tree. No build was run and no
-  source was changed.
+- Investigation only: file reads, git history counts, a grep of every
+  reference between `pkgs/` and the rest of the tree, and read-only Gitea API
+  probes. No build was run and no source was changed.

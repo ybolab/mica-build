@@ -22,7 +22,7 @@
 
 | | |
 |---|---|
-| 仓库 | `ssh://git@git.ds.cc/miehq/cx3576-alpine.git` |
+| 仓库 | `ssh://git@git.ds.cc/ybolab/cx3576-alpine.git` |
 | 关系 | `boards/cx3576/bsp/` **派生自**那棵树，不是在本仓库中撰写 |
 
 **它是一个已经漂移的派生物，不是镜像。** 它既不是 subtree 也不是 submodule，

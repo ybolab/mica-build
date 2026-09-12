@@ -1,5 +1,22 @@
 # Changelog
 
+## 2026-09-12 14:31 [progress]
+
+On `git.ds.cc`, renamed repository `ybolab/mos` to `ybolab/mica-build` and
+created the private, empty repositories `mica-build-env`, `micad`,
+`mica-deploy` and `mica-podman` under `ybolab`, as the user authorized.
+`origin` now points at `ybolab/mica-build`. No content was pushed; the split
+plan's Phase 0 keeps the throwaway registry round trip and the runner check.
+
+## 2026-09-12 14:24 [decision]
+
+The project is now Mica OS; the split plan's repository names follow it:
+this repository becomes `mica-build`, the substrate `mica-build-env`, the
+package repositories `micad`, `mica-deploy` and `mica-podman` (replacing the
+`mos-` names recorded at 14:06). Package, binary and workspace names inside
+the tree are unchanged by the plan; renaming the Gitea repository and
+repointing `origin` is added to Phase 0.
+
 ## 2026-09-12 20:35 [decision]
 
 Closed the remaining signed-file delivery and cx3576 watchdog records at the
@@ -23,6 +40,27 @@ the closed records left the tree.
   seven truth-status lines dropped it from their evidence lists and keep their
   other citations.
 
+## 2026-09-12 14:15 [progress]
+
+Repointed `origin` to `ssh://git@git.ds.cc:33/ybolab/mos.git` and the
+`cx3576-alpine` citations in the BSP documents to the renamed organisation.
+Rewrote plan `20260911-2006-split-package-repositories` as a current-state
+document: the six bindings, the coupling inventory, the probed forge facts,
+the `mos-` repository set, the lock and join retirement, gate relocation and
+phases; removed the draft narrative, closed decisions and superseded
+alternatives, which stay recorded in the 13:57 and 14:06 entries above.
+
+## 2026-09-12 14:06 [decision]
+
+Package repository split: the user chose one repository per package, all
+named with the `mos-` prefix (`mos-build-env`, `mos-mosd`, `mos-deploy`,
+`mos-podman`). Evaluated OCI images against Debian archives as the package
+format: both registries exist on `git.ds.cc`, but an image drops the
+shlibdeps dependency contract, the install-closure gate, maintainer scripts
+and the dpkg ownership that runtime selection and provenance read, while the
+lock already gives a digest per archive. Archives stay; OCI remains the
+builder-image and composed-root export format.
+
 ## 2026-09-12 14:54 [completed]
 
 Completed signed virt-arm64, CX3576 and S905X5M full images and update archives,
@@ -45,6 +83,19 @@ mechanism done once by hand; the plan now retires it in Phase 1 and publishes
 exported token: version 1.26.1, organisation renamed `miehq` to `ybolab`,
 Debian registry enabled and empty, no target repositories yet. Coupling
 inventory re-counted at 100 files. Approval still pending.
+
+## 2026-09-12 13:49 [progress]
+
+Opened task and plan `20260912-1347-root-closure-reduction` from the
+root-closure research report, planning only. The plan re-measures the current
+x64 dev root (200.4 MB unpacked, 71.2 MB shipped) and records eight
+corrections to the report: the health gate fails rather than skips without
+curl, purge residue is down to one path, the five Rust binaries span two
+workspaces, a multicall crosses four packages, `gconv` exclusion needs both
+`select.py` and a pack script, and the curl, openssh-client and iptables items
+fall under the declined PLAN-086 S5. In scope: mosd release profile with a
+measured multicall prototype, `gconv` exclusion, e2scrub and `dpkg-realpath`
+removal. Awaiting approval.
 
 ## 2026-09-12 13:45 [decision]
 

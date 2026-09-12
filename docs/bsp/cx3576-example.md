@@ -18,7 +18,7 @@ filled from the repository, not from a rig.
 Input trees and their relationships:
 
 - **Board BSP tree** (`boards/cx3576/bsp/`): drifted derivative of
-  `ssh://git@git.ds.cc/miehq/cx3576-alpine.git`, synced to upstream commit
+  `ssh://git@git.ds.cc/ybolab/cx3576-alpine.git`, synced to upstream commit
   `5e2b1c31fd0c203f55f5e1df5408676d3e6fedf3` with per-commit dispositions
   and a deviation register (one entry, D-1: eMMC-before-SD boot order) in
   the sync record
