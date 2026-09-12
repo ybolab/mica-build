@@ -8,3 +8,5 @@
 # build/src/release-manifest.ts (the release gate). See docs/design/build.md
 # section 1.1.
 #package	version	arch	sha256	source-repo	source-commit
+mos-podman	5.8.6+gitc87bfd1ddcb2-1	amd64	4056046e50f55d97357f9b0d377a52abf4b663cc73676eb8152f7d88ddf0f9eb	mica-build	c87bfd1ddcb2997cc77c12cf4870d0f958184231
+mos-podman	5.8.6+gitc87bfd1ddcb2-1	arm64	df011863980cdaf46a1002821ce575e3ddd92e0bd3e36e611b55dbb03b1e73c6	mica-build	c87bfd1ddcb2997cc77c12cf4870d0f958184231
