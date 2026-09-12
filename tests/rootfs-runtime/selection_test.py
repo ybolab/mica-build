@@ -854,6 +854,36 @@ class SelectionTest(unittest.TestCase):
         self.assertEqual((self.out / path[1:]).read_bytes(), (self.root / path[1:]).read_bytes())
         self.assertFalse((self.out / 'usr/lib/bluetooth').exists())
 
+    def test_s905_bluetooth_keeps_bridge_dynamic_library_and_board_data(self):
+        bridge = '/usr/sbin/skw_vhci_bridge'
+        library = '/usr/lib/bluetooth/plugins/libskwbt.so'
+        data = ['/etc/bluetooth/skwbt.conf', '/etc/bluetooth/sv6160.nvbin',
+                '/etc/bluetooth/sv6160lite.nvbin', '/etc/bluetooth/sv6316.nvbin']
+        self.write(bridge, elf(), 0o755)
+        self.write(library, elf(needed=['libfirst.so']))
+        for path in data:
+            self.write(path, b'board bluetooth input\n')
+        license = '/usr/share/doc/mos-s905x5m-bluetooth/copyright'
+        self.write(license, b'board license\n')
+        with self.manifest.open('a') as stream:
+            stream.write('mos-s905x5m-bluetooth\t1\tall\n')
+        owned = [bridge, library, *data, license, '/usr/sbin', '/usr/lib/bluetooth',
+                 '/usr/lib/bluetooth/plugins', '/etc/bluetooth', '/usr/share/doc/mos-s905x5m-bluetooth']
+        (self.db / 'mos-s905x5m-bluetooth.list').write_text('\n'.join(owned) + '\n')
+        with self.packages.open('a') as stream:
+            stream.write('mos-s905x5m-bluetooth\n')
+        policy = json.loads(SELECTOR.with_name('consumers.json').read_text())
+        self.rules['consumers']['mos-s905x5m-bluetooth'] = {
+            'roots': [r for r in policy['consumers']['mos-s905x5m-bluetooth']['roots']
+                      if any(p in r['paths'] for p in [bridge, library, *data])] + [
+                {'paths': [license], 'kind': 'resource', 'reason': 'fixture board license'}],
+            'runtime_links': []}
+        rows = {r['path']: r for r in self.selected()['files']}
+        for path in [bridge, library, *data]:
+            self.assertIn(path, rows)
+            self.assertEqual((self.out / path[1:]).read_bytes(), (self.root / path[1:]).read_bytes())
+        self.assertEqual(self.command('verify').returncode, 0)
+
     def iproute_without_python(self):
         entries = ['/usr/bin/ip', '/usr/bin/lnstat', '/usr/bin/nstat', '/usr/bin/rdma', '/usr/bin/ss',
                    '/usr/sbin/arpd', '/usr/sbin/bridge', '/usr/sbin/dcb', '/usr/sbin/devlink', '/usr/sbin/genl',
