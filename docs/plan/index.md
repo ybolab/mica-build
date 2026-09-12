@@ -51,3 +51,4 @@ Each plan is a single line linking to its detail file. All detailed information 
 - [ ] [**20260912-2043-unify-board-behavior Unify board build, compression and acceptance behavior**](20260912-2043-unify-board-behavior.md) `2026-09-12`
 - [ ] [**20260912-2236-phase1-findings Fix the defects the lock proof build surfaced**](20260912-2236-phase1-findings.md) `2026-09-12`
 - [x] [**20260912-2049-docs-restructure Restructure the documentation system**](20260912-2049-docs-restructure.md) `2026-09-12`
+- [ ] [**20260912-2253-rockchip-update-image Produce a Rockchip update.img for CX3576**](20260912-2253-rockchip-update-image.md) `2026-09-12`

@@ -63,3 +63,4 @@ Each task is a single line linking to its detail file. All detailed information 
 - [ ] [**20260912-2058-managed-applications Implement managed applications**](20260912-2058-managed-applications.md) `P3`
 - [ ] [**20260912-2125-source-record-citations Replace deleted record citations in source comments**](20260912-2125-source-record-citations.md) `P3`
 - [ ] [**20260912-2125-api-slot-vocabulary Remove slot-era vocabulary from the update API contract**](20260912-2125-api-slot-vocabulary.md) `P3`
+- [ ] [**20260912-2251-rockchip-update-image Produce a Rockchip update.img for CX3576**](20260912-2251-rockchip-update-image.md) `P1`
