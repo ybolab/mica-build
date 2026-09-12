@@ -1,0 +1,19 @@
+{
+  "commit": "199cf440684e922313a6fb63b421296683052838",
+  "name": "mos-podman",
+  "repository": "mica",
+  "targets": {
+    "amd64": {
+      "architecture": "amd64",
+      "asset": "mos-podman_5.8.6.git199cf440684e-1_amd64.deb",
+      "sha256": "9754580ddd65641c2408ed2fd947cf11b257b5b9cf828fae110e42402942dc7a",
+      "version": "5.8.6+git199cf440684e-1"
+    },
+    "arm64": {
+      "architecture": "arm64",
+      "asset": "mos-podman_5.8.6.git199cf440684e-1_arm64.deb",
+      "sha256": "6b9886951a0a25c5c0a810e38697c7d6e86d9c5a8e882e40901c4ffe0c5a14b9",
+      "version": "5.8.6+git199cf440684e-1"
+    }
+  }
+}

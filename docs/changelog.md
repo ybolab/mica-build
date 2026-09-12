@@ -1,5 +1,17 @@
 # Changelog
 
+## 2026-09-13 03:20 [decision]
+
+Package pins are JSON, one file per package under `deps/packages/`, in the
+shape of the Debian pins (user, 2026-09-13): name, source repository, its
+commit, and a target per pool with version, architecture, sha256 and the
+release asset name. `lock.sh --rows` stays the one reader and prints the
+pins as rows, so `fetch.sh`, the package gate, the composer, the lineage
+record and the release gate read one shape; `lock.sh --bump` writes and
+removes pin files; `rootfs/packages/lock.tsv` was converted to
+`deps/packages/mos-podman.json` and retired. The lineage and release tests
+and the stub-registry test drive the pin shape and its refusals by file.
+
 ## 2026-09-13 02:30 [decision]
 
 Repositories are linked by pins, not submodules (user, 2026-09-13): a JSON

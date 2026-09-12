@@ -8,8 +8,8 @@
 # organisation: releases per repository, assets with their digests, bytes
 # served for `Accept: application/octet-stream`, 401 without the token. The
 # archives are written in Python, no dpkg on the host. registry.sh's
-# MOS_REGISTRY_ENV and MOS_LOCK_FILE point the scripts at the stub and at a
-# scratch lock, MOS_POOL_DIR at a scratch pool. No docker, no network, no gh.
+# MOS_REGISTRY_ENV and MOS_LOCK_DIR point the scripts at the stub and at a
+# scratch pin directory, MOS_POOL_DIR at a scratch pool. No docker, no network, no gh.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -145,23 +145,34 @@ MOS_RELEASE_OWNER=ybolab
 MOS_RELEASE_TOKEN_VAR=MOS_POOL_TEST_TOKEN
 MOS_SOURCE_URL=file://${WORK}/src
 ENV
-LOCK="${WORK}/lock.tsv"
-printf '#package\tversion\tarch\tsha256\tsource-repo\tsource-commit\n' >"${LOCK}"
+LOCK="${WORK}/pins"
+mkdir -p "${LOCK}"
 POOL="${WORK}/pool"
-export MOS_REGISTRY_ENV="${WORK}/registry.env" MOS_LOCK_FILE="${LOCK}" MOS_POOL_DIR="${POOL}" MOS_RELEASE_NO_GH=1
+export MOS_REGISTRY_ENV="${WORK}/registry.env" MOS_LOCK_DIR="${LOCK}" MOS_POOL_DIR="${POOL}" MOS_RELEASE_NO_GH=1
+# A pin file, written the way lock.sh writes one: name, repository, commit, and
+# one target per pool the archive serves.
+pin() { # package version arch sha256 repo commit
+    python3 - "${LOCK}/$1.json" "$@" <<'PY'
+import json, sys
+path, name, version, arch, sha, repo, commit = sys.argv[1:]
+asset = f'{name}_{version}_{arch}.deb'.replace('+', '.')
+targets = {pool: {'version': version, 'architecture': arch, 'sha256': sha, 'asset': asset} for pool in (['amd64', 'arm64'] if arch == 'all' else [arch])}
+open(path, 'w').write(json.dumps({'name': name, 'repository': repo, 'commit': commit, 'targets': targets}, indent=2, sort_keys=True) + '\n')
+PY
+}
 export MOS_POOL_TEST_TOKEN=fixture-token
 FETCH="bash ${REPO_ROOT}/build-env/deb/fetch.sh"
 LOCKSH="bash ${REPO_ROOT}/build-env/deb/lock.sh"
 OUT="${WORK}/out.txt"
 
 # ------------------------------------------------------------ lock.sh --bump
-if ${LOCKSH} --bump mica-fixture >"${OUT}" 2>&1 && says "${OUT}" "+mos-fixture	${V2}	amd64" && ! says "${OUT}" "^[-+]mos-data"; then
+if ${LOCKSH} --bump mica-fixture >"${OUT}" 2>&1 && says "${OUT}" "\"version\": \"${V2}\"" && [ -f "${LOCK}/mos-fixture.json" ] && [ ! -f "${LOCK}/mos-data.json" ]; then
     pass "L1 --bump without a tag locks the newest build-* release (one archive, from the archive's own fields) and prints the diff"
 else fail "L1 --bump: $(cat "${OUT}")"; fi
 if ${LOCKSH} --bump mica-fixture >"${OUT}" 2>&1 && says "${OUT}" "no change"; then
     pass "L2 a second --bump is a no-op"
 else fail "L2 second bump: $(cat "${OUT}")"; fi
-if ${LOCKSH} --bump mica-fixture --tag "${TAG}" >"${OUT}" 2>&1 && says "${OUT}" "+mos-fixture	${V1}" && says "${OUT}" "-mos-fixture	${V2}" && says "${OUT}" "+mos-data	${V1}	all"; then
+if ${LOCKSH} --bump mica-fixture --tag "${TAG}" >"${OUT}" 2>&1 && says "${OUT}" "+.*\"version\": \"${V1}\"" && says "${OUT}" "-.*\"version\": \"${V2}\"" && [ "$(jq -r '.targets | keys | join(" ")' "${LOCK}/mos-data.json")" = "amd64 arm64" ]; then
     pass "L3 --tag locks that release: both of its archives, the other release's row replaced"
 else fail "L3 tagged bump: $(cat "${OUT}")"; fi
 if ${LOCKSH} --bump mica-fixture --tag "${TAG}" --package mos-data >"${OUT}" 2>&1 && says "${OUT}" "no change"; then
@@ -183,11 +194,11 @@ if ! MOS_POOL_TEST_TOKEN= ${LOCKSH} --bump mica-fixture >"${OUT}" 2>&1 && says "
 else fail "L8 token: $(cat "${OUT}")"; fi
 ROWS="$(${LOCKSH} --rows --arch amd64 | cut -f1 | tr '\n' ' ')"
 [ "${ROWS}" = "mos-data mos-fixture " ] && pass "L9 --rows --arch amd64 lists the amd64 and all rows (${ROWS% })" || fail "L9 rows: ${ROWS}"
-# A package that used to come from another repository: its old row goes when
-# the new repository's release provides it, and never survives as a duplicate.
-{ grep -v '^mos-fixture' "${LOCK}"; printf 'mos-fixture\t%s\tamd64\t%s\tmica-old\t%s\n' "${V2}" "$(sha "${A2}")" "${OTHER_COMMIT}"; } >"${LOCK}.tmp"; mv "${LOCK}.tmp" "${LOCK}"
-if ${LOCKSH} --bump mica-fixture --tag "${TAG}" >"${OUT}" 2>&1 && says "${OUT}" "^-mos-fixture	${V2}	amd64.*mica-old" && [ "$(grep -c '^mos-fixture' "${LOCK}")" -eq 1 ]; then
-    pass "L10 a row of the same package from another repository is replaced, not kept beside the new one"
+# A package that used to come from another repository: its pin is rewritten
+# when the new repository's release provides it (one file per package).
+pin mos-fixture "${V2}" amd64 "$(sha "${A2}")" mica-old "${OTHER_COMMIT}"
+if ${LOCKSH} --bump mica-fixture --tag "${TAG}" >"${OUT}" 2>&1 && says "${OUT}" "-.*\"repository\": \"mica-old\"" && [ "$(jq -r '.repository' "${LOCK}/mos-fixture.json")" = mica-fixture ]; then
+    pass "L10 a pin of the same package from another repository is replaced, not kept beside the new one"
 else fail "L10 moved package: $(cat "${OUT}")"; fi
 
 # ------------------------------------------------------------ fetch.sh
@@ -221,11 +232,8 @@ if ! ${FETCH} --arch amd64 >"${OUT}" 2>&1 && says "${OUT}" "mos-fixture ${V1} am
 else fail "F7 altered bytes: $(cat "${OUT}")"; fi
 cp "${WORK}/a1.orig" "${A1}"
 
-# The lock row is wrong about the archive it names: same bytes, other source commit.
-python3 - "${LOCK}" "${COMMIT}" <<'PY'
-import sys, pathlib; p = pathlib.Path(sys.argv[1]); c = sys.argv[2]
-p.write_text(p.read_text().replace('\t' + c + '\n', '\t' + 'd' * 40 + '\n', 1))
-PY
+# The pin is wrong about the archive it names: same bytes, other source commit.
+pin mos-data "${V1}" all "$(sha "${ALL}")" mica-fixture "$(printf 'd%.0s' $(seq 1 40))"
 rm -f "${POOL}/amd64/pool/mos-fixture_${V1}_amd64.deb" "${POOL}/amd64/pool/mos-data_${V1}_all.deb"
 if ! ${FETCH} --arch amd64 >"${OUT}" 2>&1 && says "${OUT}" "has no release tagged build-dddddddddddd" && [ "$(find "${POOL}/amd64/pool" -name '*.deb' | wc -l)" -eq 0 ]; then
     pass "F8 a lock row naming a commit the repository never released is refused by tag, before any download"
@@ -238,8 +246,7 @@ else fail "F9 missing asset: $(cat "${OUT}")"; fi
 releases mica-fixture "${TAG}:$(basename "${A1}"),$(basename "${ALL}")"
 # Same bytes, a lock row that lies about the archive's fields: the release's
 # own asset under a name that says one thing while the control file says another.
-printf 'mos-fixture\t%s\tamd64\t%s\tmica-fixture\t%s\n' "${V1}" "$(sha "${LIAR}")" "${COMMIT}" >"${LOCK}.row"
-{ grep -v '^mos-fixture' "${LOCK}"; cat "${LOCK}.row"; } >"${LOCK}.tmp"; mv "${LOCK}.tmp" "${LOCK}"
+pin mos-fixture "${V1}" amd64 "$(sha "${LIAR}")" mica-fixture "${COMMIT}"
 cp "${LIAR}" "${A1}"
 rm -f "${POOL}/amd64/pool/mos-fixture_${V1}_amd64.deb"
 if ! ${FETCH} --arch amd64 >"${OUT}" 2>&1 && says "${OUT}" "control file says Package: 'mos-liar', and the lock row says 'mos-fixture'" && [ ! -f "${POOL}/amd64/pool/mos-fixture_${V1}_amd64.deb" ]; then
@@ -247,11 +254,11 @@ if ! ${FETCH} --arch amd64 >"${OUT}" 2>&1 && says "${OUT}" "control file says Pa
 else fail "F10 control mismatch: $(cat "${OUT}")"; fi
 cp "${WORK}/a1.orig" "${A1}"
 ${LOCKSH} --bump mica-fixture --tag "${TAG}" >/dev/null 2>&1
-printf 'mos-fixture\t%s\tamd64\t%s\tmica-fixture\t%s\n' "${V1}" "$(sha "${A1}")" "${COMMIT}" >"${LOCK}.dup"
-cat "${LOCK}.dup" >>"${LOCK}"
-if ! ${FETCH} --arch amd64 >"${OUT}" 2>&1 && says "${OUT}" "locked twice"; then
-    pass "F11 a package locked twice for one architecture is refused before any download"
-else fail "F11 duplicate row: $(cat "${OUT}")"; fi
+cp "${LOCK}/mos-fixture.json" "${LOCK}/mos-other.json"
+if ! ${FETCH} --arch amd64 >"${OUT}" 2>&1 && says "${OUT}" "is not a package pin"; then
+    pass "F11 a pin file that does not name the package it holds is refused before any download"
+else fail "F11 misnamed pin: $(cat "${OUT}")"; fi
+rm -f "${LOCK}/mos-other.json"
 
 echo "RESULT: $([ "${FAIL_N}" -eq 0 ] && echo PASS || echo FAIL) (${PASS_N}/$((PASS_N + FAIL_N)) checks passed)"
 [ "${FAIL_N}" -eq 0 ]

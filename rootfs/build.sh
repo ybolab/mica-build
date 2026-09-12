@@ -286,7 +286,7 @@ newer=$(find "$POOL_DIR/pool" -maxdepth 1 -type f -name '*.deb' -newer "$POOL_DI
 #   built here   emitted by a producer of THIS tree, and then it must carry
 #                the one `+git<commit><dirty>-<rev>` STAMP
 #                build-env/deb/version.sh prints for this tree;
-#   imported     named by rootfs/packages/lock.tsv, and then it must be the
+#   imported     named by a pin in deps/packages/, and then it must be the
 #                locked version and sha256, from the locked source repository
 #                and commit (its Mos-Source-* control fields);
 #
@@ -308,9 +308,9 @@ newer=$(find "$POOL_DIR/pool" -maxdepth 1 -type f -name '*.deb' -newer "$POOL_DI
 LOCAL_PACKAGES=$(bash "$REPO_ROOT/build-env/deb/producers.sh" | awk '{ n = split($4, a, ","); for (i = 1; i <= n; i++) printf "%s ", a[i] }')
 [ -n "$LOCAL_PACKAGES" ] ||
     { echo "error: build-env/deb/producers.sh named no package, so nothing in the pool could be classified as built here" >&2; exit 1; }
-LOCK_FILE="$REPO_ROOT/rootfs/packages/lock.tsv"
-[ -f "$LOCK_FILE" ] ||
-    pool_refusal "$LOCK_FILE does not exist. It is the package lock -- every archive the assembly imports rather than builds -- and the composer reads it even when it names nothing."
+LOCK_DIR="$REPO_ROOT/deps/packages"
+[ -d "$LOCK_DIR" ] ||
+    pool_refusal "$LOCK_DIR does not exist. It holds the package pins -- every archive the assembly imports rather than builds -- and the composer reads it even when it is empty."
 MOS_POOL_UNLOCKED=${MOS_POOL_UNLOCKED:-}
 if [ -n "$MOS_POOL_UNLOCKED" ]; then
     echo "note: MOS_POOL_UNLOCKED waives the lock digest check for:$(printf ' %s' $MOS_POOL_UNLOCKED)"
@@ -319,7 +319,7 @@ fi
 LINEAGE_STAGE="$OUT_DIR/source-lineage.json"
 tree_version=$(python3 "$REPO_ROOT/rootfs/runtime/source-lineage.py" \
     --composition-source "$REPO_ROOT" --pool "$POOL_DIR" --arch "$MOS_ARCH" \
-    --epoch "$SQUASHFS_TIME" --lock "$LOCK_FILE" --unlocked "$MOS_POOL_UNLOCKED" \
+    --epoch "$SQUASHFS_TIME" --lock "$LOCK_DIR" --unlocked "$MOS_POOL_UNLOCKED" \
     --local-packages "$LOCAL_PACKAGES" --output "$LINEAGE_STAGE") ||
     pool_refusal "the $MOS_ARCH pool did not pass the two-class rule (see the refusal above)."
 tree_stamp=${tree_version##*+}
@@ -417,9 +417,9 @@ if [ -n "$missing_pkgs" ]; then
         if [ -n "$producer" ]; then
             echo "       $p is emitted by the '$producer' producer: make os-deb-$producer" >&2
         elif bash "$REPO_ROOT/build-env/deb/lock.sh" --rows --arch "$MOS_ARCH" | cut -f1 | grep -cx -- "$p" >/dev/null; then
-            echo "       $p is imported by rootfs/packages/lock.tsv: make os-pool fetches it" >&2
+            echo "       $p is imported by deps/packages/$p.json: make os-pool fetches it" >&2
         else
-            echo "       $p is emitted by NO producer in this repository and imported by no lock row, which rootfs/packages/resolve.sh should already have refused" >&2
+            echo "       $p is emitted by NO producer in this repository and imported by no pin, which rootfs/packages/resolve.sh should already have refused" >&2
         fi
     done
     exit 1
@@ -631,7 +631,7 @@ fi
     printf '#board\t%s\n' "$MOS_BOARD"
     printf '#profile\t%s\n' "$MOS_PROFILE"
     printf '#declined\t%s\n' "${MOS_ROOTFS_WITHOUT:-(none)}"
-    printf '#pool\t_out/debs/%s, built here at stamp %s, %s imported by rootfs/packages/lock.tsv\n' "$MOS_ARCH" "$tree_stamp" "$locked_n"
+    printf '#pool\t_out/debs/%s, built here at stamp %s, %s imported by deps/packages/\n' "$MOS_ARCH" "$tree_stamp" "$locked_n"
     printf '#unlocked\t%s\n' "${MOS_POOL_UNLOCKED:-(none)}"
     printf '#package\tversion\tarchitecture\tsha256\tsource\tsource-repo\tsource-commit\n'
     for p in $RESOLVED; do

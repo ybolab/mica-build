@@ -228,17 +228,29 @@ This retires `_out/mosd-build-<arch>.txt`: the composer writes
 lineage record, so no `dpkg-deb` runs on the host) and `verify/src/smoke.ts`
 asserts what it asserts today.
 
-### 3. The lock
+### 3. The lock: one pin per package
 
-`rootfs/packages/lock.tsv`, one file for both architectures:
+Decided 2026-09-13 (user): package versions and hashes are declared in JSON
+in the shape of the Debian pins, one file per package under
+`deps/packages/`, so every dependency of a repository -- upstream Debian,
+Mica OS packages, source trees (section 7) -- is the same kind of record:
 
+```json
+deps/packages/mos-podman.json
+{ "name": "mos-podman", "repository": "mica-podman", "commit": "1a2b3c4d5e6f…",
+  "targets": {
+    "amd64": { "version": "5.8.6+git1a2b3c4d5e6f-1", "architecture": "amd64",
+               "sha256": "…", "asset": "mos-podman_5.8.6.git1a2b3c4d5e6f-1_amd64.deb" },
+    "arm64": { "version": "5.8.6+git1a2b3c4d5e6f-1", "architecture": "arm64",
+               "sha256": "…", "asset": "mos-podman_5.8.6.git1a2b3c4d5e6f-1_arm64.deb" } } }
 ```
-#package	version	arch	sha256	source-repo	source-commit
-mos-podman	5.8.6+git1a2b3c4d5e6f-1	arm64	<sha256>	mica-podman	1a2b3c4d5e6f
-mos-podman	5.8.6+git1a2b3c4d5e6f-1	amd64	<sha256>	mica-podman	1a2b3c4d5e6f
-mosd	0.1.0+git9f8e7d6c5b4a-1	arm64	<sha256>	micad	9f8e7d6c5b4a
-...
-```
+
+An `Architecture: all` archive serves both pools with one target each.
+`lock.sh --rows` is the one reader, printing the pins as
+`package version arch sha256 source-repo source-commit` rows for every other
+consumer, so the composer, the gate and the release gate read one shape.
+The TSV lock of Phase 1 (`rootfs/packages/lock.tsv`) was converted on
+2026-09-13 and retired.
 
 - `fetch.sh --arch <a>` downloads every row for `<a>` and `all` into
   `_out/debs/<a>/pool/`, verifies sha256 and both control fields against the

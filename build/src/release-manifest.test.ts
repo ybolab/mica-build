@@ -7,7 +7,7 @@ import { dirname, join } from 'node:path'
 import { Signer } from '../../shared/update-envelope.ts'
 import { canonicalJson, componentId } from './components.ts'
 import { packArchive } from './component-archive.ts'
-import { assembleRelease, gateRelease, lockRows, sourceLineage, verifyArchive, type ReleaseInputs } from './release-manifest.ts'
+import { assembleRelease, gateRelease, lockRows, readPins, sourceLineage, verifyArchive, type ReleaseInputs } from './release-manifest.ts'
 import { sourceIdentity } from './release-cli.ts'
 import { acceptProvenance } from '../../tests/file-ab-x64/provenance-acceptance.ts'
 import { Toolbox } from './toolbox.ts'
@@ -226,7 +226,21 @@ function lockFixture(lineage: Record<string, any>, commit: string, tree: string,
   lineage.package_source = { ...lineage.composition_source, version: '0.1.0+git' + commit.slice(0, 12) + '-1' }
   lineage.lock = lineage.pool.packages.map((p: Record<string, string>) => ({ package: p.package, version: p.version, architecture: p.architecture, sha256: p.sha256, source_repo: p.source_repo, source_commit: p.source_commit }))
     .sort((a: { package: string }, b: { package: string }) => a.package.localeCompare(b.package))
-  return '#package\tversion\tarch\tsha256\tsource-repo\tsource-commit\n' + lineage.lock.map((r: Record<string, string>) => [r.package, r.version, r.architecture, r.sha256, r.source_repo, r.source_commit].join('\t') + '\n').join('')
+  return lineage.lock as LockRowLike[]
+}
+type LockRowLike = { package: string, version: string, architecture: string, sha256: string, source_repo: string, source_commit: string }
+/** Write rows as pin files, the way lock.sh does: one file per package, targets keyed by the pools the archive serves. */
+function writePins(directory: string, rows: LockRowLike[]) {
+  rmSync(directory, { recursive: true, force: true }); mkdirSync(directory, { recursive: true })
+  const pins = new Map<string, { name: string, repository: string, commit: string, targets: Record<string, unknown> }>()
+  for (const r of rows) {
+    const pin = pins.get(r.package) ?? { name: r.package, repository: r.source_repo, commit: r.source_commit, targets: {} }
+    for (const pool of r.architecture === 'all' ? ['amd64', 'arm64'] : [r.architecture]) {
+      pin.targets[pool] = { version: r.version, architecture: r.architecture, sha256: r.sha256, asset: `${r.package}_${r.version}_${r.architecture}.deb`.replace(/\+/g, '.') }
+    }
+    pins.set(r.package, pin)
+  }
+  for (const pin of pins.values()) writeFileSync(join(directory, `${pin.name}.json`), JSON.stringify(pin, null, 2) + '\n')
 }
 function copyReleaseCli(root: string, destination: string) {
   const copied = new Set<string>(), parser = new Bun.Transpiler({ loader: 'ts' })
@@ -258,9 +272,8 @@ test.each(['ordinary', 'linked'])('shipped release CLI and documented verificati
     await git('init', '--initial-branch=fixture', ordinary)
     writeFileSync(join(ordinary, 'tracked.txt'), 'initial fixture\n')
     copyReleaseCli(repo, ordinary)
-    // The tree's lock, which the CLI compares the record's rows against.
-    mkdirSync(join(ordinary, 'rootfs/packages'), { recursive: true })
-    writeFileSync(join(ordinary, 'rootfs/packages/lock.tsv'), lockFixture(JSON.parse(JSON.stringify(runtime().provenance.source_lineage)), 'a'.repeat(40), 'b'.repeat(40), 1))
+    // The tree's pins, which the CLI compares the record's rows against.
+    writePins(join(ordinary, 'deps/packages'), lockFixture(JSON.parse(JSON.stringify(runtime().provenance.source_lineage)), 'a'.repeat(40), 'b'.repeat(40), 1))
     await git('-C', ordinary, 'add', '.')
     await git('-C', ordinary, 'commit', '--no-gpg-sign', '-m', 'Create isolated source fixture')
     const commonHead = await git('-C', ordinary, 'rev-parse', 'HEAD')
@@ -676,27 +689,32 @@ test('an unlocked import is accepted on development and refused on customer chan
   }
 })
 
-test('the release lock must equal the tree lock for the board architecture when one is given', () => {
+test('the release lock must equal the tree pins for the board architecture when a pin directory is given', () => {
   const r = runtime(); importOne(r); writeRuntime(r)
-  const lock = join(work, 'lock.tsv')
-  const row = (v: typeof IMPORTED) => [v.package, v.version, v.architecture, v.sha256, v.source_repo, v.source_commit].join('\t')
-  writeFileSync(lock, '#package\tversion\tarch\tsha256\tsource-repo\tsource-commit\n' + row(IMPORTED) + '\n' + row({ ...IMPORTED, package: 'mos-arm-only', architecture: 'arm64' }) + '\n')
+  const lock = join(work, 'pins')
+  writePins(lock, [IMPORTED, { ...IMPORTED, package: 'mos-arm-only', architecture: 'arm64' }])
   assembleRelease({ ...inputs, lock }); rmSync(inputs.out, { recursive: true })
-  writeFileSync(lock, '#header\n' + row({ ...IMPORTED, sha256: '0'.repeat(64) }) + '\n')
+  writePins(lock, [{ ...IMPORTED, sha256: '0'.repeat(64) }])
   expect(() => assembleRelease({ ...inputs, lock })).toThrow('release lock differs from the tree lock')
-  writeFileSync(lock, '#header\n')
+  writePins(lock, [])
   expect(() => assembleRelease({ ...inputs, lock })).toThrow('release lock differs from the tree lock')
   expect(existsSync(inputs.out)).toBe(false)
 })
 
-test('lock rows are parsed per pool and malformed rows are refused by line', () => {
-  const good = ['mos-a', '1.0+git' + 'a'.repeat(12) + '-1', 'all', 'a'.repeat(64), 'repo', 'a'.repeat(40)].join('\t')
-  const arm = ['mos-b', '1.0+git' + 'a'.repeat(12) + '-1', 'arm64', 'b'.repeat(64), 'repo', 'a'.repeat(40)].join('\t')
-  expect(lockRows(`# comment\n\n${arm}\n${good}\n`, 'amd64').map(r => r.package)).toEqual(['mos-a'])
-  expect(lockRows(`${arm}\n${good}\n`, 'arm64').map(r => r.package)).toEqual(['mos-a', 'mos-b'])
-  expect(() => lockRows(good.replace('a'.repeat(64), 'z'.repeat(64)), 'amd64')).toThrow('line 1')
-  expect(() => lockRows(good + '\textra', 'amd64')).toThrow('7 fields')
-  expect(() => lockRows(good.replace('-1\t', '.dirty-1\t'), 'amd64')).toThrow('malformed row')
-  expect(() => lockRows(`${good}\n${good}\n`, 'amd64')).toThrow('locked twice')
-  expect(() => lockRows(`${good}\n${good.replace('\tall\t', '\tamd64\t')}\n`, 'amd64')).toThrow('both this architecture and all')
+test('pins are parsed per pool and malformed pins are refused by file', () => {
+  const dir = join(work, 'pins')
+  const a = { package: 'mos-a', version: '1.0+git' + 'a'.repeat(12) + '-1', architecture: 'all', sha256: 'a'.repeat(64), source_repo: 'repo', source_commit: 'a'.repeat(40) }
+  const b = { ...a, package: 'mos-b', architecture: 'arm64', sha256: 'b'.repeat(64) }
+  writePins(dir, [a, b])
+  expect(lockRows(readPins(dir), 'amd64').map(r => r.package)).toEqual(['mos-a'])
+  expect(lockRows(readPins(dir), 'arm64').map(r => r.package)).toEqual(['mos-a', 'mos-b'])
+  const pinOf = (name: string) => JSON.parse(readFileSync(join(dir, name), 'utf8'))
+  const withPin = (name: string, mutate: (p: any) => void) => { const p = pinOf(name); mutate(p); return [{ file: name, value: p }] }
+  expect(() => lockRows(withPin('mos-a.json', p => { p.targets.amd64.sha256 = 'z'.repeat(64) }), 'amd64')).toThrow()
+  expect(() => lockRows(withPin('mos-a.json', p => { p.targets.amd64.version = '1.0+git' + 'a'.repeat(12) + '.dirty-1' }), 'amd64')).toThrow('pin version')
+  expect(() => lockRows(withPin('mos-a.json', p => { p.targets.amd64.asset = 'other.deb' }), 'amd64')).toThrow('pin asset name')
+  expect(() => lockRows(withPin('mos-a.json', p => { p.targets.amd64.architecture = 'arm64' }), 'amd64')).toThrow('pin target architecture')
+  expect(() => lockRows(withPin('mos-a.json', p => { p.targets.arm64.sha256 = 'c'.repeat(64) }), 'amd64')).toThrow('pin targets')
+  expect(() => lockRows([{ file: 'mos-other.json', value: pinOf('mos-a.json') }], 'amd64')).toThrow('pin file name/package')
+  expect(() => lockRows([{ file: 'mos-a.json', value: { ...pinOf('mos-a.json'), extra: true } }], 'amd64')).toThrow('unknown or missing fields')
 })

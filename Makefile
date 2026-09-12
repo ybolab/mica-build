@@ -88,8 +88,8 @@ help:
 	@echo "  deps                fetch the source dependencies (build-env/, rootfs/debian/) at their pins in deps/sources/ (network)"
 	@echo "  deps-check          read each source pin's release without downloading"
 	@echo "  deps-bump           rewrite the pin of DEP=<repository> from its newest build-* release (or DEP_TAG=build-<commit12>)"
-	@echo "  os-pool             the whole pool: fetch what rootfs/packages/lock.tsv imports from the source repositories' releases, build the rest, index both pools (docker, network)"
-	@echo "  os-lock-bump        rewrite the lock rows of COMPONENT=<repository> from its newest build-* release (or LOCK_TAG=build-<commit12>) and print the diff (network)"
+	@echo "  os-pool             the whole pool: fetch what deps/packages/ pins from the source repositories' releases, build the rest, index both pools (docker, network)"
+	@echo "  os-lock-bump        rewrite the package pins of COMPONENT=<repository> from its newest build-* release (or LOCK_TAG=build-<commit12>) and print the diff (network)"
 	@echo "  os-pool-lock-test   drive fetch.sh and lock.sh against a stub of the release API: every refusal by name (no docker, no network)"
 	@echo "  os-deb-package-gate check the built pools: ownership, fields, reproducibility, enablement (docker)"
 	@echo "  os-install-closure-gate  apt-install both pools into clean roots: closure, ldd, accounts, versions (docker)"
@@ -353,7 +353,7 @@ os-debs: os-deb-preflight
 	        case " $$locked" in *" $$p "*) ;; *) unlocked_pkgs="$$unlocked_pkgs $$p" ;; esac; \
 	    done; \
 	    if [ -z "$$unlocked_pkgs" ]; then \
-	        echo "os-debs: skipping the '$$producer' producer ($$dir): rootfs/packages/lock.tsv imports $$packages; make os-deb-$$producer builds it anyway"; \
+	        echo "os-debs: skipping the '$$producer' producer ($$dir): deps/packages/ pins $$packages; make os-deb-$$producer builds it anyway"; \
 	        continue; \
 	    fi; \
 	    for arch in $$(printf '%s' "$$arches" | tr ',' ' '); do \
@@ -366,7 +366,7 @@ os-debs: os-deb-preflight
 	    bash build-env/deb/repo.sh --arch "$$arch"; \
 	done
 
-# THE WHOLE POOL, both classes: the archives rootfs/packages/lock.tsv imports
+# THE WHOLE POOL, both classes: the archives deps/packages/ pins
 # are fetched from the registry and verified against their rows, then the
 # producers of this tree build the rest, then both pools are indexed. This is
 # the target rootfs/build.sh names in its refusal. The fetch comes first so
@@ -385,9 +385,9 @@ os-pool: os-deb-preflight
 os-pool-lock-test:
 	bash tests/pool-lock-test.sh
 
-# The lock's only writer. Reads a release of COMPONENT (a package repository's
+# The pins' only writer. Reads a release of COMPONENT (a package repository's
 # name) -- LOCK_TAG=build-<commit12>, else its newest build-* release --
-# rewrites that component's rows from the archives themselves and prints the
+# rewrites that component's pins from the archives themselves and prints the
 # diff; the diff is the import, reviewed like any other change to this tree.
 os-lock-bump:
 	@test -n "$(COMPONENT)" || { echo "error: COMPONENT=<repository> is required, e.g. make os-lock-bump COMPONENT=mica-podman" >&2; exit 1; }

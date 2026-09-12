@@ -49,16 +49,18 @@ is used for shipped-binary smoke checks.
 
 The pool holds two classes of archive and refuses anything else. **Built here**:
 a package a producer of this repository emits, at this tree's
-`+git<commit>-1` stamp. **Imported**: a package `rootfs/packages/lock.tsv`
-names -- version, sha256, source repository, source commit -- fetched from the
-Debian registry `build-env/deb/registry.env` declares and verified against its
-row. Every archive carries `Mos-Source-Repo` and `Mos-Source-Commit` control
-fields written by the packer, so provenance travels inside the archive.
-`make os-pool` fetches the imports, builds the rest and indexes both pools;
-`make os-lock-bump COMPONENT=<repository>` is the lock's only writer and its
-diff is the reviewable import. The lineage record the composer writes carries
-the lock rows and any `MOS_POOL_UNLOCKED` development waiver; the release gate
-re-checks the rows against the tree's lock and refuses a waived image outside
+`+git<commit>-1` stamp. **Imported**: a package a pin under `deps/packages/`
+names -- one JSON file per package in the shape of the Debian pins, with the
+source repository, its commit and a target per pool (version, architecture,
+sha256, asset) -- fetched from the GitHub Release `build-<commit12>` of the
+repository that built it and verified against the pin. Every archive carries
+`Mos-Source-Repo` and `Mos-Source-Commit` control fields written by the
+packer, so provenance travels inside the archive. `make os-pool` fetches the
+imports, builds the rest and indexes both pools; `make os-lock-bump
+COMPONENT=<repository>` is the pins' only writer and its diff is the
+reviewable import. The lineage record the composer writes carries the pins
+as rows and any `MOS_POOL_UNLOCKED` development waiver; the release gate
+re-checks the rows against the tree's pins and refuses a waived image outside
 the development channel. `build-env/deb/README.md` documents the scripts.
 
 Two parts of this tree are source dependencies, pinned like the Debian base

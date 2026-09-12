@@ -4,7 +4,7 @@
 Two classes of archive are allowed in the pool, and nothing else:
 
   built here   a package this tree's producers emit, at this tree's stamp;
-  imported     a package the lock (rootfs/packages/lock.tsv) names, at the
+  imported     a package a pin (deps/packages/<package>.json) names, at the
                locked version, sha256, source repository and source commit.
 
 MOS_POOL_UNLOCKED names imported packages whose digest check is waived for
@@ -144,27 +144,30 @@ def identity(root: Path) -> dict:
 
 
 def lock_rows(path: Path, arch: str) -> list:
-    """The lock's rows for one pool: that architecture and `all`, validated, sorted."""
-    require(path.is_file() and not path.is_symlink(), 'lock file missing: ' + str(path))
-    rows = []
-    seen = set()
-    for number, line in enumerate(path.read_text().splitlines(), 1):
-        if not line or line.startswith('#'):
-            continue
-        fields = line.split('\t')
-        require(len(fields) == 6, f'lock line {number}: {len(fields)} fields, not 6')
-        row = dict(zip(LOCK_COLUMNS, fields))
-        package_name(row['package']); repo_name(row['source_repo']); hex_id(row['sha256']); hex_id(row['source_commit'], 40)
-        require('.dirty' not in stamp(row['version']), f'lock line {number}: dirty version cannot be locked')
-        require(row['architecture'] in ('amd64', 'arm64', 'all'), f'lock line {number}: architecture')
-        key = (row['package'], row['architecture'])
-        require(key not in seen, f'lock line {number}: {row["package"]} locked twice for {row["architecture"]}')
-        seen.add(key)
-        if row['architecture'] in (arch, 'all'):
-            rows.append(row)
-    names = [r['package'] for r in rows]
-    require(len(set(names)) == len(names), 'lock names one package for both this architecture and all')
-    return sorted(rows, key=lambda r: r['package'])
+    """The package pins (deps/packages/*.json) as rows for one pool: that architecture and `all`, validated, sorted."""
+    require(path.is_dir(), 'package pins missing: ' + str(path))
+    rows = {}
+    for pin in sorted(path.glob('*.json')):
+        value = keys(load(pin), 'name repository commit targets')
+        require(value['name'] == pin.stem, 'pin file name/package: ' + pin.name)
+        package_name(value['name']); repo_name(value['repository']); hex_id(value['commit'], 40)
+        targets = value['targets']
+        require(isinstance(targets, dict) and targets and set(targets) <= {'amd64', 'arm64'}, 'pin targets: ' + pin.name)
+        for pool, target in targets.items():
+            keys(target, 'version architecture sha256 asset')
+            require(target['architecture'] in (pool, 'all'), 'pin target architecture: ' + pin.name)
+            hex_id(target['sha256'])
+            require('.dirty' not in stamp(target['version']), 'dirty version cannot be pinned: ' + pin.name)
+            require(target['asset'] == (value['name'] + '_' + target['version'] + '_' + target['architecture'] + '.deb').replace('+', '.'), 'pin asset name: ' + pin.name)
+            row = dict(package=value['name'], version=target['version'], architecture=target['architecture'], sha256=target['sha256'],
+                       source_repo=value['repository'], source_commit=value['commit'])
+            key = (row['package'], row['architecture'])
+            require(rows.get(key, row) == row, 'pin targets disagree for ' + pin.name)
+            rows[key] = row
+    selected = [r for r in rows.values() if r['architecture'] in (arch, 'all')]
+    names = [r['package'] for r in selected]
+    require(len(set(names)) == len(names), 'pin names one package for both this architecture and all')
+    return sorted(selected, key=lambda r: r['package'])
 
 
 def control_fields(archive: Path) -> dict:
@@ -316,7 +319,7 @@ def main() -> None:
     parser.add_argument('--pool', type=Path, required=True)
     parser.add_argument('--arch', required=True)
     parser.add_argument('--epoch', type=int, required=True)
-    parser.add_argument('--lock', type=Path, required=True, help='rootfs/packages/lock.tsv')
+    parser.add_argument('--lock', type=Path, required=True, help='the deps/packages directory')
     parser.add_argument('--unlocked', default='', help='space-separated MOS_POOL_UNLOCKED names')
     parser.add_argument('--local-packages', required=True, help="space-separated packages this tree's producers emit")
     parser.add_argument('--output', type=Path, required=True)

@@ -43,8 +43,7 @@ class SourceLineageTest(unittest.TestCase):
             at = self.tree / name
             at.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(REPO / name, at)
-        for name, text in {'.gitignore': '_out/\n', 'Makefile': '# fixture\n', 'VERSION': '0.1.0\n',
-                           'rootfs/packages/lock.tsv': '#package\tversion\tarch\tsha256\tsource-repo\tsource-commit\n'}.items():
+        for name, text in {'.gitignore': '_out/\n', 'Makefile': '# fixture\n', 'VERSION': '0.1.0\n', 'deps/packages/.keep': ''}.items():
             at = self.tree / name; at.parent.mkdir(parents=True, exist_ok=True); at.write_text(text)
         self.must('git', 'init', '-q', self.tree)
         self.commit()
@@ -93,8 +92,13 @@ class SourceLineageTest(unittest.TestCase):
             f'{r[0].name.split("_")[0]}\t{r[2]}\t{r[3]}\t1\t{r[1]}\tpool/{r[0].name}\t{r[4]}\t{r[5]}\n' for r in rows))
 
     def lock(self, rows):
-        path = self.tree / 'rootfs/packages/lock.tsv'
-        path.write_text('#package\tversion\tarch\tsha256\tsource-repo\tsource-commit\n' + ''.join('\t'.join(r) + '\n' for r in rows))
+        pins = self.tree / 'deps/packages'
+        for old in pins.glob('*.json'):
+            old.unlink()
+        for name, version, arch, sha, repo, commit in rows:
+            asset = f'{name}_{version}_{arch}.deb'.replace('+', '.')
+            targets = {pool: dict(version=version, architecture=arch, sha256=sha, asset=asset) for pool in (['amd64', 'arm64'] if arch == 'all' else [arch])}
+            (pins / (name + '.json')).write_text(json.dumps(dict(name=name, repository=repo, commit=commit, targets=targets), indent=2, sort_keys=True) + '\n')
         self.commit()
         self.commit_id = self.must('git', '-C', self.tree, 'rev-parse', 'HEAD').strip()
         self.version = self.must('bash', self.tree / 'build-env/deb/version.sh').strip()
@@ -108,7 +112,7 @@ class SourceLineageTest(unittest.TestCase):
             self.output.unlink()
         tree = tree or self.tree
         return run('python3', HELPER, '--composition-source', tree, '--pool', self.pool, '--arch', 'amd64', '--epoch', '1577836800',
-                   '--lock', tree / 'rootfs/packages/lock.tsv', '--unlocked', unlocked, '--local-packages', local, '--output', self.output, env=self.env)
+                   '--lock', tree / 'deps/packages', '--unlocked', unlocked, '--local-packages', local, '--output', self.output, env=self.env)
 
     def record(self):
         return json.loads(self.output.read_text())
@@ -219,19 +223,31 @@ class SourceLineageTest(unittest.TestCase):
         (self.tree / 'Makefile').write_text('# edited\n')
         self.refuses('dirty source checkout')
         self.must('git', '-C', self.tree, 'checkout', '--', 'Makefile')
-        lock = self.tree / 'rootfs/packages/lock.tsv'
-        original = lock.read_text()
-        for bad, message in [
-            ('mos-imported\t' + self.imported_version + '\tamd64\t' + 'z' * 64 + '\tmica-imported\t' + self.imported_commit + '\n', 'malformed digest'),
-            ('mos-imported\t2.0.0+git' + 'b' * 12 + '.dirty-1\tamd64\t' + self.archives['mos-imported'][1] + '\tmica-imported\t' + self.imported_commit + '\n', 'dirty version cannot be locked'),
-            ('mos-imported\t' + self.imported_version + '\tamd64\t' + self.archives['mos-imported'][1] + '\tmica-imported\n', 'fields, not 6'),
-            (original.splitlines()[1] + '\n' + original.splitlines()[1] + '\n', 'locked twice'),
+        pin = self.tree / 'deps/packages/mos-imported.json'
+        original = pin.read_text()
+        good = json.loads(original)
+        def mutate(change):
+            value = json.loads(original)
+            change(value)
+            return json.dumps(value) + '\n'
+        for name, bad, message in [
+            ('digest', mutate(lambda v: v['targets']['amd64'].__setitem__('sha256', 'z' * 64)), 'malformed digest'),
+            ('dirty', mutate(lambda v: v['targets']['amd64'].update(version='2.0.0+git' + 'b' * 12 + '.dirty-1', asset='mos-imported_2.0.0.git' + 'b' * 12 + '.dirty-1_amd64.deb')), 'dirty version cannot be pinned'),
+            ('missing-key', mutate(lambda v: v['targets']['amd64'].pop('asset')), 'unknown or missing fields'),
+            ('asset', mutate(lambda v: v['targets']['amd64'].__setitem__('asset', 'other.deb')), 'pin asset name'),
+            ('pool', mutate(lambda v: v['targets'].__setitem__('arm64', dict(v['targets']['amd64']))), 'pin target architecture'),
         ]:
-            with self.subTest(message=message):
-                lock.write_text(original.splitlines()[0] + '\n' + bad)
+            with self.subTest(name=name):
+                pin.write_text(bad)
                 self.commit()
                 self.refuses(message)
-        lock.write_text(original); self.commit()
+        # A file named for another package than it holds.
+        pin.write_text(original)
+        (self.tree / 'deps/packages/mos-other.json').write_text(original)
+        self.commit()
+        self.refuses('pin file name/package: mos-other.json')
+        (self.tree / 'deps/packages/mos-other.json').unlink()
+        pin.write_text(original); self.commit()
 
     def test_stale_index_and_membership_refuse(self):
         self.refuses('stale pool index') if False else None
