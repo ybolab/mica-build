@@ -111,6 +111,8 @@ with its index row after its outcome and replacement are recorded.
   - `venus-gui-v2.md` — Venus OS gui-v2 functional reference, source-read, mapped to apid/dashboard owners
   - `ssd202d-lite.md` — draft: mos on SigmaStar SSD202D; the 16 MiB / 128 MiB flash fork that selects between a new OS and a new board
   - `root-closure.md` — measurement: what the read-only root is made of, which packages are deletable, which are held there by a shell script, and whether mosd could own network configuration instead of systemd-networkd
+- `reports/` — dated reviews with explicit source and evidence boundaries
+  - [Plan and task implementation audit — 2026-09-12](reports/20260912-plan-task-audit.md) — implemented work, remaining acceptance, confirmed gaps and focused verification
 - `plan/` — approved proposals and remaining acceptance, with a status index
 - `task/` — PMA task tracking
 - `zh/` — current Chinese user guides and retained engineering translations
