@@ -6,24 +6,12 @@
 - **createdAt**: 2026-09-10 10:13
 
 
-## Current development integration decision (2026-09-12)
+## Current execution decision (2026-09-12)
 
-The user authorized the remaining reviewed source integration and continuation
-on a new development machine. Main `4a451011` includes reviewed B `3a5127d5`
-and all other committed local branches. The current `ae40a791` root has passed
-12/12 packed-binary smoke checks and independent root-signature verification.
-Its kernel/support, firmware and complete image remain unfinished. The earlier
-`ed7231cd` complete image failed GPT discovery in the guest and is historical
-evidence, not the corrected candidate. Guest, ARM cold-root and physical
-acceptance remain open.
-
-The [development handoff](../development-handoff.md) is the current restart
-point, with remaining work, source identities and transfer requirements. At
-10:19 UTC the L1 watchdog was paused and its turn stopped; B/B7 had no live
-build. Earlier automatic-continuation instructions below are superseded by
-this pause. Resume on the new machine after restoring and verifying inputs;
-keep x64 first and reuse unaffected stages. No push, publication or unfinished
-task completion is implied.
+The user canceled handoff continuation and requested a clean main x64 rebuild.
+Historical campaign dispatch and resume instructions below are inactive.
+Current execution is tracked by `20260912-1123-clean-x64-diagnosis`.
+No cron or campaign is restarted.
 
 ## Description
 

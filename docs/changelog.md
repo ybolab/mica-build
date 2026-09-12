@@ -1,11 +1,38 @@
 # Changelog
 
+## 2026-09-12 11:33 [progress]
+
+Added `make os-keys-init` for idempotent development signing initialization in
+`meta/`, using the existing three-domain generator in Docker. Existing keys
+are validated without replacement; partial, mismatched, symlinked and unsafe
+permission inputs fail. Fresh/repeated/concurrent and refusal tests passed,
+as did documentation, shell and host-toolchain checks. A new development
+identity was generated locally for the clean x64 rebuild; keys remain ignored.
+
+## 2026-09-12 11:23 [decision]
+
+The user canceled handoff continuation and requested a clean current-main x64
+rebuild. Removed the handoff document and replaced B7 execution diaries with
+closure notices; old dispatch instructions are inactive. Old filesystem outputs
+were moved outside the project after force-removal was rejected. Dedicated MOS
+Docker cache, containers and compiled images were removed. Product source edits
+remain intact; no historical or new runtime acceptance is inferred.
+
+## 2026-09-12 11:14 [decision]
+
+Removed fixed Docker CPU/memory/swap caps and the four-job Cargo override from
+the deploy builder and boot/shutdown fixture runner at the user's request.
+The project build policy and handoff now supersede historical B7 resource
+envelopes, job ceilings and reservation requirements; historical execution
+evidence remains intact. Shell syntax, local diff review and all five
+documentation checks passed. No full rebuild was needed.
+
 ## 2026-09-12 10:19 [progress]
 
 Reviewed GPT startup/source-admission changes and their accepted root/signature
 records are merged into main at `4a451011`. The user requested continuation on
 a new development machine. The L1 watchdog is paused and its read-only turn
-was stopped; no build or guest was interrupted. The [development handoff](development-handoff.md)
+was stopped; no build or guest was interrupted. The development handoff (subsequently removed)
 records remaining components, x64/ARM/physical acceptance, the stale two-job
 memory reservation, source/artifact identities and transfer requirements.
 No incomplete acceptance result is promoted to PASS.

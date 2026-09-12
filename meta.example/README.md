@@ -62,6 +62,19 @@ metadata signing keys remain on their respective signing hosts.
 
 ## Development signing inputs
 
+Initialize the local signing directory with:
+
+```sh
+make os-keys-init
+```
+
+This defaults to the ignored `meta/` directory; set `MOS_SIGNING_OUTPUT` to
+select another directory. Missing or empty directories receive new development
+inputs. Repeated runs verify the existing private-key permissions, key types,
+certificate validity and public/private pairing without changing identities.
+Partial, mismatched or symlinked inputs are refused, not silently regenerated.
+Initialization is serialized. Private material is never printed or committed.
+
 Create an isolated set of development signing inputs with the existing
 fresh-directory generator:
 

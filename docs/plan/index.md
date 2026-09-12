@@ -1,6 +1,6 @@
 # MOS plans
 
-> Updated: 2026-09-11
+> Updated: 2026-09-12
 
 ## Usage
 
@@ -162,10 +162,14 @@ disobeys on sight teaches a reader the wrong thing about the tree.
 
 - [x] [**20260911-0110-b6-reproducibility-closure B6 reproducibility closure**](20260911-0110-b6-reproducibility-closure.md) `2026-09-11`
 
-- [-] [**20260911-0145-b7-fresh-lifecycle-acceptance B7 fresh lifecycle and rootfs acceptance**](20260911-0145-b7-fresh-lifecycle-acceptance.md) `2026-09-11`
+- [~] [**20260911-0145-b7-fresh-lifecycle-acceptance B7 fresh lifecycle and rootfs acceptance**](20260911-0145-b7-fresh-lifecycle-acceptance.md) `2026-09-11`
 
 - [-] [**20260911-1927-boot-artifact-size Shrink the signed boot artifact: compression and early-userspace closure**](20260911-1927-boot-artifact-size.md) `2026-09-11`
 
 - [x] [**20260912-0614-development-workflow Simplify development integration and acceptance workflow**](20260912-0614-development-workflow.md) `2026-09-12`
 
 - [ ] [**20260911-2006-split-package-repositories Split the tree into an assembly repository and independently released package repositories**](20260911-2006-split-package-repositories.md) `2026-09-11`
+
+- [x] [**20260912-1113-remove-build-resource-limits Remove build resource limits**](20260912-1113-remove-build-resource-limits.md) `2026-09-12`
+
+- [-] [**20260912-1123-clean-x64-diagnosis Clean main x64 rebuild and diagnosis**](20260912-1123-clean-x64-diagnosis.md) `2026-09-12`

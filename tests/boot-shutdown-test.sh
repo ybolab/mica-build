@@ -19,11 +19,11 @@ mkdir -p "$CACHE/target" "$CACHE/registry" "$CACHE/git"
 # /srv paths map identically; /root and /work are translated above for siblings.
 # mos-build-side: container-block -- pinned native and UAPI fixture toolchain.
 timeout 110 docker run --rm --label ai-agent=true --network traefik \
-    --name "ai-agent-mos-boot-shutdown-$$" --cpus 4 --memory 10g --memory-swap 10g \
+    --name "ai-agent-mos-boot-shutdown-$$" \
     -v "$HOST_REPO:/src:ro" -v "$HOST_REPO/_out/b3-rust/target:/target" \
     -v "$HOST_REPO/_out/b3-rust/registry:/usr/local/cargo/registry" \
     -v "$HOST_REPO/_out/b3-rust/git:/usr/local/cargo/git" \
-    -e "ARM_ABI=$ARM_ABI" -e CARGO_BUILD_JOBS=4 -e CARGO_TARGET_DIR=/target -w /src/pkgs/mos-deploy --entrypoint /bin/bash "$IMAGE" -c '
+    -e "ARM_ABI=$ARM_ABI" -e CARGO_TARGET_DIR=/target -w /src/pkgs/mos-deploy --entrypoint /bin/bash "$IMAGE" -c '
 set -euo pipefail
 for tool in cargo gcc; do command -v "$tool" >/dev/null; done
 cargo test --locked --offline --lib boot::shutdown::tests

@@ -20,7 +20,6 @@ tested artifacts and the remaining cx3576 physical acceptance.
 | Build, verify or publish artifacts | [Check harness](design/build-harness.md), [release directory](design/release-artifacts.md), [key delivery](design/key-delivery.md) |
 | Port or qualify a board | [Porting](bsp/porting.md), [qualification](bsp/qualification.md), [cx3576 bench](bsp/cx3576-bench.md) |
 | Find work status or a decision | [Tasks](task/index.md), [plans](plan/index.md), `decisions/`, [changelog](changelog.md) |
-| Continue on the new development machine | [Remaining work and transfer checkpoint](development-handoff.md) |
 
 ## Document ownership
 
@@ -39,7 +38,6 @@ with its index row after its outcome and replacement are recorded.
 ## Complete catalog
 
 - `architecture.md` — top-level system architecture and component map (start here)
-- `development-handoff.md` — paused campaign checkpoint, remaining acceptance and machine-transfer inputs
 - `design/` — subsystem design records
   - `access.md` — debug/maintenance access: channels, auth phases, lockdown layers
   - `applications.md` — planned managed applications: curated OCI-first catalog, signed manifest, lifecycle, trust and API boundary

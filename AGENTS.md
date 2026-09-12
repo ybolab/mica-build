@@ -31,6 +31,7 @@ the fast path; everything else waits for explicit approval such as `proceed`.
 - Deployment target: embedded Linux images (signed file deployments, independent kernel/support and root components) for the boards under `boards/`
 - Quality-gate command: `make docs-verify` for documentation; the full gate set is the `make os-*` targets `.github/workflows/check.yml` runs — there is no single aggregate target yet (see `docs/decisions/`)
 - Fast path: enabled (default)
+- Build resources: do not impose fixed CPU, memory, swap, compiler-job or aggregate build-job quotas unless the user explicitly requests them. Use the available host resources and tool defaults. This supersedes historical task/plan resource envelopes and reservation requirements; apply the same policy to restored build wrappers.
 
 ### Local divergences
 

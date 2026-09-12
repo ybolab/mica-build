@@ -19,6 +19,11 @@ signing key and optional overlap public keys.
 
 ## Development material
 
+Run `make os-keys-init` to create or validate the ignored local `meta/` directory.
+The initializer preserves valid existing identities and refuses partial or
+mismatched inputs. `MOS_SIGNING_OUTPUT` overrides the directory. Key generation
+and verification run in the pinned OpenSSL container, not the host toolchain.
+
 ```sh
 bash pkgs/mos-boot/dev-keys.sh --out /path/to/new-development-inputs
 ```

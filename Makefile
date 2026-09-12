@@ -15,6 +15,7 @@ BOARDS := cx3576 s905x5m virt-arm64 x64
 help:
 	@echo "  os-image            assemble two signed deployments (MOS_BOARD, MOS_IMAGE_RECORDS, MOS_METADATA_PUBLIC_KEYS, MOS_FIRMWARE_PACKAGE, MOS_IMAGE_OUT)"
 	@echo "  os-rootfs-x64 / os-rootfs-virt-arm64 / os-rootfs-cx3576 compose independent roots"
+	@echo "  os-keys-init        detect or create development keys in meta (MOS_SIGNING_OUTPUT overrides)"
 	@echo "  os-devkeys          create explicit development inputs (MOS_SIGNING_OUTPUT, default meta; refuses existing output)"
 	@echo "  os-layout-lint      check the current three-partition contracts"
 	@echo "  os-fit-records-test verify bounded native FIT record parsing"
@@ -636,6 +637,10 @@ os-debian-test:
 
 # Factory assembly consumes already-built and signed components.
 MOS_SIGNING_OUTPUT ?= meta
+.PHONY: os-keys-init
+os-keys-init:
+	bash pkgs/mos-boot/init-keys.sh --out "$(MOS_SIGNING_OUTPUT)"
+
 os-devkeys:
 	bash pkgs/mos-boot/dev-keys.sh --out "$(MOS_SIGNING_OUTPUT)"
 
