@@ -76,3 +76,4 @@ disobeys on sight teaches a reader the wrong thing about the tree.
 - [-] [**20260911-1927-boot-artifact-size Shrink the signed boot artifact: compression and early-userspace closure**](20260911-1927-boot-artifact-size.md) `2026-09-11`
 - [ ] [**20260911-2006-split-package-repositories Split the tree into an assembly repository and independently released package repositories**](20260911-2006-split-package-repositories.md) `2026-09-11`
 - [x] [**20260912-1329-arm64-board-builds ARM64, CX3576 and S905X5M builds**](20260912-1329-arm64-board-builds.md) `2026-09-12`
+- [ ] [**20260912-1347-root-closure-reduction Reduce the read-only root closure**](20260912-1347-root-closure-reduction.md) `2026-09-12`

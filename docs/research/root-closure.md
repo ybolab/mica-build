@@ -1,9 +1,11 @@
 # Research: the root filesystem closure — what can go, what Rust could take over, and what the floor is
 
 > **Status and intent.** This is a measurement report, not a design record and
-> not an approved plan. Nothing here is implemented, no branch exists, and no
-> task or plan record has been opened. It exists to put numbers under three
-> questions: which packages can be deleted outright, which are held in the
+> not an approved plan. Nothing here is implemented and no branch exists. The
+> plan record that takes an authorized subset of section 8, with corrections
+> to this document, is
+> [20260912-1347-root-closure-reduction](../plan/20260912-1347-root-closure-reduction.md).
+> It exists to put numbers under three questions: which packages can be deleted outright, which are held in the
 > image only by code that Rust could own instead, and what is left when both
 > are done.
 >

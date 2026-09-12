@@ -88,3 +88,4 @@ thing about the tree. Both indexes now say the same thing.
 - [-] [**20260911-2003-split-package-repositories Split the tree into an assembly repository and independently released package repositories**](20260911-2003-split-package-repositories.md) `P1`
 - [x] [**20260912-1329-arm64-board-builds ARM64, CX3576 and S905X5M builds**](20260912-1329-arm64-board-builds.md) `P1`
 - [x] [**20260912-1341-prune-settled-records Prune the settled plan and task records**](20260912-1341-prune-settled-records.md) `P2`
+- [-] [**20260912-1347-root-closure-reduction Reduce the read-only root closure**](20260912-1347-root-closure-reduction.md) `P2`
