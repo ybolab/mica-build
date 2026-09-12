@@ -126,3 +126,16 @@ Implementing Phase 1 (the mechanism inside this tree); approved 2026-09-12.
   after four diagnostic URL followers were attested;
   `make os-factory-root-gate` identical on all five comparisons, red only on
   its device negative case (findings task, item 7).
+- Phase 2 (2026-09-13, `3264236b`): `make docs-verify` green;
+  `make os-host-toolchain-lint` 440/440 with submodule files listed;
+  `tests/shell-pipefail-lint.sh` 172/174 (the two pre-existing findings);
+  `make os-debian-test` green through the submodule; `tests/deb-preflight-test.sh`
+  19/19; `tests/pool-lock-test.sh` 16/16 with Python-written fixtures;
+  `tests/rootfs-runtime-test.sh` green with the new submodule case in
+  `source_lineage_test.py` (14); a fresh clone refuses `make` until
+  `git submodule update --init --recursive`; the pool rebuilt at `3264236b`
+  (podman skipped, imported through the lock) and the x64 root composed with
+  smoke 12/12, the archives now saying `Mos-Source-Repo: mica`.
+  `git.ds.cc` stayed unreachable, so `make os-deb-preflight`'s reachability
+  check was bypassed (`make -o os-deb-preflight os-debs`) and the Gitea
+  mirrors of the three repositories are still pending.
