@@ -109,6 +109,7 @@ for target in ('x64', 'aa64'):
     else:
         assert any('dpkg --add-architecture arm64' in line for line in lines)
         assert any('systemd-boot-efi:arm64' in line for line in lines)
+        assert any('apt-get install' in line and 'binutils-aarch64-linux-gnu' in line for line in lines)
         assert not any(any(word in line for word in ('cryptsetup-bin:arm64', 'util-linux:arm64', 'mount:arm64', 'libgcc-s1:arm64')) for line in lines)
     print('PASS: recipe branch and selected EFI output', target, '(commands isolated)')
 print('BOOT_TOOLS_TARGET_ROUTE_TEST_PASS cases=15 productionBuilds=0 targetExecutions=0')

@@ -4,8 +4,8 @@ set -euo pipefail
 export SOURCE_DATE_EPOCH=1577836800
 EFI_ARCH=${2:?EFI architecture required}
 case "$EFI_ARCH" in
-    x64) STUB=/usr/lib/systemd/boot/efi/linuxx64.efi.stub; BOOT_NAME=BOOTX64.EFI ;;
-    aa64) STUB=/arm64/usr/lib/systemd/boot/efi/linuxaa64.efi.stub; BOOT_NAME=BOOTAA64.EFI ;;
+    x64) STUB=/usr/lib/systemd/boot/efi/linuxx64.efi.stub; BOOT_NAME=BOOTX64.EFI; OBJCOPY=objcopy ;;
+    aa64) STUB=/arm64/usr/lib/systemd/boot/efi/linuxaa64.efi.stub; BOOT_NAME=BOOTAA64.EFI; OBJCOPY=aarch64-linux-gnu-objcopy ;;
     *) echo 'error: unsupported EFI architecture' >&2; exit 1 ;;
 esac
 case "$1" in
@@ -17,7 +17,7 @@ kernel)
         --os-release=@/input/os-release --output=/output/boot.efi \
         --signtool=sbsign --secureboot-private-key=/signing/key.pem --secureboot-certificate=/signing/cert.pem
     sbverify --cert /signing/cert.pem /output/boot.efi
-    objcopy --dump-section .initrd=/output/signed-initrd.zst /output/boot.efi /output/section-copy.efi
+    "$OBJCOPY" --dump-section .initrd=/output/signed-initrd.zst /output/boot.efi /output/section-copy.efi
     cmp /output/initramfs.cpio.zst /output/signed-initrd.zst
     rm /output/signed-initrd.zst /output/section-copy.efi
     # objcopy must never rewrite the signed PE while extracting a section.

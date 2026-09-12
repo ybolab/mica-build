@@ -14,6 +14,7 @@ RUN case "$MOS_BOOT_TARGET" in x64|aa64) ;; *) echo 'invalid boot-tools target' 
     rm -rf /var/lib/apt/lists/*
 RUN if [ "$MOS_BOOT_TARGET" = aa64 ]; then \
     dpkg --add-architecture arm64 && apt-get update -qq && \
+    apt-get install -y --no-install-recommends binutils-aarch64-linux-gnu && \
     mkdir -p /arm-debs/partial /arm64 && \
     apt-get -o APT::Architecture=arm64 -o APT::Architectures::=arm64 \
         -o Dir::State::status=/dev/null -o Dir::Cache::archives=/arm-debs \
