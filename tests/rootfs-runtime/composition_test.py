@@ -237,7 +237,7 @@ class CompositionTest(unittest.TestCase):
             'procps': ['/etc/init.d/procps'],
             'quota': ['/etc/init.d/quota', '/etc/init.d/quotarpc', '/etc/default/quota',
                       '/usr/share/quota/quotaon.sh', '/usr/share/quota/quotaoff.sh',
-                      '/usr/share/quota/quotarpc.sh', '/var/lib/quota'],
+                      '/usr/share/quota/quotarpc.sh', '/usr/share/quota/quota-initial-check.sh', '/var/lib/quota'],
             'openssh-server': ['/etc/init.d/ssh', '/etc/default/ssh'],
             'sysvinit-utils': ['/usr/lib/lsb/init-functions', '/usr/lib/lsb/init-functions.d/00-verbose',
                               '/usr/lib/init/init-d-script', '/usr/lib/init/vars.sh'],

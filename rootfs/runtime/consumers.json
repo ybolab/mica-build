@@ -26,6 +26,7 @@
         {"paths": ["/usr/share/quota/quotaon.sh"], "packages": ["quota"], "kind": "resource", "reason": "existing native service script and configuration closure", "expect": {"mode": 493, "uid": 0, "gid": 0}},
         {"paths": ["/usr/share/quota/quotaoff.sh"], "packages": ["quota"], "kind": "resource", "reason": "existing native service script and configuration closure", "expect": {"mode": 493, "uid": 0, "gid": 0}},
         {"paths": ["/usr/share/quota/quotarpc.sh"], "packages": ["quota"], "kind": "resource", "reason": "existing native service script and configuration closure", "expect": {"mode": 493, "uid": 0, "gid": 0}},
+        {"paths": ["/usr/share/quota/quota-initial-check.sh"], "packages": ["quota"], "kind": "resource", "reason": "existing quota service startup helper reached through service", "expect": {"mode": 493, "uid": 0, "gid": 0}},
         {"paths": ["/var/lib/quota"], "packages": ["quota"], "kind": "directory", "reason": "existing native service script and configuration closure", "expect": {"mode": 493, "uid": 0, "gid": 0}},
         {"paths": ["/etc/init.d/ssh"], "packages": ["openssh-server"], "kind": "resource", "reason": "existing native service script and configuration closure", "expect": {"mode": 493, "uid": 0, "gid": 0}},
         {"paths": ["/etc/default/ssh"], "packages": ["openssh-server"], "kind": "resource", "reason": "existing native service script and configuration closure", "expect": {"mode": 420, "uid": 0, "gid": 0}},
