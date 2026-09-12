@@ -2,6 +2,7 @@
 
 - **status**: draft
 - **createdAt**: 2026-09-12 20:43
+- **revisedAt**: 2026-09-12 20:50
 - **approvedAt**: (pending)
 - **relatedTask**: [20260912-2043-unify-board-behavior](../task/20260912-2043-unify-board-behavior.md)
 
@@ -92,29 +93,65 @@ advertised as ready. Reject truncated/corrupt inputs in verification.
 The common host-side delivery workflow decompresses before flashing or importing
 updates. The device continues to receive authenticated raw MOSUPD01 archives.
 Direct compressed device API ingestion and a new archive schema are outside this
-proposal. Preserve existing component signatures and verification order.
+proposal. Preserve the authenticated content boundaries and verification order;
+regenerate signatures with the selected profiles in phase 4.
 
 Verify: the same packaging and round-trip checks pass for all boards; the
 unwrapped update passes existing archive verification and device acceptance.
 
-### 4. Share signing policy without changing trust identities
+### 4. Share signing policy with explicit platform algorithm profiles
 
-Retain three independent domains under meta: boot RSA-2048 with X.509, verity
-RSA-2048 with X.509, and updates Ed25519. PEM is the private-key container format,
-not the algorithm. The updates public key remains the existing Base64 raw key.
+Keep three independent trust domains under meta. The target policy is:
 
-Reuse the existing one-command key initializer and consistency checks. Ensure
-all board paths enforce the same domain requirements, reject partial/mismatched
-sets and reuse valid keys. Do not regenerate current keys to implement this
-plan. Keep private material confined to initialization/signing operations;
-only required public anchors enter firmware/kernel build inputs.
+| Domain | Target algorithm | Selection rule |
+|---|---|---|
+| updates | ECDSA P-256 with SHA-256 | One shared profile across all boards |
+| boot | RSA-2048 with SHA-256 or ECDSA P-256 with SHA-256 | Select from verified firmware, signing-tool and boot-backend support |
+| verity | RSA-2048 with SHA-256 or ECDSA P-256 with SHA-256 | Select from verified kernel X.509/PKCS#7 support |
 
-UEFI and FIT retain their respective signature backends. Changing boot or kernel
-PKCS#7 verification to Ed25519 requires a separate trust-chain project and is
-not implied by uniform board behavior.
+Prefer ECDSA for boot/verity where the complete verification chain is proven;
+use RSA where the target requires it. Compatibility here means the current
+platform's verification capabilities, not support for old images or keys.
+Resolve one explicit algorithm per domain in each board's build profile. Do not
+silently downgrade after a signing or verification failure. Do not require every
+device to trust both algorithms. Record the selected algorithm and public-key
+fingerprint in build/signing receipts; verifiers enforce that profile rather
+than accepting an algorithm chosen by an untrusted payload.
 
-Verify: valid-set reuse is idempotent; missing/mismatched keys fail; signed
-artifacts verify against the expected public anchors and altered payloads fail.
+Replace Ed25519 in the update key initializer, signer, verifier and contract tests.
+Use PKCS#8 PEM private keys and a single documented public-key representation
+(SPKI PEM) for updates. Specify update signatures as fixed-width 64-byte P-256
+r || s values, with each integer encoded as 32-byte big-endian, and SHA-256 over
+the existing authenticated message bytes. Use a maintained cryptographic library
+for signing and verification; do not implement nonce generation or curve math.
+Check all manifest/archive signature and key-size assumptions. Boot and verity
+retain their backend-required X.509 and signature encodings; the update encoding
+does not replace FIT, Authenticode or CMS encoding.
+
+Extend the existing one-command key initializer to detect the selected profiles,
+create missing fresh sets and reuse valid matching keys idempotently. Keep RSA
+and ECDSA material separate when different board profiles require both, with an
+explicit domain/algorithm lookup under meta. Never share private keys across
+boot, verity and updates. Reject partial sets, wrong curves and mismatched
+certificates. Existing Ed25519 update keys must be explicitly replaced during
+implementation; report new public fingerprints and rebuild all affected signed
+artifacts and embedded trust anchors. Do not silently overwrite existing keys
+or convert their identity by changing a filename. No dual Ed25519/ECDSA update
+verification or old-image migration path is required.
+
+UEFI and FIT retain their respective signature backends. Prove ECDSA against the
+actual pinned UEFI firmware/tooling, both vendor U-Boot trees and kernel configs
+before selecting it for a board. An upstream capability alone is insufficient.
+Keep private material confined to initialization/signing operations; only required
+public anchors enter firmware/kernel build inputs.
+
+Verify: both supported boot/verity profiles have focused signing and rejection
+checks; each board passes its selected profile through the actual boot and
+verity path. Updates pass a cross-board ECDSA sign/verify contract with fixed
+fixtures, followed by full-image update/rollback acceptance. Reject malformed
+signatures, wrong keys/curves/profiles, Ed25519 update inputs and altered payloads.
+Key initialization must prove matching-set reuse and clear failure on a conflicting
+existing set. Physical results remain pending until actually executed.
 
 ### 5. Unify execution and acceptance
 
@@ -152,7 +189,8 @@ its tested image and device. No legacy image compatibility matrix is added.
 ## Scope
 
 Expected changes are limited to kernel configs/export targets, shared boot and
-release scripts, existing build entry wiring, focused contract tests and the
+release scripts, key initialization, update signing/verification and public-key
+loading, existing build entry wiring, focused contract tests and the
 corresponding task/plan records. Implement in phases 1–5 after review; qualify
 x64 before expanding to ARM64. Reuse completed work rather than rebuild unrelated
 packages. This document authorizes no implementation by its draft status.
@@ -170,6 +208,9 @@ renaming, and additional rootfs feature removal.
   watchdog and memory limits before qualification.
 - Shared scripts can hide hardware differences. Keep explicit capability inputs
   and test both UEFI and FIT backends.
+- Algorithm changes replace trust identities and invalidate previous signatures.
+  Rebuild affected firmware, kernels and releases together; test only complete
+  current images and reject stale profile/key receipts.
 - Existing outputs can be stale relative to main. Receipt matching, full-image
   acceptance and digest-linked evidence are required for every changed release.
 
@@ -182,7 +223,10 @@ backend-specific implementations is the proposed boundary.
 
 ## Annotations
 
-The user requested a written plan after discussing unified board behavior.
+The user requested a written plan after discussing unified board behavior, then
+approved revising its algorithm policy: updates use ECDSA P-256/SHA-256; boot
+and verity allow RSA or ECDSA according to target-platform support. This replaces
+the original proposal to retain RSA/RSA/Ed25519 and all existing identities.
 This is a reviewable draft; no compression, trust or build behavior has been
 changed by writing it. Existing build authorization and local-commit permission
 remain separate from approval of this new cross-board implementation proposal.

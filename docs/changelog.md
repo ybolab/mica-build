@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-09-12 20:50 [decision]
+
+Revised `20260912-2043-unify-board-behavior` at the user's direction: updates
+will use ECDSA P-256/SHA-256; boot and verity may use RSA or ECDSA according to
+verified target-platform support. This supersedes the original fixed
+RSA/RSA/Ed25519 proposal and its blanket preservation of current identities.
+The plan now covers explicit key replacement, update signature/public-key
+encoding, profile enforcement and rejection tests. No legacy compatibility or
+silent algorithm fallback is planned. This revision changes documentation only.
+
 ## 2026-09-12 20:43 [decision]
 
 Added draft plan and task `20260912-2043-unify-board-behavior` for shared board
