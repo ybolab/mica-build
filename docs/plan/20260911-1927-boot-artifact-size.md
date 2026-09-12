@@ -2,8 +2,8 @@
 
 - **status**: in_progress
 - **createdAt**: 2026-09-11 19:27
-- **revisedAt**: 2026-09-12 00:21
-- **reviewStatus**: exact consumer/input extension approved; changed producers and final acceptance pending
+- **revisedAt**: 2026-09-12 02:57
+- **reviewStatus**: 438 producers complete; final combined consumer review and system/hardware acceptance pending
 - **approvedAt**: 2026-09-11 (explicit worker #347 dispatch)
 - **relatedTask**: [20260911-1925-boot-artifact-size](../task/20260911-1925-boot-artifact-size.md)
 
@@ -647,3 +647,21 @@ unchanged. All source containers are terminal and removed. The final committed
 source is used for two-clean-copy canonical admission in
 `consumer/mask-final-handoff`; independent B review, final signed-system and
 physical CX evidence remain open. No successful producer was replayed.
+
+### Final operator overlap and combined consumer handoff
+
+The exact reviewed `70a7a408` to `66385757` two-path overlap is applied without
+importing B/B7 history. Both declaration/test blobs equal the reviewed source;
+Docker, operator/service/quota resources and native rc links preserve the four
+masks and existing refusal policy. The three successful 438 producer receipts
+remain immutable. No producer inputs, source-role allowances, capture policy,
+selector or trust inputs changed for this integration.
+
+Two clean copies of the final consumer commit generate canonical startup joins
+from the actual 438 witnesses and 14 original-J plus one 438 deploy archives.
+Final source/context, capture and release admission evidence is bound separately
+from the reused B7 full-compose and 70a7 direct-test results at
+`_out/boot-size/consumer/operator-final-handoff/delivery.json`. Reused fb6 capture
+is never a 438 root qualification. B independent review and its existing-owner
+combined x64 acceptance batch remain pending, as do mandatory physical CX inputs
+and the post-approved-main consolidated ARM obligation. Status stays in progress.
