@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-09-12 20:43 [decision]
+
+Added draft plan and task `20260912-2043-unify-board-behavior` for shared board
+compression, zstd delivery, signing-role checks and lifecycle acceptance. The
+proposal preserves UEFI/FIT backends and current trust identities, requires an
+ARM64 EFI zboot proof, and keeps physical acceptance distinct from build results.
+No implementation is approved or performed by this documentation change.
+
 ## 2026-09-12 14:31 [progress]
 
 On `git.ds.cc`, renamed repository `ybolab/mos` to `ybolab/mica-build` and

@@ -89,3 +89,4 @@ thing about the tree. Both indexes now say the same thing.
 - [x] [**20260912-1329-arm64-board-builds ARM64, CX3576 and S905X5M builds**](20260912-1329-arm64-board-builds.md) `P1`
 - [x] [**20260912-1341-prune-settled-records Prune the settled plan and task records**](20260912-1341-prune-settled-records.md) `P2`
 - [-] [**20260912-1347-root-closure-reduction Reduce the read-only root closure**](20260912-1347-root-closure-reduction.md) `P2`
+- [-] [**20260912-2043-unify-board-behavior Unify board build, compression and acceptance behavior**](20260912-2043-unify-board-behavior.md) `P1`
