@@ -20,8 +20,8 @@ No compatibility or migration paths are required.
 
 ## ActiveForm
 
-Combined-source boot-native outputs and direct static/refusal proofs are ready for B
-review. Successor consumer join and full-system/physical acceptance remain pending.
+Implement the approved exact 438 consumer join and run the authorized serial deploy
+and x64 boot-tools producers; retain completed boot-native outputs and evidence.
 
 ## Dependencies
 
@@ -557,3 +557,60 @@ control. Broad ARM acceptance remains deferred until approved main integration.
   failed with `Received function did not throw`; the validator now uses the
   witnessed reader limit. Its focused GREEN and final typecheck are retained
   separately, without rerunning unchanged suites.
+
+### 2026-09-12: exact input and producer execution continuation
+
+B/L1 approved the fixed Makefile existence-only read proof, all 15 full maps with
+four explicitly unselected ARM producer maps, and the dedicated pinned BuildKit
+execution mechanics. These resolve the previous checkpoint's concrete input and
+resource questions. The producer checkout remains exact 438c9551; consumer source
+remains separate at 70c992c2. Deploy PREPARE must terminate before the private
+BuildKit daemon starts. The serial 4 CPU / 10 GiB / cpuset 4-7 envelope replaces
+the released source-gate allocation. No native replay or B7 mutation is planned.
+
+### 2026-09-12 00:21: fixed input proof and preserved deploy boundary failure
+
+- Actual deploy PREPARE ran once from clean 438c9551 and exited 0 at
+  00:06:48.571688832Z. Container `7dfecb6f427a31c005106eb09c5fe1676d6acc3f9038c6ce3500e3ac23b209e6`
+  used 4 CPU / 10 GiB / equal swap / cpuset 4-7. The staged `mos-deploy` is
+  2,632,224 bytes, SHA256 `411419421b364a27fe466ba1b0f509ee2f054a502493d6f474f1a8f4fff2855d`.
+  Prepare-only terminal receipt is 22,317 bytes, SHA256
+  `11dbe5aee5a0d6063e7eb963f1509b5e86a6d878735afb7bdaa5d7c43477d7ec`.
+  This is no deploy archive qualification and no second boot-native build.
+- The package wrapper exited 1 before packing. Pinned private BuildKit started
+  as `f97652ea80d48891db7d52eafebaf3e61ee066b853f3484cf293e8caab8187e4`,
+  PID 2344641, at 00:06:54.892734484Z. Its actual worker report included
+  `linux/amd64,linux/amd64/v2,linux/amd64/v3,linux/amd64/v4`; the local adapter
+  incorrectly required a lone `linux/amd64` and refused before cgroup/client
+  acceptance. The daemon was stopped and removed. Its labelled private volume
+  is retained. No ARM platform was reported, but no isolation PASS is claimed.
+  Original logs, create/start/stop events and failure are immutable under
+  `_out/boot-size/combined-producers-438c9551ec751fcb346881541752a7596f10cb15/metadata/`.
+- Implemented the fixed five-reader/Makefile contract and both reviewed source
+  delta legs. The complete actual input proof is 591,271 bytes, SHA256
+  `93902df4c3351b3d3e2c3ca3977f6b4bbd07fb2361c2f0aedc1f0c1c3d1b87ba`;
+  full maps retain their different Makefile identities. Four ARM producers are
+  explicitly unselected and unqualified, with no attributed reused source.
+  No producer or Makefile source was changed.
+- Focused Python source checks: original missing-contract RED (3 errors), one
+  local editor syntax failure retained, then 4 passing tests with input, mode,
+  membership, source and delta-leg mutations. These were ordinary bounded host
+  checks (taskset 4-5, 60-second TERM/30-second kill), not guest/container claims.
+  The new Bun complete-input case has an original missing-export RED, then
+  1 passing test / 15 assertions and typecheck PASS in the pinned source image.
+  Its terminal container `86aa31d648357c7a4547c44854484a81e3763833e87dd5cd4761124607e219ba`
+  ran 00:18:28.695298346Z through 00:18:32.91490337Z, exited 0 and was removed;
+  limits were 2 CPU / 4 GiB / equal swap / cpuset 4-5 / network none. No own
+  consuming container remains. No unchanged native/guest/root suite was rerun.
+- A private mechanical comparison against immutable B7 fbd70048 preserves its
+  named 4716 role, output witness and downgrade guards. It is not applied to
+  this branch or B7. The exact legacy BusyBox witness remains limited to the
+  old native role; new compressed startup keeps its own source argument.
+- PMA-CR inspected these input-contract helpers and direct tests: no introduced
+  high-confidence finding in the implemented portion. Full new join creation
+  and admission are still unfinished; the helpers deliberately do not authorize
+  missing deploy/tool receipts. Next: B disposition of the one recorded daemon
+  parser failure, a packaging-only continuation using the preserved PREPARE
+  stage, then one x64 boot-tools producer and exact receipt/consumer binding.
+  Keep task/plan in progress and handoff in review. Full system, physical CX
+  and consolidated post-approved-main ARM acceptance remain pending.

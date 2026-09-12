@@ -66,6 +66,77 @@ STARTUP_NATIVE_DELIVERY_SHA = '259d757fbdaeaa12892631e4ea129cdd433a97876d0f48251
 STARTUP_NATIVE_INPUTS_SHA = '339d8f39a461d7e7eafe36c503c88cc7a112a2ad90b9ff4ddad444c0757c5563'
 STARTUP_RUST_IMAGE = 'sha256:b13d4a7b877c9d6dd9a2766c4e80f1fd020218715d62877c69ce0dc2abe4fc12'
 
+STARTUP_MAKEFILES = [
+    {
+        "mode": "100644",
+        "blob": "5fb43c335c3f8e24ce82597b49d438459f56a6fe",
+        "bytes": 39434,
+        "sha256": "f440a7a20c7d39a46df0fb3c409c88d50a7c6dd0b8185849496445e53834e0a3"
+    },
+    {
+        "mode": "100644",
+        "blob": "06da98d9de28133551fdfea3910e1ae860813205",
+        "bytes": 39362,
+        "sha256": "26ed43862da727d20b53a06b74bcc2d7a696a98da461d726c53b6944b6dd634a"
+    }
+]
+STARTUP_READERS = {
+    "build-env/deb/version.sh": {
+        "mode": "100755",
+        "blob": "e676e83ba40a552ecc4ae93e45b35140abfbf20c",
+        "bytes": 4812,
+        "sha256": "ca3e3d5b7f6b9d72dae7333dc29bbff1b573ad30b353e51cb676b9c2fee7f6db"
+    },
+    "build-env/deb/build.sh": {
+        "mode": "100755",
+        "blob": "f221ca46cf18551891bf365d23833f532ba5fdc7",
+        "bytes": 26731,
+        "sha256": "1bc39b97754757c29c13625e950e1b901dfe1546b61ac650ec3a635e16dd0b2a"
+    },
+    "build-env/deb/producers.sh": {
+        "mode": "100755",
+        "blob": "03684ed8da64faa91ea694a4ea093980ef93f98d",
+        "bytes": 8743,
+        "sha256": "6b4642d684eef0a05396615ca6e65e3bcbe83f0a0b416634dadedbc8350929cd"
+    },
+    "build-env/deb/preflight.sh": {
+        "mode": "100755",
+        "blob": "743336750d8991073d3129bf36a3fefba79a10dc",
+        "bytes": 19575,
+        "sha256": "348cda189ee36744501e41474b44aa71c3e3ecec1d197c6988d2ba060902135e"
+    },
+    "build-env/deb/repo.sh": {
+        "mode": "100755",
+        "blob": "a068a6d6a59afe1a2081b884a47e6ab54e781422",
+        "bytes": 7659,
+        "sha256": "257e92df4f3a5d18d7f96ca4073edf30d2751800f2c18cbb10cd8ea8a556fa82"
+    }
+}
+STARTUP_DELTA_SHA = 'b111da81645b0fd91697e18ef464635a7a5cd7c814ed84ba02cabd3a75efca88'
+STARTUP_MAP_SHAS = ['f1e66da94af5fa2bf0a081cbf30d9d709962f6a005a143777980035d93074742',
+                    '2652c6a3d2bc50e6282ef99808fbeb9c12f87ff48c2930eec6c4e5fff2d678ee']
+STARTUP_SELECTED = frozenset(["board-x64","deploy","mosd","mqtt","podman","bluetooth","busybox","ca-trust","profile","system","wifi"])
+STARTUP_PACKAGES = frozenset(["mos-apid","mos-bluetooth","mos-board-x64","mos-busybox","mos-ca-trust","mos-deploy","mos-mqtt-broker","mos-mqttd","mos-podman","mos-profile-dev","mos-profile-prod","mos-system","mos-wifi","mos-wifi-ap","mosd"])
+STARTUP_UNSELECTED = {
+    "board-cx3576": [
+        "mos-board-cx3576"
+    ],
+    "board-s905x5m": [
+        "mos-bm201-front-panel",
+        "mos-board-s905x5m",
+        "mos-s905x5m-wifi",
+        "mos-s905x5m-wireless"
+    ],
+    "s905x5m-bluetooth": [
+        "mos-s905x5m-bluetooth"
+    ],
+    "board-virt-arm64": [
+        "mos-board-virt-arm64"
+    ]
+}
+STARTUP_TRACKING = frozenset({'docs/task/20260911-1925-boot-artifact-size.md',
+                              'docs/plan/20260911-1927-boot-artifact-size.md'})
+
 
 def require(ok: bool, message: str) -> None:
     if not ok:
@@ -343,6 +414,90 @@ def producer_inputs(root: Path, entries: dict) -> dict:
                                 inputs=inputs, packages=re.findall(r'^PACKAGES="([^"\n]+)"$', text, re.M))
     require(len(result) == 15, 'reviewed producer set changed')
     return result
+
+
+def startup_input_contract(original_root: Path, rebuilt_root: Path, old_maps: dict,
+                           new_maps: dict, selected_packages: list) -> dict:
+    """One fixed x64 input-use proof; the full, differing maps remain intact."""
+    require(set(old_maps) == set(new_maps) == STARTUP_SELECTED | set(STARTUP_UNSELECTED), 'startup complete 15 producer maps')
+    require(selected_packages == sorted(STARTUP_PACKAGES), 'startup selected x64 package membership')
+
+    def regular(root: Path, name: str) -> tuple[bytes, dict]:
+        at = root / name
+        require(at.parent.resolve().is_relative_to(root.resolve()), 'startup input parent escapes source')
+        info = at.lstat()
+        require(stat.S_ISREG(info.st_mode) and not at.is_symlink(), 'startup regular input required: ' + name)
+        data = at.read_bytes()
+        return data, dict(mode='100755' if info.st_mode & 0o111 else '100644',
+                          blob=hashlib.sha1(b'blob ' + str(len(data)).encode() + b'\0' + data).hexdigest(),
+                          bytes=len(data), sha256=hashlib.sha256(data).hexdigest())
+
+    makefiles = []
+    for root, expected in zip((original_root, rebuilt_root), STARTUP_MAKEFILES):
+        data, binding = regular(root, 'Makefile')
+        require(binding == expected, 'startup exact Makefile type/mode/bytes')
+        makefiles.append(data)
+    removed = b'os-boot-busybox-package-test:\n\tbash tests/boot-busybox-package-test.sh\n\n'
+    require(makefiles[0].count(removed) == 1 and makefiles[0].replace(removed, b'', 1) == makefiles[1], 'startup exact Makefile deletion')
+    for name, expected in STARTUP_READERS.items():
+        require(regular(original_root, name)[1] == regular(rebuilt_root, name)[1] == expected,
+                'startup unchanged existence-only reader: ' + name)
+
+    proofs = {}
+    for name in sorted(old_maps):
+        old, new = old_maps[name], new_maps[name]
+        for value, makefile in ((old, STARTUP_MAKEFILES[0]), (new, STARTUP_MAKEFILES[1])):
+            keys(value, 'contexts prepare inputs packages')
+            require(value['inputs'].get('Makefile') == {k: makefile[k] for k in ('mode', 'blob')}, 'startup full Makefile input retained')
+            for reader, binding in STARTUP_READERS.items():
+                require(value['inputs'].get(reader) == {k: binding[k] for k in ('mode', 'blob')}, 'startup full reader input retained')
+            for consumer in JOIN_CONSUMERS | STARTUP_TRACKING:
+                require(consumer not in value['inputs'], 'startup consumer enters producer input')
+        require(all(old[k] == new[k] for k in ('contexts', 'prepare', 'packages')), 'startup declared context/PREPARE/membership changed')
+        differences = [p for p in sorted(set(old['inputs']) | set(new['inputs'])) if old['inputs'].get(p) != new['inputs'].get(p)]
+        if name in STARTUP_SELECTED - {'deploy'}:
+            require(differences == ['Makefile'], 'startup selected producer has another changed input')
+        if name in STARTUP_UNSELECTED:
+            declared = STARTUP_UNSELECTED[name]
+            require(len(new['packages']) == 1 and sorted(new['packages'][0].split()) == declared, 'startup unselected declared package membership')
+            envs = [p for p in old['inputs'] if p.endswith('/producer.env') and Path(p).parent.name == name]
+            require(len(envs) == 1, 'startup unique producer declaration')
+            for root, value in ((original_root, old), (rebuilt_root, new)):
+                data, binding = regular(root, envs[0])
+                require({k: binding[k] for k in ('mode', 'blob')} == value['inputs'][envs[0]], 'startup declaration bytes/mode')
+                require(re.findall(r'^ARCHES="([^"\n]*)"$', data.decode(), re.M) == ['arm64'], 'startup unselected ARCHES must remain arm64')
+            qualification, source = 'recorded-unselected-not-qualified', None
+        else:
+            qualification = 'rebuilt-selected' if name == 'deploy' else 'reused-selected-with-read-contract'
+            source = (STARTUP_REBUILT if name == 'deploy' else JOIN_ORIGINAL)['commit']
+        proofs[name] = dict(before=old, after=new, before_sha256=hashlib.sha256(canonical(old)).hexdigest(),
+                            after_sha256=hashlib.sha256(canonical(new)).hexdigest(), changed_paths=differences,
+                            qualification=qualification, source_commit=source)
+    # These anchors cover every primary/named/transitive input, including the
+    # recorded but unqualified U-Boot changes. No caller can omit a map.
+    require([hashlib.sha256(canonical(m)).hexdigest() for m in (old_maps, new_maps)] == STARTUP_MAP_SHAS,
+            'startup reviewed full input map identities')
+    return dict(schema='mos/startup-input-contract/v1', original_source=JOIN_ORIGINAL, rebuilt_source=STARTUP_REBUILT,
+                selected_packages=selected_packages, producers=proofs,
+                makefile_read_contract=dict(before=STARTUP_MAKEFILES[0], after=STARTUP_MAKEFILES[1],
+                    removed=removed.decode(), readers=STARTUP_READERS, use='existence-only'))
+
+
+def startup_join_delta(original_root: Path, rebuilt_root: Path, original: dict, rebuilt: dict,
+                       before: dict, after: dict, selected_packages: list) -> tuple[dict, dict]:
+    require(original == JOIN_ORIGINAL and rebuilt == STARTUP_REBUILT, 'unreviewed startup producer sources')
+    command(['git', '-C', str(rebuilt_root), 'merge-base', '--is-ancestor', JOIN_REBUILT['commit'], rebuilt['commit']])
+    command(['git', '-C', str(rebuilt_root), 'merge-base', '--is-ancestor', original['commit'], JOIN_REBUILT['commit']])
+    middle = tree(rebuilt_root, JOIN_REBUILT['commit'])
+    legs = []
+    for old, new, digest in ((before, middle, JOIN_DELTA_SHA), (middle, after, STARTUP_DELTA_SHA)):
+        changes = [dict(path=p, before=old.get(p), after=new.get(p))
+                   for p in sorted(old.keys() | new.keys()) if old.get(p) != new.get(p)]
+        require(hashlib.sha256(canonical(changes)).hexdigest() == digest, 'unreviewed startup producer delta leg')
+        legs.append(changes)
+    proof = startup_input_contract(original_root, rebuilt_root, producer_inputs(original_root, before),
+                                   producer_inputs(rebuilt_root, after), selected_packages)
+    return dict(original_to_shutdown=legs[0], shutdown_to_startup=legs[1]), proof
 
 
 def join_delta(original_root: Path, rebuilt_root: Path, original: dict, rebuilt: dict,

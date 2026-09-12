@@ -7,7 +7,7 @@ import { dirname, join } from 'node:path'
 import { Signer } from '../../shared/update-envelope.ts'
 import { canonicalJson, componentId } from './components.ts'
 import { packArchive } from './component-archive.ts'
-import { assembleRelease, gateRelease, verifyArchive, verifyJoinedNativePayload, type ReleaseInputs } from './release-manifest.ts'
+import { assembleRelease, gateRelease, validateStartupInputContract, verifyArchive, verifyJoinedNativePayload, type ReleaseInputs } from './release-manifest.ts'
 import { sourceIdentity } from './release-cli.ts'
 import { acceptProvenance } from '../../tests/file-ab-x64/provenance-acceptance.ts'
 import { Toolbox } from './toolbox.ts'
@@ -854,4 +854,30 @@ test('startup joined refusal includes virtual-only overlaps and unrecognized arc
 test('startup joined config size cannot exceed the witnessed init reader budget', () => {
   const f = startupJoinedUki('config-oversized')
   expect(() => verifyJoinedNativePayload(f.boot, f.expected, STARTUP_SOURCE)).toThrow('boot config size')
+})
+
+
+test.skipIf(!process.env.MOS_TEST_STARTUP_INPUT_CONTRACT)('startup joined complete input contract binds selected packages and rejects mutations', () => {
+  const proof = JSON.parse(readFileSync(process.env.MOS_TEST_STARTUP_INPUT_CONTRACT!, 'utf8'))
+  const selected = proof.selected_packages as string[]
+  expect(validateStartupInputContract(proof, selected)).toEqual(proof)
+  const mutations: Record<string, (v: typeof proof) => void> = {
+    'reader': v => { v.makefile_read_contract.readers['build-env/deb/build.sh'].sha256 = '0'.repeat(64) },
+    'makefile': v => { v.makefile_read_contract.after.sha256 = '0'.repeat(64) },
+    'missing-map': v => { delete v.producers['board-virt-arm64'] },
+    'extra-map': v => { v.producers.extra = v.producers.wifi },
+    'prepare': v => { v.producers.mosd.after.prepare = ['other.sh'] },
+    'selected-input': v => { v.producers.wifi.after.inputs.Makefile.blob = '0'.repeat(40) },
+    'arm-qualified': v => { v.producers['board-cx3576'].qualification = 'reused-selected-with-read-contract' },
+    'false-source': v => { v.producers['board-cx3576'].source_commit = v.original_source.commit },
+    'arm-membership': v => { v.producers['board-cx3576'].after.packages = ['mos-other'] },
+    'source': v => { v.rebuilt_source.epoch++ },
+  }
+  for (const mutate of Object.values(mutations)) {
+    const changed = structuredClone(proof); mutate(changed)
+    expect(() => validateStartupInputContract(changed, selected)).toThrow('startup reviewed complete input contract')
+  }
+  for (const names of [[...selected, 'mos-board-cx3576'], [...selected, 'mosd'], selected.slice(1)]) {
+    expect(() => validateStartupInputContract(proof, names)).toThrow('startup selected x64 package membership')
+  }
 })

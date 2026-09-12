@@ -547,3 +547,132 @@ class SourceLineageTest(unittest.TestCase):
         r = self.invoke(); self.assertNotEqual(r.returncode, 0); self.assertIn('type/mode', r.stderr)
         path.unlink(); self.commit(self.composition)
         r = self.invoke(); self.assertNotEqual(r.returncode, 0); self.assertIn('deletion/type/mode', r.stderr)
+
+class StartupInputContractTest(unittest.TestCase):
+    """Direct fixed-contract failures; real source identities have a separate gate."""
+
+    def setUp(self):
+        from unittest.mock import patch
+        spec = importlib.util.spec_from_file_location('startup_inputs', HELPER)
+        self.h = importlib.util.module_from_spec(spec); spec.loader.exec_module(self.h)
+        self.temp = tempfile.TemporaryDirectory(); self.addCleanup(self.temp.cleanup)
+        self.old, self.new = (Path(self.temp.name) / n for n in ('old', 'new'))
+        self.old.mkdir(); self.new.mkdir()
+        self.removed = b'os-boot-busybox-package-test:\n\tbash tests/boot-busybox-package-test.sh\n\n'
+        self.before = b'# fixture\n' + self.removed
+        self.after = b'# fixture\n'
+        self.hash = lambda v: hashlib.sha256(v).hexdigest()
+        self.binding = lambda b, mode='100644': dict(mode=mode, blob=hashlib.sha1(b'blob ' + str(len(b)).encode() + b'\0' + b).hexdigest(), bytes=len(b), sha256=self.hash(b))
+        readers = {}
+        for path in ('version.sh', 'build.sh', 'producers.sh', 'preflight.sh', 'repo.sh'):
+            name = 'build-env/deb/' + path
+            content = b'for p in "${REPO_ROOT}/Makefile"; do [ -e "$p" ] || exit 1; done\n'
+            readers[name] = self.binding(content, '100755')
+            for root in (self.old, self.new):
+                at = root / name; at.parent.mkdir(parents=True, exist_ok=True); at.write_bytes(content); at.chmod(0o755)
+        (self.old / 'Makefile').write_bytes(self.before); (self.new / 'Makefile').write_bytes(self.after)
+        selected = {'board-x64': ['mos-board-x64'], 'deploy': ['mos-deploy'], 'mosd': ['mosd', 'mos-apid'],
+                    'mqtt': ['mos-mqttd', 'mos-mqtt-broker'], 'podman': ['mos-podman'], 'bluetooth': ['mos-bluetooth'],
+                    'busybox': ['mos-busybox'], 'ca-trust': ['mos-ca-trust'], 'profile': ['mos-profile-dev', 'mos-profile-prod'],
+                    'system': ['mos-system'], 'wifi': ['mos-wifi', 'mos-wifi-ap']}
+        unselected = {'board-cx3576': ['mos-board-cx3576'], 'board-s905x5m': ['mos-bm201-front-panel', 'mos-board-s905x5m', 'mos-s905x5m-wifi', 'mos-s905x5m-wireless'],
+                      's905x5m-bluetooth': ['mos-s905x5m-bluetooth'], 'board-virt-arm64': ['mos-board-virt-arm64']}
+        self.packages = sorted(p for ps in selected.values() for p in ps)
+        self.maps = []
+        for root, makefile in ((self.old, self.before), (self.new, self.after)):
+            maps = {}
+            for name, packages in (selected | unselected).items():
+                env = 'fixtures/' + name + '/producer.env'
+                content = ('ARCHES="' + ('arm64' if name in unselected else 'amd64') + '"\nPACKAGES="' + ' '.join(packages) + '"\n').encode()
+                at = root / env; at.parent.mkdir(parents=True, exist_ok=True); at.write_bytes(content)
+                entries = {'Makefile': {k: self.binding(makefile)[k] for k in ('mode', 'blob')}, env: {k: self.binding(content)[k] for k in ('mode', 'blob')}}
+                entries.update({p: {k: v[k] for k in ('mode', 'blob')} for p, v in readers.items()})
+                maps[name] = dict(contexts=['Makefile', 'build-env', 'fixtures/' + name], prepare=[], packages=[' '.join(packages)], inputs=entries)
+            self.maps.append(maps)
+        self.policy = patch.multiple(self.h, STARTUP_MAKEFILES=[self.binding(self.before), self.binding(self.after)], STARTUP_READERS=readers,
+                                     STARTUP_MAP_SHAS=[self.hash(self.h.canonical(v)) for v in self.maps])
+        self.policy.start(); self.addCleanup(self.policy.stop)
+
+    def invoke(self):
+        return self.h.startup_input_contract(self.old, self.new, *self.maps, self.packages)
+
+    def test_complete_maps_keep_makefile_hashes_and_unselected_attribution(self):
+        proof = self.invoke()
+        self.assertEqual(len(proof['producers']), 15)
+        self.assertEqual(proof['selected_packages'], self.packages)
+        for name, row in proof['producers'].items():
+            self.assertEqual(row['before'], self.maps[0][name])
+            self.assertEqual(row['after'], self.maps[1][name])
+            self.assertNotEqual(row['before_sha256'], row['after_sha256'])
+            if name.startswith('board-') and name != 'board-x64' or name == 's905x5m-bluetooth':
+                self.assertEqual(row['qualification'], 'recorded-unselected-not-qualified')
+                self.assertIsNone(row['source_commit'])
+
+    def test_makefile_and_reader_refusals(self):
+        for change in ('extra-hunk', 'mode', 'missing', 'symlink', 'reader-content', 'reader-mode'):
+            with self.subTest(change=change):
+                at = self.new / ('build-env/deb/build.sh' if change.startswith('reader') else 'Makefile')
+                content, mode = at.read_bytes(), at.stat().st_mode & 0o777
+                try:
+                    if change in ('extra-hunk', 'reader-content'): at.write_bytes(content + b'# changed\n')
+                    elif change in ('mode', 'reader-mode'): at.chmod(0o644 if change.startswith('reader') else 0o755)
+                    elif change == 'missing': at.unlink()
+                    else:
+                        at.unlink(); at.symlink_to(self.old / 'Makefile')
+                    with self.assertRaises((ValueError, OSError)): self.invoke()
+                finally:
+                    if at.is_symlink(): at.unlink()
+                    at.write_bytes(content); at.chmod(mode)
+
+    def test_map_context_prepare_selection_and_declaration_refusals(self):
+        import copy
+        changes = {
+            'selected-input': lambda m: m['wifi']['inputs'].__setitem__('other', dict(mode='100644', blob='a' * 40)),
+            'reader-map': lambda m: m['mosd']['inputs']['build-env/deb/build.sh'].__setitem__('blob', 'b' * 40),
+            'prepare': lambda m: m['mosd'].__setitem__('prepare', ['different.sh']),
+            'context': lambda m: m['wifi']['contexts'].append('other'),
+            'missing-map': lambda m: m.pop('board-virt-arm64'),
+            'extra-map': lambda m: m.__setitem__('extra', copy.deepcopy(m['wifi'])),
+            'arm-membership': lambda m: m['board-cx3576'].__setitem__('packages', ['mos-other']),
+            'missing-makefile': lambda m: m['wifi']['inputs'].pop('Makefile'),
+        }
+        original = copy.deepcopy(self.maps[1])
+        for name, mutate in changes.items():
+            with self.subTest(change=name):
+                self.maps[1] = copy.deepcopy(original); mutate(self.maps[1])
+                with self.assertRaises(ValueError): self.invoke()
+        self.maps[1] = original
+        for change in ('arm-selected', 'duplicate-selected', 'missing-selected', 'changed-arches'):
+            with self.subTest(change=change):
+                packages = self.packages[:]; env = self.new / 'fixtures/board-cx3576/producer.env'; content = env.read_bytes()
+                try:
+                    if change == 'arm-selected': self.packages.append('mos-board-cx3576')
+                    elif change == 'duplicate-selected': self.packages.append('mosd')
+                    elif change == 'missing-selected': self.packages.pop()
+                    else: env.write_bytes(content.replace(b'arm64', b'amd64'))
+                    with self.assertRaises(ValueError): self.invoke()
+                finally: self.packages = packages; env.write_bytes(content)
+
+    def test_startup_sources_and_each_reviewed_delta_leg_are_fixed(self):
+        from unittest.mock import patch
+        h = self.h
+        before = {'fixture': dict(mode='100644', blob='1' * 40)}
+        middle = {'fixture': dict(mode='100644', blob='2' * 40)}
+        after = {'fixture': dict(mode='100644', blob='3' * 40)}
+        leg = lambda a, b: [dict(path='fixture', before=a['fixture'], after=b['fixture'])]
+        with patch.object(h, 'command', return_value=b''), patch.object(h, 'tree', return_value=middle), \
+             patch.object(h, 'producer_inputs', side_effect=lambda root, entries: self.maps[root == self.new]), \
+             patch.multiple(h, JOIN_DELTA_SHA=self.hash(h.canonical(leg(before, middle))),
+                            STARTUP_DELTA_SHA=self.hash(h.canonical(leg(middle, after)))):
+            delta, proof = h.startup_join_delta(self.old, self.new, h.JOIN_ORIGINAL, h.STARTUP_REBUILT, before, after, self.packages)
+            self.assertEqual(set(delta), {'original_to_shutdown', 'shutdown_to_startup'})
+            self.assertEqual(proof['selected_packages'], self.packages)
+            for change in ('original-source', 'rebuilt-source', 'first-leg', 'second-leg'):
+                with self.subTest(change=change):
+                    original, rebuilt = dict(h.JOIN_ORIGINAL), dict(h.STARTUP_REBUILT)
+                    first, last = dict(before), dict(after)
+                    if change == 'original-source': original['epoch'] += 1
+                    elif change == 'rebuilt-source': rebuilt['commit'] = h.JOIN_REBUILT['commit']
+                    elif change == 'first-leg': first['extra'] = dict(mode='100644', blob='4' * 40)
+                    else: last['extra'] = dict(mode='100644', blob='4' * 40)
+                    with self.assertRaises(ValueError): h.startup_join_delta(self.old, self.new, original, rebuilt, first, last, self.packages)

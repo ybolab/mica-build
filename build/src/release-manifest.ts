@@ -238,6 +238,15 @@ const STARTUP_NATIVE = {
 }
 const JOIN_CONSUMERS = new Set(['rootfs/runtime/source-lineage.py', 'rootfs/build.sh', 'build/src/release-manifest.ts', 'tests/deb-package-gate.sh', 'tests/rootfs-runtime/source_lineage_test.py', 'tests/rootfs-runtime/composition_test.py', 'build/src/release-manifest.test.ts', 'docs/task/20260911-0145-b7-fresh-lifecycle-acceptance.md', 'docs/plan/20260911-0145-b7-fresh-lifecycle-acceptance.md'])
 const canonicalSha = (value: unknown) => createHash('sha256').update(canonicalJson(value) + '\n').digest('hex')
+// The fixed proof retains all 15 complete maps, including unqualified ARM maps.
+// Its hash is independent of the later deploy and boot-tools output witnesses.
+export function validateStartupInputContract(value: unknown, selectedPackages: string[]) {
+  const proof = object(value, ['schema', 'original_source', 'rebuilt_source', 'selected_packages', 'producers', 'makefile_read_contract'])
+  same(canonicalSha(proof), '93902df4c3351b3d3e2c3ca3977f6b4bbd07fb2361c2f0aedc1f0c1c3d1b87ba', 'startup reviewed complete input contract')
+  same([...selectedPackages].sort(), proof.selected_packages, 'startup selected x64 package membership')
+  return proof
+}
+
 function producerJoin(value: unknown, packages: Record<string, unknown>[], source: unknown, arch: string) {
   const j = object(value, ['schema', 'rebuilt_source', 'approved_delta', 'producer_inputs', 'original_pool', 'witnesses', 'mapping', 'native', 'production'])
   requireValue(j.schema === 'mos/producer-join/v1' && arch === 'amd64', 'producer join schema/architecture')

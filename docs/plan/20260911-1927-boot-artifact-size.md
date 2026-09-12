@@ -2,8 +2,8 @@
 
 - **status**: in_progress
 - **createdAt**: 2026-09-11 19:27
-- **revisedAt**: 2026-09-11 23:07
-- **reviewStatus**: combined native witness ready for B; full-system/physical acceptance pending
+- **revisedAt**: 2026-09-12 00:21
+- **reviewStatus**: exact consumer/input extension approved; changed producers and final acceptance pending
 - **approvedAt**: 2026-09-11 (explicit worker #347 dispatch)
 - **relatedTask**: [20260911-1925-boot-artifact-size](../task/20260911-1925-boot-artifact-size.md)
 
@@ -573,3 +573,36 @@ retained. Exact producer checkout/commands are ready for B scheduling. Source
 fixture resources are terminal and released; no second native, independent
 root/image or ARM production occurred. This is a review checkpoint within the
 active plan, not completion or full-system/hardware acceptance.
+
+### 2026-09-12: successor input contract approved
+
+Implement L1-438-MAKEFILE-MEMBERSHIP-20260911-2336 within the existing joined
+source blocks, retaining complete differing input maps and the exact five-reader
+proof. The four named ARM maps remain recorded but unselected and unqualified.
+B-347-BUILDKIT-EXECUTION-20260911-2348 authorizes the private pinned daemon only,
+after deploy PREPARE cleanup, followed by one x64 boot-tools build. Successful
+438 boot-native outputs are reused unchanged. Full signed-system and physical CX
+acceptance remain pending.
+
+### 2026-09-12 00:21: exact input contract checkpoint
+
+The J-to-438 proof now retains all 15 full maps, the exact 72-byte Makefile
+deletion and five unchanged readers, both reviewed Git delta legs, the exact
+15 selected package names and four explicitly unqualified ARM maps. Actual
+clean-source canonical proof SHA256 is
+`93902df4c3351b3d3e2c3ca3977f6b4bbd07fb2361c2f0aedc1f0c1c3d1b87ba`.
+Direct Python contract/mutation tests and the single Bun complete-input case
+plus typecheck pass; original REDs and the editor syntax failure are retained.
+These helpers are prepared for the pending complete consumer join, without
+admitting missing or failed output witnesses.
+
+Changed deploy compilation succeeded once (2,632,224-byte staged binary,
+SHA256 `411419421b364a27fe466ba1b0f509ee2f054a502493d6f474f1a8f4fff2855d`).
+Packaging did not start: the private daemon adapter rejected the native x64
+ISA variant list returned by pinned BuildKit. The original package invocation
+failed, its daemon was stopped/removed, and the successful compile is preserved.
+B has the exact packaging-only continuation proposal; no PREPARE or boot-native
+retry, extra resource allocation, shared builder change or source relabeling
+is implied. The subsequent x64 boot-tools output and full consumer receipt
+binding remain necessary. Physical CX and final signed-system acceptance are
+still pending.
