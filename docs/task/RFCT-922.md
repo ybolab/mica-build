@@ -1,8 +1,8 @@
 # RFCT-922 Exercise s905x5m Bluetooth pairing and a profile with a controlled peer
 
-- **status**: in_progress
+- **status**: pending
 - **priority**: P1
-- **owner**: hardware/bluetooth-peer-validation-20260831
+- **owner**: (unassigned)
 - **createdAt**: 2026-08-31 07:17 UTC
 - **plan**: PLAN-912
 
@@ -15,18 +15,23 @@ when an owner-supplied controlled peer is in radio range and pairable, pair it
 and exercise one explicit Bluetooth profile exchange. Record the peer role,
 profile, commands, outcome, and any persisted pairing state.
 
+The obligation remains open, but acceptance must start from a fresh complete
+current signed-file S905X5M image. The 2026-08-31 board and slot observations
+below remain historical evidence and do not qualify the current image.
+
 An empty discovery result is not evidence of pairing and must be recorded only
 as a scan result. Do not deploy a slot, reboot the board, write eMMC or its
 boot areas, or write `bootloader_a`.
 
 ## ActiveForm
 
-Collecting board-alone Bluetooth evidence and preparing controlled-peer pairing.
+Awaiting a current-image hardware owner and controlled BLE GATT peer.
 
 ## Dependencies
 
-- **blocked by**: an owner-supplied Bluetooth peer in radio range, placed in a
-  known pairable state, with its pairing method and a profile test available
+- **blocked by**: assignment of a current-image hardware owner and an
+  owner-supplied Bluetooth peer in radio range, placed in a known pairable
+  state, with its pairing method and a profile test available
 - **blocks**: completion of the Bluetooth peer-interaction follow-up from
   RFCT-913
 
@@ -175,3 +180,5 @@ advertisement is outside this task's pairing scope.
   that is advertising and pairable, with its address, pairing method, service
   UUID, readable/writable characteristic UUID, and expected values supplied by
   the owner. Pairing/profile execution still awaits explicit approval.
+
+- unclaim: The controlled-peer hardware obligation remains open, but the historical execution owner is no longer active.

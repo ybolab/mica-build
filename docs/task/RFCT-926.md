@@ -1,6 +1,6 @@
 # RFCT-926 Adopt per-board `SYS_BOOTM_LEN` derivations
 
-- **status**: in_progress
+- **status**: closed
 - **priority**: P1
 - **owner**: section-5-bootm-derivation
 - **createdAt**: 2026-08-31 08:40 UTC
@@ -35,12 +35,12 @@ its boot areas, write `bootloader_a`, or push this repository.
 
 ## ActiveForm
 
-Replacing the shared bootm-length floor with measured per-board derivations.
+Closed as superseded by the current fixed signed-FIT contract.
 
 ## Dependencies
 
-- **blocked by**: (none; the owner approved option (c) on 2026-08-31)
-- **blocks**: cx3576's pending per-board measurement and any future U-Boot port
+- **blocked by**: (none; historical boot-path derivation superseded)
+- **blocks**: (none)
 
 ## Investigation
 
@@ -174,3 +174,5 @@ own record before it can claim section-5 compliance.
 - Before changing the shared Dockerfile, its working-tree diff was empty. Only
   the bootm branch was changed to require exactly `0x4000000`; the concurrent
   FIT debt change remains untouched and final gate verification waits for it.
+
+- close: Superseded by the current fixed signed-FIT board contract and current complete-image acceptance.

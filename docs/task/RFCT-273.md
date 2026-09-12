@@ -2,7 +2,7 @@
 
 - **status**: in_progress
 - **priority**: P1
-- **owner**: codex/coreos-delivery-docs-20260831
+- **owner**: bkd/z36xbrtu
 - **createdAt**: 2026-08-31 03:08
 - **plan**: [PLAN-037](../plan/PLAN-037.md)
 
@@ -11,6 +11,12 @@
 Maintain the shared embedded-product principles, dependency graph, priorities
 and capacity schedule for the independently approved delivery plans. This task
 coordinates the programme; it does not implement any child capability.
+
+Campaign D now owns only this umbrella coordination. The roadmap's dated
+RAUC/TUF and raw-slot wording is historical; current execution follows the
+strict signed-file system and never restores old update packages or compatibility
+paths. Reviewed A/B/C campaign handoffs block D3's final reconciliation, not the
+independent child implementations.
 
 ## Acceptance
 
@@ -40,3 +46,7 @@ Coordinating independently approved embedded delivery plans.
 - User annotation at 2026-09-01 13:18 UTC: replace the single large plan with
   multiple independent small plans.
 - Child-plan implementation is not authorised by this documentation split.
+- 2026-09-10: Ownership transferred through the PMA serializer to
+  `bkd/z36xbrtu`; no child task or implementation ownership moved.
+
+- unclaim: Transferred umbrella coordination to campaign D; no child implementation moved.

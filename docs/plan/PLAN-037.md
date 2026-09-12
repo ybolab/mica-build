@@ -1,9 +1,11 @@
 # PLAN-037 Coordinate the embedded delivery roadmap
 
-- **status**: approved
+- **status**: implementing
 - **createdAt**: 2026-08-31 03:08
 - **approvedAt**: 2026-09-04
 - **relatedTask**: [RFCT-273](../task/RFCT-273.md)
+- **coordinationOwner**: bkd/z36xbrtu
+- **blocked by**: reviewed campaign handoffs before D3 final reconciliation
 
 ## Context
 
@@ -16,6 +18,15 @@ work one lifecycle, one owner and one acceptance gate.
 This file is now only the programme roadmap. Each capability below has its own
 small plan and task so it can be approved, scheduled, implemented and accepted
 independently. Splitting the records does not approve any implementation.
+
+As reconciled on 2026-09-10, this remains an implementing coordination umbrella,
+not executable duplicate work. Its 2026-09-04 RAUC/TUF, raw-slot, milestone and
+schedule wording is a historical roadmap snapshot. Current execution follows the
+strict signed-file contracts in `docs/architecture.md`, `docs/design/updates.md`
+and `docs/design/uboot-ab-handshake.md`; those contracts do not restore RAUC,
+TUF, old update packages, raw-slot update paths or compatibility readers. The
+campaign record owns only cross-record coordination, while each retained child
+obligation keeps its own owner and acceptance boundary.
 
 The common product principles remain:
 
@@ -242,6 +253,11 @@ gap. Those outcomes belong to PLAN-042 through PLAN-054.
    independently shippable system capabilities and would fragment acceptance.
 
 ## Annotations
+
+- 2026-09-10: Campaign D (`bkd/z36xbrtu`) owns this umbrella's coordination
+  lifecycle. It creates no executable subtask and waits for reviewed A/B/C
+  handoffs before D3 performs final reconciliation. All RAUC/TUF and raw-slot
+  language below is retained as dated history, not as forward-looking work.
 
 - 2026-08-31 03:29 UTC: Include official website content and hardware/board
   porting.

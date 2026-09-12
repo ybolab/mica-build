@@ -1,12 +1,29 @@
 # PLAN-910 s905x5m board intake (Amlogic S7D)
 
-- **status**: implementing
+- **status**: rejected
 - **createdAt**: 2026-08-30
 - **approvedAt**: 2026-08-30 13:42 UTC
 - **completedAt**: -
 - **relatedTask**: RFCT-910 (M1; later milestones create their own task on dispatch)
 
 ## Context
+
+### Superseded current disposition — 2026-09-10
+
+This plan is retained as historical S905X5M intake evidence and is no longer an
+executable plan. The current implementation is
+[20260910-0559-s905x5m-current-system](20260910-0559-s905x5m-current-system.md),
+with source delivery recorded by
+[20260910-0554-s905x5m-current-system](../task/20260910-0554-s905x5m-current-system.md).
+Development acceptance starts from a fresh complete newest-image flash. The
+RAUC/U-Boot slot, raw-partition, legacy package and compatibility instructions
+below are superseded and must not be executed or restored.
+
+The old board evidence remains historical evidence only. Current physical
+paired-firmware installation, boot, peripheral, watchdog, recovery, power-cut,
+shutdown and native-container gaps remain open in the campaign record until a
+current-image owner and bench dependency are assigned; they are not converted
+to completion by this plan's closure.
 
 `miehq/s905x5m-alpine` is a working Alpine bring-up for the X88 Pro X5M
 (Amlogic S905X5M / S7D, board BM201/M100). It builds its own U-Boot from the
@@ -1406,6 +1423,11 @@ the RAUC renderer can address each new PARTUUID at offset zero now.
   a contract-bypassing default artifact.
 
 ## Annotations
+
+- 2026-09-10: Superseded by the current signed-file S905X5M task and plan above.
+  Historical hardware results remain evidence, but no RAUC/raw-slot operation
+  in this record is forward-looking. Current physical gaps remain explicitly
+  open under `20260910-1013-open-plans-campaign` pending ownership.
 
 - 2026-08-30 13:37 UTC: M1 investigation complete; implementation awaits
   explicit approval.

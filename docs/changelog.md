@@ -1245,3 +1245,152 @@ validity and after expiry; built-in-key revocation returns EACCES. Replacement
 kernel rotation remains P9. Build 1,028, focused contracts/signing 42, Rust 68
 and server 36 tests passed, along with the compiled server, docs and relevant
 shell/trust gates. Record `20260908-2115-p2-descriptor-contracts-x64`; P3 is next.
+
+## 2026-09-10 10:13 [progress]
+
+Campaign `mos-open-plans-20260910-100408` established its task, implementing
+plan, and ownership registry under L1 `#314` / `10nksom6`, with D coordinated
+by `#318` / `z36xbrtu` and the campaign task serialized to stable owner
+`bkd/z36xbrtu`. A (`#315` / `6064wf7l`), B (`#316` / `8t4ghqi6`), and C
+(`#317` / `58sdocnk`) retain their bounded workstreams; external active owner
+`#313` / `4ay6q72f` retains S905X5M integration. The integration branch is
+`main` and the committed source base is
+`5c61f7fbb5589807e931e981b3ef8cb9bdff8b6d`.
+
+The approved charter covers parallel dispatch, scoped local L3 commits, and
+L3-to-L2 merges, but no L2-to-`main` merge, remote publication, or `done`
+transition. Fresh newest-image flashing is the development target; historical
+compatibility readers, migrations, RAUC restoration, raw-slot paths, and old
+update-package support remain out of scope. D1 records tracking only. D2 waits
+for D1 to merge into `bkd/z36xbrtu`; D3 waits for D1, D2, and L1's exact
+approved sibling/`#313` commit and lifecycle evidence before global
+reconciliation. PLAN-037 remains a non-executable umbrella, and PLAN-086 S5's
+2026-09-08 rejection remains in force alongside the separate allowed BusyBox
+startup/shutdown plan.
+
+Initial active L3 grants are A=2, B=1, C=2, D=1 (maximum six). Expensive-build
+grants are A=1, B=0, C=0, D=0 (maximum two, with one position reserved while
+`#313` builds); D performs no full image build. Missing indexed CX3576 records,
+removed RAUC/TUF references, and PLAN-086 lifecycle divergence remain explicit
+D2/D3 obligations. No product implementation, image build, hardware proof, or
+historical reconciliation is claimed by this entry.
+
+## 2026-09-10 10:31 [progress]
+
+D1 incorporated the campaign's timestamped coordination evidence without
+changing sibling-owned records. L1 observed the unique A/B/C/D 15-minute crons
+`gf4aphxr`, `nkglvdlt`, `w8lj5nbz`, and `v2kr5k8p` enabled and nondeleted at
+2026-09-10 10:14–10:15 UTC. The registry now records A1–A4, serial B0–B7, and
+C1–C2 ownership, dependencies, models where supplied, owned paths, grant use,
+and verification boundaries. Their running and todo states remain timestamped
+observations; D owns only later global index/changelog reconciliation and does
+not reset their task or plan states.
+
+`#313` / `4ay6q72f` reported S905X5M implementation and offline acceptance
+complete and released implementation ownership, but its 108 delivery changes
+remain dirty and unstaged on `main` at source base
+`5c61f7fbb5589807e931e981b3ef8cb9bdff8b6d`. No approved commit/tree handoff
+exists. L1 validated the 1,730-entry source record with canonical
+`sourceSha256` `5eab1647263866e310b98999e9d5df063aa6bbe3248fc8a0bd7ee7a907c75b42`
+and reverified the 56-entry artifact manifest; these remain read-only dirty
+evidence, not synchronized source or hardware acceptance. D3 and B1 stay
+blocked on L1's exact approved committed identity.
+
+The recorded S905X5M artifacts retain development signing and dirty identities;
+no hardware was flashed and `releaseTarget=false`. Every physical-board row
+remains pending. `#313` retains its completed delivery records for eventual
+preservation. Its unused reserved expensive position returned to L1's
+unallocated pool; grants remain A=1 and B/C/D=0 until reassigned. No `main`
+merge, push, compatibility fallback, product implementation, image build, or
+hardware claim was performed by D1.
+
+## 2026-09-10 10:39 [progress]
+
+L1 supplied the user-authorized `#313` S905X5M source handoff, superseding the
+10:31 no-commit state for current dependency decisions while preserving it as
+chronology. Exact local commit
+`5d0dca577a782aa707d9530779c4b23f2a7eda31`, tree
+`a8b079edc67010b6662b2243a5647950eb7176ef`, and parent
+`5c61f7fbb5589807e931e981b3ef8cb9bdff8b6d` carry the subject
+`feat: integrate s905x5m with signed-file boot and SD images`. The approved
+scope has 108 changed paths, 105 after rename detection; L1 verified its 1,730
+source-record entries against canonical `sourceSha256`
+`5eab1647263866e310b98999e9d5df063aa6bbe3248fc8a0bd7ee7a907c75b42`.
+`main` was clean after the local commit, no push occurred, and `#313` reports
+no remaining implementation, build, cleanup, or source lock.
+
+Immutable `committed-source.json` maps 1,727 committed files/links plus three
+deletions to the complete tree and has SHA-256
+`ce4330ed3845acf77e5e7f061d62255761eed80d21172211139ca7dc6180cd7c`.
+The original source record and 56-entry artifact manifest remain byte-for-byte
+unchanged. Existing artifacts remain source-equivalent pre-commit
+dirty-stamped development builds with `BOARD_RELEASE_TARGET=0`, not rebuilt
+clean artifacts or hardware evidence. Physical S905X5M rows and the separate
+complete eMMC installer milestone remain open.
+
+D1 did not synchronize source. At D's next safe boundary, L2 may take only the
+exact approved commit into its clean branch; D2 must then use the integrated
+local `bkd/z36xbrtu` HEAD. D3's `#313` source dependency is satisfied, but D3
+still waits for reviewed A/B/C handoffs and ordered final reconciliation. The
+registry also records reviewed B0 commit
+`488b8d68b240ae818dc4b763c46ed7b7f9904129` without claiming it is integrated
+into B. Grants remain L3 A/B/C/D=2/1/2/1 and expensive A=1, B/C/D=0, with the
+second expensive slot unallocated at L1. No main merge, push, publication, or
+`done` transition is authorized.
+
+## 2026-09-10 11:11 [progress]
+
+D2 reconciled the bounded open task/plan set for campaign
+`mos-open-plans-20260910-100408` without changing product code or current
+architecture/design wording.
+
+The dangling index-only task
+`cx3576-reproducible-bsp-20260907T1356Z` and plan
+`cx3576-reproducible-bsp-20260907T1400Z` were introduced together by
+`dfe16aca45fd66ccea766cbe31d5facf0787ff4a`; neither detail path has any blob
+in reachable history. PLAN-087 identifies the plan as an untracked draft from
+issue `69d0bv7y`, reconciles its measurements and scope, and records completion
+through RFCT-343 and RFCT-345. Both dangling rows were therefore removed rather
+than fabricated or restored.
+
+PLAN-037 remains an implementing, non-executable coordination umbrella owned by
+campaign D (`bkd/z36xbrtu`). Its dated RAUC/TUF and raw-slot roadmap text is
+explicitly historical; current execution follows the strict signed-file
+contracts. PLAN-086 and RFCT-336 now truthfully identify campaign B ownership
+of remaining S3/S6 work. The user's 2026-09-08 decision is unchanged in meaning:
+**S5 was declined, not deferred and not owed; the slice is out of the plan.**
+The separate BusyBox boot/shutdown work does not authorize general
+shell/network-tool reduction, outbound-SSH removal, or PAM/NSS/crypto pruning.
+
+Historical S905X5M records were reconciled against current signed-file task
+`20260910-0554-s905x5m-current-system` and plan
+`20260910-0559-s905x5m-current-system`. PLAN-910, PLAN-913, PLAN-915 and
+PLAN-916 are closed as superseded; PLAN-911 is completed by its recorded
+hardware smoke result; PLAN-912 retains the real controlled-peer gap with no
+invented owner. RFCT-915 and RFCT-335 are completed. RFCT-921, RFCT-926,
+RFCT-932, RFCT-944 and RFCT-945 are closed as superseded. RFCT-922 remains
+pending and unassigned for a controlled-peer run on a fresh current image.
+
+Four obsolete task details left the tree with their index rows: RFCT-916
+(`Declare the shared kernel surface for container networking`) had completed
+historical PLAN-911 evidence and an obsolete M2/RAUC deployment path; RFCT-925
+(`Decide the tree-wide FIT verified-boot design`) is superseded by the current
+required signed-FIT contract; RFCT-934 (`Prove the s905x5m A/B watchdog and
+rollback on hardware`) used the removed RAUC/raw-slot path, while its physical
+watchdog/power-cut gap remains open in the campaign; RFCT-940 (`The installer
+card blocks Linux boot on a board it already installed`) already said it was
+fixed and proven on hardware. Its full evidence remains in Git history.
+RFCT-941 (`The installer reinstalls on every boot because its receipt never
+persists`) is also fixed and proven, but remains because the current S905X5M
+board dossier links to its evidence; its link to deleted RFCT-940 became a bare
+historical ID. Current S905X5M physical installation, boot, peripheral,
+watchdog, recovery, power-cut, shutdown, MQTT and native-container obligations
+remain explicitly unassigned and blocked on a fresh newest-image bench run in
+the campaign record; historical evidence was not relabeled as current proof.
+
+PMA lifecycle transitions used `task-state.sh`: RFCT-273 and RFCT-336 were
+unclaimed from their stale owners and claimed by the current D and B
+coordinators; RFCT-335 and RFCT-915 were completed; RFCT-921, RFCT-926,
+RFCT-932, RFCT-944 and RFCT-945 were closed; RFCT-922 was unclaimed. Serializer
+rejections for legacy noncanonical records are preserved verbatim in the
+campaign task. No owner/status field was hand-edited after a rejection.

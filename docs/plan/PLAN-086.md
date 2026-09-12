@@ -1,13 +1,22 @@
 # PLAN-086 Compose a minimal MOS runtime from explicit payloads
 
-- **status**: approved
+- **status**: implementing
 - **createdAt**: 2026-09-06 10:54
 - **approvedAt**: 2026-09-07
 - **relatedTask**: RFCT-336
+- **coordinationOwner**: bkd/8t4ghqi6
+- **blocked by**: campaign B sequence B1 through B7
 
 ## Context
 
 The user requested a smaller system, explicitly removed backward compatibility as a requirement during development, and asked for a plan before implementation. Debian archives remain a useful binary source; neither debootstrap nor Debian's Essential package set defines the minimum MOS runtime.
+
+The current lifecycle is implementing: S1, S2 and S4 shipped; S3 and S6 are
+owned by campaign workstream B in its B1 through B7 sequence. S5 was rejected
+by the user on 2026-09-08 and is not deferred, owed or revived by the separate
+BusyBox startup/shutdown work. Historical RAUC bundle measurements below remain
+evidence of the bytes measured at the time, not an instruction to restore the
+removed RAUC runtime or an old package path.
 
 The current composition installs a locked 68-package bootstrap floor, adds upstream and local packages, and then removes package managers and selected residue. The selection in `rootfs/debian/manifest.ts` always includes the `base` consumer. `rootfs/compose/10-compose.Dockerfile` already uses scratch stages, but copies the complete configured filesystem between them. `90-pack.Dockerfile` inherits that filesystem before pruning and packing it.
 
@@ -186,6 +195,10 @@ No Linux distribution or libc migration, kernel feature reduction, init-system r
 Reference material consulted during investigation: [mmdebstrap variants](https://manpages.debian.org/trixie/mmdebstrap/mmdebstrap.1.en.html#VARIANTS), [Distroless base contents](https://github.com/GoogleContainerTools/distroless/blob/main/base/README.md), and [Debuerreotype](https://github.com/debuerreotype/debuerreotype). The proposal borrows their build/runtime separation without requiring their complete build systems.
 
 ## Annotations
+
+- 2026-09-10: Lifecycle reconciled to `implementing` with RFCT-336 owned by
+  campaign B. S3/S6 continue through B1-B7; the 2026-09-08 S5 rejection remains
+  controlling and the separate minimal boot/shutdown campaign does not alter it.
 
 - 2026-09-06: The user requested a plan for review. Implementation approval is pending.
 - 2026-09-06: Backward compatibility is not a requirement unless explicitly requested. Actual boot, update, persistence and selected application behavior remain acceptance requirements.
