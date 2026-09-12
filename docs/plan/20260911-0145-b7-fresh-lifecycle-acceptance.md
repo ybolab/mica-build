@@ -2244,3 +2244,87 @@ root-start-collected-v1.json SHA256
 e8dd895f987370c5e96dd729b8cab04d7fae1c13c6e5a166793526b4448edc7e
 preserves exact argv/environment/PIDs,14 log hashes and input/resource bindings.
 This is actual start evidence only; no root/image/guest success is inferred.
+
+
+### GPT root terminal and affected component boundary, 2026-09-12 08:40 UTC
+
+The original ae40 root command finished08:40:30.747313 UTC exit0 and its
+aggregate finished08:40:33.524958 success0. Original3346224/3347132 are absent.
+One bounded terminal collection verifies15 step/logs,261 actual packed files,
+19 Docker records and15 created-child cgroup/exit0/absence receipts. All12 real
+register smoke entries pass. Actual OCI80730112B SHA256
+822dc6a2fadd6a8e13f89dd9399a0cbf72f79ba2d78c6a7baf85d4793fe0b2ab
+has manifest156a1cde17840eb620a5e02a565cc4b633e8b59af1e42a8499cb05dd711c62d7.
+Exactly one packed mosd/apid/mos-deploy matches the actual report, modes/owners
+and J/J/d2 origins. Packed stripped deploy78a6b0f4 remains distinct from the
+original7135f578 archive payload. The source/canonical/J14/d2/438 roles remain.
+GptJoin-ae40a791d763830a8e4a7cd7b0bb83a8b8945902/metadata/W2/
+root-terminal-collected-v1.json SHA256
+88ff7b9ab0622de40e4636b45e551c60051862a40438e925e6b58b4359b333e6
+is root/packed-smoke evidence only; component/image/guest acceptance is separate.
+
+The task-only component runner/adapter preserves original semantics and binds
+current root/d2 natives/reused438 tools without replaying the completed join
+creator. Nineteen affected preparation checks pass; earlier adapter suites are
+reused. All existing signing keys remain unchanged, privately copied with0600
+modes and matched public material. A preparation comparison incorrectly treated
+the metadata public Base64 text as hex; that failed preparation is retained and
+only its encoding comparison was corrected. No product/trust edit occurred.
+The versioned component readinessf7e6d976 retains daemon1CPU5GiB, Toolbox1CPU3GiB
+and serial signer/boot-tool2CPU2GiB, aggregate4CPU10GiB/swap0/0-3. Fresh raw
+resource observations are preserved before threshold refusals. Dispatch alone
+is not a component start; actual starts/terminals remain separately recorded.
+
+
+### GPT component cleanup boundary and signing continuation, 2026-09-12 09:05 UTC
+
+Actual component attempt1 started08:53:28.268233 and failed08:54:26.552258
+before any signer ran. The exact owned Toolbox removal took129.4139198 seconds,
+exceeding the task adapter's45-second bound. The next signing guard strictly
+refused that still-removing instance. Its eventual destroy event and exact
+absence are preserved; no second removal was issued. Terminal79fa521e binds
+all9 Docker records and the two successful unsigned outputs, including unchanged
+rootfs.img f651ba2e/root hash76617bf9. Original aggregate1 remains a failure.
+
+Only the versioned task adapter now allows180 seconds for one exact owned
+Toolbox removal and requires actual absence before marking it closed. Five
+focused cases cover original45-second RED, measured-duration GREEN, exceeded
+bound, still-present object and unrelated-instance refusal. The actual unsigned
+input check passes. No product source, resource ceiling or trust was changed.
+New root-v2.resume1.building copies the retained unsigned bytes and calls the
+unchanged production signer and metadata helpers for only the unexecuted tail;
+original root/verity checks, failed outputs and producer receipts are immutable.
+
+The continuation actually started09:05:22.702971 UTC, orchestrator3363759 and
+root signing timeout3363947, persistent pane%101. Readiness435bd0b7 and distinct
+start collectione2e3167e bind exact current source/input/environment/resource
+checks. Existing kernel/support and firmware callers follow serially; allocation
+remains aggregate4CPU10GiB/swap0/0-3 including daemon and all children. This start
+snapshot is not a component/image/guest PASS. The next image runner is prepared
+against ae40 but can launch only after the actual successful component terminal
+and fresh guards; future output hashes are collected from their producers.
+
+
+### GPT short-container lifetime correction, 2026-09-12 09:12 UTC
+
+The signing continuation also terminated09:07:23.304479 exit1. Its exact short
+container executed the signer and exited0 at09:05:33.4121597, but Docker automatic
+removal finished only09:07:40.3182728. That126.9061131-second post-exit lifetime
+exceeded the unchanged120-second product caller. Caller cleanup removed the
+temporary signature, so there is no retained signature or component success.
+Terminal93a8724a preserves the incomplete executor receipt, actual die/destroy
+records, exact absence and unchanged unsigned output bytes. This failed tail
+must produce a retained signature; successful root and native/tool producers
+are not rerun.
+
+The task-only components-v3 adapter now records short-container process exit,
+actual cgroups and exact stopped/PID0/non-restarting identity before returning
+the real exit to the unchanged caller. It retains only those registered exited
+instances for bounded non-force removal and actual absence checks at the stage
+boundary. Unknown, running, removing, wrong-source/image/mount/limit/exit and
+OOM/error cases refuse. Fifteen focused identity/lifetime cases and the actual
+unsigned input check pass. Toolbox behavior and all resource/product timeouts
+remain unchanged. Readiness3cd9f789 binds the versioned adapter, cleanup, exact
+signing tail and original failures. The new attempt is dispatched in persistent
+pane%101 with fresh launch guards; its actual start/terminal is recorded separately.
+Original ae40 source/canonical/J14/d2/438 inputs and old failed outputs remain.
