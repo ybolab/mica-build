@@ -89,7 +89,7 @@ done
 [ "${#DEBS[@]}" -gt 0 ] || { echo "error: no .deb under ${POOL_ROOT}/{${ARCHES[*]}}/pool${ONLY[@]+ named ${ONLY[*]}}; nothing to publish" >&2; exit 1; }
 for o in ${ONLY[@]+"${ONLY[@]}"}; do
     found=0
-    for f in "${DEBS[@]}"; do [ "$(basename "${f}")" != "${o}_"* ] || found=1; done
+    for f in "${DEBS[@]}"; do n="$(basename "${f}")"; [ "${n%%_*}" != "${o}" ] || found=1; done
     [ "${found}" = 1 ] || { echo "error: --package ${o} names no archive under ${POOL_ROOT}/{${ARCHES[*]}}/pool" >&2; exit 1; }
 done
 
