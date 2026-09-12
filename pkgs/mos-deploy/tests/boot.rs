@@ -1,5 +1,4 @@
-use mos_deploy::boot::{selected_entry, utf16_variable, verity_args};
-use mos_deploy::components::parse_deployment;
+use mos_deploy::boot::{selected_entry, utf16_variable};
 
 #[test]
 fn normalizes_only_native_deployment_entries() {
@@ -31,32 +30,6 @@ fn reads_efi_attributes_and_strict_utf16_termination() {
 }
 
 #[test]
-fn signed_mapping_arguments_never_enable_an_unsigned_retry() {
-    let d = parse_deployment(include_bytes!(
-        "../../../tests/component-contracts/deployment.json"
-    ))
-    .unwrap();
-    let args = verity_args(
-        "/dev/loop0",
-        "mos-root",
-        "/mnt/system/root.p7s",
-        &d.rootfs.content,
-    );
-    assert!(
-        args.windows(2)
-            .any(|p| p == ["--root-hash-signature", "/mnt/system/root.p7s"])
-    );
-    // veritysetup creates read-only mappings and has no --readonly option.
-    assert!(!args.iter().any(|p| p == "--readonly"));
-    assert!(args.iter().any(|p| p == "--panic-on-corruption"));
-    assert!(
-        !args
-            .iter()
-            .any(|p| p.contains("ignore-corruption") || p.contains("check-at-most-once"))
-    );
-}
-
-#[test]
 fn preserves_only_the_bounded_exitrd_closure() {
     use mos_deploy::boot::copy_exitrd;
     use std::{
@@ -65,17 +38,30 @@ fn preserves_only_the_bounded_exitrd_closure() {
     };
     let source = tempfile::tempdir().unwrap();
     let target = tempfile::tempdir().unwrap();
-    fs::write(source.path().join("shutdown"), b"ELF fixture").unwrap();
+    let mut payload = [0_u8; 128];
+    payload[..7].copy_from_slice(b"\x7fELF\x02\x01\x01");
+    payload[16] = 3;
+    payload[18] = if cfg!(target_arch = "x86_64") {
+        62
+    } else {
+        183
+    };
+    payload[20] = 1;
+    payload[52] = 64;
+    payload[32] = 64;
+    payload[54] = 56;
+    payload[56] = 1;
+    payload[64] = 1;
+    payload[96] = 128;
+    let path = source.path().join("shutdown");
+    fs::write(&path, payload).unwrap();
     fs::set_permissions(
         source.path().join("shutdown"),
         fs::Permissions::from_mode(0o755),
     )
     .unwrap();
     copy_exitrd(source.path(), target.path(), "shutdown\n").unwrap();
-    assert_eq!(
-        fs::read(target.path().join("shutdown")).unwrap(),
-        b"ELF fixture"
-    );
+    assert_eq!(fs::read(target.path().join("shutdown")).unwrap(), payload);
     assert_eq!(
         fs::metadata(target.path().join("shutdown"))
             .unwrap()

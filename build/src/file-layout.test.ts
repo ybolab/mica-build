@@ -27,7 +27,7 @@ test('s905x5m protects Amlogic reservations and native records before SYSTEM', (
 test('x64 has exactly ESP, SYSTEM and last-growing DATA with independent capacity checks', () => {
   const layout = parseFileLayout(readFileSync(join(REPO_ROOT, 'boards/x64/board.env'), 'utf8'))
   expect(layout.partitions.map(p => p.name)).toEqual(['ESP', 'SYSTEM', 'DATA'])
-  expect(layout.partitions.map(p => p.startSector)).toEqual([2048, 513 * 2048, 2561 * 2048])
+  expect(layout.partitions.map(p => p.startSector)).toEqual([2048, 513 * 2048, 1537 * 2048])
   expect(() => checkCapacity(layout, 100 * 1048576, 20 * 1048576)).not.toThrow()
   expect(() => checkCapacity(layout, 1000 * 1048576, 20 * 1048576)).toThrow('SYSTEM')
   expect(() => checkCapacity(layout, 100 * 1048576, 230 * 1048576)).toThrow('ESP')
@@ -98,3 +98,37 @@ test('formatted SYSTEM rejects payload pairs that fit raw bytes but consume file
     rmSync(directory, { recursive: true, force: true })
   }
 }, TOOL_TIMEOUT_MS)
+
+
+test.each(['x64', 'virt-arm64', 'cx3576', 's905x5m'])('%s current signed layout keeps SYSTEM exactly 1 GiB', board => {
+  const source = readFileSync(join(REPO_ROOT, 'boards', board, 'board.env'), 'utf8')
+  const layout = parseFileLayout(source)
+  expect(layout.partitions[1]!.sizeSectors * 512).toBe(1024 * 1048576)
+  if (board === 'x64' || board === 'virt-arm64') {
+    expect(layout.partitions.map(p => p.startSector)).toEqual([2048, 513 * 2048, 1537 * 2048])
+    expect(layout.partitions[0]!.sizeSectors * 512).toBe(512 * 1048576)
+    expect(layout.partitions[2]!.sizeSectors * 512).toBe(256 * 1048576)
+  }
+})
+
+test.each(['x64', 'virt-arm64', 'cx3576', 's905x5m'])('%s refuses smaller or larger SYSTEM even with contiguous DATA', board => {
+  const source = readFileSync(join(REPO_ROOT, 'boards', board, 'board.env'), 'utf8')
+  const start = Number(/^SYSTEM_START_MIB=(\d+)$/m.exec(source)![1])
+  for (const size of [512, 1023, 1025, 2048]) {
+    const changed = source.replace(/^SYSTEM_SIZE_MIB=\d+$/m, `SYSTEM_SIZE_MIB=${size}`)
+      .replace(/^DATA_START_MIB=\d+$/m, `DATA_START_MIB=${start + size}`)
+    expect(() => parseFileLayout(changed)).toThrow('SYSTEM must be exactly 1 GiB')
+  }
+})
+
+test.each(['x64', 'virt-arm64', 'cx3576', 's905x5m'])('%s retains exact two-deployment raw reserve boundaries', board => {
+  const layout = parseFileLayout(readFileSync(join(REPO_ROOT, 'boards', board, 'board.env'), 'utf8'))
+  const boot = 60 * 1048576
+  const root = 448 * 1048576 - (layout.backend === 'uboot-fit' ? boot : 0)
+  expect(() => checkCapacity(layout, root, boot)).not.toThrow()
+  expect(() => checkCapacity(layout, root + 1, boot)).toThrow('SYSTEM')
+  if (layout.backend === 'systemd-boot') {
+    expect(() => checkCapacity(layout, root, 224 * 1048576)).not.toThrow()
+    expect(() => checkCapacity(layout, root, 224 * 1048576 + 1)).toThrow('ESP')
+  }
+})

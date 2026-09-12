@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Build the squashfs + dm-verity arm64 rootfs slot image for cx3576 (A/B layout).
-# Usage: [BOARD_DIR=...] [WITH_MOSD=0|1]
+# Usage: [BOARD_DIR=...] [WITH_MOSD=0|1] [MOS_ROOTFS_NO_CACHE=0|1]
 #        [WITH_CONTAINERS=0|1] [MOS_PROFILE=dev|prod]
 #        [MOS_ROOTFS_WITHOUT="wifi bluetooth mqtt ..."] bash rootfs/build.sh
 
@@ -124,6 +124,20 @@ case "$WITH_CONTAINERS" in
     exit 1
     ;;
 esac
+
+# Cold reproducibility checks need a cache-independent route through the same
+# stages driver as an ordinary build. The driver already implements --no-cache;
+# this explicit opt-in only bridges the rootfs entry point to that existing
+# behavior and keeps normal developer builds cached by default.
+ROOTFS_CACHE_ARGS=()
+case "${MOS_ROOTFS_NO_CACHE-0}" in
+0) ;;
+1) ROOTFS_CACHE_ARGS=(--no-cache) ;;
+*)
+    echo "error: MOS_ROOTFS_NO_CACHE is '${MOS_ROOTFS_NO_CACHE}'; it must be exactly 0 or 1" >&2
+    exit 1
+    ;;
+esac
 # The declined features, as one list. WITH_CONTAINERS and WITH_MOSD are the
 # two historical spellings and they fold into it here, so there is one answer
 # to "is this feature in the image" and every consumer below asks the same
@@ -230,20 +244,6 @@ mkdir -p "$OUT_DIR"
 # it has no record and cannot say anything at all about a wrong one.
 rm -f "$OUT_DIR/mosd-build.txt"
 
-# Only public update configuration belongs in the user-space root. Boot and
-# content trust anchors belong to the independent authenticated kernel package.
-META_DIR="${MOS_META_DIR:-$REPO_ROOT/meta}"
-bash "$REPO_ROOT/rootfs/scripts/validate-public-meta.sh" "$META_DIR"
-META_STAGE="$(mktemp -d "$OUT_DIR/meta-public.XXXXXX")"
-mkdir -p "$META_STAGE/usr/share/mos/meta/updates"
-manifest="$META_DIR/updates/manifest.json"
-install -m 0644 "$manifest" "$META_STAGE/usr/share/mos/meta/updates/manifest.json"
-if [ -s "$META_DIR/GENERATED" ]; then
-    install -m 0644 "$META_DIR/GENERATED" "$META_STAGE/usr/share/mos/meta/GENERATED"
-else
-    rm -f "$META_STAGE/usr/share/mos/meta/GENERATED"
-fi
-
 # Validate the package pool before resolving the OpenSSL inspection container.
 POOL_DIR="$REPO_ROOT/_out/debs/$MOS_ARCH"
 pool_refusal() {
@@ -293,13 +293,48 @@ pool_stamps=$(grep -v '^#' "$POOL_DIR/manifest.txt" | cut -f2 | sed 's/^.*+//' |
 pool_stamp=${pool_stamps% }
 case "$pool_stamp" in
 *' '*)
-    pool_refusal "$POOL_DIR/manifest.txt carries more than one git stamp: $pool_stamp. The pool carries one stamp across every producer by rule; two stamps mean it was half-rebuilt across a tree change."
+    [ -n "${MOS_ROOTFS_PRODUCER_JOIN:-}" ] || pool_refusal "$POOL_DIR/manifest.txt carries more than one git stamp: $pool_stamp. The pool carries one stamp across every producer by rule; two stamps mean it was half-rebuilt across a tree change."
     ;;
 esac
-tree_version=$(bash "$REPO_ROOT/build-env/deb/version.sh")
+PACKAGE_SOURCE=${MOS_ROOTFS_PACKAGE_SOURCE:-$REPO_ROOT}
+[ -z "${MOS_ROOTFS_PRODUCER_JOIN_SHA256:-}" ] || [ -n "${MOS_ROOTFS_PRODUCER_JOIN:-}" ] ||
+    pool_refusal "producer join digest requires an explicit joined input."
+# Verify the actual clean sources and frozen receipt before executing a producer
+# version script or resolving any container. An explicit source is not a stamp override.
+LINEAGE_ARGS=()
+if [ -n "${MOS_ROOTFS_PACKAGE_SOURCE:-}" ]; then
+    LINEAGE_ARGS+=(--package-source "$PACKAGE_SOURCE")
+fi
+if [ -n "${MOS_ROOTFS_PACKAGE_RECEIPT:-}" ]; then
+    LINEAGE_ARGS+=(--receipt "$MOS_ROOTFS_PACKAGE_RECEIPT" --receipt-sha256 "${MOS_ROOTFS_PACKAGE_RECEIPT_SHA256:-}")
+fi
+if [ -n "${MOS_ROOTFS_PRODUCER_JOIN:-}" ]; then
+    LINEAGE_ARGS+=(--producer-join "$MOS_ROOTFS_PRODUCER_JOIN" --producer-join-sha256 "${MOS_ROOTFS_PRODUCER_JOIN_SHA256:-}")
+fi
+LINEAGE_STAGE="$OUT_DIR/source-lineage.json"
+tree_version=$(python3 "$REPO_ROOT/rootfs/runtime/source-lineage.py" \
+    --composition-source "$REPO_ROOT" --pool "$POOL_DIR" --arch "$MOS_ARCH" \
+    --epoch "$SQUASHFS_TIME" --output "$LINEAGE_STAGE" "${LINEAGE_ARGS[@]}")
 tree_stamp=${tree_version##*+}
-[ "$pool_stamp" = "$tree_stamp" ] ||
-    pool_refusal "the $MOS_ARCH pool was built at stamp '$pool_stamp' and this tree is '$tree_stamp'. Composing would install another commit's packages into an image every check downstream would attribute to this one; a '.dirty' suffix on either side means uncommitted changes when that side was made."
+# The explicit named tool witness is verified before any resolver/container.
+# Propagate its immutable manifest identity; a tag/config digest cannot replace it.
+boot_tools_image=$(python3 - "$LINEAGE_STAGE" <<'PY_BOOT_TOOL'
+import json, sys
+record = json.load(open(sys.argv[1]))
+joined = record.get('producer_join', {})
+if joined.get('schema') == 'mos/producer-join/boot-tools-v1':
+    print(joined['boot_tools']['production']['manifest'])
+elif joined.get('schema') == 'mos/producer-join/startup-v1':
+    print(joined['production']['boot_tools']['image'])
+PY_BOOT_TOOL
+)
+if [ -n "$boot_tools_image" ]; then
+    [ "${MOS_BOOT_TOOLS_IMAGE:-$boot_tools_image}" = "$boot_tools_image" ] ||
+        pool_refusal "boot-tools image differs from the verified producer witness."
+    export MOS_BOOT_TOOLS_IMAGE="$boot_tools_image"
+fi
+[ -n "${MOS_ROOTFS_PRODUCER_JOIN:-}" ] || [ "$pool_stamp" = "$tree_stamp" ] ||
+    pool_refusal "the $MOS_ARCH pool was built at stamp '$pool_stamp' and the verified package source is '$tree_stamp'."
 echo "pool: $POOL_DIR, $pool_debs archive(s) at stamp $pool_stamp"
 
 # --- the composition's inputs: the package pool, the resolution, the context ---
@@ -342,7 +377,7 @@ commit_of_stamp=${commit_of_stamp%.dirty}
 # `^{commit}` so the argument can only resolve as a commit: a bare 12-hex
 # string is also a path a repository could hold, and `git show` would then
 # print that file and this would date the image by it.
-tree_commit_date=$(git -C "$REPO_ROOT" show -s --format=%cI "${commit_of_stamp}^{commit}" 2>/dev/null || true)
+tree_commit_date=$(git -C "$PACKAGE_SOURCE" show -s --format=%cI "${commit_of_stamp}^{commit}" 2>/dev/null || true)
 [ -n "$tree_commit_date" ] || {
     echo "error: git names no commit date for '$commit_of_stamp', the commit in this tree's stamp '$tree_stamp'." >&2
     echo "       That date is written into /usr/share/mos/release-identity.env and is the only date in a" >&2
@@ -409,7 +444,21 @@ PRODUCER_DIRS=$(bash "$REPO_ROOT/build-env/deb/producers.sh" |
 [ -n "$PRODUCER_DIRS" ] ||
     { echo "error: build-env/deb/producers.sh named no package, so every row of the composition record would carry '(no producer declares it)' for its source" >&2; exit 1; }
 
+# Only the unchanged validated public set enters the composition.
+META_DIR="${MOS_META_DIR:-$REPO_ROOT/meta}"
+bash "$REPO_ROOT/rootfs/scripts/validate-public-meta.sh" "$META_DIR"
+META_STAGE="$(mktemp -d "$OUT_DIR/meta-public.XXXXXX")"
+mkdir -p "$META_STAGE/usr/share/mos/meta/updates"
+manifest="$META_DIR/updates/manifest.json"
+install -m 0644 "$manifest" "$META_STAGE/usr/share/mos/meta/updates/manifest.json"
+if [ -s "$META_DIR/GENERATED" ]; then
+    install -m 0644 "$META_DIR/GENERATED" "$META_STAGE/usr/share/mos/meta/GENERATED"
+else
+    rm -f "$META_STAGE/usr/share/mos/meta/GENERATED"
+fi
+
 mkdir -p "$COMPOSE_STAGE"
+cp "$LINEAGE_STAGE" "$COMPOSE_STAGE/source-lineage.json"
 printf '%s\n' "$RESOLVED" > "$COMPOSE_STAGE/packages.txt"
 # The public set, audited above, handed to the composition context as the
 # image-relative tree it will be installed as. Copied and not bound, because
@@ -550,6 +599,7 @@ echo "rootfs: composing $MOS_BOARD"
 bash "$REPO_ROOT/rootfs/debian/docker.sh" cache --arch "$MOS_ARCH" \
     --packages "$COMPOSE_STAGE/packages.txt"
 if ! bash "$REPO_ROOT/build/run.sh" --build-rootfs \
+        ${ROOTFS_CACHE_ARGS[@]+"${ROOTFS_CACHE_ARGS[@]}"} \
         "${DRIVER_ARGS[@]}" 2>&1 | tee "$log"; then
     if grep -qi 'exec format error' "$log"; then
         echo >&2
@@ -708,7 +758,7 @@ echo "installed size: ${total_mb} MB (budget ${SIZE_BUDGET_MB} MB)"
 if declined mosd; then
     echo "mosd: declined, so this root carries no mosd or mos-apid and no build commit is recorded for it"
 else
-    MOSD_BUILD_SRC="$REPO_ROOT/_out/mosd-build-$MOS_ARCH.txt"
+    MOSD_BUILD_SRC="$PACKAGE_SOURCE/_out/mosd-build-$MOS_ARCH.txt"
     [ -s "$MOSD_BUILD_SRC" ] || {
         echo "error: $MOSD_BUILD_SRC is missing or empty, so the commit the mosd and mos-apid in this root" >&2
         echo "       were built from cannot be recorded beside it, and the smoke run would report that it" >&2
