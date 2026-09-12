@@ -17,8 +17,8 @@ ARM obligations remain deferred, with physical limitations separate. No S905 ima
 
 ## ActiveForm
 
-Four-mask source/input review passed. Preserve the first root command
-resource-transition failure; resume its unexecuted producer after owned-daemon recovery.
+Final operator-companion source/input review passed. The frozen 66385757 x64
+root is running; preserve its detached gate and collect its actual terminal once.
 
 ## Dependencies
 
@@ -1504,3 +1504,16 @@ The later L1 retention-only patch SHA256 1370de0da4148f880629cbfde4c5b480de9aef9
 The only additional selected path is /usr/share/quota/quota-initial-check.sh, already independently accepted by B as the authorized existing service-resource closure in message 01M29QP5RBZT72DXMER61CX44F. Final count remains 18 resources. The purge, 90-pack, selector/compose and both source-lineage/release consumer policies remain byte-identical to e1. All matching actual retained-file report entries were checked read-only; no source suite, producer, root, capture or release gate was replayed. A patch-applet availability preparation error is retained separately; the exact one-hunk comparison completed without an external patch tool.
 
 Evidence: OperatorCompanions-v1/retention-patch-reconciliation-v1/reconciliation.json, SHA256 9bd13c271612c27c2bf8caf574b7639de23a683797e9a8b65d064334da8894ec. Frozen composition 6638575781a593fba3f14f30c2f12ac7cee72694, canonical join 218b21a6b56fad5dccaeee3365d23edfdbc555afe33865437934412f954d0181, readiness 699c3628d0765c73c215a7bb8576d9393d03ed44ea000d17a457ed732ad2514c and full delivery fa5c2a7bd4018c7141db26ab2ce5d2d3676dc46ab2edd3475911536cb7afc371 remain unchanged. The existing independent B review and combined-source successor boundary continue; this tracking reconciliation does not create a new binary identity or a build start.
+
+
+### 2026-09-12 reviewed 663 root execution
+
+B-FINAL-COMPANIONS-ACCEPTED-20260912-0250 completed the independent source/input review and isolated integration. The frozen composition remains 6638575781a593fba3f14f30c2f12ac7cee72694, tree eea998068629cc460fbb8c4115971d3b56e08839, epoch 1789180557. Readiness SHA256 699c3628d0765c73c215a7bb8576d9393d03ed44ea000d17a457ed732ad2514c and canonical join 218b21a6b56fad5dccaeee3365d23edfdbc555afe33865437934412f954d0181 were consumed in the new production-x64-run1 checkout. The actual input check verified all 1,831 tracked entries, 18 joined pool files and 163 existing fixed cache archives. Original J packages, fb6 deploy/native, 4716 boot tools and the existing kernel preserve their producer identities.
+
+The actual normal root command started 2026-09-12T02:55:44.753486+00:00: timeout --signal=TERM --kill-after=30s 10800 bash rootfs/build.sh. Orchestrator PID 3028477 and root timeout PID 3029287 run in persistent tmux 75btxdqb-7e0f1b pane %101. MOS_ROOTFS_NO_CACHE=0 and the accepted environment match the actual root process; no BASH_ENV/DEBUG fixture is present. All 14 preparation/input/resource steps passed before that start. This is a running production gate, not a root/image/guest success.
+
+The original owned daemon e7da1887391e765034cc5492a0847155a9615e161e4d720372b2a3797e3f9b35 and labelled state remain. Fresh preflight found capacity 6/30 with 24 free, an idle buildkitd and actual 4 CPU/10 GiB/swap0/cpuset0-3 cgroups. The versioned adapter preserves the existing aggregate envelope and direct-child split, records actual daemon cgroups after transitions, and refuses insufficient 1 GiB shrink headroom without automatically stopping or recreating the daemon. No cache prune, threshold reduction, shared tag mutation or new resource allocation occurred.
+
+All new execution evidence is under OperatorCompanions-6638575781a593fba3f14f30c2f12ac7cee72694. Start packet metadata/W2/root-run1-start-event.json has SHA256 dec41661e44f002a72e0ac36210c28442a4bb7194d667ae6575beb06cca25d84; adapter-version record SHA256 0b282615e2c6bfdf0331d0be0b9d05a295e758855c94b2c51288fa009f2c02fa. Runner SHA256 17c3433b44b8824780fe99624ce2636b962f3db9c578ae8bf86c50cc6dca4f2e and wrapper SHA256 d692608a5d59800bb906f4b8d9bd97fa629ca2099198bd67871347620e30fc74 are immutable. Metadata is metadata/W2/x64-run1.json; the actual root log is logs/W2/x64-run1/root-build.log. B received the concrete start as message 01M29RS2F2F67DAKW45FFDYJE9. Historical f4/root/preparation failures remain separate.
+
+Worker347 source/input work remains independent. This root does not claim the later 438 combined identity. Consume only the exact reviewed combined delta at a natural source/stage boundary before the complete combined signed-image/lifecycle acceptance, avoiding duplicate full matrices. Batch 1 is complete; batches 2/3 retain conditional user authority through the designated owners after their real acceptance conditions. Broad ARM waits for the actual frozen batch 2 startup-chain main merge. Physical obligations remain pending. No successful producer or unchanged suite replay, B/main/347 sync, parent notice, main/push/publication/done or cron change occurred.
