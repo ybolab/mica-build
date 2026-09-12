@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-09-12 13:36 [fix]
+
+ARM64 UEFI components now select the ARM64 boot-tools image for packaging and
+record that image in kernel identity. A firmware-invocation regression failed
+before the fix and passed afterward. Removed fixed bootloader Ninja job limits
+under the existing build-resource policy. Docker route, native-payload, display
+and startup archive checks passed. ARM/board production acceptance is pending.
+
 ## 2026-09-12 11:57 [verification]
 
 Completed the fresh main x64 build at `a6b7b55c6183` using pinned Docker tools

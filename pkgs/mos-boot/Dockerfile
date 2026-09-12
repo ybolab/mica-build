@@ -45,14 +45,14 @@ RUN set -eu; cd /source; patch -p1 < /policy.patch; \
     meson setup /build -Dmode=release -Dauto_features=disabled -Dbootloader=enabled \
         -Dman=disabled -Dhtml=disabled -Dtests=false -Dinstall-tests=false \
         -Dversion-tag=257.13-mos1 -Dvcs-tag=false && \
-    ninja -j2 -C /build src/boot/systemd-bootx64.efi && \
+    ninja -C /build src/boot/systemd-bootx64.efi && \
     cp -p /build/src/boot/systemd-bootx64.efi /loader-out/systemd-bootx64.efi; \
     else \
     meson setup /build-arm64 --cross-file=/arm64-cross.ini \
         -Dmode=release -Dauto_features=disabled -Dbootloader=enabled \
         -Dman=disabled -Dhtml=disabled -Dtests=false -Dinstall-tests=false \
         -Dversion-tag=257.13-mos1 -Dvcs-tag=false && \
-    ninja -j2 -C /build-arm64 src/boot/systemd-bootaa64.efi && \
+    ninja -C /build-arm64 src/boot/systemd-bootaa64.efi && \
     cp -p /build-arm64/src/boot/systemd-bootaa64.efi /loader-out/systemd-bootaa64.efi; \
     fi
 

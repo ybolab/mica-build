@@ -101,7 +101,8 @@ for target in ('x64', 'aa64'):
     loader_outputs = [v for v in lines if v.startswith('cp -p ') and '/loader-out/' in v]
     assert len(loader) == len(loader_outputs) == 1, lines
     assert not any('busybox' in v for v in lines), lines
-    assert 'systemd-boot' + target + '.efi' in loader[0] and '-j2' in loader[0]
+    assert 'systemd-boot' + target + '.efi' in loader[0]
+    assert not any(arg.startswith('-j') for arg in loader[0].split()), loader[0]
     assert loader_outputs[0].endswith('/loader-out/systemd-boot' + target + '.efi')
     if target == 'x64':
         assert not any(any(word in line for word in ('--add-architecture', ':arm64', 'aarch64', 'qemu-', '/build-arm64', '/busybox-out/aa64')) for line in lines), lines

@@ -11,7 +11,7 @@ import { parseFirmware, type Firmware } from './firmware.ts'
 import { Signer } from '../../shared/update-envelope.ts'
 import { FIT_BOARDS, fitBoard, validateFitKernel } from './fit-board.ts'
 
-const BOOT_TOOLS = 'ai-agent/mos-boot-tools-amd64'
+const BOOT_TOOLS = { x64: 'ai-agent/mos-boot-tools-amd64', aa64: 'ai-agent/mos-boot-tools-arm64' }
 const FIT_TOOLS = 'ai-agent/mos-fit-tools-amd64'
 export const X64_CMDLINE = 'console=ttyS0,115200n8 net.ifnames=0 i6300esb.heartbeat=120 ro dm_verity.require_signatures=1 panic=5 rdinit=/init'
 export const CX3576_CMDLINE = FIT_BOARDS.cx3576.cmdline
@@ -26,7 +26,7 @@ function packageBoot(mode: 'kernel' | 'firmware' | 'fit', input: string, output:
   docker(['run', '--rm', '--label', 'ai-agent=true', '--network', 'traefik',
     '-v', `${resolve(input)}:/input:ro`, '-v', `${resolve(output)}:/output`,
     '-v', `${resolve(signing.key)}:/signing/key.pem:ro`, '-v', `${resolve(signing.certificate)}:/signing/cert.pem:ro`,
-    mode === 'fit' ? FIT_TOOLS : BOOT_TOOLS, 'bash', ...(mode === 'fit' ? ['/tools/fit.sh'] : ['/tools/kernel.sh', mode, efiArch])])
+    mode === 'fit' ? FIT_TOOLS : BOOT_TOOLS[efiArch], 'bash', ...(mode === 'fit' ? ['/tools/fit.sh'] : ['/tools/kernel.sh', mode, efiArch])])
 }
 
 /** Static PIE may have relocations, but never a loader or a needed library. */
@@ -142,7 +142,7 @@ export async function packKernel(inputs: KernelInputs, tb: Toolbox): Promise<Ker
       board, arch, kernel: artifactFile(join(kernelDirectory, kernelName)), config: artifactFile(join(kernelDirectory, 'config')),
       ...(fit ? { dtb: artifactFile(join(kernelDirectory, fit.dtb)), addresses: fit.addresses } : {}),
       ...executables, publicKeys, systemPartUuid, dataPartUuid, supportId: componentId(support), cmdline,
-      packager: docker(['image', 'inspect', '--format', '{{.Id}}', fit ? FIT_TOOLS : BOOT_TOOLS]),
+      packager: docker(['image', 'inspect', '--format', '{{.Id}}', fit ? FIT_TOOLS : BOOT_TOOLS[efiArch]]),
       bootCertificate: artifactFile(bootSigning.certificate),
     })
     const identity: BootIdentity = { board, arch, kernelBuildId: buildId, kernelRelease: release, supportId: componentId(support) }
