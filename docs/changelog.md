@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-09-12 10:19 [progress]
+
+Reviewed GPT startup/source-admission changes and their accepted root/signature
+records are merged into main at `4a451011`. The user requested continuation on
+a new development machine. The L1 watchdog is paused and its read-only turn
+was stopped; no build or guest was interrupted. The [development handoff](development-handoff.md)
+records remaining components, x64/ARM/physical acceptance, the stale two-job
+memory reservation, source/artifact identities and transfer requirements.
+No incomplete acceptance result is promoted to PASS.
+
 
 ## Development source integration and workflow (2026-09-12)
 

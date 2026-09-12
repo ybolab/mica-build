@@ -8,20 +8,22 @@
 
 ## Current development integration decision (2026-09-12)
 
-The user authorized merging reviewed source before workflow refactoring and
-remaining runtime acceptance. Main now contains B `ecc02dfa` and D `a6251de1`
-through `5dd630c4` and `bcdcb04f`; A/C were already integrated. This supersedes
-historical pre-main x64 conditions below without converting any missing test to
-PASS. The signed x64 candidate remains bound to `ed7231cd`, with image SHA256
-`ca6bdd50cad6c3dc2e93160316316092c84cc0da995f022909014e36556037b9`.
-Image production and separate 12/12 smoke passed; full guest/lifecycle/API,
-consolidated ARM cold samples and physical-board acceptance remain open.
+The user authorized the remaining reviewed source integration and continuation
+on a new development machine. Main `4a451011` includes reviewed B `3a5127d5`
+and all other committed local branches. The current `ae40a791` root has passed
+12/12 packed-binary smoke checks and independent root-signature verification.
+Its kernel/support, firmware and complete image remain unfinished. The earlier
+`ed7231cd` complete image failed GPT discovery in the guest and is historical
+evidence, not the corrected candidate. Guest, ARM cold-root and physical
+acceptance remain open.
 
-Use the current [development workflow](../design/build-harness.md) for automatic
-in-scope continuation and affected-stage reuse. The same B7 owner continues x64;
-B reviews actual events. One half-hour L1 watchdog replaces duplicate periodic
-B scanning. This early source merge does not trigger a broad ARM rebuild before
-the stable x64 acceptance baseline. No push, publication or done is authorized.
+The [development handoff](../development-handoff.md) is the current restart
+point, with remaining work, source identities and transfer requirements. At
+10:19 UTC the L1 watchdog was paused and its turn stopped; B/B7 had no live
+build. Earlier automatic-continuation instructions below are superseded by
+this pause. Resume on the new machine after restoring and verifying inputs;
+keep x64 first and reuse unaffected stages. No push, publication or unfinished
+task completion is implied.
 
 ## Context
 
