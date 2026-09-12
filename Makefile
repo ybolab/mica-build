@@ -68,9 +68,9 @@ help:
 	@echo "  os-deb-preflight    list every missing package-build input at once, and check every lock row is reachable, before os-pool starts a container"
 	@echo "  os-deb-preflight-test   drive that pre-flight red and green, and mutate each half of its hook count contract"
 	@echo "  os-debs             build every Debian package this tree's producers emit (locked ones skipped) for both architectures and index both pools (docker)"
-	@echo "  os-pool             the whole pool: fetch what rootfs/packages/lock.tsv imports, build the rest, index both pools (docker, network)"
-	@echo "  os-lock-bump        rewrite the lock rows of COMPONENT=<repository> from the registry index and print the diff (network)"
-	@echo "  os-pool-lock-test   drive fetch.sh and lock.sh against a stub registry: every refusal by name (no docker, no network)"
+	@echo "  os-pool             the whole pool: fetch what rootfs/packages/lock.tsv imports from the source repositories' releases, build the rest, index both pools (docker, network)"
+	@echo "  os-lock-bump        rewrite the lock rows of COMPONENT=<repository> from its newest build-* release (or LOCK_TAG=build-<commit12>) and print the diff (network)"
+	@echo "  os-pool-lock-test   drive fetch.sh and lock.sh against a stub of the release API: every refusal by name (no docker, no network)"
 	@echo "  os-deb-package-gate check the built pools: ownership, fields, reproducibility, enablement (docker)"
 	@echo "  os-install-closure-gate  apt-install both pools into clean roots: closure, ldd, accounts, versions (docker)"
 	@echo "  os-rootfs-manifest-test  resolve the rootfs package set for every board, profile and feature set; prove each refusal and that no producer package is unreachable"
@@ -358,18 +358,20 @@ os-pool: os-deb-preflight
 	bash build-env/deb/fetch.sh --arch arm64
 	$(MAKE) os-debs
 
-# fetch.sh and lock.sh against a stub registry that requires the token: a
-# replaced archive, a lying lock row, a missing archive, a duplicate row, a
-# missing or wrong token, each red by name; the bump's diff and its no-op.
+# fetch.sh and lock.sh against a stub of the release API that requires the
+# token: a replaced asset, a lying lock row, a missing asset, an unreleased
+# commit, a duplicate row, a missing or wrong token, each red by name; the
+# bump's diff and its no-op.
 os-pool-lock-test:
 	bash tests/pool-lock-test.sh
 
-# The lock's only writer. Reads the registry's index for COMPONENT (a package
-# repository's name), rewrites that component's rows and prints the diff; the
-# diff is the import, reviewed like any other change to this tree.
+# The lock's only writer. Reads a release of COMPONENT (a package repository's
+# name) -- LOCK_TAG=build-<commit12>, else its newest build-* release --
+# rewrites that component's rows from the archives themselves and prints the
+# diff; the diff is the import, reviewed like any other change to this tree.
 os-lock-bump:
 	@test -n "$(COMPONENT)" || { echo "error: COMPONENT=<repository> is required, e.g. make os-lock-bump COMPONENT=mica-podman" >&2; exit 1; }
-	bash build-env/deb/lock.sh --bump "$(COMPONENT)" $(if $(LOCK_VERSION),--version "$(LOCK_VERSION)") $(foreach p,$(LOCK_PACKAGES),--package "$(p)")
+	bash build-env/deb/lock.sh --bump "$(COMPONENT)" $(if $(LOCK_TAG),--tag "$(LOCK_TAG)") $(if $(LOCK_VERSION),--version "$(LOCK_VERSION)") $(foreach p,$(LOCK_PACKAGES),--package "$(p)")
 
 # The package-level gates of PLAN-036 section 6, over the pool os-pool built:
 # unique file ownership with no Replaces escape, the fields and the Depends

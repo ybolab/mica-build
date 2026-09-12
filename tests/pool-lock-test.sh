@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
-# fetch.sh and lock.sh against a stub registry: every refusal by name, every
+# fetch.sh and lock.sh against a stub release API: every refusal by name, every
 # acceptance leaving exactly the locked archive in the pool.
 #
 #   bash tests/pool-lock-test.sh
 #
-# The stub is a local HTTP server that requires the Authorization header and
-# serves a Debian-registry layout (pool/<dist>/<component>/<archive> and
-# dists/<dist>/<component>/binary-<arch>/Packages) out of a scratch
-# directory; the archives are written in Python, no dpkg on the host. registry.sh's
+# The stub is a local HTTP server shaped like the GitHub release API for one
+# organisation: releases per repository, assets with their digests, bytes
+# served for `Accept: application/octet-stream`, 401 without the token. The
+# archives are written in Python, no dpkg on the host. registry.sh's
 # MOS_REGISTRY_ENV and MOS_LOCK_FILE point the scripts at the stub and at a
-# scratch lock, MOS_POOL_DIR at a scratch pool. No docker, no network.
+# scratch lock, MOS_POOL_DIR at a scratch pool. No docker, no network, no gh.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -29,14 +29,25 @@ fail() { FAIL_N=$((FAIL_N + 1)); echo "FAIL: $1"; }
 says() { grep -c -- "$2" "$1" >/dev/null; }
 
 # ------------------------------------------------------------ the stub
+#
+# A GitHub-shaped release API for one organisation: GET
+# /repos/<owner>/<repo>/releases (newest first), /releases/tags/<tag>, and
+# each asset's `url` serving its bytes for `Accept: application/octet-stream`
+# (200 directly; the real API redirects, which registry_download follows).
+# Every request needs `Authorization: Bearer fixture-token`; anything else is
+# 401, and the token itself never appears in a refusal.
 REG="${WORK}/registry"
-mkdir -p "${REG}/pool/mica/mica-fixture" "${REG}/dists/mica/mica-fixture/binary-amd64" "${REG}/dists/mica/mica-fixture/binary-all"
+mkdir -p "${REG}/assets"
 COMMIT="$(printf 'b%.0s' $(seq 1 40))"
+TAG="build-${COMMIT:0:12}"
+OTHER_COMMIT="$(printf 'c%.0s' $(seq 1 40))"
+OTHER_TAG="build-${OTHER_COMMIT:0:12}"
+FIELDS="python3 ${REPO_ROOT}/build-env/deb/control-fields.py"
 # Fixture archives are written in Python -- an `ar` of debian-binary,
 # control.tar.gz and data.tar.gz -- because the host carries no dpkg
 # (docs/design/build.md section 0) and this test runs no container.
 build_deb() { # name version arch repo commit -> path
-    python3 - "${REG}/pool/mica/mica-fixture/$1_$2_$3.deb" "$1" "$2" "$3" "$4" "$5" <<'DEB'
+    python3 - "${REG}/assets/$1_$2_$3.deb" "$1" "$2" "$3" "$4" "$5" <<'DEB'
 import io, sys, tarfile
 path, name, version, arch, repo, commit = sys.argv[1:]
 control = f'Package: {name}\nVersion: {version}\nArchitecture: {arch}\nMaintainer: Fixture <fixture@example.invalid>\nDescription: fixture\nMos-Source-Repo: {repo}\nMos-Source-Commit: {commit}\n'.encode()
@@ -56,37 +67,54 @@ for member, data in members:
     if len(data) % 2: out += b'\n'
 open(path, 'wb').write(out)
 DEB
-    echo "${REG}/pool/mica/mica-fixture/$1_$2_$3.deb"
+    echo "${REG}/assets/$1_$2_$3.deb"
 }
 V1="1.0.0+git${COMMIT:0:12}-1"
-V2="1.1.0+git${COMMIT:0:12}-1"
+V2="1.1.0+git${OTHER_COMMIT:0:12}-1"
 A1="$(build_deb mos-fixture "${V1}" amd64 mica-fixture "${COMMIT}")"
-A2="$(build_deb mos-fixture "${V2}" amd64 mica-fixture "${COMMIT}")"
-ALL="$(build_deb mos-data "${V2}" all mica-fixture "${COMMIT}")"
-LIAR="$(build_deb mos-liar "${V2}" amd64 mica-other "${COMMIT}")"   # says another repository inside
-FIELDS="python3 ${REPO_ROOT}/build-env/deb/control-fields.py"
-stanza() { # path -> Packages stanza
-    printf 'Package: %s\nVersion: %s\nArchitecture: %s\nMos-Source-Repo: %s\nMos-Source-Commit: %s\nFilename: pool/mica/mica-fixture/%s\nSHA256: %s\n\n' \
-        "$(${FIELDS} "$1" Package)" "$(${FIELDS} "$1" Version)" "$(${FIELDS} "$1" Architecture)" \
-        "$2" "$(${FIELDS} "$1" Mos-Source-Commit)" "$(basename "$1")" "$(sha256sum "$1" | cut -d' ' -f1)"
-}
-{ stanza "${A1}" mica-fixture; stanza "${A2}" mica-fixture; } >"${REG}/dists/mica/mica-fixture/binary-amd64/Packages"
-stanza "${ALL}" mica-fixture >"${REG}/dists/mica/mica-fixture/binary-all/Packages"
+ALL="$(build_deb mos-data "${V1}" all mica-fixture "${COMMIT}")"
+A2="$(build_deb mos-fixture "${V2}" amd64 mica-fixture "${OTHER_COMMIT}")"
+LIAR="$(build_deb mos-liar "${V1}" amd64 mica-other "${COMMIT}")"   # says another repository inside
 sha() { sha256sum "$1" | cut -d' ' -f1; }
 
 python3 - "${REG}" "${WORK}/port" <<'PY' &
-import http.server, socketserver, sys, os, pathlib
+import http.server, socketserver, sys, os, pathlib, json, hashlib, re
 root, portfile = sys.argv[1:]
-os.chdir(root)
-class Handler(http.server.SimpleHTTPRequestHandler):
+root = pathlib.Path(root)
+# releases/<repo>.json: [{tag_name, id, assets:[names]}] written by the test; assets served from assets/.
+class Handler(http.server.BaseHTTPRequestHandler):
     def log_message(self, *args): pass
-    def authorized(self):
-        if self.headers.get('Authorization', '') == 'token fixture-token': return True
-        self.send_response(401); self.end_headers(); return False
+    def reply(self, code, body=b'', ctype='application/json'):
+        self.send_response(code); self.send_header('Content-Type', ctype); self.send_header('Content-Length', str(len(body))); self.end_headers(); self.wfile.write(body)
+    def releases(self, repo):
+        p = root / 'releases' / (repo + '.json')
+        return json.loads(p.read_text()) if p.exists() else None
+    def asset(self, name, aid):
+        data = (root / 'assets' / name).read_bytes()
+        return {'name': name, 'id': aid, 'url': f'http://127.0.0.1:{self.server.server_address[1]}/assets/{aid}/{name}',
+                'size': len(data), 'digest': 'sha256:' + hashlib.sha256(data).hexdigest()}
+    def release(self, repo, rel, rid):
+        return {'id': rid, 'tag_name': rel['tag_name'], 'draft': False, 'prerelease': False,
+                'assets': [self.asset(n, rid * 100 + i) for i, n in enumerate(rel['assets']) if (root / 'assets' / n).exists()]}
     def do_GET(self):
-        if self.authorized(): super().do_GET()
-    def do_HEAD(self):
-        if self.authorized(): super().do_HEAD()
+        if self.headers.get('Authorization', '') != 'Bearer fixture-token':
+            return self.reply(401, b'{"message":"Bad credentials"}')
+        m = re.fullmatch(r'/repos/([^/]+)/([^/]+)/releases(?:\?.*)?', self.path)
+        if m:
+            rels = self.releases(m.group(2))
+            if rels is None: return self.reply(404, b'{"message":"Not Found"}')
+            return self.reply(200, json.dumps([self.release(m.group(2), r, i + 1) for i, r in enumerate(rels)]).encode())
+        m = re.fullmatch(r'/repos/([^/]+)/([^/]+)/releases/tags/([^/]+)', self.path)
+        if m:
+            rels = self.releases(m.group(2)) or []
+            for i, r in enumerate(rels):
+                if r['tag_name'] == m.group(3): return self.reply(200, json.dumps(self.release(m.group(2), r, i + 1)).encode())
+            return self.reply(404, b'{"message":"Not Found"}')
+        m = re.fullmatch(r'/assets/(\d+)/([^/]+)', self.path)
+        if m and (root / 'assets' / m.group(2)).exists() and self.headers.get('Accept') == 'application/octet-stream':
+            return self.reply(200, (root / 'assets' / m.group(2)).read_bytes(), 'application/octet-stream')
+        return self.reply(404, b'{"message":"Not Found"}')
+    do_HEAD = do_GET
 with socketserver.TCPServer(('127.0.0.1', 0), Handler) as httpd:
     pathlib.Path(portfile).write_text(str(httpd.server_address[1]))
     httpd.serve_forever()
@@ -94,52 +122,71 @@ PY
 SERVER_PID=$!
 for _ in $(seq 1 50); do [ -s "${WORK}/port" ] && break; sleep 0.1; done
 PORT="$(cat "${WORK}/port")"
+mkdir -p "${REG}/releases"
+releases() { # repo, then tag:asset,asset ... (newest first)
+    local repo="$1"; shift
+    python3 - "${REG}/releases/${repo}.json" "$@" <<'PY'
+import json, sys
+out = []
+for spec in sys.argv[2:]:
+    tag, _, assets = spec.partition(':')
+    out.append({'tag_name': tag, 'assets': [a for a in assets.split(',') if a]})
+open(sys.argv[1], 'w').write(json.dumps(out))
+PY
+}
+releases mica-fixture "${OTHER_TAG}:$(basename "${A2}")" "${TAG}:$(basename "${A1}"),$(basename "${ALL}")"
 
 cat >"${WORK}/registry.env" <<ENV
-MOS_REGISTRY_URL=http://127.0.0.1:${PORT}
-MOS_REGISTRY_DIST=mica
-MOS_REGISTRY_TOKEN_VAR=MOS_POOL_TEST_TOKEN
+MOS_RELEASE_API=http://127.0.0.1:${PORT}
+MOS_RELEASE_UPLOAD=http://127.0.0.1:${PORT}
+MOS_RELEASE_OWNER=ybolab
+MOS_RELEASE_TOKEN_VAR=MOS_POOL_TEST_TOKEN
 MOS_SOURCE_URL=file://${WORK}/src
 ENV
 LOCK="${WORK}/lock.tsv"
 printf '#package\tversion\tarch\tsha256\tsource-repo\tsource-commit\n' >"${LOCK}"
 POOL="${WORK}/pool"
-export MOS_REGISTRY_ENV="${WORK}/registry.env" MOS_LOCK_FILE="${LOCK}" MOS_POOL_DIR="${POOL}"
+export MOS_REGISTRY_ENV="${WORK}/registry.env" MOS_LOCK_FILE="${LOCK}" MOS_POOL_DIR="${POOL}" MOS_RELEASE_NO_GH=1
 export MOS_POOL_TEST_TOKEN=fixture-token
 FETCH="bash ${REPO_ROOT}/build-env/deb/fetch.sh"
 LOCKSH="bash ${REPO_ROOT}/build-env/deb/lock.sh"
 OUT="${WORK}/out.txt"
 
 # ------------------------------------------------------------ lock.sh --bump
-if ${LOCKSH} --bump mica-fixture >"${OUT}" 2>&1 && says "${OUT}" "+mos-fixture	${V2}	amd64" && says "${OUT}" "+mos-data	${V2}	all" && ! says "${OUT}" "${V1}"; then
-    pass "L1 --bump locks the newest version of each package of the component and prints the diff"
+if ${LOCKSH} --bump mica-fixture >"${OUT}" 2>&1 && says "${OUT}" "+mos-fixture	${V2}	amd64" && ! says "${OUT}" "^[-+]mos-data"; then
+    pass "L1 --bump without a tag locks the newest build-* release (one archive, from the archive's own fields) and prints the diff"
 else fail "L1 --bump: $(cat "${OUT}")"; fi
 if ${LOCKSH} --bump mica-fixture >"${OUT}" 2>&1 && says "${OUT}" "no change"; then
     pass "L2 a second --bump is a no-op"
 else fail "L2 second bump: $(cat "${OUT}")"; fi
-if ${LOCKSH} --bump mica-fixture --version "${V1}" --package mos-fixture >"${OUT}" 2>&1 && says "${OUT}" "+mos-fixture	${V1}" && says "${OUT}" "-mos-fixture	${V2}" && ! says "${OUT}" "^[-+]mos-data"; then
-    pass "L3 --version and --package pin one package to an older version and keep the other rows"
-else fail "L3 pinned bump: $(cat "${OUT}")"; fi
-if ! ${LOCKSH} --bump mica-absent >"${OUT}" 2>&1 && says "${OUT}" "holds no archive for component mica-absent"; then
-    pass "L4 an unknown component is refused by name"
-else fail "L4 unknown component: $(cat "${OUT}")"; fi
-cp "${REG}/dists/mica/mica-fixture/binary-amd64/Packages" "${WORK}/Packages.amd64"
-stanza "${LIAR}" mica-other >>"${REG}/dists/mica/mica-fixture/binary-amd64/Packages"
-if ! ${LOCKSH} --bump mica-fixture --package mos-liar >"${OUT}" 2>&1 && says "${OUT}" "says Mos-Source-Repo: mica-other"; then
-    pass "L5 an index stanza attributing an archive to another repository is refused"
-else fail "L5 liar stanza: $(cat "${OUT}")"; fi
-cp "${WORK}/Packages.amd64" "${REG}/dists/mica/mica-fixture/binary-amd64/Packages"
+if ${LOCKSH} --bump mica-fixture --tag "${TAG}" >"${OUT}" 2>&1 && says "${OUT}" "+mos-fixture	${V1}" && says "${OUT}" "-mos-fixture	${V2}" && says "${OUT}" "+mos-data	${V1}	all"; then
+    pass "L3 --tag locks that release: both of its archives, the other release's row replaced"
+else fail "L3 tagged bump: $(cat "${OUT}")"; fi
+if ${LOCKSH} --bump mica-fixture --tag "${TAG}" --package mos-data >"${OUT}" 2>&1 && says "${OUT}" "no change"; then
+    pass "L4 --package narrows the bump and keeps the component's other rows"
+else fail "L4 narrowed bump: $(cat "${OUT}")"; fi
+if ! ${LOCKSH} --bump mica-absent >"${OUT}" 2>&1 && says "${OUT}" "does not exist or is not readable"; then
+    pass "L5 an unknown repository is refused by name"
+else fail "L5 unknown component: $(cat "${OUT}")"; fi
+releases mica-fixture "${TAG}:$(basename "${A1}"),$(basename "${ALL}"),$(basename "${LIAR}")"
+if ! ${LOCKSH} --bump mica-fixture --tag "${TAG}" >"${OUT}" 2>&1 && says "${OUT}" "says Mos-Source-Repo: mica-other"; then
+    pass "L6 an asset attributing itself to another repository is refused"
+else fail "L6 liar asset: $(cat "${OUT}")"; fi
+releases mica-fixture "${OTHER_TAG}:$(basename "${A2}")" "${TAG}:$(basename "${A1}"),$(basename "${ALL}")"
+if ! ${LOCKSH} --bump mica-fixture --tag v1.0 >"${OUT}" 2>&1 && says "${OUT}" "is not build-<commit12>"; then
+    pass "L7 a tag that is not a per-commit build release is refused"
+else fail "L7 tag shape: $(cat "${OUT}")"; fi
 if ! MOS_POOL_TEST_TOKEN= ${LOCKSH} --bump mica-fixture >"${OUT}" 2>&1 && says "${OUT}" "MOS_POOL_TEST_TOKEN is unset" && ! says "${OUT}" "fixture-token"; then
-    pass "L6 an empty token variable is refused by the variable's name, never its value"
-else fail "L6 token: $(cat "${OUT}")"; fi
+    pass "L8 an empty token variable is refused by the variable's name, never its value"
+else fail "L8 token: $(cat "${OUT}")"; fi
 ROWS="$(${LOCKSH} --rows --arch amd64 | cut -f1 | tr '\n' ' ')"
-[ "${ROWS}" = "mos-data mos-fixture " ] && pass "L7 --rows --arch amd64 lists the amd64 and all rows (${ROWS% })" || fail "L7 rows: ${ROWS}"
+[ "${ROWS}" = "mos-data mos-fixture " ] && pass "L9 --rows --arch amd64 lists the amd64 and all rows (${ROWS% })" || fail "L9 rows: ${ROWS}"
 
 # ------------------------------------------------------------ fetch.sh
-if ${FETCH} --arch amd64 --check >"${OUT}" 2>&1 && says "${OUT}" "every locked archive for amd64 (2) is reachable"; then
-    pass "F1 --check reaches every row"
+if ${FETCH} --arch amd64 --check >"${OUT}" 2>&1 && says "${OUT}" "every locked archive for amd64 (2) is published" && says "${OUT}" "digest matches the lock"; then
+    pass "F1 --check reads every row's release and compares the API digest"
 else fail "F1 check: $(cat "${OUT}")"; fi
-if ${FETCH} --arch amd64 >"${OUT}" 2>&1 && [ -f "${POOL}/amd64/pool/mos-fixture_${V1}_amd64.deb" ] && [ -f "${POOL}/amd64/pool/mos-data_${V2}_all.deb" ] && says "${OUT}" "2 archive(s) fetched"; then
+if ${FETCH} --arch amd64 >"${OUT}" 2>&1 && [ -f "${POOL}/amd64/pool/mos-fixture_${V1}_amd64.deb" ] && [ -f "${POOL}/amd64/pool/mos-data_${V1}_all.deb" ] && says "${OUT}" "2 archive(s) fetched"; then
     pass "F2 the locked archives land in the pool, verified"
 else fail "F2 fetch: $(cat "${OUT}")"; fi
 if ${FETCH} --arch amd64 >"${OUT}" 2>&1 && says "${OUT}" "0 archive(s) fetched, 2 already present"; then
@@ -148,40 +195,56 @@ else fail "F3 refetch: $(cat "${OUT}")"; fi
 if ! MOS_POOL_TEST_TOKEN= ${FETCH} --arch arm64 >"${OUT}" 2>&1 && says "${OUT}" "MOS_POOL_TEST_TOKEN is unset"; then
     pass "F4 a missing token is refused by the variable's name (the lock has an all row for arm64)"
 else fail "F4 token: $(cat "${OUT}")"; fi
-if ! MOS_POOL_TEST_TOKEN=wrong-scheme ${FETCH} --arch amd64 --check >"${OUT}" 2>&1 && says "${OUT}" "answered 401; MOS_POOL_TEST_TOKEN does not grant"; then
+if ! MOS_POOL_TEST_TOKEN=wrong-token ${FETCH} --arch amd64 --check >"${OUT}" 2>&1 && says "${OUT}" "answered 401 for ybolab/mica-fixture; MOS_POOL_TEST_TOKEN does not grant"; then
     pass "F5 a 401 names the token variable"
 else fail "F5 401: $(cat "${OUT}")"; fi
 
-# The registry replaces an archive under its name: the digest no longer matches the lock.
+# The release replaces an asset under its name: the digest no longer matches the lock.
 cp "${A1}" "${WORK}/a1.orig"
 python3 - "${A1}" <<'PY'
 import sys; p = sys.argv[1]; d = bytearray(open(p, 'rb').read()); d[-1] ^= 1; open(p, 'wb').write(d)
 PY
 rm -f "${POOL}/amd64/pool/mos-fixture_${V1}_amd64.deb"
-if ! ${FETCH} --arch amd64 >"${OUT}" 2>&1 && says "${OUT}" "mos-fixture ${V1} amd64: the registry served bytes with sha256" && [ ! -f "${POOL}/amd64/pool/mos-fixture_${V1}_amd64.deb" ] && [ -z "$(find "${POOL}/amd64/pool" -name '.fetch.*')" ]; then
-    pass "F6 an archive whose bytes differ from the lock is refused by name and discarded"
-else fail "F6 altered bytes: $(cat "${OUT}")"; fi
+if ! ${FETCH} --arch amd64 --check >"${OUT}" 2>&1 && says "${OUT}" "publishes mos-fixture_${V1}_amd64.deb with digest sha256:" && says "${OUT}" "the lock says sha256:$(sha "${WORK}/a1.orig")"; then
+    pass "F6 --check refuses an asset whose published digest differs from the lock"
+else fail "F6 check digest: $(cat "${OUT}")"; fi
+if ! ${FETCH} --arch amd64 >"${OUT}" 2>&1 && says "${OUT}" "mos-fixture ${V1} amd64: the release served bytes with sha256" && [ ! -f "${POOL}/amd64/pool/mos-fixture_${V1}_amd64.deb" ] && [ -z "$(find "${POOL}/amd64/pool" -name '.fetch.*')" ]; then
+    pass "F7 an asset whose bytes differ from the lock is refused by name and discarded"
+else fail "F7 altered bytes: $(cat "${OUT}")"; fi
 cp "${WORK}/a1.orig" "${A1}"
 
 # The lock row is wrong about the archive it names: same bytes, other source commit.
 python3 - "${LOCK}" "${COMMIT}" <<'PY'
 import sys, pathlib; p = pathlib.Path(sys.argv[1]); c = sys.argv[2]
-p.write_text(p.read_text().replace('\t' + c + '\n', '\t' + 'c' * 40 + '\n', 1))
+p.write_text(p.read_text().replace('\t' + c + '\n', '\t' + 'd' * 40 + '\n', 1))
 PY
-rm -f "${POOL}/amd64/pool/mos-fixture_${V1}_amd64.deb" "${POOL}/amd64/pool/mos-data_${V2}_all.deb"
-if ! ${FETCH} --arch amd64 >"${OUT}" 2>&1 && says "${OUT}" "control file says Mos-Source-Commit: '${COMMIT}', and the lock row says '$(printf 'c%.0s' $(seq 1 40))'" && [ "$(find "${POOL}/amd64/pool" -name '*.deb' | wc -l)" -eq 0 ]; then
-    pass "F7 a lock row that disagrees with the archive's control field is refused by name and the download discarded"
-else fail "F7 control mismatch: $(cat "${OUT}")"; fi
-${LOCKSH} --bump mica-fixture >/dev/null 2>&1
-rm -f "${REG}/pool/mica/mica-fixture/mos-data_${V2}_all.deb"
-if ! ${FETCH} --arch amd64 >"${OUT}" 2>&1 && says "${OUT}" "does not hold mos-data_${V2}_all.deb under component mica-fixture"; then
-    pass "F8 a row the registry cannot serve is refused by name"
-else fail "F8 404: $(cat "${OUT}")"; fi
-printf 'mos-fixture\t%s\tamd64\t%s\tmica-fixture\t%s\n' "${V2}" "$(sha "${A2}")" "${COMMIT}" >"${LOCK}.bad"
-cat "${LOCK}" "${LOCK}.bad" >"${LOCK}.dup"; cp "${LOCK}.dup" "${LOCK}"
+rm -f "${POOL}/amd64/pool/mos-fixture_${V1}_amd64.deb" "${POOL}/amd64/pool/mos-data_${V1}_all.deb"
+if ! ${FETCH} --arch amd64 >"${OUT}" 2>&1 && says "${OUT}" "has no release tagged build-dddddddddddd" && [ "$(find "${POOL}/amd64/pool" -name '*.deb' | wc -l)" -eq 0 ]; then
+    pass "F8 a lock row naming a commit the repository never released is refused by tag, before any download"
+else fail "F8 unreleased commit: $(cat "${OUT}")"; fi
+${LOCKSH} --bump mica-fixture --tag "${TAG}" >/dev/null 2>&1
+releases mica-fixture "${TAG}:$(basename "${A1}")"
+if ! ${FETCH} --arch amd64 >"${OUT}" 2>&1 && says "${OUT}" "carries no asset named mos-data_${V1}_all.deb"; then
+    pass "F9 a row whose asset the release does not hold is refused by name"
+else fail "F9 missing asset: $(cat "${OUT}")"; fi
+releases mica-fixture "${TAG}:$(basename "${A1}"),$(basename "${ALL}")"
+# Same bytes, a lock row that lies about the archive's fields: the release's
+# own asset under a name that says one thing while the control file says another.
+cp "${LIAR}" "${REG}/assets/mos-fixture_${V1}_amd64.deb.liar"
+printf 'mos-fixture\t%s\tamd64\t%s\tmica-fixture\t%s\n' "${V1}" "$(sha "${LIAR}")" "${COMMIT}" >"${LOCK}.row"
+{ grep -v '^mos-fixture' "${LOCK}"; cat "${LOCK}.row"; } >"${LOCK}.tmp"; mv "${LOCK}.tmp" "${LOCK}"
+cp "${LIAR}" "${A1}"
+rm -f "${POOL}/amd64/pool/mos-fixture_${V1}_amd64.deb"
+if ! ${FETCH} --arch amd64 >"${OUT}" 2>&1 && says "${OUT}" "control file says Package: 'mos-liar', and the lock row says 'mos-fixture'" && [ ! -f "${POOL}/amd64/pool/mos-fixture_${V1}_amd64.deb" ]; then
+    pass "F10 a lock row that disagrees with the archive's control field is refused by name and the download discarded"
+else fail "F10 control mismatch: $(cat "${OUT}")"; fi
+cp "${WORK}/a1.orig" "${A1}"
+${LOCKSH} --bump mica-fixture --tag "${TAG}" >/dev/null 2>&1
+printf 'mos-fixture\t%s\tamd64\t%s\tmica-fixture\t%s\n' "${V1}" "$(sha "${A1}")" "${COMMIT}" >"${LOCK}.dup"
+cat "${LOCK}.dup" >>"${LOCK}"
 if ! ${FETCH} --arch amd64 >"${OUT}" 2>&1 && says "${OUT}" "locked twice"; then
-    pass "F9 a package locked twice for one architecture is refused before any download"
-else fail "F9 duplicate row: $(cat "${OUT}")"; fi
+    pass "F11 a package locked twice for one architecture is refused before any download"
+else fail "F11 duplicate row: $(cat "${OUT}")"; fi
 
 echo "RESULT: $([ "${FAIL_N}" -eq 0 ] && echo PASS || echo FAIL) (${PASS_N}/$((PASS_N + FAIL_N)) checks passed)"
 [ "${FAIL_N}" -eq 0 ]

@@ -1,5 +1,19 @@
 # Changelog
 
+## 2026-09-13 01:10 [decision]
+
+Archives are published as GitHub Release assets by each repository's
+workflow, not through a package registry of our own (user, 2026-09-13):
+one release `build-<commit12>` per source commit, one asset per archive.
+`fetch.sh` derives a lock row's asset from its repository and commit and
+verifies bytes, the API digest and the control fields; `lock.sh --bump`
+downloads a release's `.deb` assets and writes the rows from the archives
+themselves; `publish.sh` creates the release on HEAD and uploads with
+read-back. `registry.env` names the API, the organisation and `GH_TOKEN`
+(`gh auth token` as the fallback). `tests/pool-lock-test.sh` now stubs the
+release API (20 checks). The Gitea Debian registry is retired; Gitea remains
+a git mirror.
+
 ## 2026-09-13 00:20 [progress]
 
 Phase 2 of `20260911-2006-split-package-repositories`: `build-env/` and

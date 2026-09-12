@@ -151,18 +151,11 @@ inside the archives are renamed to Mica OS by the phase that moves them
 (section 12); the split and the rename are one operation per repository,
 decided and confirmed 2026-09-12.
 
-GitHub has no Debian package registry, so the archives keep their home on
-the internal Gitea: `build-env/deb/registry.env` still names
-`https://git.ds.cc/api/packages/ybolab/debian`, distribution `mica`, and the
-component stays the source repository's name (`mica` for archives the
-assembly builds, once `origin` points at GitHub; the `mica-build` rows the
-Phase 1 proof locked are replaced at the next `os-lock-bump`). The Gitea
-repositories created on 2026-09-12 (`mica-build`, `mica-build-env`, `micad`,
-`mica-deploy`, `mica-podman` on `git.ds.cc/ybolab`) are superseded and can be
-deleted; the `ybolab` Gitea organisation stays for the registry and its
-token. Moving the archives to GitHub would mean OCI artifacts on `ghcr.io`
-through `oras`, which section *Alternatives* declined as a package format
-and which this decision does not reopen.
+Archives travel as GitHub Release assets (section 1, decided 2026-09-13);
+the Gitea instance keeps a mirror of every repository (`gitea` remote,
+pushed in step with `origin`) and nothing else. The `mica-build` rows the
+Phase 1 proof locked from the Gitea registry are replaced by rows from the
+`mica` release at the next `os-lock-bump`.
 
 | Repository | Content | Publishes |
 |---|---|---|
@@ -192,26 +185,33 @@ and `meta/`, and the release gate re-verifies its record; moved out, it
 would need the boards and the lock from here and the assembly would have
 nothing left to assemble.
 
-### 1. Transport: the Gitea Debian registry
+### 1. Transport: GitHub Releases, one per source commit
 
-Each package repository's CI, on every push to `main` that passes its gates,
-builds both architectures, runs `deb-package-gate.sh` over its own pool and
-uploads with `publish.sh`:
+Decided 2026-09-13 (user): archives are published as **release assets by
+each repository's workflow**, not through a package registry of our own.
+Every push to `main` that passes a package repository's gates creates the
+release `build-<commit12>` of `ybolab/<repository>` on that commit, with one
+asset per archive named `<package>_<version>_<arch>.deb`; `publish.sh` is
+that step, runnable from a developer machine as well:
 
 ```sh
 # build-env/deb/publish.sh [--pool _out/debs] [--arch <a>] [--package <name> ...]
-PUT https://git.ds.cc/api/packages/ybolab/debian/pool/mica/<component>/upload
+POST https://api.github.com/repos/ybolab/<repository>/releases        {tag_name: build-<commit12>, target_commitish: <commit>}
+POST https://uploads.github.com/repos/ybolab/<repository>/releases/<id>/assets?name=<archive>
 ```
 
-The registry (URL, distribution `mica`, the *name* of the token variable, the
-source URL prefix) is declared once in `build-env/deb/registry.env`; the
-component is the publishing repository, by the same rule that fills
-`Mos-Source-Repo` (`origin`'s basename, `MOS_SOURCE_REPO` overriding).
-`publish.sh` refuses a `.dirty` version, a dirty checkout, an archive from
-another repository or commit, and reads every upload back. Download is the
-direct URL `.../pool/mica/<component>/<name>_<version>_<arch>.deb`.
-`fetch.sh` reads the token variable and refuses with the variable's name on
-401/403.
+A lock row names the repository and the full commit, so `fetch.sh` derives
+the release tag and the asset and follows nothing "latest"; it verifies the
+bytes against the row's sha256 (and the API's `digest` on `--check`) and the
+five control fields against the row. `lock.sh --bump <component>
+[--tag build-…]` downloads every `.deb` asset of a release and writes the
+rows from the archives' own fields. `registry.env` declares the API, the
+organisation, the token variable (`GH_TOKEN`, falling back to
+`gh auth token`) and the source URL prefix. `publish.sh` refuses a `.dirty`
+version, a dirty checkout, an archive from another repository or commit, an
+asset already present with other bytes, and a HEAD not yet pushed (GitHub
+refuses to tag an unknown commit). The Gitea Debian registry used by the
+Phase 1 proof is retired; Gitea stays as a git mirror only.
 
 ### 2. Provenance inside the archive
 
@@ -420,6 +420,10 @@ smoke-tested from the pool as it stands.
   virt-arm64 from the fetched copy; the x64 image passed `os-verify` and the
   release gate with the lock rows in `provenance.json`. Pre-existing defects
   met on the way are `20260912-2236-phase1-findings`.
+- **Phase 2a — release transport.** Done 2026-09-13: `fetch.sh`,
+  `lock.sh` and `publish.sh` moved from the Gitea Debian registry to GitHub
+  Releases (section 1); `tests/pool-lock-test.sh` drives them against a stub
+  of the release API (20 checks).
 - **Phase 2 — `mica-build-env` and `mica-debian`.** Done 2026-09-13:
   `build-env/` (14 commits) and `rootfs/debian/` (20 commits) subtree-split
   from `75a29d4d`, pushed to GitHub, added back as submodules at their old
@@ -611,7 +615,13 @@ Run 2026-09-12; results in the task record's *Verification*.
   the `mica-debian` submodule; `rootfs/packages-src` + `overlay` yes, as
   `mica-system` through the lock; the composer no (rationale under *Target
   repository set*).
-- Decision 4 (2026-09-12): the token lives on the developer machine as
-  `GITEA_DS_TOKEN` (named, never printed, by `build-env/deb/registry.env`);
-  when a runner exists, the same variable is a repository Actions secret and
-  `publish.sh`/`fetch.sh` read it unchanged. No runner is registered today.
+- Decision 4 (2026-09-13, revised): the token is `GH_TOKEN` (named, never
+  printed, by `build-env/deb/registry.env`; `gh auth token` on a developer
+  machine); in a package repository's workflow it is the job's
+  `GITHUB_TOKEN` with `contents: write`, which may create releases and
+  upload assets of its own repository, and in the assembly's workflow a
+  fine-grained token that reads the package repositories' releases.
+  Runners are GitHub-hosted; the builder images are built by `make
+  build-env` in each job until decision 3 is revisited for speed.
+- Decided 2026-09-13 (user): packages are published by workflows as
+  releases, not through a package registry of our own (section 1).
