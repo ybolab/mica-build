@@ -1904,3 +1904,21 @@ rules. Independent B source/input review is next; the corrected root, affected
 components/image and full x64 acceptance remain pending. ED723 and every old
 failed invocation retain their original identities. No main, ARM, cron, push,
 publication or completion action occurred.
+
+
+### GPT root execution preparation, 2026-09-12 08:33 UTC
+
+While B reviews ae40 source/input admission, task-local root-v2 preparation
+binds its exact composition/readiness, existing724215ac daemon, new d2 native/
+deploy and separately reused438 tool source. Original ED723 runners are intact.
+The child cgroup gate reuses the accepted component gate with only its W2 log
+marker changed; original command/default entrypoint, stdin and exit are retained.
+Forty-eight direct checks pass across15 captured invocation shapes, source-role/
+fixture-environment controls and CPU/memory/swap/cpuset refusals. These are
+controlled preparation checks, not actual container or root execution.
+GptJoin-ae40a791d763830a8e4a7cd7b0bb83a8b8945902/metadata/
+root-adapter-preparation-v2.json SHA256
+a3c5dc3489bc9a234fb4d331fc71a98bc1e61c2ed9e6e187999fbc9233065a43
+binds six task-local files and the exact versioned changes. No production source,
+producer output, daemon state or accepted artifact changed. New source/input
+review and fresh per-launch resource/input checks still precede the root start.
