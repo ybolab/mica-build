@@ -6,7 +6,7 @@ import { dirname, join } from 'node:path'
 import { Signer } from '../../shared/update-envelope.ts'
 import { canonicalJson, componentId } from './components.ts'
 import { packArchive } from './component-archive.ts'
-import { assembleRelease, gateRelease, verifyArchive, verifyJoinedNativePayload, type ReleaseInputs } from './release-manifest.ts'
+import { assembleRelease, gateRelease, sourceLineage, verifyArchive, verifyJoinedNativePayload, type ReleaseInputs } from './release-manifest.ts'
 import { sourceIdentity } from './release-cli.ts'
 import { acceptProvenance } from '../../tests/file-ab-x64/provenance-acceptance.ts'
 import { Toolbox } from './toolbox.ts'
@@ -673,6 +673,29 @@ test.each(['missing', 'unknown', 'self-authorized'])('runtime joined lineage ref
   r.provenance.capture_sha256['source-lineage.json'] = hash(Buffer.from(canonicalJson(r.provenance.source_lineage) + '\n'))
   writeRuntime(r)
   expect(() => assembleRelease(inputs)).toThrow()
+})
+
+test('joined mask consumer admission still requires the complete producer witness', () => {
+  const lineage = runtime().provenance.source_lineage
+  lineage.schema = 'mos/source-lineage/join-v1'
+  lineage.composition_source = { commit: 'b'.repeat(40), tree: 'c'.repeat(40), epoch: 1789167737 }
+  lineage.root_epoch = 1577836800
+  lineage.receipt_sha256 = [
+    'fc79903fcd6dc8bf40191c5f4cdf4979d664dfd0315a53521d57af821f80d166',
+    '175f2dbe31b08bde91f8cf5a15680c9ec7fb38d6c2e0bda46edff5f24e558d09',
+    '267dff5433d4bc2b2a409a06e3019fd0f680f449c4866d60f8b3353b237a4683',
+    'af5bc012346a99d360612a1340df58de35265b9a7cc638d2286401b2a3ab7112',
+  ].sort()
+  lineage.producer_join = { schema: 'mos/producer-join/boot-tools-v1' }
+  lineage.delta = [{ path: 'rootfs/runtime/consumers.json',
+    before: { mode: '100644', blob: 'a'.repeat(40) }, after: { mode: '100644', blob: 'b'.repeat(40) } }]
+  const validate = () => sourceLineage(lineage, { commit: 'b'.repeat(40), dirty: false }, 'amd64', {})
+  // Passing this exact path check must still reach the strict witness parser.
+  expect(validate).toThrow('unknown or missing fields')
+  lineage.delta[0].path = 'rootfs/runtime/compose.py'
+  expect(validate).toThrow('producer join consumer delta/epoch')
+  lineage.delta[0].path = 'pkgs/mos-boot/Dockerfile'
+  expect(validate).toThrow('runtime lineage package-relevant delta')
 })
 
 
