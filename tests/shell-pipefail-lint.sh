@@ -69,7 +69,7 @@ fi
 # and not `sort`: the refusal above is what keeps a conflicted tree out, and this
 # is the second half of the same statement -- one entry per path, whatever the
 # index holds.
-mapfile -t files < <(git ls-files --recurse-submodules '*.sh' 'hack/*' | sort -u)
+mapfile -t files < <(git ls-files '*.sh' 'hack/*' | sort -u)
 [ "${#files[@]}" -gt 0 ] || { echo "error: no shell scripts found; this lint would pass by finding nothing" >&2; exit 1; }
 
 scanned=0

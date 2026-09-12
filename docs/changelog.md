@@ -1,5 +1,18 @@
 # Changelog
 
+## 2026-09-13 02:30 [decision]
+
+Repositories are linked by pins, not submodules (user, 2026-09-13): a JSON
+file per source dependency under `deps/sources/` names the commit, the
+release asset and its sha256, in the shape of the Debian pins, and the
+vendored `tools/deps.sh` fetches it into a gitignored directory (`build-env/`
+from `ybolab/mica-build-env`, `rootfs/debian/` from `ybolab/mica-debian`),
+bumps a pin from a release, and publishes a repository's own source as the
+release asset `<repository>-<commit12>.tar.gz`. `make deps`, `deps-check`
+and `deps-bump DEP=` wrap it; the Makefile refuses an empty directory with
+`make deps`; CI fetches with `MICA_DEPS_TOKEN`; the lineage identity requires
+each directory at its pin. The submodules and `.gitmodules` are gone.
+
 ## 2026-09-13 01:10 [decision]
 
 Archives are published as GitHub Release assets by each repository's

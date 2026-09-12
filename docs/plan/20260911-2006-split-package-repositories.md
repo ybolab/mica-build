@@ -318,12 +318,20 @@ unpins `mos-podman` on `mos-system` and removes `@SYSTEM_VERSION@` and
 `--system-version` with it; `mosd` and `mos-apid` stay exactly pinned on
 `mos-system` until Phase 5 moves them across the boundary.
 
-### 7. The shared substrate as a submodule
+### 7. The shared substrate as a source pin
 
-`build-env/` becomes `mica-build-env` and is added back as a submodule at
-`build-env/` in all five repositories; no consumer changes path. Each
-repository's `Makefile` refuses with the `git submodule update --init` line
-when `build-env/from.sh` is absent. Builder images stay locally built
+Decided 2026-09-13 (user): repositories are not linked by submodules but by
+pins in the shape of the Debian pins -- a JSON file per dependency naming a
+version (commit) and a hash -- so each repository builds on its own and
+depends by pin. `build-env/` becomes `mica-build-env`, published on every
+commit as the release asset `mica-build-env-<commit12>.tar.gz`, and every
+consumer carries `deps/sources/mica-build-env.json` (name, repository,
+commit, path, asset, sha256) and a vendored `tools/deps.sh` that fetches,
+verifies and unpacks it into the gitignored `build-env/`, recording the pin
+in `build-env/.deps-pin`; no consumer changes path. `mica-debian` is pinned
+the same way at `rootfs/debian/`. Each repository's `Makefile` refuses with
+`make deps` when `build-env/from.sh` is absent, and the lineage record
+requires each directory at its pin. Builder images stay locally built
 (`make build-env`); publishing them to the container registry is decision 3.
 
 ### 8. Local development loop
@@ -429,12 +437,12 @@ smoke-tested from the pool as it stands.
   from `75a29d4d`, pushed to GitHub, added back as submodules at their old
   paths; `tests/deb-package-gate.sh` became `build-env/deb/package-gate.sh`
   and the two Debian tests `rootfs/debian/tests/`, each deriving the
-  consumer from its new depth; the Makefile refuses an empty submodule by
-  name, CI checks out submodules, the two lints list submodule files
-  (`git ls-files --recurse-submodules`), and the lineage identity requires
-  each submodule at the recorded commit and clean. Neither new repository
-  runs standalone: both are consumed through `mica`, and neither carries a
-  `build-env` submodule of its own. Gitea mirrors pending (host down).
+  consumer from its new depth. Revised the same night per section 7: the
+  submodules were replaced by source pins (`deps/sources/*.json`, `make
+  deps`, `tools/deps.sh`), the directories are gitignored, CI runs `make
+  deps` with the `MICA_DEPS_TOKEN` secret, and the lineage identity requires
+  each directory at its pin. Neither new repository runs standalone: both are
+  consumed through `mica`. Gitea mirrors pending (host down).
 - **Phase 3 — `mica-podman`.** The 45-minute arm64 build leaves this tree.
   Move the two overlay files and the pins test, rename the package, publish,
   lock, delete `pkgs/podman`, rewire the four podman tests.

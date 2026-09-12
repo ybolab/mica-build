@@ -1,16 +1,33 @@
 .PHONY: os-trust-domain-test os-file-transaction-faults build-env docs-verify docs-verify-test help os-apid-api-spec-pins os-apid-api-test os-apid-ui-build-contract-test os-bare-host-gate os-boot-tools os-build-test os-components os-cx3576-flash-test os-dbus-policy-test os-deb-package-gate os-deb-preflight os-deb-preflight-test os-debian-cache os-debian-install os-debian-test os-debian-verify os-debs os-devkeys os-lock-bump os-pool os-pool-lock-test os-factory-root-gate os-fit-records-test os-gadget-test os-health-test os-host-toolchain-lint os-host-toolchain-lint-test os-image os-install-closure-gate os-layout-lint os-mac-test os-netavark-kernel-test os-quadlet-doc-test os-repart-test os-rootfs-cx3576 os-rootfs-manifest-test os-rootfs-virt-arm64 os-rootfs-x64 os-rust-gate os-shadow-test os-shell-pipefail-lint os-smoke-negative-test os-smoke-test os-verify os-verify-test podman podman-pins podman-pins-test
 
-# THE SUBMODULES, before anything else: build-env/ (mica-build-env) is the
-# substrate every target reaches through, rootfs/debian/ (mica-debian) is the
-# pinned base the composer installs. A checkout made without
-# --recurse-submodules has both directories empty, and every target would then
-# fail somewhere deep with a message naming a file instead of the cause.
+# THE SOURCE DEPENDENCIES, before anything else: build-env/ (mica-build-env)
+# is the substrate every target reaches through, rootfs/debian/ (mica-debian)
+# is the pinned base the composer installs. Both are fetched at their pins
+# (deps/sources/*.json) by tools/deps.sh and are gitignored, so a fresh clone
+# has neither, and every target would then fail somewhere deep with a message
+# naming a file instead of the cause. `make deps` is the one target that may
+# run without them.
+ifeq ($(filter deps,$(MAKECMDGOALS)),)
 ifeq ($(wildcard build-env/from.sh),)
-$(error build-env/ is empty: the build substrate is the mica-build-env submodule. Run: git submodule update --init --recursive)
+$(error build-env/ is empty: the build substrate is fetched at its pin from ybolab/mica-build-env. Run: make deps)
 endif
 ifeq ($(wildcard rootfs/debian/run.sh),)
-$(error rootfs/debian/ is empty: the pinned Debian base is the mica-debian submodule. Run: git submodule update --init --recursive)
+$(error rootfs/debian/ is empty: the pinned Debian base is fetched at its pin from ybolab/mica-debian. Run: make deps)
 endif
+endif
+
+# Fetch every source dependency at its pin (deps/sources/*.json); a no-op
+# when each directory already carries its pin. `make deps-check` reads the
+# releases without downloading; `make deps-bump DEP=<repository>` rewrites
+# one pin from that repository's newest build-* release.
+.PHONY: deps deps-check deps-bump
+deps:
+	bash tools/deps.sh fetch
+deps-check:
+	bash tools/deps.sh fetch --check
+deps-bump:
+	@test -n "$(DEP)" || { echo "error: DEP=<repository> is required, e.g. make deps-bump DEP=mica-build-env" >&2; exit 1; }
+	bash tools/deps.sh bump "$(DEP)" $(if $(DEP_TAG),--tag "$(DEP_TAG)")
 
 # mos top-level build entry. Heavy lifting stays in each component; this file
 # only routes. Board targets: make <board>-<component>, e.g. cx3576-kernel.
@@ -68,6 +85,9 @@ help:
 	@echo "  os-deb-preflight    list every missing package-build input at once, and check every lock row is reachable, before os-pool starts a container"
 	@echo "  os-deb-preflight-test   drive that pre-flight red and green, and mutate each half of its hook count contract"
 	@echo "  os-debs             build every Debian package this tree's producers emit (locked ones skipped) for both architectures and index both pools (docker)"
+	@echo "  deps                fetch the source dependencies (build-env/, rootfs/debian/) at their pins in deps/sources/ (network)"
+	@echo "  deps-check          read each source pin's release without downloading"
+	@echo "  deps-bump           rewrite the pin of DEP=<repository> from its newest build-* release (or DEP_TAG=build-<commit12>)"
 	@echo "  os-pool             the whole pool: fetch what rootfs/packages/lock.tsv imports from the source repositories' releases, build the rest, index both pools (docker, network)"
 	@echo "  os-lock-bump        rewrite the lock rows of COMPONENT=<repository> from its newest build-* release (or LOCK_TAG=build-<commit12>) and print the diff (network)"
 	@echo "  os-pool-lock-test   drive fetch.sh and lock.sh against a stub of the release API: every refusal by name (no docker, no network)"

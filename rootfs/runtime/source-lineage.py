@@ -123,20 +123,22 @@ def identity(root: Path) -> dict:
     for name, entry in tree(root, commit).items():
         path = root / name
         require(path.parent.resolve().is_relative_to(root.resolve()), 'checkout parent escapes source')
-        if entry['mode'] == '160000':
-            # A submodule (build-env, rootfs/debian): checked out at exactly the
-            # commit the superproject records, and clean, or the tree in front
-            # of us is not the tree the commit names.
-            require(path.is_dir() and (path / '.git').exists(), 'submodule not checked out: ' + name)
-            require(git(path, 'rev-parse', 'HEAD').decode().strip() == entry['blob'], 'submodule at another commit: ' + name)
-            require(not git(path, 'status', '--porcelain', '--untracked-files=all'), 'dirty submodule checkout: ' + name)
-            continue
+        require(entry['mode'] != '160000', 'submodule in the tree: ' + name)
         info = path.lstat()
         mode = '120000' if stat.S_ISLNK(info.st_mode) else ('100755' if info.st_mode & 0o111 else '100644')
         require(stat.S_ISREG(info.st_mode) or stat.S_ISLNK(info.st_mode), 'unsupported checkout node')
         data = os.readlink(path).encode() if mode == '120000' else path.read_bytes()
         blob = hashlib.sha1(b'blob ' + str(len(data)).encode() + b'\0' + data).hexdigest()
         require(dict(mode=mode, blob=blob) == entry, 'checkout bytes/mode changed: ' + name)
+    # The source dependencies (deps/sources/*.json, fetched by tools/deps.sh into
+    # gitignored directories): each directory must carry the pin it was
+    # fetched at, or the tree in front of us is not the tree the pins describe.
+    for pin in sorted((root / 'deps/sources').glob('*.json')) if (root / 'deps/sources').is_dir() else []:
+        value = keys(load(pin), 'name repository commit path asset sha256')
+        hex_id(value['sha256']); hex_id(value['commit'], 40); relative(value['path'])
+        stamp = root / value['path'] / '.deps-pin'
+        require(stamp.is_file() and stamp.read_text().strip() == value['sha256'],
+                'source dependency not fetched at its pin: ' + value['name'] + ' (make deps)')
     return dict(commit=hex_id(commit, 40), tree=hex_id(git(root, 'rev-parse', 'HEAD^{tree}').decode().strip(), 40),
                 epoch=int(git(root, 'show', '-s', '--format=%ct', 'HEAD')))
 

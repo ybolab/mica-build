@@ -1,6 +1,12 @@
 out/
 _out/
 
+# Source dependencies, fetched at their pins by tools/deps.sh from the
+# releases of ybolab/mica-build-env and ybolab/mica-debian (deps/sources/);
+# never edited in place, never committed here.
+/build-env/
+/rootfs/debian/
+
 # Private signing workspaces, including abandoned local key directories.
 # These exclusions protect secrets; no build or runtime reader uses them as
 # alternate trust inputs. Public examples live in meta.example/.

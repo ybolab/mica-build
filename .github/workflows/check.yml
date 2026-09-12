@@ -54,8 +54,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          submodules: true
+      - name: Fetch the source dependencies at their pins
+        run: make deps
+        env:
+          GH_TOKEN: ${{ secrets.MICA_DEPS_TOKEN }}
 
       # bash, make and git only. NOT build-essential and NOT dbus-daemon: both
       # were here because the compile and the bus tests ran on this runner, and
@@ -154,8 +156,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          submodules: true
+      - name: Fetch the source dependencies at their pins
+        run: make deps
+        env:
+          GH_TOKEN: ${{ secrets.MICA_DEPS_TOKEN }}
 
       # Same reasoning as the rust job: the suites are bash + make, and the
       # runner label guarantees neither. Fail-loud, no `|| true`.
@@ -256,8 +260,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          submodules: true
+      - name: Fetch the source dependencies at their pins
+        run: make deps
+        env:
+          GH_TOKEN: ${{ secrets.MICA_DEPS_TOKEN }}
 
       - name: Install suite dependencies
         run: |
@@ -368,8 +374,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          submodules: true
+      - name: Fetch the source dependencies at their pins
+        run: make deps
+        env:
+          GH_TOKEN: ${{ secrets.MICA_DEPS_TOKEN }}
       - name: Update server quality gate in the pinned Bun container
         run: |
           set -euo pipefail

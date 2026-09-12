@@ -199,31 +199,21 @@ class SourceLineageTest(unittest.TestCase):
         self.index()
         self.refuses('malformed digest')
 
-    def test_submodule_must_be_checked_out_at_the_recorded_commit_and_clean(self):
-        sub = self.work / 'sub'
-        sub.mkdir()
-        (sub / 'from.sh').write_text('#!/bin/sh\n')
-        self.must('git', 'init', '-q', sub)
-        self.must('git', '-C', sub, 'add', '.')
-        self.must('git', '-C', sub, 'commit', '-qm', 'Substrate fixture')
-        self.must('git', '-C', self.tree, '-c', 'protocol.file.allow=always', 'submodule', '-q', 'add', str(sub), 'substrate')
-        # lock() commits the tree (the submodule with it) and rebuilds the local archive at the new stamp.
+    def test_source_dependency_must_be_fetched_at_its_pin(self):
+        pins = self.tree / 'deps/sources'
+        pins.mkdir(parents=True)
+        (pins / 'mica-fixture-dep.json').write_text(json.dumps(dict(name='mica-fixture-dep', repository='mica-fixture-dep', commit='e' * 40,
+            path='vendor/dep', asset='mica-fixture-dep-' + 'e' * 12 + '.tar.gz', sha256='f' * 64)) + '\n')
+        (self.tree / '.gitignore').write_text('_out/\n/vendor/\n')
         self.lock([('mos-imported', self.imported_version, 'amd64', self.archives['mos-imported'][1], 'mica-imported', self.imported_commit)])
+        self.refuses('source dependency not fetched at its pin: mica-fixture-dep')
+        dep = self.tree / 'vendor/dep'
+        dep.mkdir(parents=True)
+        (dep / '.deps-pin').write_text('0' * 64 + '\n')
+        self.refuses('source dependency not fetched at its pin: mica-fixture-dep')
+        (dep / '.deps-pin').write_text('f' * 64 + '\n')
         result = self.invoke()
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(self.record()['composition_source']['commit'], self.commit_id)
-        # The superproject's own status already reports an edited or moved
-        # submodule, so both deviations are refused as a dirty checkout; the
-        # per-submodule checks in identity() stand behind that for a status
-        # configured to ignore submodules.
-        (self.tree / 'substrate/from.sh').write_text('#!/bin/sh\nedited\n')
-        self.refuses('dirty source checkout')
-        self.must('git', '-C', self.tree / 'substrate', 'checkout', '--', 'from.sh')
-        self.must('git', '-C', self.tree / 'substrate', 'commit', '-q', '--allow-empty', '-m', 'Advance the substrate')
-        self.refuses('dirty source checkout')
-        self.must('git', '-C', self.tree, 'config', 'status.submoduleSummary', 'false')
-        self.must('git', '-C', self.tree, 'config', 'diff.ignoreSubmodules', 'all')
-        self.refuses('submodule at another commit: substrate')
 
     def test_dirty_tree_and_malformed_lock_refuse(self):
         (self.tree / 'Makefile').write_text('# edited\n')

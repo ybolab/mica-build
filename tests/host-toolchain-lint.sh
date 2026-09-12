@@ -177,7 +177,7 @@ fi
 # Dockerfile IS a container, and every RUN in one is already on the right side
 # of the policy. The list comes from git, so a script added to the tree is
 # covered the day it lands.
-mapfile -t files < <(git ls-files --recurse-submodules '*.sh' 'Makefile' '*/Makefile' '.github/workflows/*.yml' | sort -u)
+mapfile -t files < <(git ls-files '*.sh' 'Makefile' '*/Makefile' '.github/workflows/*.yml' | sort -u)
 [ "${#files[@]}" -gt 0 ] || {
     echo "error: no shell scripts, Makefiles or workflows found; this lint would pass by finding nothing" >&2
     exit 1
@@ -426,7 +426,7 @@ done
 # findings are mostly false positives teaches people to ignore it; this one asks
 # only what the FIRST WORD is, so a producer handed to `docker run` as an
 # argument -- which is the entire toolbox -- is not a finding.
-mapfile -t tsfiles < <(git ls-files --recurse-submodules '*.ts' | sort -u)
+mapfile -t tsfiles < <(git ls-files '*.ts' | sort -u)
 TS_FILES=0
 TS_SITES=0
 TS_NAMED=0

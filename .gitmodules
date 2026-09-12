@@ -1,6 +1,0 @@
-[submodule "build-env"]
-	path = build-env
-	url = git@github.com:ybolab/mica-build-env.git
-[submodule "rootfs/debian"]
-	path = rootfs/debian
-	url = git@github.com:ybolab/mica-debian.git
