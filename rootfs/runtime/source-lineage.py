@@ -630,7 +630,134 @@ def production_identity(root: Path, entries: dict, native: dict, deploy: dict) -
                 shutdown_target_flags=['-C', 'target-feature=+crt-static', '-C', 'strip=symbols'])
 
 
+STARTUP_RECEIPTS = dict(original=JOIN_RECEIPTS['original'], native=STARTUP_NATIVE_RECEIPT,
+    deploy='224cac3207ca49a128e6881552cdd20d8b4972d22c579f3ee41bc5c4524845b0',
+    boot_tools='76b65b10a72537194d08f6b18dd997067a8d06920ede0e48607fe1c35387a47d')
+STARTUP_PRODUCTION_SHA = '1d0a377f86fe3045de74c0bf327e2a61f63d7295330c1169c58e01651d14587e'
+STARTUP_POOL_SHA = 'ad3b92fa4cc51026e4f78e423a5d75865c1e6a6b83944875742df7db261ab9a3'
+STARTUP_LEGS_SHA = '3ae7dd3f732d6c9a8dc3ca8f7abb73cac3bd20f677e3480af3c1ad0919c629d7'
+STARTUP_INPUT_CONTRACT_SHA = '93902df4c3351b3d3e2c3ca3977f6b4bbd07fb2361c2f0aedc1f0c1c3d1b87ba'
+STARTUP_SUCCESSOR_INPUTS = dict(deploy='7880904659c92f200a1ce1905b2db75e462d858e427a9968e47e30afbcebba05',
+    boot_tools='2619c7e5e8669770fe43750a92b1281d1eec821d47ba2df2255eff2a371b1969')
+
+
+def startup_successor_witness(path: Path, kind: str, root: Path, entries: dict) -> dict:
+    """The two actual executions, including the approved completed-prefix recovery."""
+    require(kind in STARTUP_SUCCESSOR_INPUTS and sha(path) == STARTUP_RECEIPTS[kind], 'startup successor receipt role/digest')
+    value = load(path)
+    common = 'schema status exitCode source sourceDirectory architecture evidence limits daemon finishedAt kind sourceInputs tools argv outputs'
+    keys(value, common + (' recovery compiledOutput frozenOutput controlSha256' if kind == 'deploy'
+                         else ' target snapshot image provenance collection'))
+    require(value['schema'] == 'mos/startup-successor-witness/v1' and value['status'] == 'success'
+            and value['exitCode'] == 0 and value['finishedAt'] and value['source'] == STARTUP_REBUILT
+            and value['architecture'] == 'amd64' and value['kind'] == kind.replace('_', '-'), 'startup successor source/status/role')
+    require(value['limits'] == dict(cpus=4, cpuset='4-7', memory=10737418240, memorySwap=10737418240, workers=4)
+            and value['daemon']['removed'] is True, 'startup successor execution limits/terminal')
+    require(hashlib.sha256(canonical(value['sourceInputs'])).hexdigest() == STARTUP_SUCCESSOR_INPUTS[kind], 'startup successor complete input set')
+    for row in value['sourceInputs']:
+        keys(row, 'path bytes sha256 mode blob'); name = relative(row['path']); at = root / name
+        require(entries.get(name) == {k: row[k] for k in ('mode', 'blob')} and at.is_file() and not at.is_symlink()
+                and at.stat().st_size == row['bytes'] and sha(at) == row['sha256'], 'startup successor actual input bytes/mode')
+    records = list(value['evidence']) + list(value['outputs'])
+    if kind == 'deploy':
+        require(value['argv'] == ['bash', 'build-env/deb/build.sh', '--producer', 'deploy', '--arch', 'amd64'], 'startup deploy invocation')
+        recovery = keys(value['recovery'], 'originalOuterExit prepareExit packExit indexExit prepare binding continuation stageCleaned')
+        require([recovery[k] for k in ('originalOuterExit', 'prepareExit', 'packExit', 'indexExit')] == [1, 0, 0, 0]
+                and recovery['stageCleaned'] is True, 'startup deploy recovery terminal')
+        records += [recovery[k] for k in ('prepare', 'binding', 'continuation')]
+        records += [value['compiledOutput'], value['frozenOutput']]
+        require(len(value['outputs']) == 1 and value['outputs'][0]['sha256'] == '31f1cdec9fc8babe3f3a21fa590adf8b6fd89d464efa447c09e0f3086a935be4', 'startup deploy output')
+        for key in ('compiledOutput', 'frozenOutput'):
+            require(value[key]['bytes'] == 2632224 and value[key]['sha256'] == '411419421b364a27fe466ba1b0f509ee2f054a502493d6f474f1a8f4fff2855d', 'startup completed PREPARE identity')
+        archive = Path(value['outputs'][0]['path'])
+        require(hashlib.sha256(command(['dpkg-deb', '--ctrl-tarfile', str(archive)])).hexdigest() == value['controlSha256'], 'startup deploy control bytes')
+        tools = list(value['tools'].values())
+    else:
+        require(value['argv'] == ['bash', 'pkgs/mos-boot/build-tools.sh', '--target', 'x64'] and value['target'] == 'x64'
+                and value['snapshot'] == 'http://snapshot.debian.org/archive/debian/20260905T000000Z', 'startup boot-tools target/snapshot')
+        require(value['collection']['packagesExit'] == 0 and value['collection']['firstExit'] == 1, 'startup tool collection terminal history')
+        image = value['image']; records += [image[k] for k in ('manifest', 'configFile', 'archive')]
+        records += [value['provenance'], value['collection']['packages']]
+        require('sha256:' + sha(Path(image['manifest']['path'])) == image['id']
+                and 'sha256:' + sha(Path(image['configFile']['path'])) == image['config']['digest'], 'startup OCI manifest/config identity')
+        manifest = load(Path(image['manifest']['path']))
+        require(manifest['config'] == image['config'] and manifest['layers'] == image['layers'], 'startup OCI layer membership')
+        tools = [value['tools']['buildkit'], image['id']]
+    for row in records:
+        keys(row, 'path bytes sha256'); at = Path(row['path']); info = at.lstat()
+        require(stat.S_ISREG(info.st_mode) and info.st_size == row['bytes'] and sha(at) == hex_id(row['sha256']), 'startup successor evidence/output bytes')
+    require(len({r['path'] for r in value['evidence']}) == len(value['evidence']) and value['outputs'], 'startup successor evidence membership')
+    for image in tools:
+        actual = json.loads(command(['docker', 'image', 'inspect', image]))
+        require(len(actual) == 1 and actual[0]['Id'] == image and actual[0]['Architecture'] == 'amd64', 'startup successor actual tool identity')
+    return value
+
+
+def startup_production(native: dict, deploy: dict, boot: dict) -> dict:
+    return dict(architecture='amd64', source=STARTUP_REBUILT,
+        native=dict(receipt=STARTUP_RECEIPTS['native'], inputs_sha256=STARTUP_NATIVE_INPUTS_SHA,
+            tool=native['toolIdentity']['id'], target='x86_64-unknown-linux-gnu', flags=['-C', 'target-feature=+crt-static', '-C', 'strip=symbols']),
+        deploy=dict(receipt=STARTUP_RECEIPTS['deploy'], inputs_sha256=hashlib.sha256(canonical(deploy['sourceInputs'])).hexdigest(),
+            tools=deploy['tools'], binary={k: deploy['compiledOutput'][k] for k in ('bytes', 'sha256')}, control_sha256=deploy['controlSha256']),
+        boot_tools=dict(receipt=STARTUP_RECEIPTS['boot_tools'], inputs_sha256=hashlib.sha256(canonical(boot['sourceInputs'])).hexdigest(),
+            tools=boot['tools'], image=boot['image']['id'], config=boot['image']['config']['digest'], target=boot['target'], snapshot=boot['snapshot']))
+
+
+def validate_startup_join(join: dict, pool: dict, original: dict, arch: str) -> dict:
+    keys(join, 'schema rebuilt_source approved_delta producer_inputs original_pool witnesses mapping native production')
+    require(join['schema'] == 'mos/producer-join/startup-v1' and arch == 'amd64'
+            and original == JOIN_ORIGINAL and join['rebuilt_source'] == STARTUP_REBUILT, 'startup join source/architecture')
+    require(join['witnesses'] == STARTUP_RECEIPTS and join['native'] == STARTUP_NATIVE, 'startup join witnessed native/producers')
+    for value, digest, label in ((join['production'], STARTUP_PRODUCTION_SHA, 'production'),
+            (join['approved_delta'], STARTUP_LEGS_SHA, 'reviewed delta legs'),
+            (join['producer_inputs'], STARTUP_INPUT_CONTRACT_SHA, 'complete input maps/read-contract'),
+            (join['original_pool'], JOIN_POOL_SHA, 'original pool'), (pool, STARTUP_POOL_SHA, 'joined pool/index/control')):
+        require(hashlib.sha256(canonical(value)).hexdigest() == digest, 'startup join ' + label)
+    require({p['package'] for p in pool['packages']} == STARTUP_PACKAGES and len(pool['packages']) == 15, 'startup x64 membership')
+    require(join['mapping'] == {name: (STARTUP_REBUILT if name == 'mos-deploy' else JOIN_ORIGINAL)['commit'] for name in STARTUP_PACKAGES}, 'startup join source attribution')
+    return join
+
+
+def create_startup_join(composition_root: Path, original_root: Path, pool: Path, arch: str, epoch: int,
+                        receipt: Path | None, receipt_sha: str | None, inputs: dict) -> dict:
+    keys(inputs, 'schema original_pool rebuilt_source native_receipt deploy_receipt boot_tools_receipt pool_files')
+    require(inputs['schema'] == 'mos/producer-join-inputs/startup-v1' and arch == 'amd64' and epoch == 1577836800, 'startup join request')
+    rebuilt_root = Path(inputs['rebuilt_source'])
+    c, after = identity(composition_root); p, before = identity(original_root); b, middle = identity(rebuilt_root)
+    for source, root in ((p, original_root), (b, rebuilt_root)):
+        source['version'] = command(['bash', str(root / 'build-env/deb/version.sh')]).decode().strip()
+    legs, proofs = startup_join_delta(original_root, rebuilt_root, p, b, before, middle, sorted(STARTUP_PACKAGES))
+    command(['git', '-C', str(composition_root), 'merge-base', '--is-ancestor', b['commit'], c['commit']])
+    changes = []
+    for path in sorted(middle.keys() | after.keys()):
+        if middle.get(path) == after.get(path):
+            continue
+        require(path in JOIN_CONSUMERS | STARTUP_TRACKING and after.get(path) is not None
+                and after[path]['mode'] in ('100644', '100755')
+                and (middle.get(path) is None or middle[path]['mode'] == after[path]['mode']), 'startup consumer path/type/mode')
+        changes.append(dict(path=path, before=middle.get(path), after=after[path]))
+    # Full equality also proves the two exact tracking exceptions cannot enter
+    # any producer input, including an unselected ARM context or PREPARE hook.
+    require(producer_inputs(rebuilt_root, middle) == producer_inputs(composition_root, after), 'startup consumer changed producer inputs')
+    original_pool = pool_identity(Path(inputs['original_pool']), arch, p['version'])
+    require(receipt_sha == STARTUP_RECEIPTS['original'], 'startup original receipt')
+    frozen_receipt(receipt, receipt_sha, original_root, p, before, arch, original_pool)
+    native = rebuilt_witness(Path(inputs['native_receipt']), 'startup-native', rebuilt_root, middle)
+    deploy = startup_successor_witness(Path(inputs['deploy_receipt']), 'deploy', rebuilt_root, middle)
+    boot = startup_successor_witness(Path(inputs['boot_tools_receipt']), 'boot_tools', rebuilt_root, middle)
+    versions = {r['package']: b['version'] if r['package'] == 'mos-deploy' else r['version'] for r in original_pool['packages']}
+    joined_pool = pool_identity(pool, arch, versions)
+    require(joined_pool['files'] == inputs['pool_files'], 'startup joined index/archive inputs')
+    join = dict(schema='mos/producer-join/startup-v1', rebuilt_source=b, approved_delta=legs, producer_inputs=proofs,
+        original_pool=original_pool, witnesses=STARTUP_RECEIPTS, mapping={n: (b if n == 'mos-deploy' else p)['commit'] for n in versions},
+        native={Path(r['path']).name: {k: r[k] for k in ('bytes', 'sha256')} for r in native['outputs']}, production=startup_production(native, deploy, boot))
+    return validate(dict(schema='mos/source-lineage/join-v1', package_source=p, composition_source=c, architecture=arch,
+        root_epoch=epoch, pool=joined_pool, receipt_sha256=sorted(STARTUP_RECEIPTS.values()), delta=changes, producer_join=join), arch, epoch)
+
+
 def validate_join(join: dict, pool: dict, original: dict, arch: str) -> dict:
+    if join.get('schema') == 'mos/producer-join/startup-v1':
+        return validate_startup_join(join, pool, original, arch)
     keys(join, 'schema rebuilt_source approved_delta producer_inputs original_pool witnesses mapping native production')
     require(join['schema'] == 'mos/producer-join/v1' and arch == 'amd64'
             and original == JOIN_ORIGINAL and join['rebuilt_source'] == JOIN_REBUILT, 'producer join source/architecture')
@@ -664,7 +791,10 @@ def validate_join(join: dict, pool: dict, original: dict, arch: str) -> dict:
 def create_join(composition_root: Path, original_root: Path, pool: Path, arch: str, epoch: int,
                 receipt: Path | None, receipt_sha: str | None, request: Path, request_sha: str) -> dict:
     require(sha(request) == hex_id(request_sha), 'join input digest')
-    inputs = keys(load(request), 'schema original_pool rebuilt_source native_receipt deploy_receipt pool_files')
+    request_value = load(request)
+    if request_value.get('schema') == 'mos/producer-join-inputs/startup-v1':
+        return create_startup_join(composition_root, original_root, pool, arch, epoch, receipt, receipt_sha, request_value)
+    inputs = keys(request_value, 'schema original_pool rebuilt_source native_receipt deploy_receipt pool_files')
     require(inputs['schema'] == 'mos/producer-join-inputs/v1' and arch == 'amd64' and epoch == 1577836800, 'join input schema/architecture/epoch')
     rebuilt_root = Path(inputs['rebuilt_source'])
     c, after = identity(composition_root); p, before = identity(original_root); b, middle = identity(rebuilt_root)
@@ -697,6 +827,10 @@ def create_join(composition_root: Path, original_root: Path, pool: Path, arch: s
 
 def validate(record: dict, arch: str, epoch: int) -> dict:
     joined = record.get('schema') == 'mos/source-lineage/join-v1'
+    startup = joined and record.get('producer_join', {}).get('schema') == 'mos/producer-join/startup-v1'
+    rebuilt = STARTUP_REBUILT if startup else JOIN_REBUILT
+    receipts = STARTUP_RECEIPTS if startup else JOIN_RECEIPTS
+    consumers = JOIN_CONSUMERS | STARTUP_TRACKING if startup else JOIN_CONSUMERS
     keys(record, 'schema package_source composition_source architecture root_epoch pool receipt_sha256 delta' + (' producer_join' if joined else ''))
     require(record['schema'] in ('mos/source-lineage/v1', 'mos/source-lineage/join-v1') and record['architecture'] == arch, 'schema/architecture mismatch')
     require(arch in ('amd64', 'arm64'), 'invalid architecture')
@@ -713,7 +847,7 @@ def validate(record: dict, arch: str, epoch: int) -> dict:
     require(isinstance(record['delta'], list), 'invalid source delta')
     paths = []
     for row in record['delta']:
-        keys(row, 'path before after'); require(row['path'] in COMPOSITION_PATHS, 'unapproved source delta')
+        keys(row, 'path before after'); require(row['path'] in (consumers if startup else COMPOSITION_PATHS), 'unapproved source delta')
         paths.append(row['path'])
         for entry in (row['before'], row['after']):
             if entry is not None:
@@ -736,15 +870,15 @@ def validate(record: dict, arch: str, epoch: int) -> dict:
         require(isinstance(row['package'], str) and re.fullmatch('[a-z0-9][a-z0-9+.-]+', row['package']) and row['package'] not in names, 'package name/duplicate')
         names.add(row['package'])
         require(row['architecture'] in (arch, 'all') and isinstance(row['version'], str)
-                and row['version'].rsplit('+', 1)[-1] == (JOIN_REBUILT if joined and row['package'] == 'mos-deploy' else p)['version'].rsplit('+', 1)[-1], 'package architecture/stamp mismatch')
+                and row['version'].rsplit('+', 1)[-1] == (rebuilt if joined and row['package'] == 'mos-deploy' else p)['version'].rsplit('+', 1)[-1], 'package architecture/stamp mismatch')
         require(re.fullmatch(r'pool/[^/]+\.deb', row['archive']) is not None, 'archive path')
         hex_id(row['sha256']); hex_id(row['control_sha256'])
         require(pool['files'].get(row['archive']) == row['sha256'] and row['archive'] not in expected, 'pool archive mismatch')
         expected.add(row['archive'])
     require(set(pool['files']) == expected, 'lineage pool membership')
     if joined:
-        require(record['receipt_sha256'] == sorted(JOIN_RECEIPTS.values()) and epoch == 1577836800, 'join receipt/root epoch')
-        require(all(path in JOIN_CONSUMERS for path in paths), 'unapproved joined consumer delta')
+        require(record['receipt_sha256'] == sorted(receipts.values()) and epoch == 1577836800, 'join receipt/root epoch')
+        require(all(path in consumers for path in paths), 'unapproved joined consumer delta')
         validate_join(record['producer_join'], pool, p, arch)
     return record
 

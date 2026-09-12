@@ -606,3 +606,28 @@ retry, extra resource allocation, shared builder change or source relabeling
 is implied. The subsequent x64 boot-tools output and full consumer receipt
 binding remain necessary. Physical CX and final signed-system acceptance are
 still pending.
+
+The 2026-09-12 00:39 recovery disposition resolves the daemon parser boundary:
+one explicit recreation, fresh cgroup/remote checks, then the exact remaining
+pack/export/index work and one x64 boot-tools invocation are authorized in the
+existing serial slot. Previous failure and successful PREPARE identities remain
+immutable; the full consumer join and physical/system acceptance remain pending.
+
+The 2026-09-12 bounded packaging recovery completed the actual changed deploy
+and single x64 boot-tools producers from clean reviewed `438c9551`. The native
+producer and successful deploy PREPARE were not replayed. Exact receipts,
+output identities, original collector failures and resource terminals are
+recorded in task 1925 and `pack-recovery-v1/witnesses`. All producer containers
+are removed and the heavy reservation is released. Full startup consumer
+admission now binds the actual new outputs; its final direct tests, two-copy
+canonical proof and independent integration review remain in progress. The
+whole plan remains open for full-system and mandatory hardware acceptance.
+
+The exact startup join implementation now binds actual 438 native, deploy and
+boot-tools receipts while preserving original J package and old fb6/4716 role
+semantics. Focused record, file, capture, default-source and unselected ARM
+refusals pass; the final TypeScript check passes after preserving and fixing its
+original missing-binding failure. The real creator has consumed all actual
+producer inputs successfully. Final committed-source two-copy lineage and B
+integration evidence are attached through the existing task handoff path.
+This is consumer/source readiness, not complete plan or physical acceptance.

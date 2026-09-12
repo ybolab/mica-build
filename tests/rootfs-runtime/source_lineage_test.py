@@ -676,3 +676,77 @@ class StartupInputContractTest(unittest.TestCase):
                     elif change == 'first-leg': first['extra'] = dict(mode='100644', blob='4' * 40)
                     else: last['extra'] = dict(mode='100644', blob='4' * 40)
                     with self.assertRaises(ValueError): h.startup_join_delta(self.old, self.new, original, rebuilt, first, last, self.packages)
+
+@unittest.skipUnless(os.environ.get('MOS_TEST_STARTUP_RECORD'), 'requires actual startup production fixture')
+class StartupAdmissionTest(unittest.TestCase):
+    def setUp(self):
+        spec = importlib.util.spec_from_file_location('startup_admission', HELPER)
+        self.h = importlib.util.module_from_spec(spec); spec.loader.exec_module(self.h)
+        self.record = self.h.load(Path(os.environ['MOS_TEST_STARTUP_RECORD']))
+
+    def test_actual_startup_record_is_admitted_with_four_exact_witness_roles(self):
+        self.assertEqual(self.h.validate(self.record, 'amd64', 1577836800), self.record)
+        self.assertEqual(len(self.record['receipt_sha256']), 4)
+
+    def test_actual_startup_record_refuses_source_witness_map_pool_and_default_mutations(self):
+        cases = {
+            'source': lambda r: r['producer_join']['rebuilt_source'].__setitem__('epoch', 1),
+            'native': lambda r: r['producer_join']['native']['mos-init'].__setitem__('bytes', 1),
+            'missing-witness': lambda r: r['producer_join']['witnesses'].pop('boot_tools'),
+            'extra-witness': lambda r: r['producer_join']['witnesses'].__setitem__('extra', '1' * 64),
+            'failed-witness': lambda r: r['producer_join']['witnesses'].__setitem__('deploy', '0' * 64),
+            'duplicate-receipt': lambda r: r['receipt_sha256'].append(r['receipt_sha256'][0]),
+            'false-attribution': lambda r: r['producer_join']['mapping'].__setitem__('mosd', '0' * 40),
+            'prepare': lambda r: r['producer_join']['producer_inputs']['producers']['deploy']['after']['prepare'].append('other.sh'),
+            'missing-map': lambda r: r['producer_join']['producer_inputs']['producers'].pop('board-cx3576'),
+            'extra-map': lambda r: r['producer_join']['producer_inputs']['producers'].__setitem__('extra', {}),
+            'read-contract': lambda r: r['producer_join']['producer_inputs']['makefile_read_contract'].__setitem__('use', 'evaluate'),
+            'tool': lambda r: r['producer_join']['production']['boot_tools'].__setitem__('image', 'sha256:' + '0' * 64),
+            'lock': lambda r: r['producer_join']['production']['deploy'].__setitem__('inputs_sha256', '0' * 64),
+            'leg': lambda r: r['producer_join']['approved_delta']['shutdown_to_startup'].pop(),
+            'archive': lambda r: r['pool']['packages'][0].__setitem__('control_sha256', '0' * 64),
+            'index': lambda r: r['pool']['files'].__setitem__('Packages', '0' * 64),
+            'old-role': lambda r: r['producer_join'].__setitem__('schema', 'mos/producer-join/v1'),
+            'default': lambda r: r.__setitem__('schema', 'mos/source-lineage/v1'),
+            'unapproved-consumer': lambda r: r['delta'].append(dict(path='pkgs/mos-deploy/Cargo.lock', before=None, after=dict(mode='100644', blob='1' * 40))),
+            'arch': lambda r: r.__setitem__('architecture', 'arm64'),
+        }
+        for name, mutate in cases.items():
+            with self.subTest(case=name):
+                changed = json.loads(json.dumps(self.record)); mutate(changed)
+                with self.assertRaises(ValueError): self.h.validate(changed, 'amd64', 1577836800)
+
+    @unittest.skipUnless(os.environ.get('MOS_TEST_STARTUP_WITNESSES'), 'requires actual successor witnesses')
+    def test_actual_successor_receipts_and_mutations(self):
+        from unittest.mock import patch
+        directory = Path(os.environ['MOS_TEST_STARTUP_WITNESSES'])
+        for kind, filename in [('deploy', 'deploy.json'), ('boot_tools', 'boot-tools.json')]:
+            path = directory / filename; value = self.h.load(path); root = Path(value['sourceDirectory'])
+            entries = self.h.tree(root, self.h.STARTUP_REBUILT['commit'])
+            self.assertEqual(self.h.startup_successor_witness(path, kind, root, entries), value)
+            mutations = {
+                'status': lambda v: v.__setitem__('status', 'failure'),
+                'exit': lambda v: v.__setitem__('exitCode', 1),
+                'source': lambda v: v['source'].__setitem__('commit', self.h.JOIN_REBUILT['commit']),
+                'role': lambda v: v.__setitem__('kind', 'native'),
+                'missing-input': lambda v: v['sourceInputs'].pop(),
+                'duplicate-input': lambda v: v['sourceInputs'].append(v['sourceInputs'][0]),
+                'input-mode': lambda v: v['sourceInputs'][0].__setitem__('mode', '120000'),
+                'command': lambda v: v['argv'].append('--unreviewed'),
+                'missing-evidence': lambda v: v['evidence'][0].__setitem__('path', '/nonexistent/startup-witness'),
+                'changed-output': lambda v: v['outputs'][0].__setitem__('bytes', 1),
+                'duplicate-evidence': lambda v: v['evidence'].append(v['evidence'][0]),
+            }
+            with tempfile.TemporaryDirectory(dir=REPO / '.tmp') as temp:
+                altered = Path(temp) / filename
+                for name, mutate in mutations.items():
+                    with self.subTest(kind=kind, mutation=name):
+                        changed = json.loads(json.dumps(value)); mutate(changed)
+                        altered.write_bytes(self.h.canonical(changed))
+                        with self.assertRaises(ValueError): self.h.startup_successor_witness(altered, kind, root, entries)
+                        # Move only the outer digest in this unit fixture to
+                        # exercise semantic and actual-file guards underneath.
+                        pins = dict(self.h.STARTUP_RECEIPTS, **{kind: self.h.sha(altered)})
+                        with patch.object(self.h, 'STARTUP_RECEIPTS', pins):
+                            with self.assertRaises((ValueError, OSError)):
+                                self.h.startup_successor_witness(altered, kind, root, entries)

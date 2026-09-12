@@ -247,6 +247,25 @@ export function validateStartupInputContract(value: unknown, selectedPackages: s
   return proof
 }
 
+const STARTUP_REBUILT = { commit: STARTUP_SOURCE, tree: '775874cfdce2ef40b7f51ae3090c6c6706a5deae', epoch: 1789167215, version: '0.1.0+git438c9551ec75-1' }
+const STARTUP_RECEIPTS = { original: JOIN_RECEIPTS.original, native: 'e66650563f340e0ce8f722a7812f36bba8012ee98e3e220aa2bbea5d1864afc0', deploy: '224cac3207ca49a128e6881552cdd20d8b4972d22c579f3ee41bc5c4524845b0', boot_tools: '76b65b10a72537194d08f6b18dd997067a8d06920ede0e48607fe1c35387a47d' }
+const STARTUP_TRACKING = new Set(['docs/task/20260911-1925-boot-artifact-size.md', 'docs/plan/20260911-1927-boot-artifact-size.md'])
+const STARTUP_UNSELECTED_PACKAGES = new Set(['mos-board-cx3576', 'mos-bm201-front-panel', 'mos-board-s905x5m', 'mos-s905x5m-wifi', 'mos-s905x5m-wireless', 'mos-s905x5m-bluetooth', 'mos-board-virt-arm64'])
+function startupProducerJoin(value: unknown, pool: Record<string, unknown>, source: unknown, arch: string) {
+  const j = object(value, ['schema', 'rebuilt_source', 'approved_delta', 'producer_inputs', 'original_pool', 'witnesses', 'mapping', 'native', 'production'])
+  requireValue(j.schema === 'mos/producer-join/startup-v1' && arch === 'amd64', 'startup join schema/architecture')
+  same(source, JOIN_ORIGINAL, 'startup original source'); same(j.rebuilt_source, STARTUP_REBUILT, 'startup rebuilt source')
+  same(j.witnesses, STARTUP_RECEIPTS, 'startup producer witnesses'); same(j.native, STARTUP_NATIVE, 'startup native outputs')
+  same(canonicalSha(j.production), '1d0a377f86fe3045de74c0bf327e2a61f63d7295330c1169c58e01651d14587e', 'startup producer recipe/tool/flags/outputs')
+  same(canonicalSha(j.approved_delta), '3ae7dd3f732d6c9a8dc3ca8f7abb73cac3bd20f677e3480af3c1ad0919c629d7', 'startup approved delta legs')
+  same(canonicalSha(j.original_pool), 'de26c7fd9d4e5b76ae10aa166659e2d047ede56088a79fd46024fb419a5b4087', 'startup original pool')
+  same(canonicalSha(pool), 'ad3b92fa4cc51026e4f78e423a5d75865c1e6a6b83944875742df7db261ab9a3', 'startup joined pool/index/control')
+  const packages = array(pool.packages).map(p => record(p).package as string)
+  validateStartupInputContract(j.producer_inputs, packages)
+  same(j.mapping, Object.fromEntries(packages.map(n => [n, n === 'mos-deploy' ? STARTUP_SOURCE : JOIN_ORIGINAL.commit])), 'startup source attribution')
+  return record(record(j.production).boot_tools).image as string
+}
+
 function producerJoin(value: unknown, packages: Record<string, unknown>[], source: unknown, arch: string) {
   const j = object(value, ['schema', 'rebuilt_source', 'approved_delta', 'producer_inputs', 'original_pool', 'witnesses', 'mapping', 'native', 'production'])
   requireValue(j.schema === 'mos/producer-join/v1' && arch === 'amd64', 'producer join schema/architecture')
@@ -272,6 +291,10 @@ function producerJoin(value: unknown, packages: Record<string, unknown>[], sourc
 
 export function sourceLineage(value: unknown, source: Source, arch: string, capture: Record<string, unknown>) {
   const joined = record(value).schema === 'mos/source-lineage/join-v1'
+  const startup = joined && record(record(value).producer_join).schema === 'mos/producer-join/startup-v1'
+  const consumers = startup ? new Set([...JOIN_CONSUMERS, ...STARTUP_TRACKING]) : JOIN_CONSUMERS
+  const rebuilt = startup ? STARTUP_REBUILT : JOIN_REBUILT
+  let bootToolsImage: string | undefined
   const l = object(value, ['schema', 'package_source', 'composition_source', 'architecture', 'root_epoch', 'pool', 'receipt_sha256', 'delta', ...(joined ? ['producer_join'] : [])])
   requireValue(['mos/source-lineage/v1', 'mos/source-lineage/join-v1'].includes(l.schema as string) && l.architecture === arch, 'runtime lineage schema/architecture')
   const p = object(l.package_source, ['commit', 'tree', 'epoch', 'version'])
@@ -301,7 +324,7 @@ export function sourceLineage(value: unknown, source: Source, arch: string, capt
   const paths: string[] = []
   for (const value of l.delta) {
     const row = object(value, ['path', 'before', 'after'])
-    requireValue(typeof row.path === 'string' && allowed.has(row.path), 'runtime lineage package-relevant delta')
+    requireValue(typeof row.path === 'string' && (startup ? consumers : allowed).has(row.path), 'runtime lineage package-relevant delta')
     paths.push(row.path)
     for (const value of [row.before, row.after]) if (value !== null) {
       const entry = object(value, ['mode', 'blob'])
@@ -327,7 +350,7 @@ export function sourceLineage(value: unknown, source: Source, arch: string, capt
     requireValue(typeof row.package === 'string' && /^[a-z0-9][a-z0-9+.-]+$/.test(row.package) && !names.has(row.package), 'runtime lineage package name/set')
     names.add(row.package)
     requireValue([arch, 'all'].includes(row.architecture as string) && typeof row.version === 'string'
-      && row.version.split('+').at(-1) === (joined && row.package === 'mos-deploy' ? JOIN_REBUILT.version : p.version as string).split('+').at(-1), 'runtime lineage package stamp/architecture')
+      && row.version.split('+').at(-1) === (joined && row.package === 'mos-deploy' ? rebuilt.version : p.version as string).split('+').at(-1), 'runtime lineage package stamp/architecture')
     requireValue(typeof row.archive === 'string' && /^pool\/[^/]+\.deb$/.test(row.archive) && !expected.has(row.archive), 'runtime lineage archive')
     expected.add(row.archive); digest(row.sha256); digest(row.control_sha256)
     same(files[row.archive], row.sha256, 'runtime lineage archive digest')
@@ -335,13 +358,14 @@ export function sourceLineage(value: unknown, source: Source, arch: string, capt
   })
   same(Object.keys(files).sort(), [...expected].sort(), 'runtime lineage pool membership')
   if (joined) {
-    same(l.receipt_sha256, Object.values(JOIN_RECEIPTS).sort(), 'producer join receipt set')
-    requireValue(l.root_epoch === 1577836800 && paths.every(p => JOIN_CONSUMERS.has(p)), 'producer join consumer delta/epoch')
-    producerJoin(l.producer_join, packages, p, arch)
+    same(l.receipt_sha256, Object.values(startup ? STARTUP_RECEIPTS : JOIN_RECEIPTS).sort(), 'producer join receipt set')
+    requireValue(l.root_epoch === 1577836800 && paths.every(p => consumers.has(p)), 'producer join consumer delta/epoch')
+    if (startup) bootToolsImage = startupProducerJoin(l.producer_join, pool, p, arch)
+    else producerJoin(l.producer_join, packages, p, arch)
   }
   for (const name of ['Packages', 'SHA256SUMS', 'manifest.txt']) same(capture[name], files[name], 'runtime lineage pool capture')
   same(capture['source-lineage.json'], createHash('sha256').update(canonicalJson(value) + '\n').digest('hex'), 'runtime lineage capture bytes')
-  return { record: value, packages, rootEpoch: l.root_epoch as number }
+  return { record: value, packages, rootEpoch: l.root_epoch as number, bootToolsImage }
 }
 function shippedRuntime(path: string, inventory: string, arch: string, root: VerityImage, meta: string, marker: string, source: Source) {
   const report = readRuntime(path)
@@ -367,6 +391,7 @@ function shippedRuntime(path: string, inventory: string, arch: string, root: Ver
   }
   for (const name of ['sources.tsv', 'upstream.tsv', 'Packages']) digest(capture[name])
   const lineage = sourceLineage(p.source_lineage, source, arch, capture)
+  if (lineage.bootToolsImage) requireValue(buildPackages.every(p => !STARTUP_UNSELECTED_PACKAGES.has(p.package)), 'startup unqualified ARM package installed')
   for (const row of buildPackages) {
     const match = lineage.packages.find(p => p.package === row.package)
     if (match || row.archive.startsWith('pool/')) {
@@ -484,7 +509,7 @@ function shippedRuntime(path: string, inventory: string, arch: string, root: Ver
     VERITY_DATA_SECTORS: String(root.verity.hashOffset / 512), SQUASHFS_BYTES: String(root.verity.hashOffset), IMAGE_BYTES: String(root.image.bytes) }, 'signed verity geometry')
   array(report.external_inputs)
   for (const row of files.values()) same(row.mtime_ns, String(BigInt(lineage.rootEpoch) * 1000000000n), 'runtime lineage root epoch')
-  return { buildPackages, shippedPackages, sourceLineage: lineage.record, files: provenance, measurements, licenses }
+  return { buildPackages, shippedPackages, sourceLineage: lineage.record, bootToolsImage: lineage.bootToolsImage, files: provenance, measurements, licenses }
 }
 
 function derived(dir: string, m: Omit<ReleaseManifest, 'artifacts'>, image: string, root: VerityImage) {
@@ -495,6 +520,7 @@ function derived(dir: string, m: Omit<ReleaseManifest, 'artifacts'>, image: stri
   const images: unknown = JSON.parse(read(join(dir, 'builder-images.json')))
   requireValue(images !== null && typeof images === 'object' && !Array.isArray(images)
     && Object.keys(images).length > 0 && Object.entries(images).every(([k, v]) => /^(IMAGE|LOCAL)_[A-Z0-9_]+$/.test(k) && typeof v === 'string' && v), 'builder image records')
+  if (runtime.bootToolsImage) same(record(images).LOCAL_BOOT_TOOLS_X64, runtime.bootToolsImage, 'startup release boot-tools image')
   return {
     'sbom.cdx.json': { bomFormat: 'CycloneDX', specVersion: '1.5', version: 1,
       metadata: { component: { type: 'operating-system', name: `mos-${m.board}`, version: m.version },
@@ -747,7 +773,7 @@ export function assembleRelease(inputs: ReleaseInputs) {
   const bootAssurance = evidence(JSON.parse(read(inputs.evidence)), inputs.board)
   const deployment = verifyArchive(inputs.update, inputs.keys)
   requireValue(deployment.board === inputs.board && deployment.version === inputs.version, 'update board or version differs')
-  shippedRuntime(inputs.runtimeReport, read(inputs.packages), inputs.board === 'x64' ? 'amd64' : 'arm64', deployment.rootfs.content, read(join(inputs.meta, 'updates/manifest.json')), marker, inputs.source)
+  const runtime = shippedRuntime(inputs.runtimeReport, read(inputs.packages), inputs.board === 'x64' ? 'amd64' : 'arm64', deployment.rootfs.content, read(join(inputs.meta, 'updates/manifest.json')), marker, inputs.source)
   const m: ReleaseManifest = { schema: 'mos/release/v1', board: inputs.board, version: inputs.version, channel: inputs.channel,
     profile: inputs.profile, source: inputs.source, bootAssurance, developmentDomains, artifacts: [] }
   const files = { [image]: inputs.image, 'update.mosupd': inputs.update, 'firmware.json': join(inputs.firmware, 'firmware.json'),
@@ -758,7 +784,12 @@ export function assembleRelease(inputs: ReleaseInputs) {
   for (const [name, path] of Object.entries(files)) copyFileSync(path, join(inputs.out, name))
   // Retain the installed marker bytes; domains() still enforces channel policy.
   writeFileSync(join(inputs.out, 'development-marker.txt'), marker)
-  json(inputs.out, 'builder-images.json', inputs.builderImages)
+  const builderImages = { ...inputs.builderImages }
+  if (runtime.bootToolsImage) {
+    if (Object.hasOwn(builderImages, 'LOCAL_BOOT_TOOLS_X64')) same(builderImages.LOCAL_BOOT_TOOLS_X64, runtime.bootToolsImage, 'startup caller boot-tools image')
+    builderImages.LOCAL_BOOT_TOOLS_X64 = runtime.bootToolsImage
+  }
+  json(inputs.out, 'builder-images.json', builderImages)
   for (const [name, value] of Object.entries(derived(inputs.out, m, image, deployment.rootfs.content))) json(inputs.out, name, value)
   m.artifacts = Object.entries(releaseFiles(image)).filter(([name]) => name !== 'SHA256SUMS').map(([name, role]) => measure(inputs.out, name, role))
   writeFileSync(join(inputs.out, 'SHA256SUMS'), sums(m.artifacts))

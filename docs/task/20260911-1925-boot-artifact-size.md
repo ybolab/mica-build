@@ -614,3 +614,91 @@ the released source-gate allocation. No native replay or B7 mutation is planned.
   stage, then one x64 boot-tools producer and exact receipt/consumer binding.
   Keep task/plan in progress and handoff in review. Full system, physical CX
   and consolidated post-approved-main ARM acceptance remain pending.
+
+### 2026-09-12: authorized packaging recovery
+
+B-347-PACKAGING-RECOVERY-20260912-0039 approved one explicit daemon recreation
+on the retained owned state, exact x64 platform-set parsing, and the remaining
+frozen driver suffix using the successful PREPARE stage. The recovery preserves
+all old failure records and writes new evidence under `metadata/pack-recovery-v1`.
+No original compile, boot-native invocation or producer source is replayed.
+
+### 2026-09-12: changed producers recovered and frozen
+
+The authorized daemon recreation passed exact platform, cgroup and remote
+transport checks. The original successful PREPARE was reused once through the
+frozen driver suffix; deploy pack and index exited zero. New deploy archive:
+758,104 bytes, SHA256
+`31f1cdec9fc8babe3f3a21fa590adf8b6fd89d464efa447c09e0f3086a935be4`.
+Its installed executable equals the original 2,632,224-byte PREPARE output.
+The private pool contains that archive and exactly 14 byte-identical J archives.
+
+The single x64 boot-tools producer exited zero at 00:48:40 UTC. Its new manifest
+is `sha256:af672edb59f2e23c38a7e2245804760e5b90d3884aee6dac327cf1bd64d5a661`;
+its actual OCI config is
+`sha256:ccf6474e8a983bad48625c9204951a8a1a93af3a583b44126657f58e3b70c44a`.
+Exported manifest/config/layers, selected EFI, compression scripts, license and
+source inputs are bound under the producer metadata `pack-recovery-v1` directory.
+The final package-query collector initially failed because shell expansion
+consumed the dpkg format variables. Only that query was corrected and rerun;
+all preceding passed checks and the failed record remain intact.
+
+The first cleanup sampler preceded asynchronous daemon deletion. A later
+read-only collector retained actual die/destroy events and absence; requested
+daemon shutdown exited one, independently of successful producer exits. All
+owned containers are absent, the labelled private state volume is retained,
+and the 4 CPU/10 GiB producer reservation was released to B.
+
+Normalized actual deploy witness SHA256 is
+`224cac3207ca49a128e6881552cdd20d8b4972d22c579f3ee41bc5c4524845b0`;
+boot-tools witness SHA256 is
+`76b65b10a72537194d08f6b18dd997067a8d06920ede0e48607fe1c35387a47d`.
+They retain 59/19 source inputs and 157 evidence bindings each. The complete
+consumer admission is being implemented against these actual receipts. The
+original architecture/stamp refusal is preserved; direct Python admission and
+successor witness guards now pass. TypeScript, two clean copies and B review
+remain pending. No full-system, physical CX or post-approved-main ARM result is
+claimed.
+
+### 2026-09-12: exact startup consumer admission
+
+The existing Python and TypeScript joined-source validators now admit only
+`mos/producer-join/startup-v1` with the four fixed J/438 receipt roles. They
+retain both complete producer delta legs, all 15 full input maps, the exact
+72-byte Makefile read-contract proof, the unqualified ARM declarations, 14 J
+archives and the new deploy/control/index identities. Later consumer changes
+must still preserve complete producer maps. Only the two existing 1925/1927
+tracking files receive a startup-specific exception outside producer contexts;
+`COMPOSITION_PATHS` is unchanged.
+
+The release validator binds the new x64 boot-tools image and rejects packages
+from the four unqualified ARM producers even when installed as `Architecture:
+all`. Existing signed compressed native/manifest/observer checks remain intact.
+The actual creator passed against the clean 438 producer checkout, all three
+new producer witnesses and the immutable original J frozen receipt. That input
+diagnosis is not a final consumer-checkout or full-image acceptance claim.
+
+Direct RED retained the Python package-stamp and TypeScript lineage-stamp
+refusals. GREEN covers the actual admission and 20 record mutations, both real
+successor receipts and 22 semantic/file mutations, and two explicit release
+tests with 23 assertions including capture/default/ARM-installed refusal.
+These were bounded station source checks using recorded Bun 1.4.0/Python tool
+bytes; no source-test container or heavy reservation was consumed. The first
+TypeScript check found a missing local runtime binding, which was corrected;
+the final typecheck and docs/diff checks pass. Unchanged native, guest, format,
+kernel and producer suites were not replayed.
+
+PMA-CR examined the changed joined-source blocks, actual producer receipts,
+source/format dispatch, consumer/input boundaries and retained failure evidence.
+No unresolved introduced source finding remains in the local review. The exact
+private B7 overlap proposal is under `b7-overlap-v2/startup-on-fbd70048.patch`;
+it preserves named 4716 and legacy downgrade refusals, retains both test sets,
+and confines legacy BusyBox to its existing source role. It is syntax-checked,
+not applied or qualified as an integrated candidate. A missing test closure in
+the first private mechanical resolution was recorded and corrected.
+
+The final committed consumer source is the input to the two-clean-copy CLI gate;
+its canonical lineage, exact file hashes and terminal evidence are frozen in
+`_out/boot-size/consumer/startup-final-handoff/delivery.json`. Independent B
+source/overlap integration review and later combined signed-system acceptance
+remain required. Task and plan stay in progress, handoff in review.

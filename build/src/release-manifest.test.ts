@@ -881,3 +881,47 @@ test.skipIf(!process.env.MOS_TEST_STARTUP_INPUT_CONTRACT)('startup joined comple
     expect(() => validateStartupInputContract(proof, names)).toThrow('startup selected x64 package membership')
   }
 })
+
+test.skipIf(!process.env.MOS_TEST_STARTUP_RECORD)('startup actual join binds producer roles, pool capture and default refusals', async () => {
+  const { sourceLineage } = await import('./release-manifest.ts')
+  const value = JSON.parse(readFileSync(process.env.MOS_TEST_STARTUP_RECORD!, 'utf8'))
+  const source = { commit: value.composition_source.commit as string, dirty: false }
+  const captured = (v: typeof value) => ({ ...v.pool.files, 'source-lineage.json': hash(Buffer.from(canonicalJson(v) + '\n')) })
+  expect(sourceLineage(value, source, 'amd64', captured(value)).record).toEqual(value)
+  const mutations: Record<string, (v: typeof value) => void> = {
+    'source': v => { v.producer_join.rebuilt_source.epoch++ },
+    'missing-witness': v => { delete v.producer_join.witnesses.boot_tools },
+    'extra-witness': v => { v.producer_join.witnesses.extra = '0'.repeat(64) },
+    'failed-witness': v => { v.producer_join.witnesses.deploy = '0'.repeat(64) },
+    'duplicate-receipt': v => { v.receipt_sha256.push(v.receipt_sha256[0]) },
+    'native': v => { v.producer_join.native['mos-init'].bytes++ },
+    'attribution': v => { v.producer_join.mapping.mosd = STARTUP_SOURCE },
+    'prepare': v => { v.producer_join.producer_inputs.producers.deploy.after.prepare.push('other.sh') },
+    'lock': v => { v.producer_join.production.deploy.inputs_sha256 = '0'.repeat(64) },
+    'tool': v => { v.producer_join.production.boot_tools.image = 'sha256:' + '0'.repeat(64) },
+    'pool': v => { v.pool.files.Packages = '0'.repeat(64) },
+    'archive': v => { v.pool.packages[0].control_sha256 = '0'.repeat(64) },
+    'old-role': v => { v.producer_join.schema = 'mos/producer-join/v1' },
+    'default': v => { v.schema = 'mos/source-lineage/v1' },
+    'producer-delta': v => { v.delta.push({ path: 'pkgs/mos-deploy/Cargo.lock', before: null, after: { mode: '100644', blob: '0'.repeat(40) } }) },
+  }
+  for (const mutate of Object.values(mutations)) {
+    const changed = structuredClone(value); mutate(changed)
+    expect(() => sourceLineage(changed, source, 'amd64', captured(changed))).toThrow()
+  }
+  expect(() => sourceLineage(value, source, 'arm64', captured(value))).toThrow()
+  expect(() => sourceLineage(value, { ...source, dirty: true }, 'amd64', captured(value))).toThrow()
+  expect(() => sourceLineage(value, source, 'amd64', { ...captured(value), Packages: '0'.repeat(64) })).toThrow('pool capture')
+  expect(() => sourceLineage(value, source, 'amd64', { ...captured(value), 'source-lineage.json': '0'.repeat(64) })).toThrow('capture bytes')
+})
+
+test.skipIf(!process.env.MOS_TEST_STARTUP_RECORD)('startup actual join refuses an unselected ARM producer installed as all', () => {
+  const value = JSON.parse(readFileSync(process.env.MOS_TEST_STARTUP_RECORD!, 'utf8'))
+  const report = runtime(), p = report.provenance
+  p.source_lineage = value
+  p.capture_sha256 = { ...p.capture_sha256, ...value.pool.files, 'source-lineage.json': hash(Buffer.from(canonicalJson(value) + '\n')) }
+  p.build_packages.push({ ...p.build_packages[0], package: 'mos-board-cx3576', architecture: 'all', archive: 'upstream/mos-board-cx3576.deb' })
+  inputs.source = { commit: value.composition_source.commit, dirty: false }
+  writeRuntime(report)
+  expect(() => assembleRelease(inputs)).toThrow('startup unqualified ARM package installed')
+})
