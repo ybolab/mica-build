@@ -8,8 +8,10 @@
 
 REGISTRY_HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REGISTRY_REPO_ROOT="$(cd "${REGISTRY_HERE}/../.." && pwd)"
-REGISTRY_ENV="${REGISTRY_HERE}/registry.env"
-LOCK_FILE="${REGISTRY_REPO_ROOT}/rootfs/packages/lock.tsv"
+# MOS_REGISTRY_ENV and MOS_LOCK_FILE point the scripts at another declaration
+# and another lock; tests/pool-lock-test.sh uses them to drive a stub registry.
+REGISTRY_ENV="${MOS_REGISTRY_ENV:-${REGISTRY_HERE}/registry.env}"
+LOCK_FILE="${MOS_LOCK_FILE:-${REGISTRY_REPO_ROOT}/rootfs/packages/lock.tsv}"
 
 # registry.env is KEY=value in the producer.env discipline, checked for that
 # shape before it is sourced: a declaration that can execute is a build step
@@ -33,7 +35,7 @@ registry_load() {
         [ -n "${!v}" ] || { echo "error: ${REGISTRY_ENV} declares no ${v}" >&2; return 1; }
     done
     case "${MOS_REGISTRY_URL}" in
-    https://*) ;;
+    https://* | http://127.0.0.1:* | http://localhost:*) ;;
     *) echo "error: MOS_REGISTRY_URL='${MOS_REGISTRY_URL}' is not an https:// URL; the token would be sent in clear" >&2; return 1 ;;
     esac
     MOS_REGISTRY_URL="${MOS_REGISTRY_URL%/}"
@@ -88,9 +90,9 @@ lock_rows() {
             if ($1 !~ /^[a-z0-9][a-z0-9+.-]+$/) { printf "error: %s line %d: %s is not a package name\n", file, NR, $1 > "/dev/stderr"; bad = 1; exit 1 }
             if ($2 !~ /^[0-9][A-Za-z0-9.~+-]*\+git[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]-[1-9][0-9]*$/) { printf "error: %s line %d: version %s carries no clean git stamp; a dirty or unstamped archive cannot be locked\n", file, NR, $2 > "/dev/stderr"; bad = 1; exit 1 }
             if ($3 != "amd64" && $3 != "arm64" && $3 != "all") { printf "error: %s line %d: arch %s is not amd64, arm64 or all\n", file, NR, $3 > "/dev/stderr"; bad = 1; exit 1 }
-            if ($4 !~ /^[0-9a-f]{64}$/) { printf "error: %s line %d: sha256 is malformed\n", file, NR > "/dev/stderr"; bad = 1; exit 1 }
+            if (length($4) != 64 || $4 !~ /^[0-9a-f]+$/) { printf "error: %s line %d: sha256 is malformed\n", file, NR > "/dev/stderr"; bad = 1; exit 1 }
             if ($5 !~ /^[A-Za-z0-9][A-Za-z0-9._-]*$/) { printf "error: %s line %d: source-repo %s is not a repository name\n", file, NR, $5 > "/dev/stderr"; bad = 1; exit 1 }
-            if ($6 !~ /^[0-9a-f]{40}$/) { printf "error: %s line %d: source-commit is not a 40-hex commit\n", file, NR > "/dev/stderr"; bad = 1; exit 1 }
+            if (length($6) != 40 || $6 !~ /^[0-9a-f]+$/) { printf "error: %s line %d: source-commit is not a 40-hex commit\n", file, NR > "/dev/stderr"; bad = 1; exit 1 }
             key = $1 "\t" $3
             if (key in seen) { printf "error: %s line %d: %s for %s is locked twice\n", file, NR, $1, $3 > "/dev/stderr"; bad = 1; exit 1 }
             seen[key] = 1

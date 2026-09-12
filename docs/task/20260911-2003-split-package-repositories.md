@@ -81,7 +81,8 @@ Implementing Phase 1 (the mechanism inside this tree); approved 2026-09-12.
   two-class negatives by name), `tests/rootfs-runtime-test.sh` (139 +
   reproducibility), `build/src/release-manifest.test.ts` (71, lock and
   unlocked-channel cases), `bun run typecheck` in `build/` and `verify/`,
-  `tests/deb-preflight-test.sh` (19), `make os-host-toolchain-lint`,
+  `tests/deb-preflight-test.sh` (19), `tests/pool-lock-test.sh` (16, the
+  fetch and bump negatives against a stub registry), `make os-host-toolchain-lint`,
   `make docs-verify`. `tests/shell-pipefail-lint.sh` reports two
   pre-existing findings outside this change (`pkgs/mos-boot/init-keys.sh`,
   `pkgs/mosd/apid/ui/verify-ui-policy.sh`).

@@ -518,7 +518,9 @@ token variable, the source URL prefix); the token itself is never printed.
 `make os-pool` is `fetch.sh` for both architectures, then `make os-debs` (which
 skips a producer whose every package is locked), then `repo.sh` for both;
 `make os-deb-preflight` runs `fetch.sh --check` beside the producer inputs;
-`make os-lock-bump COMPONENT=<name>` wraps `lock.sh --bump`.
+`make os-lock-bump COMPONENT=<name>` wraps `lock.sh --bump`;
+`make os-pool-lock-test` drives `fetch.sh` and `lock.sh` against a stub
+registry and requires every refusal above by name.
 
 ### Local development
 
