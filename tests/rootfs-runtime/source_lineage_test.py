@@ -605,7 +605,7 @@ class StartupRootCallerTest(unittest.TestCase):
         cls.source = Path(cls.inputs['source'])
         cls.record_bytes = Path(cls.inputs['lineage']).read_bytes()
         cls.record = json.loads(cls.record_bytes)
-        assert cls.record['producer_join']['schema'] == 'mos/producer-join/startup-v1'
+        assert cls.record['producer_join']['schema'] in ('mos/producer-join/startup-v1', 'mos/producer-join/gpt-v1')
         assert subprocess.check_output(['git', '-C', str(cls.source), 'rev-parse', 'HEAD'], text=True).strip() == cls.record['composition_source']['commit']
         assert not subprocess.check_output(['git', '-C', str(cls.source), 'status', '--porcelain'])
         cls.results = Path(cls.inputs['results']); cls.results.mkdir()
@@ -871,3 +871,77 @@ class StartupAdmissionTest(unittest.TestCase):
                         with patch.object(self.h, 'STARTUP_RECEIPTS', pins):
                             with self.assertRaises((ValueError, OSError)):
                                 self.h.startup_successor_witness(altered, kind, root, entries)
+
+
+@unittest.skipUnless(os.environ.get('MOS_TEST_GPT_RECORD'), 'requires actual GPT producer inputs')
+class GptAdmissionTest(unittest.TestCase):
+    def setUp(self):
+        spec = importlib.util.spec_from_file_location('gpt_admission', HELPER)
+        self.h = importlib.util.module_from_spec(spec); spec.loader.exec_module(self.h)
+        self.record = self.h.load(Path(os.environ['MOS_TEST_GPT_RECORD']))
+
+    def test_actual_gpt_roles_retain_the_original_packages_and_startup_tool(self):
+        self.assertEqual(self.h.validate(self.record, 'amd64', 1577836800), self.record)
+        production = self.record['producer_join']['production']
+        self.assertEqual(production['native']['source'], production['deploy']['source'])
+        self.assertNotEqual(production['native']['source'], production['boot_tools']['source'])
+        self.assertEqual(len(self.record['pool']['packages']), 15)
+
+    def test_gpt_join_refuses_changed_producer_capture_and_source_roles(self):
+        cases = {
+            'source': lambda r: r['producer_join']['rebuilt_source'].__setitem__('epoch', 1),
+            'native': lambda r: r['producer_join']['native']['mos-init'].__setitem__('bytes', 1),
+            'missing-witness': lambda r: r['producer_join']['witnesses'].pop('native'),
+            'failed-witness': lambda r: r['producer_join']['witnesses'].__setitem__('deploy', '0' * 64),
+            'extra-witness': lambda r: r['producer_join']['witnesses'].__setitem__('extra', '0' * 64),
+            'duplicate-receipt': lambda r: r['receipt_sha256'].append(r['receipt_sha256'][0]),
+            'relabel-tool': lambda r: r['producer_join']['production']['boot_tools'].__setitem__('source', r['producer_join']['rebuilt_source']),
+            'relabel-mosd': lambda r: r['producer_join']['mapping'].__setitem__('mosd', r['producer_join']['rebuilt_source']['commit']),
+            'missing-map': lambda r: r['producer_join']['producer_inputs']['gpt']['producers'].pop('deploy'),
+            'prepare': lambda r: r['producer_join']['producer_inputs']['gpt']['producers']['deploy']['prepare'].append('unreviewed.sh'),
+            'native-input': lambda r: r['producer_join']['producer_inputs']['gpt']['native_inputs'].pop(),
+            'producer-delta': lambda r: r['producer_join']['approved_delta']['startup_to_gpt'].pop(),
+            'tool': lambda r: r['producer_join']['production']['boot_tools'].__setitem__('image', 'sha256:' + '0' * 64),
+            'archive-control': lambda r: r['pool']['packages'][0].__setitem__('control_sha256', '0' * 64),
+            'index': lambda r: r['pool']['files'].__setitem__('Packages', '0' * 64),
+            'downgrade': lambda r: r['producer_join'].__setitem__('schema', 'mos/producer-join/startup-v1'),
+            'default': lambda r: r.__setitem__('schema', 'mos/source-lineage/v1'),
+            'consumer-overlap': lambda r: r['delta'].append(dict(path='pkgs/mos-deploy/Cargo.lock', before=None, after=dict(mode='100644', blob='1' * 40))),
+        }
+        for name, mutate in cases.items():
+            with self.subTest(case=name):
+                changed = json.loads(json.dumps(self.record)); mutate(changed)
+                with self.assertRaises(ValueError): self.h.validate(changed, 'amd64', 1577836800)
+
+    @unittest.skipUnless(os.environ.get('MOS_TEST_GPT_WITNESSES'), 'requires actual GPT producer witnesses')
+    def test_actual_gpt_witnesses_and_semantic_refusals(self):
+        from unittest.mock import patch
+        directory = Path(os.environ['MOS_TEST_GPT_WITNESSES'])
+        for kind in ('native', 'deploy'):
+            path = directory / (kind + '.json'); value = self.h.load(path)
+            root = Path(value['sourceDirectory']); entries = self.h.tree(root, value['source']['commit'])
+            self.assertEqual(self.h.gpt_witness(path, kind, root, entries), value)
+            mutations = {
+                'status': lambda v: v.__setitem__('status', 'failure'),
+                'source': lambda v: v['source'].__setitem__('epoch', 1),
+                'role': lambda v: v.__setitem__('role', 'other'),
+                'command': lambda v: v['argv'].append('--unknown'),
+                'input': lambda v: v['sourceInputs'].pop(),
+                'duplicate-input': lambda v: v['sourceInputs'].append(v['sourceInputs'][0]),
+                'tool': lambda v: v['tools'].__setitem__('rust', 'sha256:' + '0' * 64),
+                'output': lambda v: v['outputs'][0].__setitem__('bytes', 1),
+                'terminal': lambda v: v['terminal'].__setitem__('sha256', '0' * 64),
+                'flags': lambda v: v['flags'].append('--unreviewed'),
+                'failed-prefix': lambda v: v.__setitem__('successfulContinuation', not v['successfulContinuation']),
+                'missing-output-file': lambda v: v['outputs'][0].__setitem__('path', '/nonexistent/gpt-native'),
+            }
+            with tempfile.TemporaryDirectory() as temp:
+                altered = Path(temp) / (kind + '.json')
+                for name, mutate in mutations.items():
+                    with self.subTest(kind=kind, case=name):
+                        changed = json.loads(json.dumps(value)); mutate(changed)
+                        altered.write_bytes(self.h.canonical(changed))
+                        with self.assertRaises(ValueError): self.h.gpt_witness(altered, kind, root, entries)
+                        with patch.dict(self.h.GPT_RECEIPTS, {kind: self.h.sha(altered)}):
+                            with self.assertRaises((ValueError, OSError)):
+                                self.h.gpt_witness(altered, kind, root, entries)

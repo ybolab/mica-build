@@ -677,8 +677,7 @@ test.each(['missing', 'unknown', 'self-authorized'])('runtime joined lineage ref
 })
 
 const STARTUP_SOURCE = '438c9551ec751fcb346881541752a7596f10cb15'
-function startupJoinedUki(change = '', actual = false) {
-  const native = process.env.MOS_TEST_STARTUP_NATIVE
+function startupJoinedUki(change = '', actual = false, native = process.env.MOS_TEST_STARTUP_NATIVE) {
   const init = actual ? readFileSync(join(native!, 'mos-init')) : Buffer.from('fixture static init')
   const shutdown = actual ? readFileSync(join(native!, 'mos-shutdown')) : Buffer.from('fixture static shutdown')
   const expected = { 'mos-init': { bytes: init.length, sha256: hash(init) }, 'mos-shutdown': { bytes: shutdown.length, sha256: hash(shutdown) } }
@@ -959,5 +958,66 @@ test('joined boot tool payload binds the authenticated startup BusyBox bytes', (
   for (const change of ['missing-busybox', 'wrong-busybox']) {
     const bad = joinedUki(change, true)
     expect(() => verifyJoinedNativePayload(bad.boot, bad.expected, undefined, busybox)).toThrow()
+  }
+})
+
+test.skipIf(!process.env.MOS_TEST_GPT_RECORD)('GPT actual join binds new native/deploy and reused startup tools independently', async () => {
+  const { sourceLineage } = await import('./release-manifest.ts')
+  const value = JSON.parse(readFileSync(process.env.MOS_TEST_GPT_RECORD!, 'utf8'))
+  const source = { commit: value.composition_source.commit as string, dirty: false }
+  const captured = (v: typeof value) => ({ ...v.pool.files, 'source-lineage.json': hash(Buffer.from(canonicalJson(v) + '\n')) })
+  expect(sourceLineage(value, source, 'amd64', captured(value)).bootToolsImage).toBe(value.producer_join.production.boot_tools.image)
+  const mutations: Record<string, (v: typeof value) => void> = {
+    source: v => { v.producer_join.rebuilt_source.epoch++ },
+    witness: v => { delete v.producer_join.witnesses.native },
+    native: v => { v.producer_join.native['mos-init'].bytes++ },
+    toolSource: v => { v.producer_join.production.boot_tools.source = v.producer_join.rebuilt_source },
+    tool: v => { v.producer_join.production.boot_tools.image = 'sha256:' + '0'.repeat(64) },
+    attribution: v => { v.producer_join.mapping.mosd = v.producer_join.rebuilt_source.commit },
+    prepare: v => { v.producer_join.producer_inputs.gpt.producers.deploy.prepare.push('unknown.sh') },
+    inputs: v => { v.producer_join.producer_inputs.gpt.native_inputs.pop() },
+    delta: v => { v.producer_join.approved_delta.startup_to_gpt.pop() },
+    index: v => { v.pool.files.Packages = '0'.repeat(64) },
+    control: v => { v.pool.packages[0].control_sha256 = '0'.repeat(64) },
+    downgrade: v => { v.producer_join.schema = 'mos/producer-join/startup-v1' },
+    default: v => { v.schema = 'mos/source-lineage/v1' },
+  }
+  for (const mutate of Object.values(mutations)) {
+    const changed = structuredClone(value); mutate(changed)
+    expect(() => sourceLineage(changed, source, 'amd64', captured(changed))).toThrow()
+  }
+  expect(() => sourceLineage(value, source, 'arm64', captured(value))).toThrow()
+  expect(() => sourceLineage(value, source, 'amd64', { ...captured(value), Packages: '0'.repeat(64) })).toThrow('pool capture')
+  expect(() => sourceLineage(value, source, 'amd64', { ...captured(value), 'source-lineage.json': '0'.repeat(64) })).toThrow('capture bytes')
+})
+
+test.skipIf(!process.env.MOS_TEST_GPT_NATIVE)('GPT actual native bytes remain bound through authenticated startup archive', () => {
+  const source = 'd2e352d0a4226f10b8b2587cd7c1bc5040b8d234'
+  const f = startupJoinedUki('', true, process.env.MOS_TEST_GPT_NATIVE)
+  expect(f.expected).toEqual({
+    'mos-init': { bytes: 2403504, sha256: '9d1b164b3af709cc382e6bdbc29e222225ac76e0f8c6e9d4a948f425d7548682' },
+    'mos-shutdown': { bytes: 2043048, sha256: '28ccd8655a02d54b4229f9674e297fa7925881cf89450febe436704bfdab3f0d' },
+  })
+  const signer = new Signer(generateKeyPairSync('ed25519').privateKey, true)
+  const d = JSON.parse(readFileSync(new URL('../../tests/component-contracts/deployment.json', import.meta.url), 'utf8'))
+  const support = { bytes: 12288, sha256: hash(Buffer.alloc(12288, 42)) }
+  d.kernel.boot.artifact = { bytes: f.boot.length, sha256: hash(f.boot) }
+  d.kernel.support.image = d.kernel.support.signature = d.rootfs.content.image = d.rootfs.content.signature = support
+  d.kernel.id = componentId(d.kernel); d.rootfs.id = componentId(d.rootfs)
+  writeFileSync(join(work, 'kernel/boot.efi'), f.boot)
+  writeFileSync(join(work, 'kernel/support.img'), Buffer.alloc(12288, 42))
+  const archive = join(work, 'gpt.mosupd')
+  packArchive(JSON.stringify(signer.sign(JSON.parse(canonicalJson(d)))), join(work, 'kernel'), join(work, 'root'), [signer.publicKey], archive)
+  expect(() => verifyArchive(archive, [signer.publicKey], source)).not.toThrow()
+  expect(() => verifyArchive(archive, [signer.publicKey], STARTUP_SOURCE)).toThrow('native bytes')
+  expect(() => verifyArchive(archive, [signer.publicKey], true)).toThrow('cpio header')
+  expect(() => verifyArchive(archive, keys, source)).toThrow()
+  const original = readFileSync(archive), mutated = Buffer.from(original)
+  mutated[mutated.length - 1] = mutated[mutated.length - 1]! ^ 1
+  writeFileSync(archive, mutated)
+  expect(() => verifyArchive(archive, [signer.publicKey], source)).toThrow('digest')
+  for (const change of ['bytes', 'mode', 'owner', 'symlink-target', 'omitted-manifest', 'extra-executable', 'checksum', 'raw']) {
+    const bad = startupJoinedUki(change, true, process.env.MOS_TEST_GPT_NATIVE)
+    expect(() => verifyJoinedNativePayload(bad.boot, f.expected, source)).toThrow()
   }
 })

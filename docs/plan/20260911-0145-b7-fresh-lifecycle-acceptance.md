@@ -5,6 +5,31 @@
 - **approvedAt**: 2026-09-11 01:45 (prior user approval)
 - **relatedTask**: 20260911-0145-b7-fresh-lifecycle-acceptance
 
+## Current coordination boundary (2026-09-12)
+
+The parent completed the authorized early source/workflow integration at main
+24f14d0afcb99e0cbda85b1974885384a5c70faa, tree
+4da7e15be971834956105422e0a673657edd7f82. This is source integration, not
+runtime acceptance. B7 keeps its branch and immutable ed723 image; no main sync,
+image relabeling, push, publication or done follows. The workflow in that main
+commit authorizes the existing execution owner to repair the complete evidenced
+in-scope call chain, run direct RED/GREEN and submit new product changes to B
+once. There are no per-stage/path/recovered-fixture generic approval waits.
+
+The enabled L1 watchdog is gb4a328c (30 minutes); old c9ea0np3 and B nkglvdlt
+are deleted, as is sighz7r7. B is an event-driven reviewer. B7 changes no cron
+and sends no parent receipt/progress notification. Its aggregate 4 CPU/10 GiB,
+no-extra-swap, cpuset 0-3 envelope still includes the daemon and every child.
+
+The accepted ed7231cdf9820c310e483b4cb479a3b52259467c / tree
+31e3fd25f91cd0c3b03055591f68896a8e351d81 image retains SHA256
+ca6bdd50cad6c3dc2e93160316316092c84cc0da995f022909014e36556037b9.
+Its failed first guest and unexecuted lifecycle/API scenarios remain pending.
+Only genuinely affected producers and dependents get new source/output
+identities after a correction; unchanged successful inputs keep their original
+witnesses. Stable x64 acceptance precedes the consolidated ARM baseline;
+physical CX and two independent equal-input virt cold samples remain owed.
+
 ## Context
 
 The reviewed B0-B6 dependency tree and J7 no-Python correction are integrated
@@ -1939,3 +1964,388 @@ The image-only continuation completed at 05:22:53.200333 UTC with producer exit 
 The Toolbox close client timed out after 45 seconds and remains a failed Docker receipt, although the existing production caller did not propagate it and returned image exit 0. Collection refused to call every Docker record successful. Exact later inspection proves container 43a5eb75d26fbdbf03f3bee85b877df954420f9aaf4205a27074f82c66cfea40 absent; image-run2-cleanup-observation.json SHA256 f34c3dd17980d7cc5ba6a36f0d2b69facb3724e4451f809a7d7760ae8a90e314 preserves the original stale running registry separately. No second removal, daemon recreation or artifact reconstruction occurred. This is image production with a retained cleanup-client failure and a verified absent resource, not an all-green executor receipt.
 
 The next same-node guest executor assessment is metadata/W4/caller-assessment-v1/result.json. It binds the frozen API/QEMU/seeding/lab callers and the actual image. The existing lab build unconditionally acquires ARM packages; it must not run in Phase1. A local amd64 lab candidate is inspected by immutable ID, with its history preserved, but its complete recipe/base/snapshot/payload reuse proof remains a prelaunch input check. The component adapter intentionally cannot serve the API controller's nested Docker/socket/QEMU/suite route or write its disposable .qemu directory. The next authorized task-local work is that exact bounded adapter and tool-input validation, preserving the aggregate resource envelope, private transport, fixed C verifier and all eight API phases. No guest has started, and no boot/lifecycle/API/service/RSS/physical or post-batch-2 ARM result is claimed. Existing automatic acceptance continues; no new product or generic approval is requested.
+
+
+### 2026-09-12 accepted image and bounded guest executor continuation
+
+B accepted the final ed723 image at its actual production scope and integrated eddff80c as records only. This same task now validates the existing immutable lab and controller inputs and implements only the authorized task-local QEMU/controller/API transport. The selected design uses a private task Unix socket and exact operation/instance/mount admission; no shared Docker socket enters a container. The retained daemon stays 1 CPU/5 GiB. Guest, controller, preparation and API lifetimes share the remaining 3 CPU/5 GiB on0-3 without extra swap. Current product callers, final image, signed archive, source roles and prior failed cleanup receipts remain unchanged. No ARM acquisition, guest start or completed lifecycle claim is implied by this input/executor preparation.
+
+
+The existing lab reuse check now passes against its current immutable d33be5a8 image, pinned amd64 base, exact normalized recipe history and fixed snapshot. Actual read-only collection binds 192 installed package rows and 123 program, firmware, library and module files, including QEMU 10.0.11, OVMF and the real virt-fw-vars payload. Lab payload SHA256 5e8da9b5da38b3a3d2dd7b1f80bff629fbba0e72fd5c91fd1c2f82611deeb1a0 preserves original package ownership/md5sums and current SHA256 identities. The controller's Bun, Docker CLI and buildx bytes independently match the fixed Bun and CLI images; port-payload/result.json SHA256 97f14d2550640ce6c2311f4d0d8d34b92d896fb0f0bf3110b9bc660b1f09c195 binds the actual bounded execution. No lab build, ARM acquisition or target-root Python addition occurred. The initial collector syntax error, unsupported virt-fw-vars --version invocation, generated source-bytecode refusal and wrong recorder source filename remain preparation failures.
+
+The final task-local guest transport passed 41 direct checks, including 33 refusals, and five real host/Bun-client protocol cases. It forwards exact immutable images and known operations through a private task socket, with no shared Docker socket mount. Controller 0.25 CPU/256 MiB, guest 2 CPU/3 GiB and API suite 0.75 CPU/1792 MiB fit beside the retained daemon 1 CPU/5 GiB; DATA preparation is separately limited to 2 CPU/2 GiB and cannot overlap the guest. Every created child requires fresh input/resource checks, pre-start image/mount/argv inspection and actual cgroups. Unknown images, operations, instances, mounts, target architecture, fixture environment and excess overlap remain refusals. tools/guest-v1/readiness.json SHA256 1d49a4c3b4828718b2c1efe9b3717415c5320ca1dd0fb29d23dcbd6449482743 binds this executor and the unchanged product callers.
+
+The first guest attempt ran only preflight at 06:10:20.688425..06:10:26.704324 UTC. Actual 1841-entry source and original final-image integrity checks passed, then the unchanged resource guard refused station CPU 112.69%, above its strict <50% threshold. Orchestrator 3260772 is absent. No bridge, API controller, QEMU, DATA seed or disposable disk was started; there is no guest result. metadata/W4/guest-v1/terminal-v1.json SHA256 feb0ac08013eaac4838a7a54ee9f113274fc490e41be694699f7394e0a1b251c binds the exact failure, immutable runner/readiness and separate subsequent observation of only the original 724215ac buildkitd at 1 CPU/5 GiB/swap0/0-3. The guard raised before retaining the full CPU snapshot; its exact assertion remains the launch evidence, and the later resource observation does not substitute for it. This round ends without a retry, threshold relaxation or daemon recreation. Fresh capacity is required at the next eligible event.
+
+Frozen ed723 source, final ca6bdd50 image, signed generation-3 update archive and J/438 producer identities remain unchanged. All eight API phases and the independent complete shutdown/reboot/update-fallback/lifecycle/auth/storage/service/size/RSS and fixed-C-verifier acceptance remain pending. API teardown will not qualify completed shutdown. Conditional batch 2/3 authority remains, with no current main/push/publication/done or broad ARM action. This task remains in progress.
+
+
+### 2026-09-12 source-merge steering and guest-only continuation
+
+L1-EARLY-SOURCE-MERGE-AND-WORKFLOW-STEERING-20260912 is consumed. Parent 304kmj92 alone performs the newly authorized early reviewed-source main transaction. B7 retains the existing ed723 source and accepted ca6bdd50 image; no main merge, rebase, broad workflow patch or duplicate image is made here. This source merge does not qualify pending x64 guest/lifecycle results or trigger the deferred broad ARM wave. Per-stage generic approval waits are removed within the existing scope; concrete trust, source, executor and resource checks remain. The verified main/workflow handoff and final D reconciliation are still separate prerequisites for their respective scope.
+
+A fresh current-boundary resource observation passed (capacity.json SHA256 4ad1b844c31d3713afbb6b30532103b319619e6f261636ade474600acaf55adb). Guest attempt 2 preserved the first CPU refusal and moved only the current-image hash into a read-only 0.25 CPU/256 MiB input child, removed before launch; every previous threshold remained unchanged. Its actual API preamble ran 06:18:09.360973..06:18:10.128112, exit 1, because three exact Go-template newline arguments were mismatched by the task adapter. No controller or guest started. Actual original-argv RED/GREEN and four unknown-format/image/instance refusals qualify the versioned correction; no product caller changed.
+
+Attempt 3 passed network discovery and created controller 3abbc1a2684e, but refused before start because Docker reordered the identical bind list. Actual source/destination/mode mappings and command/image were equal. The never-started container was removed and observed absent. A new adapter compares the exact sorted bind list plus the unchanged per-destination source/read-write map; wrong source, permission, extra/duplicate bind, image and command still refuse. Both previous attempts, their Docker receipts and guest-x64-v1 preparation logs remain immutable. A separate clean guest-x64-v2 source/output namespace preserves those paths.
+
+The affected guest-only attempt 4 uses tools/guest-v3/readiness.json SHA256 23469605688566f5008925ee645fdc714c126328cf2e1a7e4a7167e0987ee217. Orchestrator 3288565, private bridge 3288813 and actual API timeout PID 3288814 run under persistent pane %101; API invocation began 2026-09-12T06:24:23.657050+00:00. Actual 1841-entry source, immutable input hash and fresh capacity/envelope checks passed. The unmodified caller has prepared the disposable 4 GiB disk from the one accepted signed image. The original image, signed update archive, J/438 inputs and root/source identities remain unchanged. Metadata/W4/guest-v1/production-v4.json records actual state; preparation or a running harness is not guest/API/lifecycle PASS. The existing eight-phase suite and subsequent complete shutdown/update-fallback/lifecycle checks retain their original assertions and bounded resource allocation.
+
+
+Actual first guest boot ran 06:24:50.853150..06:25:16.240280 UTC in container 84d3493b19f2b5b0d9f29c67ea453cf1152c1cc51fca7b506e244b930a393ed2. Its real Docker command exited 0 and the container/client are absent, but guest acceptance failed before APID: mos-init refused SYSTEM discovery, then the authenticated static shutdown path reported partial-startup poweroff and the kernel powered down. This is neither normal completed shutdown qualification nor an API pass. The original API harness continues its unchanged bounded readiness deadline; it is not interrupted and no second guest is started.
+
+Read-only first-boot-v4/terminal-and-gpt.json SHA256 75ba245b65c7fbc0581a270395b20f046bbd9791cfabdb9a094b8df30fd8d196 binds the actual console, guest resource/argv receipt and exact source/header bytes. The factory image has 3,674,112 sectors with alternate GPT at LBA3,674,111. The unchanged QEMU caller extends its disposable copy to 8,388,608 sectors; its byte-identical primary GPT still names alternate LBA3,674,111 instead of actual last LBA8,388,607. Both primary CRCs and all three partition identities match, including SYSTEM UUID5ac35760-0064-4000-8000-000000000002. Linux enumerated vda1/vda2/vda3 and warned about the stale alternate-header location. The current native GPT parser requires alternateLba == sectors - 1 and skips a disk when parsing refuses; mos-init subsequently reports SYSTEM partition not found uniquely. This establishes a concrete caller/medium-geometry refusal path, not new target-parser execution or an exhaustive exclusion of other paths. No GPT source, disk header, trust input or producer was changed. The exact technical correction belongs at the existing owner boundary while the newly authorized early reviewed-source main transaction remains separate from failed acceptance.
+
+## GPT geometry correction and implemented workflow (2026-09-12)
+
+The verified early main source/workflow handoff is recorded in the current
+coordination boundary above. It authorizes this evidenced in-scope correction;
+no new user decision or generic path/stage approval is requested.
+
+The original ed723 API attempt ended at 06:40:00 UTC with exit 1 (launcher
+9/10, zero API phases). Its guest had already powered off after SYSTEM
+lookup refused the primary GPT on the enlarged 4 GiB disposable medium.
+`guest-v1/terminal-v4.json` binds that actual terminal; the immutable image and
+all prior snapshots, partial-startup cleanup and failure classifications remain.
+
+`GptMedia-v1` records the native parser repair. Its primary GPT backup location
+may precede the physical medium end, but must remain inside the medium; the
+usable range still ends before the declared backup table/header. Existing CRC,
+UUID, partition range, overlap, device and ownership checks are unchanged.
+The original parser failed both the new larger-media unit case and the actual
+captured factory/disposable parser case. The final source passes four GPT unit
+tests and one actual captured-input test, with no skips; smaller media and
+malformed/out-of-range/CRC/UUID/overlap controls refuse. This is parser evidence,
+not a corrected native binary, successful boot or API acceptance.
+
+Offline-cache preparation failures, a missing host TOML reader, initial
+external-fixture formatting failure and the unrelated Clippy fixture-path
+failure remain explicit history. The exact locked 114 cached crate archives
+were checksum-verified into task-private storage without network acquisition
+or lock/tool changes. Final affected quality results remain separately named.
+
+Actual input attribution checks all 49 native, 59 deploy and 19 boot-tool
+entries. Only native/deploy consume the changed module; all boot-tool entries
+match. Affected native/deploy outputs need new actual witnesses and dependent
+component/image admission. The fixed438 join remains strict until those inputs
+are truthfully represented; no producer path was placed in a consumer set.
+Original J packages, reusable kernel, boot tools and all old outputs retain
+original identities. B receives this clean source/direct evidence for its one
+independent review; eligible execution then continues under the existing grant.
+
+
+## GPT correction native producer terminal (2026-09-12)
+
+B independently accepted d2e352d0a4226f10b8b2587cd7c1bc5040b8d234 and
+integrated its exact source into c2058188. The production checkout remains
+frozen to d2e352d0/tree190ffef0/epoch1789196122, with all 1841 Git entries
+verified before and after production. No B or main source was imported.
+
+The real x64 native hook ran 07:08:53.159666..07:11:07.924441 UTC, exit 0;
+its container aaca62aac238 ran 07:08:56.237536..07:09:54.560850 UTC, exit 0.
+The bounded cleanup exited 0 and the exact container and original processes
+are absent. Aggregate native-v1 completed 07:11:10.010628 UTC, exit 0.
+`GptProducer-d2e352d0a4226f10b8b2587cd7c1bc5040b8d234/metadata/native-terminal-v1.json`
+SHA256 e9bcc367562f3eba08ccd30c1284e947797434ca39f36b3b0df390499306dbd8
+binds all four steps, 20 evidence files, actual source/argv/environment,
+output checks and retained resource observations. The earlier start snapshot
+of the removing container remains separate from the successful cleanup.
+
+New mos-init is 2403504 B, SHA256
+9d1b164b3af709cc382e6bdbc29e222225ac76e0f8c6e9d4a948f425d7548682;
+new mos-shutdown is 2043048 B, SHA256
+28ccd8655a02d54b4229f9674e297fa7925881cf89450febe436704bfdab3f0d.
+Both are actual source-bound x64 static ELF outputs with no PT_INTERP or
+DT_NEEDED. GNU static NSS/linker warnings remain in the original 9870 B log,
+SHA256 08941a049e5625642853d285cb21a079110d38dd498adbbb01e0da8eddaad021.
+No target execution or successful guest is inferred from compilation.
+
+The task adapter admitted the exact existing native hook only, verified its
+immutable Rust image and created/inspected the child before start. Actual
+cgroups were 3 CPU/5 GiB/swap0 on 0-3 beside the unchanged 1 CPU/5 GiB
+owned daemon. Raw fresh CPU/capacity/memory/disk observations were retained
+before threshold decisions. No daemon resize/recreation, shared state change,
+network crate acquisition, tool/pin change or successful producer replay occurred.
+
+The final producer-inputs-final.json corrects only the previously recorded
+pre-final-test GPT after-hash; the original stale GptMedia attribution record
+is preserved. Exact final 49 native/59 deploy/19 boot-tool entries confirm
+only native/deploy consume the changed GPT module and all boot-tool inputs
+remain equal. The next affected producer is deploy under the same serial
+resource slot. New deploy/output witnesses and strict final joined-source
+admission remain required before affected component/image/guest successors.
+Original J packages,438 tool/kernel identities, ed723 image production and
+its failed first guest/API attempt remain immutable; none is relabeled.
+
+
+## GPT correction deploy production and prefix recovery (2026-09-12)
+
+The affected deploy PREPARE used the same frozen d2e352d0/tree190ffef0,
+epoch1789196122 and original pinned Rust image. Container70c94047de90 ran
+07:29:26.103386..07:29:55.575225 UTC, exit 0; cleanup exited 0 and the
+existing hook exported only mos-deploy. The compiled and packed payload is
+2631680 B, SHA2567135f5789cdd843a21373f5833b617a7344c4f1081aa804ac7aee9a9c7a01f7e.
+
+The first runner refused before production because its private target directory
+was absent. After that preparation correction, the original driver still ended
+07:31:10.525452 with exit 1: the task adapter rejected the existing Debian tool
+OCI index's separate provenance manifest before launching BuildKit packaging.
+Its actual fixed a6eff372 index contains one amd64 manifest721b2807 and an
+attached attestationf6b60c56. The corrected task-only validator verifies their
+exact identities, config, all seven compressed/diff layers, subject and attached
+provenance. Eleven positive/refusal checks passed. A subsequent inspect-array
+wiring error also refused before packaging; the actual corrected inspect-to-
+validator call passed separately. All original failures and the read-only
+20-second start-observation timeout during cleanup remain preserved.
+
+The completed PREPARE was reused without recompilation. Only the previously
+unexecuted package/index stages continued, through the original exact package
+arguments and repo.sh source. Their aggregate ran 07:37:06.960328..
+07:37:22.203538 UTC, exit 0. The original outer exit 1 remains unchanged.
+New mos-deploy_0.1.0+gitd2e352d0a422-1_amd64.deb is 757948 B, SHA256
+018f707b4a2322293f614ce9d909f17ad4de6256bc36f1998f98178204fe493e.
+Its control, executable mode/ownership/bytes and all three generated indexes
+match. Package dependencies remain libc6, libgcc-s1, mount and curl; the
+original dpkg-shlibdeps diversion warnings are preserved.
+
+GptProducer-d2e352d0/metadata/deploy-terminal-v1.json (under the full immutable
+GptProducer directory) SHA256a9d6333f6da9e6138b5351b3e751cdb2043c01c20a7e5d48b6f93a76e325acff
+binds 55 evidence files, actual source/argv/exits, archive and unchanged
+1841-entry before/after source. All original execution PIDs and direct children
+are absent. Packaging used only the existing bounded daemon1CPU5GiB; compiler
+and index each used serial3CPU5GiB beside it, with actual fresh resource and
+create-inspect-start/cgroup proofs. No resource expansion/recreation occurred.
+
+The new fixed per-role witness files are native.json SHA256
+65a4dae876b4e4c58bc4c029679998081b5d543b80668e2129a861f4a1f9370f
+and deploy.json SHA256
+aaa082345b66961bab3b327314841226f31e19157ffde626198084759ae60d88,
+with 49/59 exact source inputs and actual successful invocations/recovery.
+They are pending admission by the affected strict joined-source consumers,
+which still refuse changed producers under the fixed438 role. The next work
+is that bounded existing caller/lineage/release correction and its direct
+current-input proof, then affected image and complete x64 acceptance. No
+native, tool, kernel, original-J package or old guest/image replay occurred.
+
+### 2026-09-12 GPT producer join implementation
+
+The reviewed d2e352d0 GPT correction has successful native and completed-prefix
+deploy production. This consumer correction introduces one fixed gpt-v1 joined
+role: d2 native/deploy, unchanged original J14 archives, and the separately
+witnessed 438 boot tool. Original failed aggregate and successful continuation
+receipts remain distinct. No producer path enters the composition or joined
+consumer sets, and no producer/tool/kernel was rebuilt for admission.
+
+GptJoin-v1 under the existing Phase1 wave holds the independent 15-archive pool
+and newly generated indexes. Its actual repo.sh command ran 07:51:30.725288..
+07:51:35.198202 UTC, exit 0, within the unchanged daemon1CPU5GiB plus serial
+child3CPU5GiB envelope. The old and new producer pools were not overwritten.
+The proposed record is diagnostic input until final clean-source validation.
+
+Direct original-source RED shows the old lineage and release consumers refusing
+the d2 package stamp and native source role. A new witness-function absence was
+also recorded as an implementation RED. The first TypeScript edit had a duplicate
+local declaration and failed before tests; it is preserved separately. Corrected
+direct checks admit the actual native/deploy outputs and authenticated compressed
+startup payload, while rejecting changed producer roles, witnesses, inputs,
+indexes, native bytes and old-source attribution. This is source/input and signed
+fixture evidence, not a production component, image, guest or API result.
+
+The canonical creator verifies the full reviewed J/fb6/438/d2 delta legs, all
+15 producer/PREPARE maps, native49/deploy59/tool19 inputs, actual original and new
+receipts/output/control/tool bytes, and a separate consumer-only successor delta.
+The root caller derives only the validated immutable 438 tool manifest. Release
+capture, installed package identity and authenticated native payload remain
+strict. Final clean two-copy joins and affected caller/capture/package admission
+are the next required evidence before independent B review and affected x64
+production. The unchanged ED723 image and failed guest/API remain historical;
+full x64 acceptance and later physical/consolidated ARM obligations are pending.
+
+### 2026-09-12 GPT join final source and input handoff
+
+Frozen consumer correction ae40a791d763830a8e4a7cd7b0bb83a8b8945902,
+tree e2ea87818636e931117f8c7b07f5372d5cf864aa, epoch1789200301,
+changes exactly seven source/test/record paths. Producer source remains d2;
+original J14 and reused438 tools retain their own identities. The five changed
+product/test paths are outside every complete producer map. Fixed path sets are
+unchanged. Direct lineage3, context5, release2/33 assertions, type, shell syntax,
+docs and diff checks pass against the final relevant source bytes.
+
+Both actual clean 1841-entry verification copies yield canonical lineage
+SHA256a54c66c0d5b82f66389bf53ba86bcdf66e41e375341d9aa040f257e4187546a8.
+Actual root caller5 tests/eight shell invocations pass: unset/exact derive the
+witnessed af672 tool at isolated boundary79; wrong config/old tool/tag/manifest,
+unverified join and default mixed stamps refuse. Boundary79 is fixture-only.
+Each clean copy passes current pool/capture/release admission plus seven
+cross-source/capture refusals. All18 actual mixed pool files match. Kernel
+reuse rechecks all12 original relevant source inputs/modes and original output
+bytes; no kernel build occurred.
+
+The actual joined package input gate ran 08:14:18.883200..08:14:27.313904 UTC,
+exit0:140 checks,15 archives,600 paths,3 maintainer scripts and7 frozen all-
+architecture witnesses. Its exact21fb00cc child ran08:14:24.860435..
+08:14:26.828261 with create/inspect/cgroup/cleanup0 and verified absence.
+Fresh guards kept daemon1CPU5GiB plus serial child3CPU5GiB/swap0/0-3.
+Cross-architecture comparison and producer reproducibility were not replayed.
+
+Preparation history remains separate: dependency directory symlinks were
+untracked and the first clean-source check refused before any input gate;
+real ignored directories corrected only that task preparation. The next runner
+completed lineage1 and all shell cases, then could not locate Bun. Only its
+unexecuted capture and second-copy work continued via the actual Bun path.
+No successful creator/caller was rerun for that recovery. A task adapter's
+initial template-directory assumption was corrected before container execution,
+and the exact frozen J Bun reference was explicitly mapped to its known digest.
+All original attempts, logs and adapter versions remain available.
+
+Final GptJoin-ae40a791d763830a8e4a7cd7b0bb83a8b8945902/metadata/
+successor-readiness-v2.json SHA256
+623516c92679021f9486358b016a9883c702dd6762f2abc61005e283996da258
+binds the actual roles, pool, two clean copies, public input references, caller
+results, current kernel proof and unchanged resource/production-environment
+rules. Independent B source/input review is next; the corrected root, affected
+components/image and full x64 acceptance remain pending. ED723 and every old
+failed invocation retain their original identities. No main, ARM, cron, push,
+publication or completion action occurred.
+
+
+### GPT root execution preparation, 2026-09-12 08:33 UTC
+
+While B reviews ae40 source/input admission, task-local root-v2 preparation
+binds its exact composition/readiness, existing724215ac daemon, new d2 native/
+deploy and separately reused438 tool source. Original ED723 runners are intact.
+The child cgroup gate reuses the accepted component gate with only its W2 log
+marker changed; original command/default entrypoint, stdin and exit are retained.
+Forty-eight direct checks pass across15 captured invocation shapes, source-role/
+fixture-environment controls and CPU/memory/swap/cpuset refusals. These are
+controlled preparation checks, not actual container or root execution.
+GptJoin-ae40a791d763830a8e4a7cd7b0bb83a8b8945902/metadata/
+root-adapter-preparation-v2.json SHA256
+a3c5dc3489bc9a234fb4d331fc71a98bc1e61c2ed9e6e187999fbc9233065a43
+binds six task-local files and the exact versioned changes. No production source,
+producer output, daemon state or accepted artifact changed. New source/input
+review and fresh per-launch resource/input checks still precede the root start.
+
+
+### GPT reviewed root actual start, 2026-09-12 08:37 UTC
+
+Independent B source/input review accepted exact ae40/tree e2ea8781 and
+canonical a54c66c0. The same-source x64 normal root actually started at
+08:37:24.494779 UTC after14 successful preflight steps. Orchestrator3346224,
+root timeout3347132 and persistent pane%101 were observed live in the distinct
+startup collection. All1841 source entries,18 copied pool files, fixed cache,
+J14/d2 native-deploy/438 tool, public trust and source-role identities passed.
+Fresh capacity, station/unrelated CPU, memory/disk, daemon724215ac quiescence
+and cgroup/headroom checks passed before launch. Child limits remain3CPU5GiB,
+with aggregate4CPU10GiB/swap0/0-3 and an actual in-child cgroup gate. Root process
+environment excludes BASH_ENV/DEBUG boundary injection. No source sync or
+successful producer/kernel replay occurred.
+GptJoin-ae40a791d763830a8e4a7cd7b0bb83a8b8945902/metadata/W2/
+root-start-collected-v1.json SHA256
+e8dd895f987370c5e96dd729b8cab04d7fae1c13c6e5a166793526b4448edc7e
+preserves exact argv/environment/PIDs,14 log hashes and input/resource bindings.
+This is actual start evidence only; no root/image/guest success is inferred.
+
+
+### GPT root terminal and affected component boundary, 2026-09-12 08:40 UTC
+
+The original ae40 root command finished08:40:30.747313 UTC exit0 and its
+aggregate finished08:40:33.524958 success0. Original3346224/3347132 are absent.
+One bounded terminal collection verifies15 step/logs,261 actual packed files,
+19 Docker records and15 created-child cgroup/exit0/absence receipts. All12 real
+register smoke entries pass. Actual OCI80730112B SHA256
+822dc6a2fadd6a8e13f89dd9399a0cbf72f79ba2d78c6a7baf85d4793fe0b2ab
+has manifest156a1cde17840eb620a5e02a565cc4b633e8b59af1e42a8499cb05dd711c62d7.
+Exactly one packed mosd/apid/mos-deploy matches the actual report, modes/owners
+and J/J/d2 origins. Packed stripped deploy78a6b0f4 remains distinct from the
+original7135f578 archive payload. The source/canonical/J14/d2/438 roles remain.
+GptJoin-ae40a791d763830a8e4a7cd7b0bb83a8b8945902/metadata/W2/
+root-terminal-collected-v1.json SHA256
+88ff7b9ab0622de40e4636b45e551c60051862a40438e925e6b58b4359b333e6
+is root/packed-smoke evidence only; component/image/guest acceptance is separate.
+
+The task-only component runner/adapter preserves original semantics and binds
+current root/d2 natives/reused438 tools without replaying the completed join
+creator. Nineteen affected preparation checks pass; earlier adapter suites are
+reused. All existing signing keys remain unchanged, privately copied with0600
+modes and matched public material. A preparation comparison incorrectly treated
+the metadata public Base64 text as hex; that failed preparation is retained and
+only its encoding comparison was corrected. No product/trust edit occurred.
+The versioned component readinessf7e6d976 retains daemon1CPU5GiB, Toolbox1CPU3GiB
+and serial signer/boot-tool2CPU2GiB, aggregate4CPU10GiB/swap0/0-3. Fresh raw
+resource observations are preserved before threshold refusals. Dispatch alone
+is not a component start; actual starts/terminals remain separately recorded.
+
+
+### GPT component cleanup boundary and signing continuation, 2026-09-12 09:05 UTC
+
+Actual component attempt1 started08:53:28.268233 and failed08:54:26.552258
+before any signer ran. The exact owned Toolbox removal took129.4139198 seconds,
+exceeding the task adapter's45-second bound. The next signing guard strictly
+refused that still-removing instance. Its eventual destroy event and exact
+absence are preserved; no second removal was issued. Terminal79fa521e binds
+all9 Docker records and the two successful unsigned outputs, including unchanged
+rootfs.img f651ba2e/root hash76617bf9. Original aggregate1 remains a failure.
+
+Only the versioned task adapter now allows180 seconds for one exact owned
+Toolbox removal and requires actual absence before marking it closed. Five
+focused cases cover original45-second RED, measured-duration GREEN, exceeded
+bound, still-present object and unrelated-instance refusal. The actual unsigned
+input check passes. No product source, resource ceiling or trust was changed.
+New root-v2.resume1.building copies the retained unsigned bytes and calls the
+unchanged production signer and metadata helpers for only the unexecuted tail;
+original root/verity checks, failed outputs and producer receipts are immutable.
+
+The continuation actually started09:05:22.702971 UTC, orchestrator3363759 and
+root signing timeout3363947, persistent pane%101. Readiness435bd0b7 and distinct
+start collectione2e3167e bind exact current source/input/environment/resource
+checks. Existing kernel/support and firmware callers follow serially; allocation
+remains aggregate4CPU10GiB/swap0/0-3 including daemon and all children. This start
+snapshot is not a component/image/guest PASS. The next image runner is prepared
+against ae40 but can launch only after the actual successful component terminal
+and fresh guards; future output hashes are collected from their producers.
+
+
+### GPT short-container lifetime correction, 2026-09-12 09:12 UTC
+
+The signing continuation also terminated09:07:23.304479 exit1. Its exact short
+container executed the signer and exited0 at09:05:33.4121597, but Docker automatic
+removal finished only09:07:40.3182728. That126.9061131-second post-exit lifetime
+exceeded the unchanged120-second product caller. Caller cleanup removed the
+temporary signature, so there is no retained signature or component success.
+Terminal93a8724a preserves the incomplete executor receipt, actual die/destroy
+records, exact absence and unchanged unsigned output bytes. This failed tail
+must produce a retained signature; successful root and native/tool producers
+are not rerun.
+
+The task-only components-v3 adapter now records short-container process exit,
+actual cgroups and exact stopped/PID0/non-restarting identity before returning
+the real exit to the unchanged caller. It retains only those registered exited
+instances for bounded non-force removal and actual absence checks at the stage
+boundary. Unknown, running, removing, wrong-source/image/mount/limit/exit and
+OOM/error cases refuse. Fifteen focused identity/lifetime cases and the actual
+unsigned input check pass. Toolbox behavior and all resource/product timeouts
+remain unchanged. Readiness3cd9f789 binds the versioned adapter, cleanup, exact
+signing tail and original failures. The new attempt is dispatched in persistent
+pane%101 with fresh launch guards; its actual start/terminal is recorded separately.
+Original ae40 source/canonical/J14/d2/438 inputs and old failed outputs remain.
+
+
+### GPT signed root accepted locally; kernel launch refused, 2026-09-12 09:13 UTC
+
+Actual root signing/finalization in attempt3 returned0, with root component
+ID d2644ae1a22bce3ca1bcac1177c2bb5c554a06e3f35c4265b8fb7bb0d53c44ca,
+original root image f651ba2e and457-byte signature bac4abb76c0034f9634b5947f4efbb1c479788bc5d01fb839361f54e20ea0beb.
+The short child has actual process0/cgroups, followed by explicit cleanup0 and
+confirmed absence. The product caller no longer waits for automatic removal.
+These four root component outputs are retained and will not be regenerated.
+
+Kernel/support's actual09:13:04.258268 caller failed before Toolbox creation.
+The unchanged fresh memory guard summed recorded Docker memory estimates plus
+its22GiB reserve to33635593453.568B, exceeding host33635225600B. The367853.568B
+difference is derived from rounded Docker stats, not a new physical measurement.
+Raw observations remain bound; no threshold was weakened and no retry was made.
+Aggregate09:13:10.352783 remains failure1; firmware/image/guest are still pending.
+Terminal757f2457 binds both steps, four Docker records, two successful cleanup
+receipts and all four root outputs. components-v4 is prepared to reuse those
+outputs and start only kernel/support and firmware after new launch conditions
+pass. It has not been launched. No producer/root/signature replay is requested.
