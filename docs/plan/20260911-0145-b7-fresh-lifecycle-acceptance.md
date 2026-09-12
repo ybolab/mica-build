@@ -2328,3 +2328,24 @@ remain unchanged. Readiness3cd9f789 binds the versioned adapter, cleanup, exact
 signing tail and original failures. The new attempt is dispatched in persistent
 pane%101 with fresh launch guards; its actual start/terminal is recorded separately.
 Original ae40 source/canonical/J14/d2/438 inputs and old failed outputs remain.
+
+
+### GPT signed root accepted locally; kernel launch refused, 2026-09-12 09:13 UTC
+
+Actual root signing/finalization in attempt3 returned0, with root component
+ID d2644ae1a22bce3ca1bcac1177c2bb5c554a06e3f35c4265b8fb7bb0d53c44ca,
+original root image f651ba2e and457-byte signature bac4abb76c0034f9634b5947f4efbb1c479788bc5d01fb839361f54e20ea0beb.
+The short child has actual process0/cgroups, followed by explicit cleanup0 and
+confirmed absence. The product caller no longer waits for automatic removal.
+These four root component outputs are retained and will not be regenerated.
+
+Kernel/support's actual09:13:04.258268 caller failed before Toolbox creation.
+The unchanged fresh memory guard summed recorded Docker memory estimates plus
+its22GiB reserve to33635593453.568B, exceeding host33635225600B. The367853.568B
+difference is derived from rounded Docker stats, not a new physical measurement.
+Raw observations remain bound; no threshold was weakened and no retry was made.
+Aggregate09:13:10.352783 remains failure1; firmware/image/guest are still pending.
+Terminal757f2457 binds both steps, four Docker records, two successful cleanup
+receipts and all four root outputs. components-v4 is prepared to reuse those
+outputs and start only kernel/support and firmware after new launch conditions
+pass. It has not been launched. No producer/root/signature replay is requested.
