@@ -233,4 +233,4 @@ thing about the tree. Both indexes now say the same thing.
 - [x] [**20260912-1113-remove-build-resource-limits Remove build resource limits**](20260912-1113-remove-build-resource-limits.md) `P1`
 
 - [x] [**20260912-1123-clean-x64-diagnosis Clean main x64 rebuild and diagnosis**](20260912-1123-clean-x64-diagnosis.md) `P1`
-- [ ] [**20260912-1329-arm64-board-builds ARM64, CX3576 and S905X5M builds**](20260912-1329-arm64-board-builds.md) `P1`
+- [-] [**20260912-1329-arm64-board-builds ARM64, CX3576 and S905X5M builds**](20260912-1329-arm64-board-builds.md) `P1`
