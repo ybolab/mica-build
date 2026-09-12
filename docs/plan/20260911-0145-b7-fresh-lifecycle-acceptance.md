@@ -7,23 +7,28 @@
 
 ## Current coordination boundary (2026-09-12)
 
-The user now authorizes the reviewed source to enter main before the full x64
-guest matrix, then the concrete workflow changes will follow the parent's
-verified handoff. Parent 304kmj92 is the sole main writer for this transaction.
-B7 neither merges main nor rebases its running candidate. This early source
-merge is not final acceptance and does not trigger broad ARM execution.
+The parent completed the authorized early source/workflow integration at main
+24f14d0afcb99e0cbda85b1974885384a5c70faa, tree
+4da7e15be971834956105422e0a673657edd7f82. This is source integration, not
+runtime acceptance. B7 keeps its branch and immutable ed723 image; no main sync,
+image relabeling, push, publication or done follows. The workflow in that main
+commit authorizes the existing execution owner to repair the complete evidenced
+in-scope call chain, run direct RED/GREEN and submit new product changes to B
+once. There are no per-stage/path/recovered-fixture generic approval waits.
 
-B7 retains frozen ed7231cdf9820c310e483b4cb479a3b52259467c, tree
-31e3fd25f91cd0c3b03055591f68896a8e351d81, and the accepted final image
+The enabled L1 watchdog is gb4a328c (30 minutes); old c9ea0np3 and B nkglvdlt
+are deleted, as is sighz7r7. B is an event-driven reviewer. B7 changes no cron
+and sends no parent receipt/progress notification. Its aggregate 4 CPU/10 GiB,
+no-extra-swap, cpuset 0-3 envelope still includes the daemon and every child.
+
+The accepted ed7231cdf9820c310e483b4cb479a3b52259467c / tree
+31e3fd25f91cd0c3b03055591f68896a8e351d81 image retains SHA256
 ca6bdd50cad6c3dc2e93160316316092c84cc0da995f022909014e36556037b9.
-Guest/API and complete lifecycle qualification continue under existing grants;
-failing and unexecuted checks stay pending. No per-stage generic permission is
-needed. One execution owner and candidate, batch input checks, truthful producer
-reuse and the fixed 4 CPU/10 GiB/no-extra-swap/0-3 allocation remain. No broad
-workflow/product patch, push, publication, done or parent progress notice is
-part of this steering. The later verified main/workflow handoff controls final
-D reconciliation and the eventual ARM baseline; physical CX and two equal-input
-independent virt cold samples remain owed.
+Its failed first guest and unexecuted lifecycle/API scenarios remain pending.
+Only genuinely affected producers and dependents get new source/output
+identities after a correction; unchanged successful inputs keep their original
+witnesses. Stable x64 acceptance precedes the consolidated ARM baseline;
+physical CX and two independent equal-input virt cold samples remain owed.
 
 ## Context
 
@@ -1989,3 +1994,40 @@ The affected guest-only attempt 4 uses tools/guest-v3/readiness.json SHA256 2346
 Actual first guest boot ran 06:24:50.853150..06:25:16.240280 UTC in container 84d3493b19f2b5b0d9f29c67ea453cf1152c1cc51fca7b506e244b930a393ed2. Its real Docker command exited 0 and the container/client are absent, but guest acceptance failed before APID: mos-init refused SYSTEM discovery, then the authenticated static shutdown path reported partial-startup poweroff and the kernel powered down. This is neither normal completed shutdown qualification nor an API pass. The original API harness continues its unchanged bounded readiness deadline; it is not interrupted and no second guest is started.
 
 Read-only first-boot-v4/terminal-and-gpt.json SHA256 75ba245b65c7fbc0581a270395b20f046bbd9791cfabdb9a094b8df30fd8d196 binds the actual console, guest resource/argv receipt and exact source/header bytes. The factory image has 3,674,112 sectors with alternate GPT at LBA3,674,111. The unchanged QEMU caller extends its disposable copy to 8,388,608 sectors; its byte-identical primary GPT still names alternate LBA3,674,111 instead of actual last LBA8,388,607. Both primary CRCs and all three partition identities match, including SYSTEM UUID5ac35760-0064-4000-8000-000000000002. Linux enumerated vda1/vda2/vda3 and warned about the stale alternate-header location. The current native GPT parser requires alternateLba == sectors - 1 and skips a disk when parsing refuses; mos-init subsequently reports SYSTEM partition not found uniquely. This establishes a concrete caller/medium-geometry refusal path, not new target-parser execution or an exhaustive exclusion of other paths. No GPT source, disk header, trust input or producer was changed. The exact technical correction belongs at the existing owner boundary while the newly authorized early reviewed-source main transaction remains separate from failed acceptance.
+
+## GPT geometry correction and implemented workflow (2026-09-12)
+
+The verified early main source/workflow handoff is recorded in the current
+coordination boundary above. It authorizes this evidenced in-scope correction;
+no new user decision or generic path/stage approval is requested.
+
+The original ed723 API attempt ended at 06:40:00 UTC with exit 1 (launcher
+9/10, zero API phases). Its guest had already powered off after SYSTEM
+lookup refused the primary GPT on the enlarged 4 GiB disposable medium.
+`guest-v1/terminal-v4.json` binds that actual terminal; the immutable image and
+all prior snapshots, partial-startup cleanup and failure classifications remain.
+
+`GptMedia-v1` records the native parser repair. Its primary GPT backup location
+may precede the physical medium end, but must remain inside the medium; the
+usable range still ends before the declared backup table/header. Existing CRC,
+UUID, partition range, overlap, device and ownership checks are unchanged.
+The original parser failed both the new larger-media unit case and the actual
+captured factory/disposable parser case. The final source passes four GPT unit
+tests and one actual captured-input test, with no skips; smaller media and
+malformed/out-of-range/CRC/UUID/overlap controls refuse. This is parser evidence,
+not a corrected native binary, successful boot or API acceptance.
+
+Offline-cache preparation failures, a missing host TOML reader, initial
+external-fixture formatting failure and the unrelated Clippy fixture-path
+failure remain explicit history. The exact locked 114 cached crate archives
+were checksum-verified into task-private storage without network acquisition
+or lock/tool changes. Final affected quality results remain separately named.
+
+Actual input attribution checks all 49 native, 59 deploy and 19 boot-tool
+entries. Only native/deploy consume the changed module; all boot-tool entries
+match. Affected native/deploy outputs need new actual witnesses and dependent
+component/image admission. The fixed438 join remains strict until those inputs
+are truthfully represented; no producer path was placed in a consumer set.
+Original J packages, reusable kernel, boot tools and all old outputs retain
+original identities. B receives this clean source/direct evidence for its one
+independent review; eligible execution then continues under the existing grant.
