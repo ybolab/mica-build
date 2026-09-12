@@ -30,7 +30,8 @@ says() { grep -c -- "$2" "$1" >/dev/null; }
 
 # ------------------------------------------------------------ the stub
 #
-# A GitHub-shaped release API for one organisation: GET
+# A GitHub-shaped release API for one organisation (asset names carry `.`
+# where the archive name carries `+`, as GitHub rewrites them): GET
 # /repos/<owner>/<repo>/releases (newest first), /releases/tags/<tag>, and
 # each asset's `url` serving its bytes for `Accept: application/octet-stream`
 # (200 directly; the real API redirects, which registry_download follows).
@@ -46,8 +47,9 @@ FIELDS="python3 ${REPO_ROOT}/build-env/deb/control-fields.py"
 # Fixture archives are written in Python -- an `ar` of debian-binary,
 # control.tar.gz and data.tar.gz -- because the host carries no dpkg
 # (docs/design/build.md section 0) and this test runs no container.
-build_deb() { # name version arch repo commit -> path
-    python3 - "${REG}/assets/$1_$2_$3.deb" "$1" "$2" "$3" "$4" "$5" <<'DEB'
+build_deb() { # name version arch repo commit -> path (asset name: + mapped to . as GitHub does)
+    local asset="$1_$2_$3.deb"; asset="${asset//+/.}"
+    python3 - "${REG}/assets/${asset}" "$1" "$2" "$3" "$4" "$5" <<'DEB'
 import io, sys, tarfile
 path, name, version, arch, repo, commit = sys.argv[1:]
 control = f'Package: {name}\nVersion: {version}\nArchitecture: {arch}\nMaintainer: Fixture <fixture@example.invalid>\nDescription: fixture\nMos-Source-Repo: {repo}\nMos-Source-Commit: {commit}\n'.encode()
@@ -67,7 +69,7 @@ for member, data in members:
     if len(data) % 2: out += b'\n'
 open(path, 'wb').write(out)
 DEB
-    echo "${REG}/assets/$1_$2_$3.deb"
+    echo "${REG}/assets/${asset}"
 }
 V1="1.0.0+git${COMMIT:0:12}-1"
 V2="1.1.0+git${OTHER_COMMIT:0:12}-1"
@@ -205,7 +207,7 @@ python3 - "${A1}" <<'PY'
 import sys; p = sys.argv[1]; d = bytearray(open(p, 'rb').read()); d[-1] ^= 1; open(p, 'wb').write(d)
 PY
 rm -f "${POOL}/amd64/pool/mos-fixture_${V1}_amd64.deb"
-if ! ${FETCH} --arch amd64 --check >"${OUT}" 2>&1 && says "${OUT}" "publishes mos-fixture_${V1}_amd64.deb with digest sha256:" && says "${OUT}" "the lock says sha256:$(sha "${WORK}/a1.orig")"; then
+if ! ${FETCH} --arch amd64 --check >"${OUT}" 2>&1 && says "${OUT}" "publishes $(basename "${A1}") with digest sha256:" && says "${OUT}" "the lock says sha256:$(sha "${WORK}/a1.orig")"; then
     pass "F6 --check refuses an asset whose published digest differs from the lock"
 else fail "F6 check digest: $(cat "${OUT}")"; fi
 if ! ${FETCH} --arch amd64 >"${OUT}" 2>&1 && says "${OUT}" "mos-fixture ${V1} amd64: the release served bytes with sha256" && [ ! -f "${POOL}/amd64/pool/mos-fixture_${V1}_amd64.deb" ] && [ -z "$(find "${POOL}/amd64/pool" -name '.fetch.*')" ]; then
@@ -224,13 +226,12 @@ if ! ${FETCH} --arch amd64 >"${OUT}" 2>&1 && says "${OUT}" "has no release tagge
 else fail "F8 unreleased commit: $(cat "${OUT}")"; fi
 ${LOCKSH} --bump mica-fixture --tag "${TAG}" >/dev/null 2>&1
 releases mica-fixture "${TAG}:$(basename "${A1}")"
-if ! ${FETCH} --arch amd64 >"${OUT}" 2>&1 && says "${OUT}" "carries no asset named mos-data_${V1}_all.deb"; then
+if ! ${FETCH} --arch amd64 >"${OUT}" 2>&1 && says "${OUT}" "carries no asset named $(basename "${ALL}")"; then
     pass "F9 a row whose asset the release does not hold is refused by name"
 else fail "F9 missing asset: $(cat "${OUT}")"; fi
 releases mica-fixture "${TAG}:$(basename "${A1}"),$(basename "${ALL}")"
 # Same bytes, a lock row that lies about the archive's fields: the release's
 # own asset under a name that says one thing while the control file says another.
-cp "${LIAR}" "${REG}/assets/mos-fixture_${V1}_amd64.deb.liar"
 printf 'mos-fixture\t%s\tamd64\t%s\tmica-fixture\t%s\n' "${V1}" "$(sha "${LIAR}")" "${COMMIT}" >"${LOCK}.row"
 { grep -v '^mos-fixture' "${LOCK}"; cat "${LOCK}.row"; } >"${LOCK}.tmp"; mv "${LOCK}.tmp" "${LOCK}"
 cp "${LIAR}" "${A1}"
