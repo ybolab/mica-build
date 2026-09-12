@@ -222,7 +222,7 @@ interface NativeDiagnostic { readonly text: string, readonly following: readonly
 // Exact source diagnostics and complete following text observed in the signed
 // sample. Following text establishes the URL boundary; it is not part of the URL.
 const DBUS_DIAGNOSTICS: readonly NativeDiagnostic[] = [
-  { text: 'Invalid address. See https://dbus.freedesktop.org/doc/dbus-specification.html#addresses', following: ['mid > len'] },
+  { text: 'Invalid address. See https://dbus.freedesktop.org/doc/dbus-specification.html#addresses', following: ['mid > len', 'DBUS_SYSTEM_BUS_ADDRESSu `Result::unwrap()` on an `Err` value'] },
   { text: 'Invalid member name. See https://dbus.freedesktop.org/doc/dbus-specification.html#message-protocol-names-member', following: ['Invalid interface name. See https://dbus.freedesktop.org/doc/dbus-specification.html#message-protocol-names-interface'] },
   { text: 'Invalid error name. See https://dbus.freedesktop.org/doc/dbus-specification.html#message-protocol-names-error', following: ['org.freedesktop.DBusInvalid unique name. See https://dbus.freedesktop.org/doc/dbus-specification.html#message-protocol-names-bus'] },
   { text: 'Invalid unique name. See https://dbus.freedesktop.org/doc/dbus-specification.html#message-protocol-names-bus', following: ['BusName::UniqueBusName::WellKnownOwnedErrorNameOwnedUniqueNameInvalid bus name. See https://dbus.freedesktop.org/doc/dbus-specification.html#message-protocol-names-bus'] },
@@ -238,11 +238,11 @@ const NATIVE_DIAGNOSTICS: Readonly<Record<string, readonly NativeDiagnostic[]>> 
   '/usr/bin/apid': [
     ...DBUS_DIAGNOSTICS,
     { text: 'Invalid interface name. See https://dbus.freedesktop.org/doc/dbus-specification.html#message-protocol-names-interface', following: ['Invalid error name. See https://dbus.freedesktop.org/doc/dbus-specification.html#message-protocol-names-error'] },
-    { text: 'peer closed connection without sending TLS close_notify: https://docs.rs/rustls/latest/rustls/manual/_03_howto/index.html#unexpected-eof', following: ['internal error: entered unreachable code'] },
+    { text: 'peer closed connection without sending TLS close_notify: https://docs.rs/rustls/latest/rustls/manual/_03_howto/index.html#unexpected-eof', following: ['internal error: entered unreachable code', 'is not valid for any names (according to its subjectAltName extension)'] },
     { text: 'Node.js ES modules are not directly supported, see https://docs.rs/getrandom#nodejs-es-module-support', following: ['Errorinternal_codedescriptionunknown_code\0'] },
   ],
   '/usr/bin/mos-deploy': [
-    { text: 'Fatal internal error. Please consider filing a bug report at https://github.com/clap-rs/clap/issues', following: ['a Display implementation returned an error unexpectedly', 'falseTryFromIntErrora Display implementation returned an error unexpectedly', 'internal error: entered unreachable code'] },
+    { text: 'Fatal internal error. Please consider filing a bug report at https://github.com/clap-rs/clap/issues', following: ['a Display implementation returned an error unexpectedly', 'falseTryFromIntErrora Display implementation returned an error unexpectedly', 'internal error: entered unreachable code', '!'] },
   ],
 }
 
