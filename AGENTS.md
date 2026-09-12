@@ -25,6 +25,8 @@ the fast path; everything else waits for explicit approval such as `proceed`.
 
 ### Project-specific facts
 
+- Submodules: `build-env/` (`ybolab/mica-build-env`) and `rootfs/debian/` (`ybolab/mica-debian`); `git submodule update --init --recursive` after cloning, and a change inside either is committed and pushed in its own repository, then bumped here
+
 - Primary language / runtime: Rust `1.96` (`pkgs/mosd/Cargo.toml` `rust-version`); Bun `1` pinned by digest as `IMAGE_BUN_1` in `build-env/images.env`
 - Database / storage: none — mosd persists to `DATA/state` and `DATA/meta` as files (`docs/design/`)
 - Dev URL routing: not used; the API is exercised through `pkgs/mosd/tests/apid-api/` against a QEMU guest

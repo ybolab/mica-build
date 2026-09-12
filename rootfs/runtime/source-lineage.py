@@ -104,12 +104,13 @@ def git(root: Path, *args: str) -> bytes:
 
 
 def tree(root: Path, commit: str) -> dict:
+    """Every blob of the commit, and every submodule as a `commit` entry (mode 160000)."""
     result = {}
     for entry in git(root, 'ls-tree', '-rz', commit).split(b'\0'):
         if entry:
             header, name = entry.split(b'\t', 1)
             mode, kind, blob = header.decode().split()
-            require(kind == 'blob' and mode in ('100644', '100755', '120000'), 'unsupported Git object')
+            require((kind == 'blob' and mode in ('100644', '100755', '120000')) or (kind == 'commit' and mode == '160000'), 'unsupported Git object')
             result[name.decode()] = dict(mode=mode, blob=blob)
     return result
 
@@ -122,6 +123,14 @@ def identity(root: Path) -> dict:
     for name, entry in tree(root, commit).items():
         path = root / name
         require(path.parent.resolve().is_relative_to(root.resolve()), 'checkout parent escapes source')
+        if entry['mode'] == '160000':
+            # A submodule (build-env, rootfs/debian): checked out at exactly the
+            # commit the superproject records, and clean, or the tree in front
+            # of us is not the tree the commit names.
+            require(path.is_dir() and (path / '.git').exists(), 'submodule not checked out: ' + name)
+            require(git(path, 'rev-parse', 'HEAD').decode().strip() == entry['blob'], 'submodule at another commit: ' + name)
+            require(not git(path, 'status', '--porcelain', '--untracked-files=all'), 'dirty submodule checkout: ' + name)
+            continue
         info = path.lstat()
         mode = '120000' if stat.S_ISLNK(info.st_mode) else ('100755' if info.st_mode & 0o111 else '100644')
         require(stat.S_ISREG(info.st_mode) or stat.S_ISLNK(info.st_mode), 'unsupported checkout node')

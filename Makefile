@@ -1,5 +1,17 @@
 .PHONY: os-trust-domain-test os-file-transaction-faults build-env docs-verify docs-verify-test help os-apid-api-spec-pins os-apid-api-test os-apid-ui-build-contract-test os-bare-host-gate os-boot-tools os-build-test os-components os-cx3576-flash-test os-dbus-policy-test os-deb-package-gate os-deb-preflight os-deb-preflight-test os-debian-cache os-debian-install os-debian-test os-debian-verify os-debs os-devkeys os-lock-bump os-pool os-pool-lock-test os-factory-root-gate os-fit-records-test os-gadget-test os-health-test os-host-toolchain-lint os-host-toolchain-lint-test os-image os-install-closure-gate os-layout-lint os-mac-test os-netavark-kernel-test os-quadlet-doc-test os-repart-test os-rootfs-cx3576 os-rootfs-manifest-test os-rootfs-virt-arm64 os-rootfs-x64 os-rust-gate os-shadow-test os-shell-pipefail-lint os-smoke-negative-test os-smoke-test os-verify os-verify-test podman podman-pins podman-pins-test
 
+# THE SUBMODULES, before anything else: build-env/ (mica-build-env) is the
+# substrate every target reaches through, rootfs/debian/ (mica-debian) is the
+# pinned base the composer installs. A checkout made without
+# --recurse-submodules has both directories empty, and every target would then
+# fail somewhere deep with a message naming a file instead of the cause.
+ifeq ($(wildcard build-env/from.sh),)
+$(error build-env/ is empty: the build substrate is the mica-build-env submodule. Run: git submodule update --init --recursive)
+endif
+ifeq ($(wildcard rootfs/debian/run.sh),)
+$(error rootfs/debian/ is empty: the pinned Debian base is the mica-debian submodule. Run: git submodule update --init --recursive)
+endif
+
 # mos top-level build entry. Heavy lifting stays in each component; this file
 # only routes. Board targets: make <board>-<component>, e.g. cx3576-kernel.
 
@@ -371,7 +383,7 @@ os-lock-bump:
 # cached packing layer and re-exports the same bytes, which proves the export is
 # deterministic and nothing about pack.sh.
 os-deb-package-gate:
-	bash tests/deb-package-gate.sh
+	bash build-env/deb/package-gate.sh
 
 # The INSTALL-time half of PLAN-036 section 6, over the same pools: APT installs
 # the set rootfs/packages/resolve.sh yields into a clean pinned Debian base,
@@ -677,8 +689,8 @@ os-debian-install:
 	bash rootfs/debian/docker.sh install --arch '$(MOS_ARCH)' --root '$(MOS_ROOT)' $(if $(MOS_DEBIAN_PACKAGES),--packages '$(MOS_DEBIAN_PACKAGES)')
 
 os-debian-test:
-	bash tests/debian-base-test.sh
-	bash tests/debian-lock-test.sh
+	bash rootfs/debian/tests/debian-base-test.sh
+	bash rootfs/debian/tests/debian-lock-test.sh
 
 # Factory assembly consumes already-built and signed components.
 MOS_SIGNING_OUTPUT ?= meta

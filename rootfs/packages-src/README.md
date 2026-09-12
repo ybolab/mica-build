@@ -89,7 +89,7 @@ check they are opposites, because a package with no entry can acquire or lose a
 wants-symlink with every gate green. That refusal is the whole value of the
 field.
 
-`tests/deb-package-gate.sh` asserts the declared count against the archives,
+`build-env/deb/package-gate.sh` asserts the declared count against the archives,
 per package and per producer, reading `dpkg-deb --contents` in the packer
 container -- the host carries no dpkg, and the **host** architecture's image is
 used because listing an archive parses it rather than executing it. A producer

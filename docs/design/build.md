@@ -61,6 +61,14 @@ the lock rows and any `MOS_POOL_UNLOCKED` development waiver; the release gate
 re-checks the rows against the tree's lock and refuses a waived image outside
 the development channel. `build-env/deb/README.md` documents the scripts.
 
+Two parts of this tree are submodules: `build-env/` is `ybolab/mica-build-env`
+(the builder images and the packaging contract, shared by every Mica OS
+repository) and `rootfs/debian/` is `ybolab/mica-debian` (the pinned Debian
+base; its commit is the pin). A checkout needs `git submodule update --init
+--recursive`; the Makefile refuses by name when either directory is empty,
+and the lineage record requires each submodule checked out at the recorded
+commit and clean.
+
 `MOS_META_DIR` selects a directory containing current public factory defaults.
 The root composer copies its explicit public allowlist and rejects private or
 unclaimed material. It does not manufacture keys or migrate an existing

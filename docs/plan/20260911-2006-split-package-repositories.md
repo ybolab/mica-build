@@ -420,10 +420,17 @@ smoke-tested from the pool as it stands.
   virt-arm64 from the fetched copy; the x64 image passed `os-verify` and the
   release gate with the lock rows in `provenance.json`. Pre-existing defects
   met on the way are `20260912-2236-phase1-findings`.
-- **Phase 2 — `mica-build-env` and `mica-debian`.** Subtree-split
-  `build-env/` and `rootfs/debian/`, push each, add each back as a
-  submodule at its old path, move `deb-package-gate.sh` and the two Debian
-  tests in, gates green (locally until a runner exists).
+- **Phase 2 — `mica-build-env` and `mica-debian`.** Done 2026-09-13:
+  `build-env/` (14 commits) and `rootfs/debian/` (20 commits) subtree-split
+  from `75a29d4d`, pushed to GitHub, added back as submodules at their old
+  paths; `tests/deb-package-gate.sh` became `build-env/deb/package-gate.sh`
+  and the two Debian tests `rootfs/debian/tests/`, each deriving the
+  consumer from its new depth; the Makefile refuses an empty submodule by
+  name, CI checks out submodules, the two lints list submodule files
+  (`git ls-files --recurse-submodules`), and the lineage identity requires
+  each submodule at the recorded commit and clean. Neither new repository
+  runs standalone: both are consumed through `mica`, and neither carries a
+  `build-env` submodule of its own. Gitea mirrors pending (host down).
 - **Phase 3 — `mica-podman`.** The 45-minute arm64 build leaves this tree.
   Move the two overlay files and the pins test, rename the package, publish,
   lock, delete `pkgs/podman`, rewire the four podman tests.

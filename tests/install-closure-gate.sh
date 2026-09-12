@@ -8,7 +8,7 @@
 #   builds  clean roots from the digest-pinned Debian base, per architecture,
 #           and asserts what only an INSTALLED root can answer
 #
-# tests/deb-package-gate.sh says in its own header that it does not do this:
+# build-env/deb/package-gate.sh says in its own header that it does not do this:
 # it reads archives with dpkg-deb and never installs one. Everything an archive
 # cannot answer lives here -- whether APT can satisfy the closure at all,
 # whether a wants-symlink points at a unit some package actually ships, whether
@@ -101,7 +101,7 @@ command -v docker >/dev/null 2>&1 || {
 }
 
 # The two pools, written here rather than discovered under _out/debs, for
-# tests/deb-package-gate.sh's reason: a discovered list turns a pool that was
+# build-env/deb/package-gate.sh's reason: a discovered list turns a pool that was
 # never built into a gate that checks one architecture and reports green.
 ARCHES=(amd64 arm64)
 for arch in "${ARCHES[@]}"; do
@@ -393,7 +393,7 @@ fi
 # Derived from dpkg's own record of what each package shipped, so a package that
 # gained or lost a file is covered without this script being edited. Directories
 # are counted apart: a shared directory is not a promise either package made
-# alone, which is the distinction tests/deb-package-gate.sh's ownership rule
+# alone, which is the distinction build-env/deb/package-gate.sh's ownership rule
 # draws for the same reason.
 PATHS_N=0
 DIRS_N=0
@@ -456,7 +456,7 @@ fi
 # where the chain image does not.
 #
 # Only an installed root can see it. The symlink is in nobody's archive, so
-# tests/deb-package-gate.sh's per-package ENABLEMENT count is correct and
+# build-env/deb/package-gate.sh's per-package ENABLEMENT count is correct and
 # blind to it at the same time. Reported by name and NOT failed: the mos rule
 # governs mos producers, and what an upstream Debian maintainer script does with
 # its own unit is a fact for the composer workstream to rule on rather than one
@@ -717,7 +717,7 @@ esac
 
 # The payload, for the disjointness comparison the HOST makes across the three
 # roots -- no root can see another's. Non-directory paths only: directories are
-# shared on purpose, exactly as tests/deb-package-gate.sh's ownership rule
+# shared on purpose, exactly as build-env/deb/package-gate.sh's ownership rule
 # has it.
 PAYLOAD_N=0
 while IFS= read -r path; do

@@ -65,7 +65,7 @@ What is worth knowing before writing one:
   before the build — which is also why a cross-compiled `arm64` payload has to
   be packed inside an `arm64` container, so that `dpkg-shlibdeps` resolves
   against the right libraries.
-- **The gate reads the archive, not a list.** `tests/deb-package-gate.sh`
+- **The gate reads the archive, not a list.** `build-env/deb/package-gate.sh`
   asserts unique file ownership across the pool, one version stamp across it,
   a `copyright` file per package, and the declared enablement symlink count
   per package. A dependency on another local package must be pinned to the

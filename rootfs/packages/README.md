@@ -99,7 +99,7 @@ dependency anywhere names `mos-profile`**. Every dependency is either
 local-real (`mos-system`, `mosd`, pinned to `(= @VERSION@)`) or external
 (`systemd`, `passwd`, `bluez`, `${shlibs:Depends}`, …).
 
-So `tests/deb-package-gate.sh`'s local-virtual branch — the `PROVIDED_BY`
+So `build-env/deb/package-gate.sh`'s local-virtual branch — the `PROVIDED_BY`
 lookup that increments `VIRTUAL_RESOLVED_N` — would count **0** today, in both
 architecture pools. Its `RESULT` line would print `0 local-virtual dependencies
 resolved` and its note line an empty list. The branch has no material.

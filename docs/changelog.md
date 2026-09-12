@@ -1,5 +1,20 @@
 # Changelog
 
+## 2026-09-13 00:20 [progress]
+
+Phase 2 of `20260911-2006-split-package-repositories`: `build-env/` and
+`rootfs/debian/` left this tree as `ybolab/mica-build-env` (14 commits) and
+`ybolab/mica-debian` (20 commits), split with their history and added back
+as submodules at the same paths. `tests/deb-package-gate.sh` is now
+`build-env/deb/package-gate.sh`, the two Debian tests are
+`rootfs/debian/tests/`, and every reference follows. The Makefile refuses an
+empty submodule with the `git submodule update --init --recursive` line,
+`check.yml` checks submodules out, the host-toolchain and pipefail lints
+list submodule files, and `source-lineage.py` requires each submodule
+checked out at the recorded commit and clean (tested). Both new
+repositories carry README, AGENTS.md, LICENSE and PMA records. Pushed to
+GitHub; the Gitea mirrors wait for `git.ds.cc` to come back.
+
 ## 2026-09-12 23:30 [decision]
 
 The Mica OS repositories live on GitHub under `ybolab`: `mica` is the

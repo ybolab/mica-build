@@ -7,14 +7,14 @@
 # The stub is a local HTTP server that requires the Authorization header and
 # serves a Debian-registry layout (pool/<dist>/<component>/<archive> and
 # dists/<dist>/<component>/binary-<arch>/Packages) out of a scratch
-# directory; the archives are built with the host's dpkg-deb. registry.sh's
+# directory; the archives are written in Python, no dpkg on the host. registry.sh's
 # MOS_REGISTRY_ENV and MOS_LOCK_FILE point the scripts at the stub and at a
 # scratch lock, MOS_POOL_DIR at a scratch pool. No docker, no network.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
 REPO_ROOT="$(pwd)"
-for t in python3 dpkg-deb curl sha256sum; do
+for t in python3 curl sha256sum; do
     command -v "${t}" >/dev/null 2>&1 || { echo "error: ${t} is required" >&2; exit 1; }
 done
 WORK="$(mktemp -d)"
@@ -32,12 +32,30 @@ says() { grep -c -- "$2" "$1" >/dev/null; }
 REG="${WORK}/registry"
 mkdir -p "${REG}/pool/mica/mica-fixture" "${REG}/dists/mica/mica-fixture/binary-amd64" "${REG}/dists/mica/mica-fixture/binary-all"
 COMMIT="$(printf 'b%.0s' $(seq 1 40))"
+# Fixture archives are written in Python -- an `ar` of debian-binary,
+# control.tar.gz and data.tar.gz -- because the host carries no dpkg
+# (docs/design/build.md section 0) and this test runs no container.
 build_deb() { # name version arch repo commit -> path
-    local root="${WORK}/deb-$1-$3"
-    rm -rf "${root}"; mkdir -p "${root}/DEBIAN" "${root}/usr/share/doc/$1"
-    printf 'fixture\n' >"${root}/usr/share/doc/$1/copyright"
-    printf 'Package: %s\nVersion: %s\nArchitecture: %s\nMaintainer: Fixture <fixture@example.invalid>\nDescription: fixture\nMos-Source-Repo: %s\nMos-Source-Commit: %s\n' "$1" "$2" "$3" "$4" "$5" >"${root}/DEBIAN/control"
-    dpkg-deb --build --root-owner-group "${root}" "${REG}/pool/mica/mica-fixture/$1_$2_$3.deb" >/dev/null
+    python3 - "${REG}/pool/mica/mica-fixture/$1_$2_$3.deb" "$1" "$2" "$3" "$4" "$5" <<'DEB'
+import io, sys, tarfile
+path, name, version, arch, repo, commit = sys.argv[1:]
+control = f'Package: {name}\nVersion: {version}\nArchitecture: {arch}\nMaintainer: Fixture <fixture@example.invalid>\nDescription: fixture\nMos-Source-Repo: {repo}\nMos-Source-Commit: {commit}\n'.encode()
+def tar_of(entries):
+    buffer = io.BytesIO()
+    with tarfile.open(fileobj=buffer, mode='w:gz') as tar:
+        for member, data in entries:
+            info = tarfile.TarInfo('./' + member); info.size = len(data); info.mtime = 0; info.mode = 0o644
+            tar.addfile(info, io.BytesIO(data))
+    return buffer.getvalue()
+members = [('debian-binary', b'2.0\n'), ('control.tar.gz', tar_of([('control', control)])),
+           ('data.tar.gz', tar_of([(f'usr/share/doc/{name}/copyright', b'fixture\n')]))]
+out = bytearray(b'!<arch>\n')
+for member, data in members:
+    out += f'{member:<16}{0:<12}{0:<6}{0:<6}{"100644":<8}{len(data):<10}`\n'.encode()
+    out += data
+    if len(data) % 2: out += b'\n'
+open(path, 'wb').write(out)
+DEB
     echo "${REG}/pool/mica/mica-fixture/$1_$2_$3.deb"
 }
 V1="1.0.0+git${COMMIT:0:12}-1"
@@ -46,10 +64,11 @@ A1="$(build_deb mos-fixture "${V1}" amd64 mica-fixture "${COMMIT}")"
 A2="$(build_deb mos-fixture "${V2}" amd64 mica-fixture "${COMMIT}")"
 ALL="$(build_deb mos-data "${V2}" all mica-fixture "${COMMIT}")"
 LIAR="$(build_deb mos-liar "${V2}" amd64 mica-other "${COMMIT}")"   # says another repository inside
+FIELDS="python3 ${REPO_ROOT}/build-env/deb/control-fields.py"
 stanza() { # path -> Packages stanza
     printf 'Package: %s\nVersion: %s\nArchitecture: %s\nMos-Source-Repo: %s\nMos-Source-Commit: %s\nFilename: pool/mica/mica-fixture/%s\nSHA256: %s\n\n' \
-        "$(dpkg-deb -f "$1" Package)" "$(dpkg-deb -f "$1" Version)" "$(dpkg-deb -f "$1" Architecture)" \
-        "$2" "$(dpkg-deb -f "$1" Mos-Source-Commit)" "$(basename "$1")" "$(sha256sum "$1" | cut -d' ' -f1)"
+        "$(${FIELDS} "$1" Package)" "$(${FIELDS} "$1" Version)" "$(${FIELDS} "$1" Architecture)" \
+        "$2" "$(${FIELDS} "$1" Mos-Source-Commit)" "$(basename "$1")" "$(sha256sum "$1" | cut -d' ' -f1)"
 }
 { stanza "${A1}" mica-fixture; stanza "${A2}" mica-fixture; } >"${REG}/dists/mica/mica-fixture/binary-amd64/Packages"
 stanza "${ALL}" mica-fixture >"${REG}/dists/mica/mica-fixture/binary-all/Packages"

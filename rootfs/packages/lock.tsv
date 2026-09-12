@@ -4,7 +4,7 @@
 # (build-env/deb/lock.sh), never by hand -- a lock diff is the reviewable
 # import. Read by build-env/deb/fetch.sh (download + verify), rootfs/build.sh
 # and rootfs/runtime/source-lineage.py (the composer's two-class rule),
-# tests/deb-package-gate.sh (expected pool membership) and
+# build-env/deb/package-gate.sh (expected pool membership) and
 # build/src/release-manifest.ts (the release gate). See docs/design/build.md
 # section 1.1.
 #package	version	arch	sha256	source-repo	source-commit

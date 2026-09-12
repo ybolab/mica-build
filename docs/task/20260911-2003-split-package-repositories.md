@@ -88,6 +88,11 @@ Implementing Phase 1 (the mechanism inside this tree); approved 2026-09-12.
   unreachable at that moment (443 and 33 refused), so the Gitea side --
   renaming `mica-build` to `mica`, creating `mica-debian` and `mica-system`,
   pushing -- is pending until it answers; GitHub received `main`.
+- Phase 2 (2026-09-13, in `/srv/ybolab/mica/mica`): `mica-build-env` and
+  `mica-debian` created from the subtree histories, pushed to GitHub, and
+  consumed as submodules at `build-env/` and `rootfs/debian/`; the package
+  gate and the Debian tests moved with them. Standalone clones of both live
+  beside the assembly under `/srv/ybolab/mica/`.
 
 ## Findings
 
