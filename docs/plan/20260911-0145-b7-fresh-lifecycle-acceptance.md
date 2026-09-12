@@ -5,6 +5,26 @@
 - **approvedAt**: 2026-09-11 01:45 (prior user approval)
 - **relatedTask**: 20260911-0145-b7-fresh-lifecycle-acceptance
 
+## Current coordination boundary (2026-09-12)
+
+The user now authorizes the reviewed source to enter main before the full x64
+guest matrix, then the concrete workflow changes will follow the parent's
+verified handoff. Parent 304kmj92 is the sole main writer for this transaction.
+B7 neither merges main nor rebases its running candidate. This early source
+merge is not final acceptance and does not trigger broad ARM execution.
+
+B7 retains frozen ed7231cdf9820c310e483b4cb479a3b52259467c, tree
+31e3fd25f91cd0c3b03055591f68896a8e351d81, and the accepted final image
+ca6bdd50cad6c3dc2e93160316316092c84cc0da995f022909014e36556037b9.
+Guest/API and complete lifecycle qualification continue under existing grants;
+failing and unexecuted checks stay pending. No per-stage generic permission is
+needed. One execution owner and candidate, batch input checks, truthful producer
+reuse and the fixed 4 CPU/10 GiB/no-extra-swap/0-3 allocation remain. No broad
+workflow/product patch, push, publication, done or parent progress notice is
+part of this steering. The later verified main/workflow handoff controls final
+D reconciliation and the eventual ARM baseline; physical CX and two equal-input
+independent virt cold samples remain owed.
+
 ## Context
 
 The reviewed B0-B6 dependency tree and J7 no-Python correction are integrated
@@ -1953,3 +1973,19 @@ The final task-local guest transport passed 41 direct checks, including 33 refus
 The first guest attempt ran only preflight at 06:10:20.688425..06:10:26.704324 UTC. Actual 1841-entry source and original final-image integrity checks passed, then the unchanged resource guard refused station CPU 112.69%, above its strict <50% threshold. Orchestrator 3260772 is absent. No bridge, API controller, QEMU, DATA seed or disposable disk was started; there is no guest result. metadata/W4/guest-v1/terminal-v1.json SHA256 feb0ac08013eaac4838a7a54ee9f113274fc490e41be694699f7394e0a1b251c binds the exact failure, immutable runner/readiness and separate subsequent observation of only the original 724215ac buildkitd at 1 CPU/5 GiB/swap0/0-3. The guard raised before retaining the full CPU snapshot; its exact assertion remains the launch evidence, and the later resource observation does not substitute for it. This round ends without a retry, threshold relaxation or daemon recreation. Fresh capacity is required at the next eligible event.
 
 Frozen ed723 source, final ca6bdd50 image, signed generation-3 update archive and J/438 producer identities remain unchanged. All eight API phases and the independent complete shutdown/reboot/update-fallback/lifecycle/auth/storage/service/size/RSS and fixed-C-verifier acceptance remain pending. API teardown will not qualify completed shutdown. Conditional batch 2/3 authority remains, with no current main/push/publication/done or broad ARM action. This task remains in progress.
+
+
+### 2026-09-12 source-merge steering and guest-only continuation
+
+L1-EARLY-SOURCE-MERGE-AND-WORKFLOW-STEERING-20260912 is consumed. Parent 304kmj92 alone performs the newly authorized early reviewed-source main transaction. B7 retains the existing ed723 source and accepted ca6bdd50 image; no main merge, rebase, broad workflow patch or duplicate image is made here. This source merge does not qualify pending x64 guest/lifecycle results or trigger the deferred broad ARM wave. Per-stage generic approval waits are removed within the existing scope; concrete trust, source, executor and resource checks remain. The verified main/workflow handoff and final D reconciliation are still separate prerequisites for their respective scope.
+
+A fresh current-boundary resource observation passed (capacity.json SHA256 4ad1b844c31d3713afbb6b30532103b319619e6f261636ade474600acaf55adb). Guest attempt 2 preserved the first CPU refusal and moved only the current-image hash into a read-only 0.25 CPU/256 MiB input child, removed before launch; every previous threshold remained unchanged. Its actual API preamble ran 06:18:09.360973..06:18:10.128112, exit 1, because three exact Go-template newline arguments were mismatched by the task adapter. No controller or guest started. Actual original-argv RED/GREEN and four unknown-format/image/instance refusals qualify the versioned correction; no product caller changed.
+
+Attempt 3 passed network discovery and created controller 3abbc1a2684e, but refused before start because Docker reordered the identical bind list. Actual source/destination/mode mappings and command/image were equal. The never-started container was removed and observed absent. A new adapter compares the exact sorted bind list plus the unchanged per-destination source/read-write map; wrong source, permission, extra/duplicate bind, image and command still refuse. Both previous attempts, their Docker receipts and guest-x64-v1 preparation logs remain immutable. A separate clean guest-x64-v2 source/output namespace preserves those paths.
+
+The affected guest-only attempt 4 uses tools/guest-v3/readiness.json SHA256 23469605688566f5008925ee645fdc714c126328cf2e1a7e4a7167e0987ee217. Orchestrator 3288565, private bridge 3288813 and actual API timeout PID 3288814 run under persistent pane %101; API invocation began 2026-09-12T06:24:23.657050+00:00. Actual 1841-entry source, immutable input hash and fresh capacity/envelope checks passed. The unmodified caller has prepared the disposable 4 GiB disk from the one accepted signed image. The original image, signed update archive, J/438 inputs and root/source identities remain unchanged. Metadata/W4/guest-v1/production-v4.json records actual state; preparation or a running harness is not guest/API/lifecycle PASS. The existing eight-phase suite and subsequent complete shutdown/update-fallback/lifecycle checks retain their original assertions and bounded resource allocation.
+
+
+Actual first guest boot ran 06:24:50.853150..06:25:16.240280 UTC in container 84d3493b19f2b5b0d9f29c67ea453cf1152c1cc51fca7b506e244b930a393ed2. Its real Docker command exited 0 and the container/client are absent, but guest acceptance failed before APID: mos-init refused SYSTEM discovery, then the authenticated static shutdown path reported partial-startup poweroff and the kernel powered down. This is neither normal completed shutdown qualification nor an API pass. The original API harness continues its unchanged bounded readiness deadline; it is not interrupted and no second guest is started.
+
+Read-only first-boot-v4/terminal-and-gpt.json SHA256 75ba245b65c7fbc0581a270395b20f046bbd9791cfabdb9a094b8df30fd8d196 binds the actual console, guest resource/argv receipt and exact source/header bytes. The factory image has 3,674,112 sectors with alternate GPT at LBA3,674,111. The unchanged QEMU caller extends its disposable copy to 8,388,608 sectors; its byte-identical primary GPT still names alternate LBA3,674,111 instead of actual last LBA8,388,607. Both primary CRCs and all three partition identities match, including SYSTEM UUID5ac35760-0064-4000-8000-000000000002. Linux enumerated vda1/vda2/vda3 and warned about the stale alternate-header location. The current native GPT parser requires alternateLba == sectors - 1 and skips a disk when parsing refuses; mos-init subsequently reports SYSTEM partition not found uniquely. This establishes a concrete caller/medium-geometry refusal path, not new target-parser execution or an exhaustive exclusion of other paths. No GPT source, disk header, trust input or producer was changed. The exact technical correction belongs at the existing owner boundary while the newly authorized early reviewed-source main transaction remains separate from failed acceptance.
