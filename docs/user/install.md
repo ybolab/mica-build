@@ -71,7 +71,7 @@ and power-cut recovery remain bench qualification items. Host stub tests prove
 preflight/readback control flow, not that a particular board has been flashed.
 Do not treat software evidence as a completed physical installation.
 
-> status: board-dependent — evidence: `boards/cx3576/bsp/Makefile`, `boards/cx3576/bsp/scripts/verify-flash.py`, `docs/task/20260908-2229-file-ab-delivery-x64-first.md`
+> status: board-dependent — evidence: `boards/cx3576/bsp/Makefile`, `boards/cx3576/bsp/scripts/verify-flash.py`
 
 ## First boot and recovery
 

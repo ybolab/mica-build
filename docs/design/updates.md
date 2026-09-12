@@ -112,6 +112,6 @@ identity and complete shutdown. Deterministic native fault injection covers
 install, confirmation and GC on both boot backends. Firmware signing and
 maintenance have separate [trust evidence](release-signing.md).
 
-The [delivery record](../task/20260908-2229-file-ab-delivery-x64-first.md)
+The delivery record (20260908-2229-file-ab-delivery-x64-first)
 identifies exact current runs and unresolved gates, including physical cx3576 watchdog/power-cut tests. Process interruption and
 VM shutdown cannot establish physical eMMC power-loss durability.

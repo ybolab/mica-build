@@ -196,7 +196,7 @@ This is development-grade software evidence. Physical cx3576 enforcement,
 power-loss recovery and watchdog coverage are pending. Hardware-rooted boot,
 closed debug interfaces and production enrollment are not claimed.
 
-> status: board-dependent — evidence: `boards/cx3576/evidence.json`, `tests/file-ab-fit`, `docs/task/20260908-2229-file-ab-delivery-x64-first.md`
+> status: board-dependent — evidence: `boards/cx3576/evidence.json`, `tests/file-ab-fit`
 
 ## Qualification results
 

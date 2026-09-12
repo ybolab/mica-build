@@ -53,4 +53,4 @@ directory. Save serial and image/component identities when reporting a failure.
 Physical eMMC durability and board recovery require the cx3576 bench tests;
 QEMU and offline checks establish only their stated software behavior.
 
-> status: board-dependent — evidence: `docs/design/uboot-ab-handshake.md`, `docs/task/20260908-2229-file-ab-delivery-x64-first.md`
+> status: board-dependent — evidence: `docs/design/uboot-ab-handshake.md`

@@ -55,7 +55,7 @@ make -C boards/cx3576/bsp flash-mos MOS_IMAGE=/path/to/image/mos-cx3576-20260909
 实际 loader/maskrom 进入、刷写、启动、看门狗和断电恢复仍需台架验收。主机桩测试
 只证明预检及回读控制流程，不能作为某块实物板已刷写或启动的证据。
 
-> status: board-dependent — evidence: `boards/cx3576/bsp/Makefile`, `boards/cx3576/bsp/scripts/verify-flash.py`, `docs/task/20260908-2229-file-ab-delivery-x64-first.md`
+> status: board-dependent — evidence: `boards/cx3576/bsp/Makefile`, `boards/cx3576/bsp/scripts/verify-flash.py`
 
 ## 首次启动及恢复
 

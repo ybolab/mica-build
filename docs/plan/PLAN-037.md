@@ -3,7 +3,7 @@
 - **status**: implementing
 - **createdAt**: 2026-08-31 03:08
 - **approvedAt**: 2026-09-04
-- **relatedTask**: [RFCT-273](../task/RFCT-273.md)
+- **relatedTask**: RFCT-273
 - **coordinationOwner**: bkd/z36xbrtu
 - **blocked by**: reviewed campaign handoffs before D3 final reconciliation
 

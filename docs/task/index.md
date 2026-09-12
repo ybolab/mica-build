@@ -70,25 +70,19 @@ thing about the tree. Both indexes now say the same thing.
 
 ## Tasks
 
-- [-] [**RFCT-273 Coordinate the embedded delivery roadmap**](RFCT-273.md) `P1`
 - [ ] [**RFCT-290 Design conditional fleet management**](RFCT-290.md) `P2`
 - [-] [**RFCT-305 Gate A mechanisms: the trust grade, the device surface and the publication refusal**](RFCT-305.md) `P1`
 - [-] [**RFCT-310 The host toolchain lint and the container-only build policy**](RFCT-310.md) `P1`
 - [-] [**RFCT-315 PLAN-070 F7/F8/F9: the client reads the baked anchor**](RFCT-315.md) `P1`
 - [ ] [**UI-011 Stabilize Bun V8 coverage aggregation**](UI-011.md) `P1`
 - [-] [**RFCT-336 Compose a minimal MOS runtime from explicit payloads**](RFCT-336.md) `P1`
-- [-] [**20260908-1423-file-ab-signed-components Design and implement file-based A/B with independently signed components**](20260908-1423-file-ab-signed-components.md) `P1`
 - [ ] [**RFCT-922 Exercise s905x5m Bluetooth pairing and a profile with a controlled peer**](RFCT-922.md) `P1`
 - [-] [**RFCT-941 The installer reinstalls on every boot because its receipt never persists**](RFCT-941.md) `P1`
 - [ ] [**20260908-2011-state-units-never-load STATE-seeded systemd units never load on first boot**](20260908-2011-state-units-never-load.md) `P2`
 - [ ] [**20260908-2011-ssh-generator-vs-image-policy systemd-ssh-generator overrides the image's SSH policy and port**](20260908-2011-ssh-generator-vs-image-policy.md) `P2`
 - [ ] [**20260908-2011-wtmp-unbounded-append Login accounting appends to /var/log/wtmp without a bound**](20260908-2011-wtmp-unbounded-append.md) `P2`
-- [-] [**20260908-2229-file-ab-delivery-x64-first Complete signed file-based deployment delivery, x64 first**](20260908-2229-file-ab-delivery-x64-first.md) `P1`
-- [-] [**20260909-1421-apid-reboot Diagnose and repair appliance reboot dispatch**](20260909-1421-apid-reboot.md) `P1`
-- [-] [**20260909-2331-cx3576-boot-watchdog Repair the cx3576 firmware watchdog boot blocker**](20260909-2331-cx3576-boot-watchdog.md) `P0`
 - [-] [**20260910-0025-cx3576-boot-log-cleanup Resolve cx3576 boot configuration mismatches and verify runtime handoff**](20260910-0025-cx3576-boot-log-cleanup.md) `P1`
 - [ ] [**20260910-0117-cx3576-late-hdmi-logo Restore the CX3576 boot logo after late HDMI attachment**](20260910-0117-cx3576-late-hdmi-logo.md) `P2`
-- [-] [**20260910-1013-open-plans-campaign Establish open plans campaign tracking**](20260910-1013-open-plans-campaign.md) `P1`
 - [-] [**20260910-1206-b3-bounded-exitrd-teardown B3 bounded exitrd teardown**](20260910-1206-b3-bounded-exitrd-teardown.md) `P1`
 - [-] [**20260911-1925-boot-artifact-size Shrink the signed boot artifact: compression and early-userspace closure**](20260911-1925-boot-artifact-size.md) `P1`
 - [-] [**20260911-2003-split-package-repositories Split the tree into an assembly repository and independently released package repositories**](20260911-2003-split-package-repositories.md) `P1`

@@ -39,6 +39,6 @@ System 页面展示运行部署、组件身份、候选、保留的回退部署�
 以前的软件包或分区格式。
 
 QEMU 启动/更新证据与 cx3576 硬件证据分别记录。物理看门狗、存储断电和 USB 维护
-验收仍属于板级工作，见[交付记录](../../task/20260908-2229-file-ab-delivery-x64-first.md)。
+验收仍属于板级工作，见交付记录 (20260908-2229-file-ab-delivery-x64-first)。
 
-> status: board-dependent — evidence: `docs/design/release-signing.md`, `docs/task/20260908-2229-file-ab-delivery-x64-first.md`
+> status: board-dependent — evidence: `docs/design/release-signing.md`

@@ -136,4 +136,4 @@ cx3576 has offline image/FIT verification and firmware-policy tests. Its
 physical startup, watchdog handoff, recovery and power-cut behavior require the
 [bench runbook](../bsp/cx3576-bench.md). Boot assurance and recovery capability
 are separate claims. Exact artifacts, results and pending checks live in the
-[delivery record](../task/20260908-2229-file-ab-delivery-x64-first.md).
+delivery record (20260908-2229-file-ab-delivery-x64-first).

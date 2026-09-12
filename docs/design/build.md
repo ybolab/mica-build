@@ -158,5 +158,5 @@ disk. Pass board, complete image and matching root image to
 counter and SYSTEM byte around growth.
 
 Track exact image/component identities and limitations in the
-[delivery task](../task/20260908-2229-file-ab-delivery-x64-first.md). Physical
+delivery task (20260908-2229-file-ab-delivery-x64-first). Physical
 cx3576 power-cut/watchdog/USB tests cannot be replaced by sandbox or VM evidence.

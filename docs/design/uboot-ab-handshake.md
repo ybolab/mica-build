@@ -100,7 +100,7 @@ catalog and does not perform irreversible enrollment.
 
 The current loader, FIT signatures, strict record parser, native transaction
 faults, full-image verifier and real DATA growth test have software evidence in
-the [delivery task](../task/20260908-2229-file-ab-delivery-x64-first.md).
+the delivery task (20260908-2229-file-ab-delivery-x64-first).
 Dirty SYSTEM snapshots were read by the pinned U-Boot sandbox; a missing
 uncommitted candidate requires bounded fallback. These results do not establish
 physical eMMC durability.

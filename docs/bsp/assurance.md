@@ -56,6 +56,6 @@ serial trace, watchdog/reset cause and power-cut observations. Sandbox execution
 and process-kill tests cannot be relabelled as eMMC power-loss results.
 
 Use the [board template](board-template.md), [qualification matrix](qualification.md)
-and [current delivery evidence](../task/20260908-2229-file-ab-delivery-x64-first.md).
+and current delivery evidence (20260908-2229-file-ab-delivery-x64-first).
 
 > status: shipped — evidence: `docs/bsp/board-template.md`, `docs/bsp/verify-board.sh`

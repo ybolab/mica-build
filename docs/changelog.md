@@ -1,5 +1,28 @@
 # Changelog
 
+## 2026-09-12 20:35 [decision]
+
+Closed the remaining signed-file delivery and cx3576 watchdog records at the
+user's direction and removed the dead coordination shells; per the index rule
+the closed records left the tree.
+
+- Completed and deleted: 20260908-1423-file-ab-signed-components (task),
+  20260908-2229-file-ab-delivery-x64-first (task),
+  20260908-1428-file-ab-signed-components (plan) and
+  20260909-2331-cx3576-boot-watchdog (task and plan). Software delivery is
+  complete on x64 and the ARM images are built. Physical CX3576 startup,
+  watchdog, recovery and power-cut evidence is not claimed by this closure and
+  currently has no record of its own.
+- Closed and deleted: 20260909-1421-apid-reboot. The generic dispatch and
+  feedback repair is delivered and x64 reboot is proven; the originally
+  affected device was never supplied, so that diagnosis is dropped.
+- Closed and deleted as abandoned coordination: RFCT-273 and
+  20260910-1013-open-plans-campaign (task and plan). The bkd campaign dispatch
+  has been inactive since 2026-09-12. PLAN-037 stays as the roadmap umbrella.
+- Shipped documents that linked the x64 delivery record now name it as text;
+  seven truth-status lines dropped it from their evidence lists and keep their
+  other citations.
+
 ## 2026-09-12 14:54 [completed]
 
 Completed signed virt-arm64, CX3576 and S905X5M full images and update archives,
@@ -358,7 +381,7 @@ start failures report their errors before storage access or attempt consumption.
 RockUSB recovery runs cyclic watchdog service while waiting for USB. Pinned-source
 regressions reproduce both defects and pass after repair. The rebuilt complete
 image passes FIT signature negatives, 123 offline checks and flash geometry; the
-[task](task/20260909-2331-cx3576-boot-watchdog.md) identifies its exact artifacts
+task (20260909-2331-cx3576-boot-watchdog) identifies its exact artifacts
 and component sources. Bench instructions reflect the enabled SYSFS/NOWAYOUT
 configuration. Physical startup and watchdog acceptance remain pending.
 
@@ -371,7 +394,7 @@ matching image by default. The existing cx3576 handover uses its actual
 `20260909-164233` build time with unchanged bytes and source identity. All 384
 build tests, real image CLI output, release verification and flash selection
 checks pass. The completed task and plan `20260909-1725-timestamped-factory-images`
-are consolidated into the [delivery record](task/20260908-2229-file-ab-delivery-x64-first.md)
+are consolidated into the delivery record (20260908-2229-file-ab-delivery-x64-first)
 and current build/install documentation to avoid retaining obsolete work records.
 
 ## Clean cx3576 image rebuild (2026-09-09)
@@ -381,7 +404,7 @@ cx3576 image from clean commit `38f2a37b9a3c`, including the apid power feedback
 repair. The image passes all 123 offline checks, required FIT signature negatives,
 flash geometry, DATA-only growth and the 14-artifact release gate. Root smoke
 reports 11 passes and the existing crun qemu-user limitation. Earlier generated
-images and transcripts were removed; the [delivery record](task/20260908-2229-file-ab-delivery-x64-first.md)
+images and transcripts were removed; the delivery record (20260908-2229-file-ab-delivery-x64-first)
 identifies the new artifacts and preserves the distinction from pending physical
 board acceptance.
 
@@ -393,7 +416,7 @@ and an unconfirmed timeout retain explicit backend error responses. The dashboar
 closes its confirmation dialog so success and failure remain visible, and avoids
 automatic power retries. Reboot interlocks are unchanged. Regression tests cover
 admission, refusal, failure, timeout, confirmation and cancellation; the full Rust
-and frontend gates pass. The [investigation](task/20260909-1421-apid-reboot.md)
+and frontend gates pass. The investigation (20260909-1421-apid-reboot)
 records fresh-image browser evidence and the unresolved original-device context.
 The completed focused plan `20260909-1425-apid-power-feedback` is consolidated
 into that open investigation rather than retained as an obsolete plan entry.
@@ -428,8 +451,8 @@ current-image integration provide software evidence. Kernel panic testing found
 and fixed first-boot TLS identity durability. cx3576 firmware/FIT/image packaging,
 offline verification and DATA-only growth pass; physical startup, watchdog
 handoff and storage power-cut qualification remain pending bench access. The
-[implementation plan](plan/20260908-1428-file-ab-signed-components.md) and
-[delivery task](task/20260908-2229-file-ab-delivery-x64-first.md) track the exact
+implementation plan (20260908-1428-file-ab-signed-components) and
+delivery task (20260908-2229-file-ab-delivery-x64-first) track the exact
 artifacts, completed checks and remaining acceptance work.
 
 Final software acceptance passes on x64 and virt-arm64, including all three

@@ -475,4 +475,4 @@ merge the same shared fragment before `olddefconfig`. Board intake tiers:
 | s905x5m | arm64 | eMMC boot0 MOS firmware → SD native records → required signed FIT | SD development port; physical qualification pending, excluded from qualified releases |
 
 Exact current artifact IDs and gate results are recorded in the
-[file-deployment delivery task](../task/20260908-2229-file-ab-delivery-x64-first.md).
+file-deployment delivery task (20260908-2229-file-ab-delivery-x64-first).

@@ -42,4 +42,4 @@ DATA/SYSTEM 缺失、只读或损坏会停止受影响启动路径，等待显�
 日志和镜像/组件身份。物理 eMMC 持久性及板级恢复依赖 cx3576 台架测试，QEMU 与
 离线检查只证明各自明确覆盖的软件行为。
 
-> status: board-dependent — evidence: `docs/design/uboot-ab-handshake.md`, `docs/task/20260908-2229-file-ab-delivery-x64-first.md`
+> status: board-dependent — evidence: `docs/design/uboot-ab-handshake.md`

@@ -54,6 +54,6 @@ package or partition format is accepted.
 
 QEMU boot/update evidence is recorded separately from cx3576 hardware evidence.
 Physical watchdog, storage power-cut and USB maintenance acceptance remain board
-work, described in the [delivery record](../task/20260908-2229-file-ab-delivery-x64-first.md).
+work, described in the delivery record (20260908-2229-file-ab-delivery-x64-first).
 
-> status: board-dependent — evidence: `docs/design/release-signing.md`, `docs/task/20260908-2229-file-ab-delivery-x64-first.md`
+> status: board-dependent — evidence: `docs/design/release-signing.md`

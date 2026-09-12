@@ -61,4 +61,4 @@ is supplied to the Rust/package producer; it is not checked into the source.
 Component tests cover state and action behavior. Browser acceptance checks the
 rendered flows, and full-image API acceptance checks the real service contract.
 Keep hardware behavior separate from browser/mock evidence in the
-[delivery record](../task/20260908-2229-file-ab-delivery-x64-first.md).
+delivery record (20260908-2229-file-ab-delivery-x64-first).

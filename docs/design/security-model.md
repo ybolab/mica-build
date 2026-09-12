@@ -90,7 +90,7 @@ Boot-key, content-key and metadata-key overlap/removal are separate operations.
 Firmware maintenance is an authenticated offline workflow with a recovery artifact
 and readback. Ordinary root/kernel updates do not write loader firmware. No OTP
 or fuse change is part of current acceptance. Evidence and exact limitations are
-in the [delivery task](../task/20260908-2229-file-ab-delivery-x64-first.md).
+in the delivery task (20260908-2229-file-ab-delivery-x64-first).
 
 ## 5. The I1–I4 boot-assurance ladder
 

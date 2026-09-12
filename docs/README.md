@@ -5,7 +5,7 @@
 Current development images use signed file deployments managed by `mos-deploy`.
 There is no RAUC or lode update runtime. Each acceptance sequence starts from a
 complete current image. The [architecture](architecture.md) maps the components;
-the [delivery record](task/20260908-2229-file-ab-delivery-x64-first.md) records
+the delivery record (20260908-2229-file-ab-delivery-x64-first) records
 tested artifacts and the remaining cx3576 physical acceptance.
 
 ## Start with a task

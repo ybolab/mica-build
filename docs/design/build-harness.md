@@ -88,7 +88,7 @@ not prove a reconciler has finished.
 
 cx3576 software checks precede the separate [physical bench sequence](../bsp/cx3576-bench.md).
 VM reset and deterministic I/O faults cannot establish physical eMMC power-loss
-durability. The [delivery record](../task/20260908-2229-file-ab-delivery-x64-first.md)
+durability. The delivery record (20260908-2229-file-ab-delivery-x64-first)
 binds each result to its artifact and states the remaining hardware gates.
 
 ## 6. Documentation gates
