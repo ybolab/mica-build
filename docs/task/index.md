@@ -186,6 +186,10 @@ thing about the tree. Both indexes now say the same thing.
 
 - [x] [**20260910-0836-apid-ui-chunk-split Split the apid console entry bundle**](20260910-0836-apid-ui-chunk-split.md) `P2`
 
+- [x] [**20260910-1012-c-config-update-obligations Classify configuration and update policy obligations**](20260910-1012-c-config-update-obligations.md) `P1`
+
+- [x] [**20260910-1012-c-fleet-app-trust-obligations Classify fleet application and trust obligations**](20260910-1012-c-fleet-app-trust-obligations.md) `P1`
+
 - [x] [**20260910-1014-a1-cx3576-resource-repairs CX3576 accelerator and resource repairs**](20260910-1014-a1-cx3576-resource-repairs.md) `P1`
 
 - [x] [**20260910-1014-a2-cx3576-acceptance-matrix Current CX3576 acceptance matrix and evidence baseline**](20260910-1014-a2-cx3576-acceptance-matrix.md) `P1`
@@ -193,5 +197,19 @@ thing about the tree. Both indexes now say the same thing.
 - [x] [**20260910-1014-a3-cx3576-late-hdmi-logo CX3576 late HDMI and return-to-logo repair**](20260910-1014-a3-cx3576-late-hdmi-logo.md) `P1`
 
 - [x] [**20260910-1014-a4-cx3576-integrated-acceptance CX3576 integrated artifact and board acceptance**](20260910-1014-a4-cx3576-integrated-acceptance.md) `P1`
+
+- [x] [**20260910-1046-c-provisioning-resolution-tests Verify provisioning resolution through the API route**](20260910-1046-c-provisioning-resolution-tests.md) `P1`
+
+- [x] [**20260910-1046-c-public-defaults-guide Update the public defaults guide**](20260910-1046-c-public-defaults-guide.md) `P1`
+
+- [x] [**20260910-1050-c-native-endpoint-verification Verify native binaries contain no default update endpoints**](20260910-1050-c-native-endpoint-verification.md) `P1`
+
+- [x] [**20260910-1050-c-packed-public-meta-validation Validate packed public metadata independently**](20260910-1050-c-packed-public-meta-validation.md) `P1`
+
+- [x] [**20260910-1050-c-public-meta-source-validation Validate public metadata before root staging**](20260910-1050-c-public-meta-source-validation.md) `P1`
+
+- [x] [**20260910-1221-c-offline-fleet-config Project offline fleet desired configuration**](20260910-1221-c-offline-fleet-config.md) `P1`
+
+- [x] [**20260910-1910-fleet-device-plane-protocol Design the fleet device-to-plane protocol**](20260910-1910-fleet-device-plane-protocol.md) `P1`
 
 - [ ] [**20260911-1925-boot-artifact-size Shrink the signed boot artifact: compression and early-userspace closure**](20260911-1925-boot-artifact-size.md) `P1`

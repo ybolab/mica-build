@@ -14,6 +14,7 @@
 
 import { $ } from 'bun'
 import { randomUUID } from 'node:crypto'
+import { realpathSync } from 'node:fs'
 import { resolveImage } from './images.ts'
 
 // THERE IS ONE ROUTE, AND IT IS THE CONTAINER. Every tool this file runs is a
@@ -130,6 +131,11 @@ export interface OpenOptions {
    */
   readonly mounts?: readonly string[]
   /**
+   * Read-only identity mounts, resolved to real paths along with their writable
+   * peers. Protection takes precedence over duplicate/descendant declarations.
+   */
+  readonly readOnlyMounts?: readonly string[]
+  /**
    * Kept so that `'host'` is a refusal that names the policy rather than a
    * value nothing reads. `'container'` is the only route there is.
    */
@@ -204,7 +210,21 @@ export class Toolbox {
     const container = `mos-build-${toolset.key}-${randomUUID().slice(0, 8)}`
 
     const mountArgs: string[] = []
-    for (const m of options.mounts ?? []) mountArgs.push('-v', `${m}:${m}`)
+    if (options.readOnlyMounts?.length) {
+      const modes = new Map<string, boolean>()
+      for (const path of options.mounts ?? []) modes.set(realpathSync(path), false)
+      for (const path of options.readOnlyMounts) modes.set(realpathSync(path), true)
+      const protectedParents: string[] = []
+      // Emit parents first. A read-only parent already covers all descendants;
+      // never remount a writable descendant over that protection.
+      for (const [path, readOnly] of [...modes].sort(([a], [b]) => a.length - b.length)) {
+        if (protectedParents.some(parent => path.startsWith(parent))) continue
+        mountArgs.push('-v', `${path}:${path}${readOnly ? ':ro' : ''}`)
+        if (readOnly) protectedParents.push(path.endsWith('/') ? path : `${path}/`)
+      }
+    } else {
+      for (const m of options.mounts ?? []) mountArgs.push('-v', `${m}:${m}`)
+    }
 
     // --rm with -d so a container this process never gets to close is removed
     // when its sleep ends; the sleep is BOUNDED for the same reason. `sleep
