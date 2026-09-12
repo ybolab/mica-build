@@ -17,8 +17,8 @@ ARM obligations remain deferred, with physical limitations separate. No S905 ima
 
 ## ActiveForm
 
-Awaiting the same B3 static source handoff; J7 no-Python is reviewed and locally
-integrated. Preserve completed producers and resume only ready x64 successors.
+Four-mask candidate is implemented with final-source input proofs; awaiting B
+independent source/input review before the authorized x64 root successor.
 
 ## Dependencies
 
@@ -1395,3 +1395,11 @@ L1-FOUR-SYSTEMD-MASKS-20260912-0005, delivered by the 00:33 transport recovery, 
 Source-bound RED reaches the original `/dev/null` special-node refusal and both joined-path refusals. The exact approved production patches are applied. Final composition tests retain all four systemd links plus an ordinary required unit, with and without disposable null; wrong target/origin/required unit/undeclared mask and direct selected device still refuse. The final actual cached-input select/copy/verify has seven cases. Original SELinux-xattr fixture limitations remain explicit; this is not a full root result.
 
 Evidence under `Phase1-fb6c4597bb902f69d528bcdc3c8372f310c322b1/FourMasks-v1`: direct composition GREEN, joined helper plus final context negative, capture lineage, exact single-file release tests and types pass. Two fixture preparation failures (parent ownership, then preserving existing fixture runtime links) remain separately recorded; production checks were not relaxed. Self-review confirms only the four declared rows and the one matching path in each JOIN_CONSUMERS set; no producer/pin/selector/compose algorithm change. Clean successor two-copy actual-input proof and B review are the remaining source handoff gates; no root or producer replay is claimed.
+
+### 2026-09-12 four-mask clean candidate and actual input handoff
+
+Composition candidate `f4c1c4c44a64f7cda00afe5b6c74e611c440c5dd` / tree `164725070bac579b771ba137b13cbe36a6c3678a` / epoch `1789173629` is the isolated eight-file correction. Two independent clean1831-entry copies produce identical canonical lineage `e4e8e56c0cbf15d5fe1d9b3b12567212b2f7326bffcb452e9fa8f38ad414f91b` against the unchanged actual J14 archives, fb6 deploy/native and4716 tool witnesses. The final helper verifies all15 actual producer/PREPARE maps and the full nine-path consumer-only delta from4716; the present correction has eight files relative to its own parent. Pool/control/index/native/tool bytes retain their original identities; root epoch remains1577836800.
+
+Direct gates: three composition tests (two positive cases and four refusal subcases), direct selected-device refusal, eight joined helper tests plus the separately final-bound context-negative test, two capture/lineage tests, exact single-file32 release tests/76 assertions and type/docs/diff checks. The final actual cached-node select/copy/verify has seven source-bound cases. Three original source REDs and two fixture setup failures remain historical evidence. The final shell caller keeps default mixed-pool refusal1, verified join boundary79, and wrong tool refusal1; the final release input validator checks the actual new lineage with33 total positive/negative cases. These are source/input fixtures, not a real root/image/guest result.
+
+Evidence: `_out/wave/e176876b733d675d1e20b40b42628cd4e18b197d/Phase1-fb6c4597bb902f69d528bcdc3c8372f310c322b1/FourMasks-f4c1c4c44a64f7cda00afe5b6c74e611c440c5dd/metadata/final-input-validation.json` and `successor-readiness-v2.json`; implementation gates, source bindings, self-review and retained failures are in `_out/wave/e176876b733d675d1e20b40b42628cd4e18b197d/Phase1-fb6c4597bb902f69d528bcdc3c8372f310c322b1/FourMasks-v1`. Readiness preparation v1 compared the two different delta bases and refused; v2 checks both exact Git bases, without rerunning input gates. No producer/kernel/native/tool or unchanged140-check package-gate replay. B independent review/local integration is next; no later347 source was imported. The previous fbd root remains failed and immutable.
