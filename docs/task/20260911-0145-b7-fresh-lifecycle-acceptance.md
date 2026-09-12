@@ -1823,3 +1823,37 @@ which still refuse changed producers under the fixed438 role. The next work
 is that bounded existing caller/lineage/release correction and its direct
 current-input proof, then affected image and complete x64 acceptance. No
 native, tool, kernel, original-J package or old guest/image replay occurred.
+
+### 2026-09-12 GPT producer join implementation
+
+The reviewed d2e352d0 GPT correction has successful native and completed-prefix
+deploy production. This consumer correction introduces one fixed gpt-v1 joined
+role: d2 native/deploy, unchanged original J14 archives, and the separately
+witnessed 438 boot tool. Original failed aggregate and successful continuation
+receipts remain distinct. No producer path enters the composition or joined
+consumer sets, and no producer/tool/kernel was rebuilt for admission.
+
+GptJoin-v1 under the existing Phase1 wave holds the independent 15-archive pool
+and newly generated indexes. Its actual repo.sh command ran 07:51:30.725288..
+07:51:35.198202 UTC, exit 0, within the unchanged daemon1CPU5GiB plus serial
+child3CPU5GiB envelope. The old and new producer pools were not overwritten.
+The proposed record is diagnostic input until final clean-source validation.
+
+Direct original-source RED shows the old lineage and release consumers refusing
+the d2 package stamp and native source role. A new witness-function absence was
+also recorded as an implementation RED. The first TypeScript edit had a duplicate
+local declaration and failed before tests; it is preserved separately. Corrected
+direct checks admit the actual native/deploy outputs and authenticated compressed
+startup payload, while rejecting changed producer roles, witnesses, inputs,
+indexes, native bytes and old-source attribution. This is source/input and signed
+fixture evidence, not a production component, image, guest or API result.
+
+The canonical creator verifies the full reviewed J/fb6/438/d2 delta legs, all
+15 producer/PREPARE maps, native49/deploy59/tool19 inputs, actual original and new
+receipts/output/control/tool bytes, and a separate consumer-only successor delta.
+The root caller derives only the validated immutable 438 tool manifest. Release
+capture, installed package identity and authenticated native payload remain
+strict. Final clean two-copy joins and affected caller/capture/package admission
+are the next required evidence before independent B review and affected x64
+production. The unchanged ED723 image and failed guest/API remain historical;
+full x64 acceptance and later physical/consolidated ARM obligations are pending.

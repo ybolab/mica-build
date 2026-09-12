@@ -842,7 +842,180 @@ def boot_witness(root: Path, rebuilt_root: Path, middle: dict, path: Path) -> tu
     return validate_boot_role(role), entries
 
 
+# The reviewed GPT parser transition replaces native/deploy only. Its tool
+# retains the separately witnessed startup source; no producer path is exempt.
+GPT_REBUILT = dict(commit='d2e352d0a4226f10b8b2587cd7c1bc5040b8d234',
+    tree='190ffef0ba12ad24625456f508c5179e517ffc74', epoch=1789196122, version='0.1.0+gitd2e352d0a422-1')
+GPT_NATIVE = {
+    'mos-init': dict(bytes=2403504, sha256='9d1b164b3af709cc382e6bdbc29e222225ac76e0f8c6e9d4a948f425d7548682'),
+    'mos-shutdown': dict(bytes=2043048, sha256='28ccd8655a02d54b4229f9674e297fa7925881cf89450febe436704bfdab3f0d'),
+}
+GPT_RECEIPTS = dict(original=STARTUP_RECEIPTS['original'], boot_tools=STARTUP_RECEIPTS['boot_tools'],
+    native='65a4dae876b4e4c58bc4c029679998081b5d543b80668e2129a861f4a1f9370f',
+    deploy='aaa082345b66961bab3b327314841226f31e19157ffde626198084759ae60d88')
+GPT_DELTA_SHA = '5c258e12f0bbb3f10d3c6b6bd3db193eb1a474dc4d87863108f88819024b7f26'
+GPT_LEGS_SHA = 'bc669939c224d936e72bda629e8e2828f18e95f44002bbb0da7bfc7950086bbd'
+GPT_INPUTS_SHA = '3a76ae8130a1107da3eaf36a950b3589352d2ec970d9b9ae3ff88adaeb0a7c65'
+GPT_PRODUCTION_SHA = 'c1cf815d29028f92abed870925b0d2f1368d240164e67fe012b8c7b10b10b9f7'
+GPT_POOL_SHA = '565c0f0bf614299ad6d3a49a6d6127e2f6fc70f240a8361318a7b46b4b15c62c'
+GPT_INPUT_SHAS = dict(native='c51fad1f8cc29459ee326dd29a3ef5b778f53d368b9f0a3b38b2a736c1671c8b',
+    deploy='100e505f18742d862759498ce158b6778ee78988aaaecfbb959d9ad0820d9ff7')
+GPT_DEPLOY_BINARY = dict(bytes=2631680, sha256='7135f5789cdd843a21373f5833b617a7344c4f1081aa804ac7aee9a9c7a01f7e')
+GPT_DEPLOY_SHA = '018f707b4a2322293f614ce9d909f17ad4de6256bc36f1998f98178204fe493e'
+GPT_DEPLOY_CONTROL = '35f35cc2ad349edd582f3ef8b659fa9a715ecd2802a58a8b3c1584f9a86fe161'
+
+
+def gpt_file(row: dict) -> Path:
+    keys(row, 'path bytes sha256'); at = Path(row['path']); info = at.lstat()
+    require(stat.S_ISREG(info.st_mode) and info.st_size == row['bytes'] and sha(at) == hex_id(row['sha256']), 'GPT witness actual file bytes')
+    return at
+
+
+def gpt_witness(path: Path, kind: str, root: Path, entries: dict) -> dict:
+    require(kind in GPT_INPUT_SHAS and sha(path) == GPT_RECEIPTS[kind], 'GPT witness role/digest')
+    value = load(path)
+    common = 'schema role source sourceDirectory architecture target sourceInputs sourceInputsSha256 status originalAggregateExit successfulContinuation sourceBefore sourceAfter tools limits terminal argv outputs flags bins finishedAt'
+    keys(value, common + (' execution' if kind == 'native' else ' originalExecution continuation indexes compiledBinary packedBinary controlSha256 preservedOriginalStage'))
+    require(value['schema'] == 'mos/gpt-producer-witness/v1' and value['role'] == kind
+            and value['source'] == GPT_REBUILT and Path(value['sourceDirectory']) == root
+            and value['architecture'] == 'amd64' and value['target'] == 'x86_64-unknown-linux-gnu'
+            and value['status'] == 'success' and value['finishedAt'], 'GPT witness source/role/status')
+    require(value['limits'] == dict(aggregateCpus=4, aggregateMemory=10737418240, extraSwap=0, cpuset='0-3',
+            directChildCpus=3, directChildMemory=5368709120, daemonCpus=1, daemonMemory=5368709120), 'GPT execution envelope')
+    require(hashlib.sha256(canonical(value['sourceInputs'])).hexdigest() == GPT_INPUT_SHAS[kind]
+            and hashlib.sha256(canonical(value['sourceInputs'])[:-1]).hexdigest() == value['sourceInputsSha256'], 'GPT complete native/PREPARE input set')
+    for row in value['sourceInputs']:
+        keys(row, 'path bytes sha256 mode blob'); name = relative(row['path'])
+        require(entries.get(name) == {k: row[k] for k in ('mode', 'blob')}, 'GPT input Git mode/blob')
+        gpt_file(dict(path=str(root / name), bytes=row['bytes'], sha256=row['sha256']))
+    for name in ('sourceBefore', 'sourceAfter'):
+        observed = load(gpt_file(value[name]))
+        require(observed == dict(identity={k: GPT_REBUILT[k] for k in ('commit', 'tree', 'epoch')}, entries=entries), 'GPT producer clean source before/after')
+    terminal = load(gpt_file(value['terminal']))
+    # The exact terminal binds the original failures and successful continuation
+    # separately; an aggregate failure alone is never a production witness.
+    if kind == 'native':
+        execution = load(gpt_file(value['execution']))
+        expected_argv = ['timeout', '--signal=TERM', '--kill-after=30', '7450', 'bash',
+            'pkgs/mos-deploy/hack/build-deb.sh', '--producer', 'boot', '--bins', 'mos-init mos-shutdown',
+            '--arch', 'amd64', '--stage', str(Path(value['outputs'][0]['path']).parent)]
+        require(value['argv'] == expected_argv == execution['producer']['argv']
+                and execution['exitCode'] == execution['producer']['exitCode'] == 0
+                and value['originalAggregateExit'] == 0 and value['successfulContinuation'] is False,
+                'GPT native invocation/terminal')
+        require(value['bins'] == ['mos-init', 'mos-shutdown']
+                and value['flags'] == ['-C', 'target-feature=+crt-static', '-C', 'strip=symbols'], 'GPT native flags/membership')
+        require(len(value['outputs']) == 2 and {Path(r['path']).name: {k: r[k] for k in ('bytes', 'sha256')} for r in value['outputs']} == GPT_NATIVE,
+                'GPT native outputs')
+        require(terminal['aggregate']['exitCode'] == terminal['container']['exitCode'] == 0
+                and terminal['container']['absent'] is True and execution['outputs'] == value['outputs'], 'GPT native collected outputs')
+        for row in value['outputs']:
+            require(stat.S_IMODE(gpt_file(row).stat().st_mode) == 0o755, 'GPT native executable mode')
+        gpt_file(execution['producer']['logBinding'])
+    else:
+        original = load(gpt_file(value['originalExecution'])); execution = load(gpt_file(value['continuation']))
+        require(value['argv'] == ['bash', 'build-env/deb/build.sh', '--producer', 'deploy', '--arch', 'amd64']
+                and value['bins'] == ['mos-deploy'] and value['flags'] == ['--release', '--locked', '--target', 'x86_64-unknown-linux-gnu'], 'GPT deploy invocation/flags')
+        require(original['exitCode'] == value['originalAggregateExit'] == 1 and value['successfulContinuation'] is True
+                and execution['exitCode'] == 0 and execution['originalOuterExit'] == 1 and execution['prepareExit'] == 0
+                and value['preservedOriginalStage'] is True, 'GPT deploy completed-prefix recovery')
+        require([s['name'] for s in execution['steps']] == ['deploy-pack-continuation-v2', 'deploy-index-continuation-v2']
+                and all(s['exitCode'] == 0 for s in execution['steps'])
+                and [terminal[k]['exitCode'] for k in ('originalDriver', 'prepare', 'pack', 'index', 'continuation')] == [1, 0, 0, 0, 0], 'GPT deploy real stage terminals')
+        for row in execution['steps']: gpt_file(row['log'])
+        for row in execution['docker']:
+            actual = load(gpt_file(row)); require(actual['exitCode'] == 0, 'GPT deploy producer exit')
+        prefix = load(gpt_file(execution['completedPrefix']))
+        require(prefix['exitCode'] == prefix['terminal']['State']['ExitCode'] == 0 and prefix['terminalAbsent'] is True, 'GPT completed PREPARE producer')
+        require(len(value['outputs']) == 1 and value['outputs'][0]['bytes'] == 757948
+                and value['outputs'][0]['sha256'] == GPT_DEPLOY_SHA, 'GPT deploy archive identity')
+        archive = gpt_file(value['outputs'][0])
+        require(value['controlSha256'] == GPT_DEPLOY_CONTROL
+                == hashlib.sha256(command(['dpkg-deb', '--ctrl-tarfile', str(archive)])).hexdigest(), 'GPT deploy control bytes')
+        require({k: value['compiledBinary'][k] for k in ('bytes', 'sha256')} == GPT_DEPLOY_BINARY, 'GPT compiled deploy bytes')
+        gpt_file(value['compiledBinary'])
+        require(value['packedBinary'] == dict(path='/usr/bin/mos-deploy', **GPT_DEPLOY_BINARY, mode='0755', uid=0, gid=0), 'GPT packed binary witness')
+        import io
+        import tarfile
+        with tarfile.open(fileobj=io.BytesIO(command(['dpkg-deb', '--fsys-tarfile', str(archive)]))) as data:
+            members = [m for m in data if m.name.lstrip('./') == 'usr/bin/mos-deploy']
+            require(len(members) == 1 and members[0].isfile(), 'GPT deploy unique archive member')
+            member = members[0]
+            require(member.mode == 0o755 and member.uid == member.gid == 0 and member.size == GPT_DEPLOY_BINARY['bytes']
+                    and hashlib.sha256(data.extractfile(member).read()).hexdigest() == GPT_DEPLOY_BINARY['sha256'], 'GPT packed binary metadata/bytes')
+        require(value['indexes'] == execution['outputs'], 'GPT producer index membership')
+        for row in value['indexes']: gpt_file(row)
+    tools = dict(rust=STARTUP_RUST_IMAGE)
+    if kind == 'deploy': tools['packaging'] = 'sha256:a6eff372d48dbbcdf62ca420c9fc4bb65352111e6c0ce9cb2a65720acea38c86'
+    require(value['tools'] == tools, 'GPT actual producer tools')
+    for image in tools.values():
+        actual = json.loads(command(['docker', 'image', 'inspect', image]))
+        require(len(actual) == 1 and actual[0]['Id'] == image and actual[0]['Architecture'] == 'amd64', 'GPT actual tool identity')
+    return value
+
+
+def validate_gpt_join(join: dict, pool: dict, original: dict, arch: str) -> dict:
+    keys(join, 'schema rebuilt_source approved_delta producer_inputs original_pool witnesses mapping native production')
+    require(join['schema'] == 'mos/producer-join/gpt-v1' and arch == 'amd64' and original == JOIN_ORIGINAL
+            and join['rebuilt_source'] == GPT_REBUILT and join['witnesses'] == GPT_RECEIPTS
+            and join['native'] == GPT_NATIVE, 'GPT join source/witness/native roles')
+    for value, digest, label in ((join['production'], GPT_PRODUCTION_SHA, 'production'),
+            (join['approved_delta'], GPT_LEGS_SHA, 'reviewed delta legs'), (join['producer_inputs'], GPT_INPUTS_SHA, 'complete producer inputs'),
+            (join['original_pool'], JOIN_POOL_SHA, 'original pool'), (pool, GPT_POOL_SHA, 'joined pool/index/control')):
+        require(hashlib.sha256(canonical(value)).hexdigest() == digest, 'GPT join ' + label)
+    require(join['mapping'] == {name: (GPT_REBUILT if name == 'mos-deploy' else JOIN_ORIGINAL)['commit'] for name in STARTUP_PACKAGES}, 'GPT package source attribution')
+    return join
+
+
+def create_gpt_join(composition_root: Path, original_root: Path, pool: Path, arch: str, epoch: int,
+                    receipt: Path | None, receipt_sha: str | None, inputs: dict) -> dict:
+    keys(inputs, 'schema original_pool startup_source rebuilt_source native_receipt deploy_receipt boot_tools_receipt pool_files')
+    require(inputs['schema'] == 'mos/producer-join-inputs/gpt-v1' and arch == 'amd64' and epoch == 1577836800, 'GPT join request')
+    rebuilt_root, startup_root = Path(inputs['rebuilt_source']), Path(inputs['startup_source'])
+    c, final = identity(composition_root); p, first = identity(original_root)
+    s, prior = identity(startup_root); b, middle = identity(rebuilt_root)
+    for source, root in ((p, original_root), (s, startup_root), (b, rebuilt_root)):
+        source['version'] = command(['bash', str(root / 'build-env/deb/version.sh')]).decode().strip()
+    require(b == GPT_REBUILT, 'unreviewed GPT producer source')
+    legs, startup_proof = startup_join_delta(original_root, startup_root, p, s, first, prior, sorted(STARTUP_PACKAGES))
+    command(['git', '-C', str(rebuilt_root), 'merge-base', '--is-ancestor', s['commit'], b['commit']])
+    changes = [dict(path=n, before=prior.get(n), after=middle.get(n)) for n in sorted(prior.keys() | middle.keys()) if prior.get(n) != middle.get(n)]
+    require(hashlib.sha256(canonical(changes)).hexdigest() == GPT_DELTA_SHA, 'unreviewed GPT producer delta')
+    legs['startup_to_gpt'] = changes
+    previous_maps, maps = producer_inputs(startup_root, prior), producer_inputs(rebuilt_root, middle)
+    require(previous_maps.keys() == maps.keys() and {n for n in maps if maps[n] != previous_maps[n]} == {'deploy'}, 'GPT affected producer/PREPARE membership')
+    final_delta = delta(rebuilt_root, composition_root, b, c, middle, final)
+    require(all(r['path'] in JOIN_CONSUMERS | STARTUP_TRACKING for r in final_delta)
+            and maps == producer_inputs(composition_root, final), 'GPT consumer changed producer inputs')
+    original_pool = pool_identity(Path(inputs['original_pool']), arch, p['version'])
+    require(receipt_sha == GPT_RECEIPTS['original'], 'GPT original receipt')
+    frozen_receipt(receipt, receipt_sha, original_root, p, first, arch, original_pool)
+    native = gpt_witness(Path(inputs['native_receipt']), 'native', rebuilt_root, middle)
+    deploy = gpt_witness(Path(inputs['deploy_receipt']), 'deploy', rebuilt_root, middle)
+    boot = startup_successor_witness(Path(inputs['boot_tools_receipt']), 'boot_tools', startup_root, prior)
+    for row in boot['sourceInputs']:
+        require(middle.get(row['path']) == prior[row['path']] and sha(rebuilt_root / row['path']) == row['sha256'], 'GPT changed reused boot-tool input')
+    proof = dict(startup=startup_proof, gpt=dict(producers=maps, native_inputs=native['sourceInputs'],
+        deploy_inputs=deploy['sourceInputs'], boot_tools_inputs=boot['sourceInputs']))
+    production = dict(architecture='amd64', native=dict(source=b, receipt=GPT_RECEIPTS['native'],
+        inputs_sha256=GPT_INPUT_SHAS['native'], tools=native['tools'], target=native['target'], flags=native['flags']),
+        deploy=dict(source=b, receipt=GPT_RECEIPTS['deploy'], inputs_sha256=GPT_INPUT_SHAS['deploy'], tools=deploy['tools'],
+            target=deploy['target'], flags=deploy['flags'], binary=GPT_DEPLOY_BINARY, control_sha256=deploy['controlSha256']),
+        boot_tools=dict(source=s, receipt=GPT_RECEIPTS['boot_tools'], inputs_sha256=STARTUP_SUCCESSOR_INPUTS['boot_tools'],
+            tools=boot['tools'], image=boot['image']['id'], config=boot['image']['config']['digest'], target=boot['target'], snapshot=boot['snapshot']))
+    versions = {r['package']: b['version'] if r['package'] == 'mos-deploy' else r['version'] for r in original_pool['packages']}
+    joined_pool = pool_identity(pool, arch, versions)
+    require(joined_pool['files'] == inputs['pool_files'], 'GPT joined index/archive inputs')
+    join = dict(schema='mos/producer-join/gpt-v1', rebuilt_source=b, approved_delta=legs, producer_inputs=proof,
+        original_pool=original_pool, witnesses=GPT_RECEIPTS, mapping={n: (b if n == 'mos-deploy' else p)['commit'] for n in versions},
+        native={Path(r['path']).name: {k: r[k] for k in ('bytes', 'sha256')} for r in native['outputs']}, production=production)
+    return validate(dict(schema='mos/source-lineage/join-v1', package_source=p, composition_source=c, architecture=arch,
+        root_epoch=epoch, pool=joined_pool, receipt_sha256=sorted(GPT_RECEIPTS.values()), delta=final_delta, producer_join=join), arch, epoch)
+
+
 def validate_join(join: dict, pool: dict, original: dict, arch: str) -> dict:
+    if join.get('schema') == 'mos/producer-join/gpt-v1':
+        return validate_gpt_join(join, pool, original, arch)
     if join.get('schema') == 'mos/producer-join/startup-v1':
         return validate_startup_join(join, pool, original, arch)
     boot = join.get('schema') == 'mos/producer-join/boot-tools-v1'
@@ -882,6 +1055,8 @@ def create_join(composition_root: Path, original_root: Path, pool: Path, arch: s
                 receipt: Path | None, receipt_sha: str | None, request: Path, request_sha: str) -> dict:
     require(sha(request) == hex_id(request_sha), 'join input digest')
     request_value = load(request)
+    if request_value.get('schema') == 'mos/producer-join-inputs/gpt-v1':
+        return create_gpt_join(composition_root, original_root, pool, arch, epoch, receipt, receipt_sha, request_value)
     if request_value.get('schema') == 'mos/producer-join-inputs/startup-v1':
         return create_startup_join(composition_root, original_root, pool, arch, epoch, receipt, receipt_sha, request_value)
     inputs = request_value
@@ -928,9 +1103,10 @@ def create_join(composition_root: Path, original_root: Path, pool: Path, arch: s
 def validate(record: dict, arch: str, epoch: int) -> dict:
     joined = record.get('schema') == 'mos/source-lineage/join-v1'
     startup = joined and record.get('producer_join', {}).get('schema') == 'mos/producer-join/startup-v1'
-    rebuilt = STARTUP_REBUILT if startup else JOIN_REBUILT
-    receipts = STARTUP_RECEIPTS if startup else JOIN_RECEIPTS
-    consumers = JOIN_CONSUMERS | STARTUP_TRACKING if startup else JOIN_CONSUMERS
+    gpt = joined and record.get('producer_join', {}).get('schema') == 'mos/producer-join/gpt-v1'
+    rebuilt = GPT_REBUILT if gpt else STARTUP_REBUILT if startup else JOIN_REBUILT
+    receipts = GPT_RECEIPTS if gpt else STARTUP_RECEIPTS if startup else JOIN_RECEIPTS
+    consumers = JOIN_CONSUMERS | STARTUP_TRACKING if startup or gpt else JOIN_CONSUMERS
     keys(record, 'schema package_source composition_source architecture root_epoch pool receipt_sha256 delta' + (' producer_join' if joined else ''))
     require(record['schema'] in ('mos/source-lineage/v1', 'mos/source-lineage/join-v1') and record['architecture'] == arch, 'schema/architecture mismatch')
     require(arch in ('amd64', 'arm64'), 'invalid architecture')
@@ -947,7 +1123,7 @@ def validate(record: dict, arch: str, epoch: int) -> dict:
     require(isinstance(record['delta'], list), 'invalid source delta')
     paths = []
     for row in record['delta']:
-        keys(row, 'path before after'); require(row['path'] in (consumers if startup else COMPOSITION_PATHS), 'unapproved source delta')
+        keys(row, 'path before after'); require(row['path'] in (consumers if startup or gpt else COMPOSITION_PATHS), 'unapproved source delta')
         paths.append(row['path'])
         for entry in (row['before'], row['after']):
             if entry is not None:
@@ -978,7 +1154,7 @@ def validate(record: dict, arch: str, epoch: int) -> dict:
     require(set(pool['files']) == expected, 'lineage pool membership')
     if joined:
         boot = record['producer_join'].get('schema') == 'mos/producer-join/boot-tools-v1'
-        if not boot and not startup:
+        if not boot and not startup and not gpt:
             require(c == JOIN_LEGACY_COMPOSITION, 'boot-tools witness omitted or downgraded')
         require(record['receipt_sha256'] == sorted([*receipts.values(), *([BOOT_RECEIPT_SHA] if boot else [])])
                 and epoch == 1577836800, 'join receipt/root epoch')

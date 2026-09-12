@@ -324,7 +324,7 @@ record = json.load(open(sys.argv[1]))
 joined = record.get('producer_join', {})
 if joined.get('schema') == 'mos/producer-join/boot-tools-v1':
     print(joined['boot_tools']['production']['manifest'])
-elif joined.get('schema') == 'mos/producer-join/startup-v1':
+elif joined.get('schema') in ('mos/producer-join/startup-v1', 'mos/producer-join/gpt-v1'):
     print(joined['production']['boot_tools']['image'])
 PY_BOOT_TOOL
 )
