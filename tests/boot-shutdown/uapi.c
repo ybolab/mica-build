@@ -28,6 +28,10 @@ _Static_assert(WDIOC_GETTIMEOUT == 0x80045707, "watchdog timeout request");
 _Static_assert(WDIOC_KEEPALIVE == 0x80045705, "watchdog keepalive request");
 _Static_assert(LOOP_GET_STATUS64 == 0x4c05, "loop status request");
 _Static_assert(LOOP_CLR_FD == 0x4c01, "loop detach request");
+_Static_assert(LOOP_CTL_GET_FREE == 0x4c82, "loop free request");
+_Static_assert(LOOP_SET_FD == 0x4c00, "loop attach request");
+_Static_assert(LOOP_SET_STATUS64 == 0x4c04, "loop configuration request");
+_Static_assert(LO_FLAGS_READ_ONLY == 1, "loop read-only flag");
 #include <linux/dm-ioctl.h>
 _Static_assert(sizeof(struct dm_ioctl) == 312, "DM header size");
 _Static_assert(_Alignof(struct dm_ioctl) == 8, "DM header alignment");
@@ -53,3 +57,7 @@ _Static_assert(DM_DEV_STATUS == 0xc138fd07, "DM status request");
 _Static_assert(DM_TABLE_STATUS == 0xc138fd0c, "DM table request");
 _Static_assert(DM_DEV_REMOVE == 0xc138fd04, "DM remove request");
 _Static_assert(DM_STATUS_TABLE_FLAG == (1 << 4), "DM table flags");
+_Static_assert(DM_DEV_CREATE == 0xc138fd03, "DM create request");
+_Static_assert(DM_TABLE_LOAD == 0xc138fd09, "DM load request");
+_Static_assert(DM_DEV_SUSPEND == 0xc138fd06, "DM resume request");
+_Static_assert(DM_READONLY_FLAG == 1, "DM read-only flag");

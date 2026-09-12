@@ -9,6 +9,7 @@ test ! -e "$out/source"
 mkdir "$out/source"
 cp pkgs/mos-deploy/Cargo.toml pkgs/mos-deploy/Cargo.lock "$out/source/"
 cp -a pkgs/mos-deploy/src "$out/source/src"
+cp -a pkgs/mos-deploy/lifecycle-sys "$out/source/lifecycle-sys"
 python3 - "$out/source/src/bin/mos-init.rs" <<'PY'
 from pathlib import Path
 import sys
@@ -27,6 +28,6 @@ timeout -k 20 1200 docker run --rm --label ai-agent=true --network traefik \
     -v "$out:/w" -v "$PWD/_out/cargo/registry:/usr/local/cargo/registry" \
     -v "$PWD/_out/cargo/git:/usr/local/cargo/git" -w /w/source \
     -e CARGO_TARGET_DIR=/w/target --entrypoint /bin/bash "$image" \
-    -c 'set -euo pipefail; cargo build --release --locked --target "$1" --bin mos-init; cp "/w/target/$1/release/mos-init" /w/mos-init' _ "$target"
+    -c 'set -euo pipefail; cargo build --release --locked --target "$1" --bin mos-init --config "target.$1.rustflags=[\"-C\",\"target-feature=+crt-static\",\"-C\",\"strip=symbols\"]"; cp "/w/target/$1/release/mos-init" /w/mos-init' _ "$target"
 test -s "$out/mos-init"
 echo "FILE_AB_EARLY_HANG_INIT_READY: $arch"
