@@ -176,6 +176,9 @@ class SourceLineageTest(unittest.TestCase):
                     production=dict(target='x64', platform='linux/amd64', manifest='sha256:' + '9' * 64))
         record['composition_source'] = dict(commit='a1' * 20, tree='b1' * 20, epoch=1577923500)
         record['producer_join'].update(schema='mos/producer-join/boot-tools-v1', boot_tools=role)
+        record['delta'] = [dict(path='rootfs/runtime/consumers.json',
+                               before=dict(mode='100644', blob='c' * 40),
+                               after=dict(mode='100644', blob='d' * 40))]
         record['receipt_sha256'].append(role['receipt_sha256']); record['receipt_sha256'].sort()
         with policy, patch.multiple(h, BOOT_ROLE_SHA=hashlib.sha256(h.canonical(role)).hexdigest(), BOOT_RECEIPT_SHA=role['receipt_sha256'], create=True):
             self.assertEqual(h.validate(record, 'amd64', 1577836800), record)
@@ -215,7 +218,7 @@ class SourceLineageTest(unittest.TestCase):
             'tool': lambda r: r['producer_join']['production'].__setitem__('tool', 'wrong'),
             'prepare': lambda r: r['producer_join']['producer_inputs']['fixture0'].__setitem__('after_sha256', '9' * 64),
             'unknown': lambda r: r['producer_join'].__setitem__('approved', True),
-            'consumer': lambda r: r['delta'].append(dict(path='rootfs/runtime/consumers.json', before=None, after=dict(mode='100644', blob='1' * 40))),
+            'consumer': lambda r: r['delta'].append(dict(path='rootfs/runtime/compose.py', before=None, after=dict(mode='100644', blob='1' * 40))),
             'root-epoch': lambda r: r.__setitem__('root_epoch', 1),
         }
         for name, mutate in mutations.items():
@@ -295,6 +298,22 @@ class SourceLineageTest(unittest.TestCase):
         spec = importlib.util.spec_from_file_location('gate_context', HELPER)
         h = importlib.util.module_from_spec(spec); spec.loader.exec_module(h)
         before_source, before = h.identity(self.package); after_source, after = h.identity(consumer)
+        with self.assertRaisesRegex(ValueError, 'composition path enters producer context'):
+            h.delta(self.package, consumer, before_source, after_source, before, after)
+
+    def test_joined_mask_consumer_cannot_enter_a_package_context(self):
+        producer = self.package / 'rootfs/packages-src/fixture/producer.env'
+        producer.parent.mkdir(parents=True)
+        producer.write_text('BUILD_CONTEXTS="consumer=rootfs/runtime"\n')
+        self.commit(self.package)
+        consumer = self.work / 'mask-consumer'
+        self.must('git', 'clone', '-q', self.package, consumer)
+        shutil.copyfile(REPO / 'rootfs/runtime/consumers.json', consumer / 'rootfs/runtime/consumers.json')
+        self.commit(consumer)
+        spec = importlib.util.spec_from_file_location('mask_context', HELPER)
+        h = importlib.util.module_from_spec(spec); spec.loader.exec_module(h)
+        before_source, before = h.identity(self.package); after_source, after = h.identity(consumer)
+        self.assertIn('rootfs/runtime/consumers.json', h.JOIN_CONSUMERS)
         with self.assertRaisesRegex(ValueError, 'composition path enters producer context'):
             h.delta(self.package, consumer, before_source, after_source, before, after)
 

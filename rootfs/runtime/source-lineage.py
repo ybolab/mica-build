@@ -50,6 +50,7 @@ JOIN_NATIVE = {
 JOIN_DEPLOY_SHA = '5c86a35df5ce3a495fdd8390f40a6e3d099fac4f10346e53783481ccda281168'
 JOIN_DEPLOY_CONTROL = '43440d0b43a9e2ab31b1a9940dc072d5f83cc088bd5e0675089e61dd141f84b2'
 JOIN_CONSUMERS = frozenset({
+    'rootfs/runtime/consumers.json',
     'rootfs/runtime/source-lineage.py', 'rootfs/build.sh', 'build/src/release-manifest.ts',
     'tests/deb-package-gate.sh', 'tests/rootfs-runtime/source_lineage_test.py',
     'tests/rootfs-runtime/composition_test.py', 'build/src/release-manifest.test.ts',
