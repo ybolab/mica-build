@@ -2031,3 +2031,47 @@ are truthfully represented; no producer path was placed in a consumer set.
 Original J packages, reusable kernel, boot tools and all old outputs retain
 original identities. B receives this clean source/direct evidence for its one
 independent review; eligible execution then continues under the existing grant.
+
+
+## GPT correction native producer terminal (2026-09-12)
+
+B independently accepted d2e352d0a4226f10b8b2587cd7c1bc5040b8d234 and
+integrated its exact source into c2058188. The production checkout remains
+frozen to d2e352d0/tree190ffef0/epoch1789196122, with all 1841 Git entries
+verified before and after production. No B or main source was imported.
+
+The real x64 native hook ran 07:08:53.159666..07:11:07.924441 UTC, exit 0;
+its container aaca62aac238 ran 07:08:56.237536..07:09:54.560850 UTC, exit 0.
+The bounded cleanup exited 0 and the exact container and original processes
+are absent. Aggregate native-v1 completed 07:11:10.010628 UTC, exit 0.
+`GptProducer-d2e352d0a4226f10b8b2587cd7c1bc5040b8d234/metadata/native-terminal-v1.json`
+SHA256 e9bcc367562f3eba08ccd30c1284e947797434ca39f36b3b0df390499306dbd8
+binds all four steps, 20 evidence files, actual source/argv/environment,
+output checks and retained resource observations. The earlier start snapshot
+of the removing container remains separate from the successful cleanup.
+
+New mos-init is 2403504 B, SHA256
+9d1b164b3af709cc382e6bdbc29e222225ac76e0f8c6e9d4a948f425d7548682;
+new mos-shutdown is 2043048 B, SHA256
+28ccd8655a02d54b4229f9674e297fa7925881cf89450febe436704bfdab3f0d.
+Both are actual source-bound x64 static ELF outputs with no PT_INTERP or
+DT_NEEDED. GNU static NSS/linker warnings remain in the original 9870 B log,
+SHA256 08941a049e5625642853d285cb21a079110d38dd498adbbb01e0da8eddaad021.
+No target execution or successful guest is inferred from compilation.
+
+The task adapter admitted the exact existing native hook only, verified its
+immutable Rust image and created/inspected the child before start. Actual
+cgroups were 3 CPU/5 GiB/swap0 on 0-3 beside the unchanged 1 CPU/5 GiB
+owned daemon. Raw fresh CPU/capacity/memory/disk observations were retained
+before threshold decisions. No daemon resize/recreation, shared state change,
+network crate acquisition, tool/pin change or successful producer replay occurred.
+
+The final producer-inputs-final.json corrects only the previously recorded
+pre-final-test GPT after-hash; the original stale GptMedia attribution record
+is preserved. Exact final 49 native/59 deploy/19 boot-tool entries confirm
+only native/deploy consume the changed GPT module and all boot-tool inputs
+remain equal. The next affected producer is deploy under the same serial
+resource slot. New deploy/output witnesses and strict final joined-source
+admission remain required before affected component/image/guest successors.
+Original J packages,438 tool/kernel identities, ed723 image production and
+its failed first guest/API attempt remain immutable; none is relabeled.
