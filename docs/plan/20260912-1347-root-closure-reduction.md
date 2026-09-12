@@ -43,6 +43,41 @@ The research's ranking survives: compressed bytes, not unpacked bytes, decide
 the order, and the Rust binaries and `gconv` are the two largest items that
 no standing decision excludes.
 
+### Current measurement (virt-arm64, cx3576, s905x5m)
+
+Read the same way from the three factory roots the ARM64 build task
+20260912-1329-arm64-board-builds exported on 2026-09-12 (`factory-root.oci`
+and `rootfs-verity.img` per board in that task's production worktree), with
+x64 re-measured over the same file lists so the columns compare.
+
+| | x64 | virt-arm64 | cx3576 | s905x5m |
+|---|---:|---:|---:|---:|
+| Composed root, unpacked | 200.4 MB, 2153 files | 223.8 MB, 2154 files | 238.9 MB, 2253 files | 244.2 MB, 2360 files |
+| `rootfs-verity.img` as shipped | 71.2 MB | 69.5 MB | 74.6 MB | 77.1 MB |
+| Whole root, gzip-6 proxy | 79.0 MB | 76.6 MB | 82.3 MB | 84.9 MB |
+
+The group figures are identical across the three arm64 roots: the groups are
+Debian arm64 archives plus the `pkgs/mosd/` binaries from one cross build, and
+only board and radio packages differ between the boards.
+
+| Group | arm64 unpacked | arm64 gzip-6 | x64 gzip-6, same lists | Research, cx3576 at `677d326f` |
+|---|---:|---:|---:|---:|
+| podman family (7 executables) | 58.30 MB | 22.10 MB | 24.38 MB | 21.1 MB |
+| five Rust binaries | 29.28 MB | 12.18 MB | 12.91 MB | 11.5 MB |
+| `gconv` (255 objects) | 19.65 MB | 3.48 MB | 2.69 MB | 3.35 MB |
+| `curl` + its 14 exclusive libraries (16 files) | 9.87 MB | 3.76 MB | 3.85 MB | ~1.7 MB (section 8) |
+| `iproute2` programs + libtirpc/krb5/libdb/libbpf (21 files) | 7.65 MB | 2.97 MB | 2.97 MB | ~2.6 MB |
+| openssh client programs + `sftp-server` (13 files) | 5.35 MB | 2.11 MB | 2.15 MB | ~1.5 MB |
+| `quota` tools + libext2fs (14 files) | 2.07 MB | 0.66 MB | 0.64 MB | — |
+| iptables family (8 files) | 0.75 MB | 0.20 MB | 0.21 MB | 0.53 MB |
+| e2scrub (9 files) | 0.02 MB | 0.01 MB | 0.01 MB | — |
+| `/usr/bin/dpkg-realpath` | 0.07 MB | 0.03 MB | 0.02 MB | — |
+
+Two consequences for the ranking: `gconv` costs 2.4 times more unpacked on
+arm64 than on x64 and 3.48 MB compressed, so R3 is worth more on every board
+than the x64 figure suggests; and the curl closure is the largest of the
+declined S5 items on the boards as well, at 3.76 MB.
+
 ### Corrections to the research document
 
 1. **Section 3.1, health gate.** `mos-health` does not degrade to SKIP when
@@ -81,12 +116,24 @@ no standing decision excludes.
    acceptance criteria are kept in Alternatives for a separate plan.
 8. **Section 8 item 1, "3–5 MB expected".** Still unmeasured. Measuring it is
    this plan's first step, and the multicall step is gated on the result.
+9. **Section 1.1 and 2.2, iptables.** The current roots ship the `iptables`
+   nft front-end and its four libraries as 8 files, 0.75 MB unpacked and
+   0.20 MB compressed on arm64. The 150 `xtables` plugin objects and the
+   8.35 MB figure are no longer in the image; the byte argument for
+   removing the family is now a fifth of a megabyte.
+10. **Section 8 item 3, "~1.7 MB".** Counting curl's 14 exclusive libraries,
+    the closure is 3.76 MB compressed on arm64 and 3.85 MB on x64, more than
+    twice the section 8 figure. Section 1.1 listed only `curl` + `libcurl4t64`
+    (0.62 MB) and placed the libraries under other rows. The item stays
+    excluded by the S5 decision; the corrected figure is what reversing that
+    decision would recover.
 
 ## Proposal
 
 Four steps. Each reports, at equal feature selection, before/after unpacked
 bytes, the gzip-6 proxy and the shipped `rootfs-verity.img` size on x64;
-virt-arm64 and cx3576 are re-measured when their builds exist.
+virt-arm64, cx3576 and s905x5m are measured from the same exported roots as
+the Context tables, so every step reports all four.
 
 **R1. Release profile for `pkgs/mosd/`.** Add to the workspace `Cargo.toml`:
 
@@ -102,6 +149,12 @@ change and not only a size change: a panicking task currently ends that task,
 with `abort` it ends the daemon and systemd restarts it. Adopt `panic` only
 if its measured saving is material and the behavior change is accepted
 explicitly; the default outcome of R1 is the two-line profile.
+
+Build a third variant with `opt-level = "s"` on top of the two-line profile
+and record it the same way. It is the size-first codegen choice and is
+orthogonal to LTO. Adopt it only if its saving is material and the apid API
+suite in QEMU shows no measurable latency regression, because it trades
+speed for bytes.
 
 **R2. Multicall measurement, not merge.** After R1, build one prototype
 binary that links the four crates and dispatches on `argv[0]`, and measure
@@ -137,9 +190,10 @@ runs `printf` and `tar` on a UTF-8 name is the runtime half of the check.
 ### Order and independence
 
 R1 → R2 is sequential. R3 and R4 are independent of each other and of R1.
-R3 and R4 touch `rootfs/runtime/` and `rootfs/scripts/`, which campaign B
-(RFCT-336, S3/S6) owns; they are proposed as one small change coordinated
-with that owner, not as a parallel rewrite.
+R3 and R4 touch `rootfs/runtime/` and `rootfs/scripts/`. No active record
+owns those paths: campaign B ended with the 2026-09-12 cancellation and
+RFCT-336 carries no in-flight work, so R3 and R4 proceed as one small change
+without a coordination gate.
 
 ### Verification
 
@@ -159,7 +213,7 @@ with that owner, not as a parallel rewrite.
 | `gconv` removal breaks a conversion something actually performs | Builtin conversions asserted at pack time; guest smoke on UTF-8 paths; legacy code pages are declared unsupported |
 | Tests pin file or package counts that R3 and R4 change | Revise the assertion to the new count with the reason, never widen it |
 | Reproducible packing | New scripts are hashed into `transform-sources.sha256` like the existing ones |
-| Ownership race with campaign B on `rootfs/runtime/` | One coordinated change with RFCT-336's owner; no parallel edits |
+| `opt-level = "s"` slows hot paths | Measured as a separate variant; adopted only with the API suite showing no regression |
 
 ## Scope
 
@@ -172,8 +226,8 @@ with that owner, not as a parallel rewrite.
 - This task and plan, `docs/changelog.md`, and a pointer in the research
   document.
 
-Expected recovery on x64, gzip-6 proxy: R3 2.66 MB; R4 under 0.1 MB; R1 and
-R2 unmeasured until R1 runs. Not in scope: podman, radios, the floor
+Expected recovery, gzip-6 proxy: R3 2.66 MB on x64 and 3.48 MB on arm64;
+R4 under 0.1 MB; R1 and R2 unmeasured until R1 runs. Not in scope: podman, radios, the floor
 (section 6), `mos-deploy`, and everything listed under Alternatives.
 
 ## Alternatives
@@ -181,12 +235,12 @@ R2 unmeasured until R1 runs. Not in scope: podman, radios, the floor
 **Section 8 as written, including the S5 items.** Blocked by the 2026-09-08
 decision. If the user reverses it, each item would need:
 
-| Item | x64 gzip-6 | What it takes |
-|---|---:|---|
-| curl probe in Rust, drop curl and its closure | 3.90 MB | the apid health-check mode PLAN-086's policy table already designs; drop the wget fallback with it; `mos-system` Depends edit |
-| host-key generation in Rust, drop `openssh-client` and the sftp server | 2.07 MB | `ssh-key` crate work in `mos-seed-state`'s replacement; `mos-system` Depends edit; SSH/SFTP acceptance |
-| drop the iptables family | 0.21 MB | `mos-system` Depends edit; reverses the "operator habit" rationale its control file records |
-| `setquota` via `quotactl(2)` | 0.54 MB | a native data-layout step; `mos-system` Depends edit |
+| Item | x64 gzip-6 | arm64 gzip-6 | What it takes |
+|---|---:|---:|---|
+| curl probe in Rust, drop curl and its closure | 3.90 MB | 3.76 MB | the apid health-check mode PLAN-086's policy table already designs; drop the wget fallback with it; `mos-system` Depends edit |
+| host-key generation in Rust, drop `openssh-client` and the sftp server | 2.07 MB | 2.11 MB | `ssh-key` crate work in `mos-seed-state`'s replacement; `mos-system` Depends edit; SSH/SFTP acceptance |
+| drop the iptables family | 0.21 MB | 0.20 MB | `mos-system` Depends edit; reverses the "operator habit" rationale its control file records |
+| `setquota` via `quotactl(2)` | 0.54 MB | 0.66 MB | a native data-layout step; `mos-system` Depends edit |
 
 **Section 7, mosd programs the network.** Separate plan. Its acceptance
 criteria, taken from the research: the WireGuard private key stops being
@@ -205,3 +259,6 @@ after it.
 
 - 2026-09-12: The user asked for the plan only. Implementation waits for
   explicit approval.
+- 2026-09-12 22:40: Revised after the ARM64 board builds: added the four-root
+  measurement and corrections 9 and 10, the `opt-level = "s"` variant in R1,
+  and removed the campaign B coordination gate. Still awaiting approval.
