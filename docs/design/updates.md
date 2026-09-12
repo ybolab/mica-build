@@ -1,12 +1,10 @@
 # File deployment lifecycle
 
-MOS installs independently signed kernel/support and root components. The
+Mica OS installs independently signed kernel/support and root components. The
 native backend is `mos-deploy`; `mosd` exposes its state and actions through
-D-Bus, and `apid` preserves the existing authenticated API/CSRF boundary. Current
-formats are strict; no prior slot, package, trust or settings schema is read.
-RAUC is removed. No lode dependency participates in OS update acquisition,
-installation, boot selection or health confirmation. Lode was referenced in
-earlier configuration-model planning; it is not the deployment backend.
+D-Bus, and `apid` exposes them behind the authenticated API/CSRF boundary.
+Formats are strict: only the current deployment, catalog and settings schemas
+are read.
 
 ## State and identity
 
@@ -112,6 +110,6 @@ identity and complete shutdown. Deterministic native fault injection covers
 install, confirmation and GC on both boot backends. Firmware signing and
 maintenance have separate [trust evidence](release-signing.md).
 
-The delivery record (20260908-2229-file-ab-delivery-x64-first)
-identifies exact current runs and unresolved gates, including physical cx3576 watchdog/power-cut tests. Process interruption and
+Per-board results and unresolved gates, including physical cx3576
+watchdog/power-cut tests, are in [support tiers](../boards/support-tiers.md#current-boards). Process interruption and
 VM shutdown cannot establish physical eMMC power-loss durability.

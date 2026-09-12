@@ -69,7 +69,7 @@ bytes or enrolls platform keys.
 Actual QEMU Secure Boot proves UKI enforcement, EFI loader replacement,
 restoration and key removal. Production U-Boot control FDT extraction and FIT
 signature tests prove its configured signer policy. Native readback and IO
-fault tests cover software transactions. The delivery record (20260908-2229-file-ab-delivery-x64-first)
-tracks the current images and results. Physical cx3576 ROM/SPL trust, watchdog
+fault tests cover software transactions. Board dossiers record per-board results
+([support tiers](../boards/support-tiers.md#current-boards)). Physical cx3576 ROM/SPL trust, watchdog
 handoff, USB maintenance and storage power-cut durability remain separate bench
 acceptance gates. Development keys are explicitly development grade.

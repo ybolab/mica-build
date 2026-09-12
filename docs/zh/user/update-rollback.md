@@ -1,6 +1,6 @@
 # 更新与回滚
 
-一个 MOS 部署选择独立签名的 kernel/support 和 root 组件。发布可只改 root、只改
+一个 Mica OS 部署选择独立签名的 kernel/support 和 root 组件。发布可只改 root、只改
 kernel，或同时改变二者。设备运行时暂存已验证对象，重启后尝试候选部署；固件维护
 是独立操作。
 
@@ -39,6 +39,6 @@ System 页面展示运行部署、组件身份、候选、保留的回退部署�
 以前的软件包或分区格式。
 
 QEMU 启动/更新证据与 cx3576 硬件证据分别记录。物理看门狗、存储断电和 USB 维护
-验收仍属于板级工作，见交付记录 (20260908-2229-file-ab-delivery-x64-first)。
+验收仍属于板级工作，见[板卡状态表](../../boards/support-tiers.md#current-boards)。
 
 > status: board-dependent — evidence: `docs/design/release-signing.md`

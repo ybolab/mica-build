@@ -84,24 +84,23 @@ Empty or malformed generated markers fail release assembly. A missing marker is
 not proof of operational key custody or physical qualification.
 
 Current negative tests cover domain separation, unknown/missing/modified
-signatures, metadata/object tampering, staged overlap and old-key removal. Exact
-software/VM evidence is in the current delivery task. Production custody ceremonies
+signatures, metadata/object tampering, staged overlap and old-key removal. Production custody ceremonies
 and physical platform qualification are not inferred from those tests.
 
 ### 1.3 Device TLS identities — owner: release owner (policy), support owner (field) — **[partial]**
 
 What exists: apid generates a **self-signed** certificate on first start into
-its STATE directory and reuses it (`pkgs/mosd/apid/src/tls.rs`); it
+its DATA/state directory and reuses it (`pkgs/mosd/apid/src/tls.rs`); it
 authenticates nothing beyond "same device as last time" to a browser that
 has accepted it. There is no device certificate hierarchy, no fleet CA and no
 enrollment — first-boot provisioning deliberately mints no PKI
 (`docs/design/provisioning.md` §2, "What was NOT carried over").
 
 - **Generation** — on device, first apid start; never in the image.
-- **Rotation/revocation** — delete the pair on STATE; the next start
+- **Rotation/revocation** — delete the pair on DATA/state; the next start
   regenerates. No expiry-driven or fleet-driven rotation exists.
-- **Recovery** — wiping STATE regenerates identity wholesale, as with every
-  STATE credential.
+- **Recovery** — wiping DATA/state regenerates identity wholesale, as with every
+  DATA/state credential.
 - A managed device identity (fleet CA, enrollment, revocation) is
   **[proposed]** and proceeds with the fleet/remote-management work
   (`docs/design/remote-management.md`), not here.
@@ -112,7 +111,7 @@ Three live credential classes, each with its lifecycle already designed and
 shipped; this section assigns ownership and cross-references rather than
 restating:
 
-- **apid webAdmin credential** — hash on STATE; set at setup through apid.
+- **apid webAdmin credential** — hash on DATA/state; set at setup through apid.
 - **SSH authorized keys** — the persistent access credential; rotation is
   editing the `access.ssh.authorizedKeys` list, and every key is a root key
   (`docs/design/access.md` §4.1).

@@ -1,6 +1,6 @@
 # 首次启动、离线配置与认领设备
 
-mos 设备必须在零外部输入的情况下抵达完全可用状态——没有 DHCP 服务器、没有
+Mica OS 设备必须在零外部输入的情况下抵达完全可用状态——没有 DHCP 服务器、没有
 DNS，甚至可能没有网线。这个性质是设计出来的，不是碰巧。本页讲首次启动自己
 做了什么、完全没有网络的设备走哪条离线路径，以及设备如何从"未认领"变成
 你的。
@@ -117,7 +117,7 @@ WiFi 客户端网络，以及时间设置。每个键都映射到一个已经存
 **传输通道没有**：没有任何测试、没有任何台架运行把真实的引导分区或真实的
 U 盘送进一次真实启动，其中引导分区通道尤其从未在物理板卡上跑过。机制发布
 了；流程没有被证明，而记录一次真实运行的地方是板卡档案
-（[../../bsp/qualification.md](../../bsp/qualification.md)）。
+（[../../boards/qualification.md](../../boards/qualification.md)）。
 
 > status: shipped — evidence: `rootfs/overlay/usr/lib/mos/mos-provisioning-import`, `docs/design/provisioning.md`
 

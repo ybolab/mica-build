@@ -1,6 +1,6 @@
 # Device bus and MQTT application-data contract
 
-This document describes the shipped boundary between the mos management plane,
+This document describes the shipped boundary between the Mica OS management plane,
 application services, and MQTT. The boundary is positive and package-enrolled:
 
 - `com.mos.mosd1` is a local system-management API. APID is its network-facing
@@ -240,7 +240,7 @@ make the setting itself application data: the bridge cannot read or write the
 
 `mos-mqttd` is disabled in the immutable image and runs as the static,
 unprivileged `mos-mqttd` account. Broker connection settings come from the
-optional STATE-backed `/var/lib/mos/mqttd.env`; the default bridge mode is
+optional DATA/state-backed `/var/lib/mos/mqttd.env`; the default bridge mode is
 `read-only`.
 
 For authenticated MQTT, enroll a broker account in the existing

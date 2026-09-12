@@ -1,6 +1,6 @@
 # API reference
 
-The mos management API is specified by one machine-readable contract:
+The Mica OS management API is specified by one machine-readable contract:
 **`pkgs/mosd/apid/openapi.json`**. It is generated from the same code that
 serves the routes, and CI holds it equal to what the shipped binary reports —
 so it cannot drift from the device the way a hand-written endpoint list

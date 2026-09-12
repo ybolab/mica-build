@@ -1,7 +1,7 @@
 # Storage policy and observation
 
-Every current MOS factory image has three GPT partitions. UEFI uses
-ESP/SYSTEM/DATA; cx3576 uses FIRMWARE/SYSTEM/DATA. Their sizes, identities and
+Every current Mica OS factory image has three GPT partitions. UEFI uses
+ESP/SYSTEM/DATA; U-Boot boards (cx3576, s905x5m) use FIRMWARE/SYSTEM/DATA. Their sizes, identities and
 roles are declared in `boards/<board>/board.env`. DATA alone grows to the
 available medium. Firmware and SYSTEM ranges remain fixed.
 
@@ -31,7 +31,7 @@ The `/mos`, `/var` and `/mos/containers` binds use private mount propagation.
 Protected state and container child mounts stay at their logical paths; they
 must not appear inside the physical DATA tree traversed by reset.
 
-State/meta are private physical directories. The bound mos state root permits
+State/meta are private physical directories. The bound Mica OS state root permits
 traversal to networkd's group-readable WireGuard key directory; credential
 subdirectories remain mode 0700 and documents 0600. Binding an approved leaf
 avoids granting a service access to unrelated physical state namespaces.

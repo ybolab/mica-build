@@ -1,6 +1,6 @@
 # 应用
 
-mos 支持两条应用交付路径，区别在于谁发布、何时发布：
+Mica OS 支持两条应用交付路径，区别在于谁发布、何时发布：
 
 1. **原生应用**在构建时以 Debian 包的形式组合进签名系统镜像。它们与操作
    系统一起更新和回滚，在同一个签名 A/B bundle 里，并且是集成商能力——
@@ -32,7 +32,7 @@ mos 支持两条应用交付路径，区别在于谁发布、何时发布：
 有两条后果值得读两遍。两条路径的失败本身都不会让 OS 回滚：健康闸只要求
 一个点名的小集合——启动事务已完成、mosd 应答、apid 应答——应用的 unit 不在
 其中，所以更新后的崩溃循环留给你的是一台还能跑的设备加一个坏掉的应用，
-而不是一次回滚。这是有意的；被回滚进一个未必能跑的槽，比留下一台你能连上、
+而不是一次回滚。这是有意的；被回滚进一个未必能跑的部署，比留下一台你能连上、
 能修的设备更糟。而容器会原样跨过 OS 回滚，这在两者按不同节奏发布时是
 特性，在应用依赖旧 OS 没有的东西时是隐患。
 
@@ -40,7 +40,7 @@ mos 支持两条应用交付路径，区别在于谁发布、何时发布：
 
 各自的集成商指南是
 [../../design/native-applications.md](../../design/native-applications.md) 与
-[../design/containers.md](../design/containers.md)（前者目前只有英文）。
+[../design/containers.md](../../design/containers.md)（前者目前只有英文）。
 
 > status: shipped — evidence: `docs/design/native-applications.md`, `docs/design/containers.md`
 
@@ -65,10 +65,10 @@ mos 支持两条应用交付路径，区别在于谁发布、何时发布：
 ## 3. 容器：podman 与 Quadlet
 
 镜像随附引擎（podman、crun、conmon、netavark、aardvark-dns、Quadlet
-生成器），从固定版本的上游源码构建。mos 不做容器编排：你用 systemd 的
+生成器），从固定版本的上游源码构建。Mica OS 不做容器编排：你用 systemd 的
 语言描述工作负载——`.container`、`.network`、`.volume` 文件——由 Quadlet
 把它们变成单元。带测试样例的集成商指南是
-[../design/containers.md](../design/containers.md)；其中每个样例都由测试
+[../design/containers.md](../../design/containers.md)；其中每个样例都由测试
 套件送进随附的生成器（`make os-quadlet-doc-test`），因此失效的样例会让
 构建变红，而不是留在文档里。
 
@@ -77,7 +77,7 @@ mos 支持两条应用交付路径，区别在于谁发布、何时发布：
 - **一个开关。**设置树中的 `container.enabled`，默认 `false`。它为 false
   时什么都不运行，也不存在任何容器单元。通过认证 API 或 UI 的 Services
   页面设置。
-- **定义放哪。**`/etc/containers/systemd`，它绑定到一个 STATE 支持的
+- **定义放哪。**`/etc/containers/systemd`，它绑定到一个 DATA/state 支持的
   目录——定义在重启和 A/B 更新中保留。添加或修改文件后：
   `systemctl daemon-reload`，然后启动单元。
 - **数据放哪。**命名卷落在 DATA 上的 `/mos/containers/storage`；bind mount
@@ -109,8 +109,8 @@ mos 支持两条应用交付路径，区别在于谁发布、何时发布：
   设备上已有的镜像，要么根本不启动，而不是在启动时无人值守地去找
   registry。
 - **registry 凭据由你放置和轮换。**`podman login --authfile` 写到你指定的
-  位置；把那个路径放在 STATE 上，让它挺过更新，因为 podman 对 root 的
-  默认位置在 tmpfs 上。该文件是编码的，不是加密的，mos 不管理它。
+  位置；把那个路径放在 DATA/state 上，让它挺过更新，因为 podman 对 root 的
+  默认位置在 tmpfs 上。该文件是编码的，不是加密的，Mica OS 不管理它。
 - **回滚是手工的，并且需要旧镜像。**把 `Image=` 改回上一个摘要再重启。
   这只在旧镜像还留在设备上时有效——`podman image prune` 会删掉它，之后
   回滚就需要 registry。
@@ -126,7 +126,7 @@ mos 支持两条应用交付路径，区别在于谁发布、何时发布：
 `N/R/W/<deviceId>/<class>/<instance>/<path>` 语法。管理关注点——网络、
 SSH、凭据、更新、电源、容器启用——永远不是 MQTT item，桥在结构上无法
 寻址管理守护进程。完整契约，含登记、D-Bus 策略、冲突处理与默认只读桥
-模式，见 [../design/bus.md](../design/bus.md)。
+模式，见 [../design/bus.md](../../design/bus.md)。
 
 > status: shipped — evidence: `docs/design/bus.md`, `pkgs/mosd/mqttd/`
 
@@ -145,7 +145,7 @@ apid 可以用集成商的 Web UI 替代内置 UI。在内置界面的 System �
 
 > status: unsupported
 
-## 6. mos 不强制什么
+## 6. Mica OS 不强制什么
 
 上面的一切，对一个受信任的产品集成商来说，都是文档与经过测试的约定。
 它们都不是能拒绝一个发布的机制，而这个区别对要决定向客户承诺什么的人
@@ -155,18 +155,18 @@ apid 可以用集成商的 Web UI 替代内置 UI。在内置界面的 System �
 随附的容器策略接受任何镜像，启动时不检查任何签名；**强制资源上限**——
 CPU、内存、PID 和 I/O 限制在两条路径上都有文档和测试，但没有任何东西
 要求它们，所以一个不带任何上限的单元照样被启动；**密钥存储**——
-registry 凭据和应用密钥都是有人放在 STATE 上、root 可读的文件，mos 不
+registry 凭据和应用密钥都是有人放在 DATA/state 上、root 可读的文件，Mica OS 不
 创建、不轮换、不托管、不审计它们；以及**自动应用回滚**——两条路径上
 都没有健康闸盯着一次应用更新。
 
 > status: unsupported
 
 最后一条在原生侧有一个限定，往哪个方向读过头都不对，而且它比过去更窄了。
-原生代码继承整槽 A/B 回滚，但健康闸不会因为一个应用失败就触发它：健康闸
-只要求这个槽还能被**恢复**——启动事务已完成、mosd 应答、apid 应答——其余
+原生代码继承整个部署的 A/B 回滚，但健康闸不会因为一个应用失败就触发它：健康闸
+只要求这个部署还能被**恢复**——启动事务已完成、mosd 应答、apid 应答——其余
 一律只上报。一个把设备彻底赶下网的应用会让健康闸失败；一个只是崩溃的应用
 不会。回滚真的发生时，它不是按应用的——它一次搬动设备上的每一个应用，而且
-一个应用的**数据**都不搬。STATE 和 DATA 按设计在 A/B 对之外，这正是它们能
+一个应用的**数据**都不搬。DATA/state 和其他 DATA 命名空间按设计在 A/B 部署之外，这正是它们能
 挺过更新的原因；后果是：一个在更新后首次启动时迁移了自己 schema 的应用，
 在任何回滚之后都是旧版本指着新数据。那份契约由集成商自己写、自己测，
 两条路径都一样。
@@ -175,9 +175,7 @@ registry 凭据和应用密钥都是有人放在 STATE 上、root 可读的文�
 
 受管与不受信任应用的控制——独立签名的应用 bundle、可分发的容器信任
 策略、能拒绝一个发布的准入、受保护的密钥存储、审计轨迹，以及按应用的
-健康闸回滚——是另一个产品，另一份成本。它们记录为一份条件计划，不在
-上面的指南里设计。
+健康闸回滚——是另一个产品，另一份成本。其设计见
+[托管应用](../../design/applications.md)；尚未实现，也不在上面的指南里描述。
 
-> status: proposed — evidence: `docs/plan/PLAN-069.md`
-
-TODO(PLAN-069): revisit after this plan merges
+> status: proposed — evidence: `docs/task/20260912-2058-managed-applications.md`

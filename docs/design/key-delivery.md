@@ -1,6 +1,6 @@
 # Key delivery
 
-MOS uses three independent signing domains. Development inputs are explicit;
+Mica OS uses three independent signing domains. Development inputs are explicit;
 private signing material never belongs in a root filesystem, kernel archive,
 container image layer, firmware package, deployment archive or release directory.
 

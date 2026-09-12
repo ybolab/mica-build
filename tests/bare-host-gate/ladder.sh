@@ -9,7 +9,7 @@
 #
 # THE CEILING, and it is below section 4's. This climbs:
 #
-#   rung 1  bash docs/verify-index.sh              -- bash alone runs a gate
+#   rung 1  bash tools/docs/verify-index.sh              -- bash alone runs a gate
 #   rung 2  make docs-verify                       -- make alone runs five
 #           make os-host-toolchain-lint            -- and the policy's own check
 #   rung 3  make os-layout-lint                    -- bun, out of a container
@@ -162,8 +162,8 @@ fi
 #
 # AND THE TRANSCRIPT IS READ ON THE GREEN PATH TOO, which is not symmetry for
 # its own sake. Measured 2026-09-05, by planting `jq -r .version package.json`
-# into docs/verify-index.sh above its `set -euo pipefail`: busybox printed
-# `docs/verify-index.sh: line 30: jq: not found`, the script carried on, the
+# into tools/docs/verify-index.sh above its `set -euo pipefail`: busybox printed
+# `tools/docs/verify-index.sh: line 30: jq: not found`, the script carried on, the
 # rung exited 0 and the gate reported PASS. A gate that watched only exit codes
 # would have called a new host dependency green -- so a tool named in the output
 # of a rung that SUCCEEDED is a finding as well, and it says which of the two
@@ -289,7 +289,7 @@ run_step() {
 # Rung 1. One gate, run by bash, with make still unreachable to it -- section
 # 4.2's `183/183 PASS`. It is the smallest statement the ladder makes: this
 # tree's entry points are bash scripts and a bash script can run one.
-run_step 1 bash docs/verify-index.sh
+run_step 1 bash tools/docs/verify-index.sh
 
 # Rung 2. The target names are the build's interface, so make running five gates
 # is a different claim from bash running one; and the policy's own check is

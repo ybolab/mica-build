@@ -352,7 +352,7 @@ expect "TypeScript scanned with no launch site at all is refused" "${d}" red 'no
 # 21. PROSE INSIDE A QUOTED ARGUMENT IS NOT A COMMAND -- AND A COMMAND
 #     SUBSTITUTION INSIDE ONE STILL IS. The first half is a defect this lint
 #     carried rather than fixed: `operator_step "install the GOOD bundle (rauc
-#     install <bundle>), ..."` in docs/bsp/cx3576-bench-collect.sh is one
+#     install <bundle>), ..."` in tests/cx3576-bench/collect.sh is one
 #     English sentence, and its `(` read as a command separator to a scan that
 #     did not track quoting. It was registered as a false positive, and every
 #     false positive spends some of what makes a rule worth reading.

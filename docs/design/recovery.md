@@ -109,7 +109,7 @@ There is no unsigned escape path or counter refill to conceal the failure.
 ### 6.2 Shared-store repair
 
 Bounded journal replay during startup is not a general filesystem repair
-service. MOS ships no separate rescue OS or automatic data-preserving repair
+service. Mica OS ships no separate rescue OS or automatic data-preserving repair
 operation. External diagnosis and a complete current reflash remain explicit
 service operations; neither inherits a data-preservation guarantee from A/B.
 
@@ -134,6 +134,6 @@ scope preservation and a further idempotent boot for each tier.
 
 cx3576 has offline image/FIT verification and firmware-policy tests. Its
 physical startup, watchdog handoff, recovery and power-cut behavior require the
-[bench runbook](../bsp/cx3576-bench.md). Boot assurance and recovery capability
-are separate claims. Exact artifacts, results and pending checks live in the
-delivery record (20260908-2229-file-ab-delivery-x64-first).
+[bench runbook](../boards/cx3576-bench.md). Boot assurance and recovery capability
+are separate claims. Pending per-board checks are in
+[support tiers](../boards/support-tiers.md#current-boards).

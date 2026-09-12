@@ -1,7 +1,7 @@
 # Page brief: Embedded differences
 
-- **Purpose**: explain why mos is not a generic server/cloud CoreOS, for a
-  visitor who knows Fedora CoreOS or similar and is pattern-matching mos onto
+- **Purpose**: explain why Mica OS is not a generic server/cloud CoreOS, for a
+  visitor who knows Fedora CoreOS or similar and is pattern-matching Mica OS onto
   it. The navigation patterns are comparable; the operating assumptions are
   not.
 - **Audience**: integrators and engineers who already run image-based Linux in
@@ -22,24 +22,24 @@
 
 Cloud image-based systems assume elastic hardware, a network at first boot,
 disks measured in terabytes, and machines that are replaced rather than
-repaired. An embedded appliance gets none of that. mos borrows what works from
+repaired. An embedded appliance gets none of that. Mica OS borrows what works from
 that family — immutable root, atomic A/B updates — and rebuilds the lifecycle
 around the device on a bench and in the field.
 
 ### Boards, not instances
 
-A mos release is built per board. Each board contributes its own partition
+A Mica OS release is built per board. Each board contributes its own partition
 geometry, kernel, device tree and bootloader through a declared BSP contract,
 and the OS build consumes those artifacts without reaching into their build.
 Kernel configurations must satisfy a shared assertion set, so every board
 carries the features the OS depends on.
 
-> status: shipped — evidence: `boards/cx3576/board.env`, `boards/common/mos-required.fragment`, `docs/design/boards.md`
+> status: shipped — evidence: `boards/cx3576/board.env`, `boards/common/mos-required.fragment`, `docs/boards/contract.md`
 
 ### Factory and offline setup
 
 A device must become configurable before it has a network, an account or a
-cloud to phone. mos provisions itself: the first boot seeds a device identity
+cloud to phone. Mica OS provisions itself: the first boot seeds a device identity
 and its settings under DATA/state, and a validated
 provisioning document placed on the boot partition or a removable medium can
 carry a first configuration — network, credential, hostname — onto a unit that
@@ -51,26 +51,30 @@ end to end.
 
 **The site may not call that journey proven.** No step of it has been executed
 on physical hardware from this tree — the flash, the first boot and both
-offline transports are unrun — and mos ships no factory tooling: no versioned
+offline transports are unrun — and Mica OS ships no factory tooling: no versioned
 input pools, no verification at injection, no per-device record.
 
 > status: unsupported
 
 ### Bounded flash
 
-Embedded storage is fixed at manufacture and often small. The disk layout is
-one GPT declared per board — two system slots, update metadata, configuration,
-application data and a disposable tier — so every byte has an owner and a
-loss-consequence, and the OS never assumes it can grow.
+Embedded storage is fixed at manufacture and often small. Every factory disk
+has exactly three GPT partitions declared per board — ESP or FIRMWARE, SYSTEM
+and DATA. SYSTEM holds at most two signed deployments and their shared
+component objects; DATA holds state, configuration, applications and a bounded
+variable-data tier. Only DATA grows to fill the medium, and the OS never
+assumes it can grow SYSTEM or firmware.
 
-> status: shipped — evidence: `boards/cx3576/board.env`, `docs/design/ro-root.md`
+> status: shipped — evidence: `boards/x64/board.env`, `boards/cx3576/board.env`, `docs/design/storage.md`
 
 ### Field recovery
 
 A fielded device that fails must recover without a technician reinstalling an
-OS. Today, a slot that fails to boot burns its boot credits and the bootloader
-returns to the previous slot automatically; below the OS, boards with a
-maskROM USB loader path can be reflashed whole when nothing else answers.
+OS. Today, a new deployment boots on a bounded number of trial attempts and
+becomes current only when the health check confirms it; if the trials run out
+or the check fails, the boot records return to the retained confirmed
+deployment automatically. Below the OS, boards with a maskROM USB loader path
+can be reflashed whole when nothing else answers.
 
 > status: shipped — evidence: `docs/design/uboot-ab-handshake.md`
 > status: board-dependent — evidence: `docs/design/access.md`
@@ -101,15 +105,14 @@ or gets reflashed.
 ### Long-lived BSP maintenance
 
 An appliance lives for years on a kernel and bootloader its vendor may stop
-maintaining. mos records BSP provenance per board — source repository, synced
+maintaining. Mica OS records BSP provenance per board — source repository, synced
 commit, deviation register — and the board contract's next layer is published:
 the staged porting manual, the vendor intake rubric and the field-reliability
-qualification process, with [../bsp/porting.md](../bsp/porting.md) as the
+qualification process, with [../boards/porting.md](../boards/porting.md) as the
 integrator's entry point. The evidence those procedures collect is a board
-fact and is not in yet: the one dossier on file has every qualification row at
-`not tested`, and long-term CVE response is assigned as a lifecycle duty by
+fact and is not in yet: no board has a dated physical qualification row, and long-term CVE response is assigned as a lifecycle duty by
 the tier definitions rather than written up as a procedure.
 
-> status: shipped — evidence: `docs/design/bsp-cx3576-sync.md`
-> status: shipped — evidence: `docs/bsp/porting.md`, `docs/bsp/intake.md`, `docs/bsp/qualification.md`, `docs/bsp/support-tiers.md`
-> status: board-dependent — evidence: `docs/bsp/cx3576-example.md`
+> status: shipped — evidence: `docs/boards/cx3576-bsp-sync.md`
+> status: shipped — evidence: `docs/boards/porting.md`, `docs/boards/intake.md`, `docs/boards/qualification.md`, `docs/boards/support-tiers.md`
+> status: board-dependent — evidence: `docs/boards/cx3576.md`

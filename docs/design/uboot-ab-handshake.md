@@ -4,7 +4,7 @@ The normal cx3576 boot path is compiled C policy in
 [`mos-file-boot.c`](../../boards/cx3576/bsp/uboot/mos-file-boot.c).
 It reads current three-partition geometry and bounded deployment records, arms
 the watchdog before storage discovery, persists a trial decrement, and loads a
-required-signature FIT. It does not import commands, boot scripts, raw-slot
+required-signature FIT. It does not import commands, boot scripts, environment
 variables or an editable root command line.
 
 ## Development console policy
@@ -99,8 +99,7 @@ catalog and does not perform irreversible enrollment.
 ## Acceptance
 
 The current loader, FIT signatures, strict record parser, native transaction
-faults, full-image verifier and real DATA growth test have software evidence in
-the delivery task (20260908-2229-file-ab-delivery-x64-first).
+faults, full-image verifier and real DATA growth test have software evidence.
 Dirty SYSTEM snapshots were read by the pinned U-Boot sandbox; a missing
 uncommitted candidate requires bounded fallback. These results do not establish
 physical eMMC durability.

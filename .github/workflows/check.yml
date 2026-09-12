@@ -163,7 +163,7 @@ jobs:
           $SUDO apt-get update
           $SUDO apt-get install -y --no-install-recommends bash make ca-certificates git binutils file
 
-      - name: docs/README.md and the design tree agree, in both directions
+      - name: Documentation gates
         run: make docs-verify docs-verify-test
 
       - name: Native deployment health and boot failure handling

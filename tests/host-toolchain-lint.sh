@@ -52,7 +52,7 @@
 #     `docker run ... sh -c 'mkfs.ext4 ...'`, which is the toolbox. There is no
 #     such site in the tree -- the change that blanked quoted spans moved the
 #     finding count by exactly one, the sentence at
-#     docs/bsp/cx3576-bench-collect.sh:1058 -- and a `-c` special case would buy
+#     tests/cx3576-bench/collect.sh:1058 -- and a `-c` special case would buy
 #     nothing present at the price of flagging every container's script.
 #   - A DECLARATION THAT IS WRONG. `# mos-build-side: container` is a claim by
 #     whoever wrote it. This counts the claims and refuses a run that found
@@ -317,7 +317,7 @@ for f in "${files[@]}"; do
         # returns the line with those spans blanked to `Q`, so the match above
         # reads only what the shell would run. It exists because
         # `operator_step "install the GOOD bundle (rauc install <bundle>), ..."`
-        # -- one English sentence, in docs/bsp/cx3576-bench-collect.sh -- was a
+        # -- one English sentence, in tests/cx3576-bench/collect.sh -- was a
         # finding: the `(` read as a command separator. That was carried as a
         # registered false positive, and a false positive spends the credibility
         # this rule needs to be worth having.

@@ -1,6 +1,6 @@
-# Containers on mos
+# Containers on Mica OS
 
-**mos does not orchestrate containers.** It ships a container engine, turns
+**Mica OS does not orchestrate containers.** It ships a container engine, turns
 `.container` files into systemd units, and gives you one switch to turn the
 whole capability off. What runs, in what order, how containers reach each
 other and what survives an update are yours to describe — in systemd's terms,
@@ -357,7 +357,7 @@ the unit instead of failing it, and `systemctl status` says which of the two
 happened.
 
 Device names are board facts, and `/dev/ttyS3` here is an example. Take the
-node from the board's own dossier — [../bsp/cx3576-example.md](../bsp/cx3576-example.md)
+node from the board's own dossier — [../boards/cx3576.md](../boards/cx3576.md)
 is the worked one — and
 prefer a stable udev name over a numbered one wherever the board provides one.
 
@@ -386,7 +386,7 @@ and the only evidence is in the journal. `/dev/mmcblk0` is the eMMC on the
 cx3576; check the board before copying it.
 
 **Nothing requires any of this.** A `.container` file with no `[Service]`
-section at all is accepted, generates a unit with no ceilings, and mos adds
+section at all is accepted, generates a unit with no ceilings, and Mica OS adds
 none. There is no admission step between a file appearing in the Quadlet
 directory and a unit that can take the device down. Ceilings here are the
 integrator's discipline, not a platform guarantee, and this document is the
@@ -394,10 +394,10 @@ only thing asking for them.
 
 ## 9. Images: digests, credentials, rollback and data
 
-**mos does not update your containers.** There is no `podman-auto-update.timer`
+**Mica OS does not update your containers.** There is no `podman-auto-update.timer`
 in this image; that unit is not built. Pulling a new image, restarting the unit,
 and deciding when that is safe are the integrator's, and the reason is the same
-one that makes mos's own updates A/B and signed: an update that can happen
+one that makes Mica OS's own updates A/B and signed: an update that can happen
 without a decision is an update that can happen at the wrong moment.
 
 `/etc/containers/policy.json` ships as:
@@ -408,7 +408,7 @@ without a decision is an update that can happen at the wrong moment.
 
 **Read that literally: image signatures are not verified.** What protects a
 pull is TLS to the registry and, if you use one, a digest reference. This is
-upstream's default and Debian's, and mos keeps it because mos has no way to
+upstream's default and Debian's, and Mica OS keeps it because Mica OS has no way to
 distribute your signing keys — but it is a decision, not an oversight.
 
 Tightening it is a **build-time** act rather than a device edit. `policy.json`
@@ -471,7 +471,7 @@ root is under `/run` — a tmpfs, gone at the next boot:
 podman login --authfile /var/lib/mos/containers-auth.json registry.example.com
 ```
 
-`/var/lib/mos` is a bind of STATE, so the file survives a reboot and an A/B
+`/var/lib/mos` is a bind of DATA/state, so the file survives a reboot and an A/B
 update. The unit points at it with `Environment=` in `[Service]`, which is the
 environment of the `podman` process and not of the container:
 `REGISTRY_AUTH_FILE` is read by podman itself. `[Container]`'s own
@@ -480,7 +480,7 @@ reads it — the two keys have the same name and different meanings.
 
 **This is not a secret store.** The file holds the registry username and
 password base64-encoded — encoded, not encrypted — readable by root, which is
-what everything on this path already runs as. mos does not create it, rotate
+what everything on this path already runs as. Mica OS does not create it, rotate
 it, back it up, or know that it exists, and nothing removes it when the unit
 that used it goes away. If a credential must not sit at rest on the device,
 the answer is a short-lived one installed with each update, not a different
@@ -511,8 +511,8 @@ and most do, silently, because that is what an application does when it finds
 an old database — then the previous version is now pointed at data it does not
 understand, and the failure arrives after the rollback appeared to work.
 
-That contract is the integrator's to make and to test, and mos holds no
-opinion about it. What mos gives you is the two halves being separable: the
+That contract is the integrator's to make and to test, and Mica OS holds no
+opinion about it. What Mica OS gives you is the two halves being separable: the
 image is content-addressed and replaceable, and the volume is on DATA under
 `/mos/containers/storage`, where `podman volume export` before an update is a
 backup you can restore afterwards. The system update path has a health gate
@@ -531,7 +531,7 @@ application to decide whether its last update went well.
 | name does not resolve | the two containers are not on the same `.network` |
 | storage full | `podman system df`; check `/srv` against the UI bundles sharing it |
 
-## 11. What mos will not do for you
+## 11. What Mica OS will not do for you
 
 Restated because it is the whole shape of this document: no compose file, no
 dependency resolution beyond systemd's, no health-based restart orchestration,
@@ -539,5 +539,5 @@ no image update policy, no secret store. If you need those, they are ordinary
 systemd and podman features and this document has shown where each attaches.
 
 The reason is not minimalism. An orchestrator is a second thing that decides
-when your application runs, and mos already has one — systemd — that the rest
+when your application runs, and Mica OS already has one — systemd — that the rest
 of the device is built on. Two would have to agree.

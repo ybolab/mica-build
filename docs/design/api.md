@@ -109,5 +109,5 @@ inside the authenticated immutable root, independent of DATA UI selection.
 Rust route and bus tests verify authentication, path isolation, validation and
 task behavior. The OpenAPI generation gate checks the committed schema against
 the binary. The [API harness](../../pkgs/mosd/tests/apid-api/README.md) exercises
-the full service stack on a fresh current QEMU image. Exact runs belong in the
-delivery record (20260908-2229-file-ab-delivery-x64-first).
+the full service stack on a fresh current QEMU image. The harness writes its result to
+`_out/<board>/apid-api/result.json`.

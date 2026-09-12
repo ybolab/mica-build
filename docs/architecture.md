@@ -1,14 +1,19 @@
-# mos System Architecture
+# Mica OS System Architecture
 
 The top-level map; each section names the record it summarises.
 
 ---
 
-## 1. What mos is
+## 1. What Mica OS is
 
-An embedded appliance operating system: a read-only Debian root under systemd,
-updated through signed file deployments, managed by a small Rust plane that owns the
-device's settings and drives systemd to match them.
+An embedded appliance operating system for industrial devices: a read-only
+Debian root under systemd, updated through signed file deployments, managed by a
+small Rust plane that owns the device's settings and drives systemd to match
+them.
+
+**Naming.** The product is Mica OS (identifier `mica`). Package, binary,
+service, D-Bus and path names keep the `mos` prefix (`mosd`, `mos-deploy`,
+`com.mos.mosd`, `/mos/config`).
 
 | Layer | What it is | Where |
 |---|---|---|
@@ -18,7 +23,7 @@ device's settings and drives systemd to match them.
 | Application data | `mos-mqttd` bridges only exact package-enrolled `com.mos.<class>[.<suffix>]` application item trees to MQTT; `com.mos.mosd` is forbidden | `pkgs/mosd/mqttd/`, `pkgs/mosd/broker/`, `docs/design/bus.md` |
 | A/B installer | Native durable file transactions with UEFI/FIT trial records | `pkgs/mos-deploy/`, `docs/design/uboot-ab-handshake.md` |
 | Update trust | Signed deployment/catalog envelopes and kernel-enforced root/support signatures | `pkgs/mos-deploy/`, `docs/design/release-signing.md` |
-| BSP artifacts | per-board buildkit Dockerfiles producing kernel, device tree and bootloader | `boards/`, `docs/design/boards.md` |
+| BSP artifacts | per-board buildkit Dockerfiles producing kernel, device tree and bootloader | `boards/`, `docs/boards/contract.md` |
 | Workloads | podman plus the Quadlet systemd generator, off by default | `pkgs/podman/`, `docs/design/containers.md` |
 
 ## 2. Component inventory (runtime)
@@ -42,7 +47,7 @@ device's settings and drives systemd to match them.
 
 - **systemd** is PID 1. Every piece above is a unit, and mosd starts, stops and
   re-renders those units rather than supervising processes of its own
-  (`docs/design/connd.md`).
+  (`docs/design/wifi.md`).
 - **`mosd`** owns the settings tree persisted on DATA/state, exports it over the
   system bus as `com.mos.mosd`, and runs one reconciler per concern in
   `pkgs/mosd/mosd/src/reconciler/`. Its unit is `Type=dbus` (`pkgs/mosd/dist/mosd.service`).
@@ -52,9 +57,8 @@ device's settings and drives systemd to match them.
   (`pkgs/mosd/dist/apid.service`). The dashboard is one of its clients, and
   `pkgs/mosd/apid/openapi.json` is generated from the handlers.
 - **Networking** is mosd's `network`, `wifi.client` and `wifi.ap` subtrees,
-  reconciled into systemd-networkd, wpa_supplicant and hostapd units. The
-  wireless half is recorded under the name `connd`; the concern is a pair of
-  reconcilers, not a process (`docs/design/connd.md`).
+  reconciled into systemd-networkd, wpa_supplicant and hostapd units. Wi-Fi
+  is a pair of reconcilers, not a separate daemon (`docs/design/wifi.md`).
 - **Interface kinds.** A `network` entry declares a **kind** — physical, `vlan`,
   `bridge` or `wireguard` — and the one optional block that belongs to it. The
   block is authoritative and the interface name is not:
@@ -66,7 +70,7 @@ device's settings and drives systemd to match them.
   A removed virtual entry is torn down, not just unlinked, and a WireGuard
   tunnel's private key is drawn on the device into a `networkd-secrets/`
   directory beside the settings file, never into the settings tree
-  (`docs/design/mosd.md` §5.3a).
+  (`docs/design/mosd.md` §2.3a).
 - **`mos-mqttd`** dynamically publishes only exact package-enrolled
   `com.mos.<class>[.<suffix>]` application item trees and, in full mode,
   applies writes to the exact application service. It has zero D-Bus access to
@@ -114,7 +118,7 @@ QEMU evidence and pending cx3576 bench evidence are tracked separately.
 
 ## 5. Access model
 
-Provisioning and debugging are different problems, and mos does not answer both
+Provisioning and debugging are different problems, and Mica OS does not answer both
 with one shell (`docs/design/access.md`). Three ways in exist today:
 
 1. **The API**, over HTTPS, authenticated by an argon2id password hash held in
@@ -122,8 +126,8 @@ with one shell (`docs/design/access.md`). Three ways in exist today:
 2. **SSH** — OpenSSH, with mosd rendering the only file that configures it.
    Shipped on both profiles, off by default on both; persistent access is by
    public key and a root password is the transient exception.
-3. **Physical recovery** — the RockUSB loader path and a whole-disk reflash,
-   below the OS and reachable when nothing else is.
+3. **Physical recovery** — a whole-disk reflash through the board's loader path
+   (RockUSB on cx3576), below the OS and reachable when nothing else is.
 
 Disablement is layered, and two layers ship: the runtime switch, where
 `enabled: false` stops and disables `ssh.service`, and the build-time image
@@ -137,26 +141,29 @@ is designed, and marked not implemented (`docs/design/access.md` §5.2).
 ## 6. Repository map
 
 ```
-mos/
-├── docs/          plans (docs/plan/), tasks (docs/task/), design records (docs/design/)
-├── boards/    one board.env per board — the partition geometry and every layout
-│              constant — plus that board's BSP: kernel, U-Boot and firmware
-├── build/     TypeScript: the image assemblers, the component and archive producers, the toolset wrappers
-├── build-env/ the pinned builder images every component build is FROM
-├── pkgs/      source this repository compiles into a shipped artefact:
-│              podman/, mos-boot/, mos-deploy/ and the mosd Rust workspace
-│              (mosd, apid, mos-mqttd, mos-mqtt-broker, mosd-settings); shared
-│              black-box harnesses are kept together under mosd/tests/
-├── rootfs/    the root filesystem: compose/ (the two composition Dockerfiles),
-│              packages/ (the manifests and the resolver), packages-src/ (the
-│              system, profile, radio and CA-trust producers), plus build.sh
-├── tests/     shell suites over the built image
-├── tools/     QEMU and development helpers
-├── verify/    TypeScript: the board model, and the checks an assembled image must pass
+mica-build/
+├── boards/        one board.env per board — partition geometry and layout
+│                  constants — plus that board's BSP, overlay and Debian packaging
+├── build/         TypeScript: image assemblers, component and archive producers, toolset wrappers
+├── build-env/     pinned builder images every component build is FROM, and the .deb helpers
+├── docs/          documentation (docs/README.md is the catalog and ownership map)
+├── meta.example/  committed public factory defaults; private meta/ is git-ignored
+├── pkgs/          source compiled into shipped artefacts: podman/, mos-boot/,
+│                  mos-deploy/ and the mosd Rust workspace (mosd, apid, mos-mqttd,
+│                  mos-mqtt-broker, mosd-settings) with its harnesses under mosd/tests/
+├── rootfs/        the root filesystem: debian/ (pinned base), packages/ (manifests and
+│                  resolver), packages-src/ (system, profile, radio and CA-trust
+│                  producers), runtime/ (selection and composition), compose/ (the two
+│                  composition Dockerfiles), overlay/, scripts/ and build.sh
+├── shared/        TypeScript shared by build/, verify/ and update-server/
+├── tests/         shell and fixture suites over packages, boot paths and built images
+├── tools/         QEMU and development helpers; tools/docs/ holds the docs gates
+├── update-server/ Bun service that serves signed catalogs, components and firmware
+├── verify/        TypeScript: the board model and the checks an assembled image must pass
 └── Makefile       top-level routing; `make help` lists every target
 ```
 
-The rootfs is **composed**: one APT transaction installs a resolved set of mos
+The rootfs is **composed**: one APT transaction installs a resolved set of Mica OS
 `.deb` packages out of the local pool at `_out/debs/<arch>/` onto a
 digest-pinned Debian base, and one finalizer closes and packs the result
 (`rootfs/compose/`, two files). What is in an image is a package list, and
@@ -165,17 +172,13 @@ producer, not a stage. `docs/design/build.md` §1.1 has the whole model.
 
 ## 7. Boards
 
-- **`x64`** — generic UEFI x86_64, signed UKI and patched systemd-boot;
-  the QEMU baseline.
-- **`virt-arm64`** — ARM64 UEFI/QEMU using the same signed-file contracts.
-- **`cx3576`** — CX3576-Z, Rockchip RK3576, vendor kernel, signed-policy U-Boot
-  and FIT, Wi-Fi and Bluetooth. Physical acceptance remains a separate gate.
-- **`s905x5m`** — BM201 / Amlogic S7D, SD development image with required
-  signed FIT and paired MOS firmware in eMMC boot0; physical qualification pending.
+The current boards are `x64` and `virt-arm64` (UEFI, signed UKI) and `cx3576`
+and `s905x5m` (U-Boot, signed FIT). Their build, acceptance and support tier
+are kept in one table: [support tiers](boards/support-tiers.md#current-boards).
 
 A board produces artifacts and the OS build consumes artifacts; neither side
 reaches into the other's build. Kernel configs must satisfy the shared
-assertion set in `boards/common/mos-required.fragment` (`docs/design/boards.md`).
+assertion set in `boards/common/mos-required.fragment` (`docs/boards/contract.md`).
 
 ## 8. Where to read next
 

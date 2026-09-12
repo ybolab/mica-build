@@ -1,6 +1,6 @@
 # Design: Security Model — Threat and Physical-Access Boundaries
 
-> What mos defends, against whom, per boundary — stated separately for runtime
+> What Mica OS defends, against whom, per boundary — stated separately for runtime
 > rootfs integrity, update authenticity, boot-chain authenticity, data
 > confidentiality, recovery/provisioning and rootful applications, because the
 > six have different mechanisms, different maturity, and different honest
@@ -89,8 +89,8 @@ power-loss behavior or a board's full firmware-to-health watchdog handoff.
 Boot-key, content-key and metadata-key overlap/removal are separate operations.
 Firmware maintenance is an authenticated offline workflow with a recovery artifact
 and readback. Ordinary root/kernel updates do not write loader firmware. No OTP
-or fuse change is part of current acceptance. Evidence and exact limitations are
-in the delivery task (20260908-2229-file-ab-delivery-x64-first).
+or fuse change is part of current acceptance. Per-board evidence and limitations are in
+[support tiers](../boards/support-tiers.md#current-boards).
 
 ## 5. The I1–I4 boot-assurance ladder
 
@@ -107,12 +107,12 @@ physical evidence. Mechanism-level software proofs are listed separately:
 
 The current code implements the I1–I3 mechanisms and tests them in development
 QEMU/sandbox environments. Board evidence remains conservative; physical cx3576
-qualification is pending. No I4 claim is made. The [BSP assurance page](../bsp/assurance.md)
+qualification is pending. No I4 claim is made. The [BSP assurance page](../boards/assurance.md)
 applies this distinction to dossiers and release wording.
 
 ## 6. Boundary (d): data confidentiality at rest — **[proposed]**
 
-**Nothing on a mos device is encrypted at rest today.** Stated as the current
+**Nothing on a Mica OS device is encrypted at rest today.** Stated as the current
 limit, explicitly:
 
 - DATA and its state/meta namespaces are plain ext4. Settings, the apid admin password

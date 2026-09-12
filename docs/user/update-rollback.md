@@ -1,6 +1,6 @@
 # Update and rollback
 
-An MOS deployment selects an independently signed kernel/support component and
+An Mica OS deployment selects an independently signed kernel/support component and
 an independently signed root filesystem. A release can change the root, the
 kernel, or both. The device stages verified objects while the current system
 runs, then starts the candidate on reboot. Firmware maintenance is separate.
@@ -54,6 +54,6 @@ package or partition format is accepted.
 
 QEMU boot/update evidence is recorded separately from cx3576 hardware evidence.
 Physical watchdog, storage power-cut and USB maintenance acceptance remain board
-work, described in the delivery record (20260908-2229-file-ab-delivery-x64-first).
+work; see the [support tiers](../boards/support-tiers.md#current-boards).
 
 > status: board-dependent — evidence: `docs/design/release-signing.md`

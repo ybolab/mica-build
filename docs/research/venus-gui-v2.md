@@ -1,9 +1,9 @@
 # Research: Venus OS gui-v2 — a functional reference for benchmarking apid
 
 > **Status and intent.** This is a research note, not a design record: it
-> documents someone else's product so that mos can measure its own management
-> surface against a shipped, mature appliance UI. It restates no mos design;
-> section 14 maps each gui-v2 capability domain to the mos document or open
+> documents someone else's product so that Mica OS can measure its own management
+> surface against a shipped, mature appliance UI. It restates no Mica OS design;
+> section 14 maps each gui-v2 capability domain to the Mica OS document or open
 > task that owns the analogous surface. The earlier Venus OS *compatibility*
 > goal was closed in August 2026 and is not being reopened here — nothing in
 > this document proposes implementing Venus contracts, bus names, or topics.
@@ -30,7 +30,7 @@ GX, Raspberry Pi builds). gui-v2 is its operator UI: an inverter/battery/solar
 dashboard, a device configurator, and a settings tree, presented on an
 attached touch screen and, identically, in a browser ("Remote Console").
 
-The product parallel to mos is close: a headless-capable Linux appliance, a
+The product parallel to Mica OS is close: a headless-capable Linux appliance, a
 local management daemon, an attached-display kiosk, and a browser surface that
 must work without the vendor cloud but gains remote reach with it.
 
@@ -444,34 +444,34 @@ integration seam.
   (on-screen and Remote Console independently) — the old and new UIs
   shipped in parallel for multiple releases.
 
-## 14. Benchmark mapping to mos
+## 14. Benchmark mapping to Mica OS
 
-What gui-v2 demonstrates, mapped to where mos carries (or owes) the
+What gui-v2 demonstrates, mapped to where Mica OS carries (or owes) the
 equivalent. The energy domain itself (ESS, DVCC, solar, boat) is Victron's
 product and maps to nothing here; the *management surface* is the benchmark.
 
-| gui-v2 capability domain | mos owner today |
+| gui-v2 capability domain | Mica OS owner today |
 |---|---|
 | Single API/data plane, UI issues writes only, no exec in UI | `docs/design/api.md` — apid's `/api`-only contract; same posture, HTTP instead of a value tree |
-| One UI for local kiosk and remote browser | `docs/design/display.md` (cage+WPE renders apid's own UI) — mos already unified this harder than Victron did |
+| One UI for local kiosk and remote browser | `docs/design/display.md` (cage+WPE renders apid's own UI) — Mica OS already unified this harder than Victron did |
 | Connection state machine, heartbeat, visible staleness | apid session model; no dashboard-side staleness contract yet — relevant to `docs/design/dashboard.md` |
-| Notifications: severity model, acknowledge, badges, history | no mos analog yet; nearest owners are RFCT-288 (diagnostics) and the dashboard proposal |
+| Notifications: severity model, acknowledge, badges, history | no Mica OS analog yet; nearest owners are `docs/design/diagnostics.md` and `docs/design/dashboard.md` |
 | Settings tree: uniform bound rows, generated pages | `docs/design/mosd.md` settings schema + `docs/design/dashboard.md` IA |
-| Device list with per-class page suites and an "unsupported" fallback | mos analog is storage devices and services — RFCT-285 |
-| Connectivity settings (Ethernet/WiFi/AP, live link state) | `docs/design/connd.md`, `GET /api/v1/network`; gui-v2's WiFi/GSM status-bar affordances are a dashboard reference |
-| Cloud logger diagnostics: per-channel errors, last contact, no-contact reboot watchdog | no mos analog; the *named per-channel error* pattern is directly relevant to RFCT-288 and any future fleet channel (`docs/design/remote-management.md`) |
-| Firmware update online/offline + explicit rollback page with named refusals | RFCT-283 (authenticated updates), RAUC A/B + `docs/design/uboot-ab-handshake.md`; the *offline from removable media* path matches RFCT-284 recovery thinking |
+| Device list with per-class page suites and an "unsupported" fallback | Mica OS analog is storage devices and services — `docs/design/storage.md` |
+| Connectivity settings (Ethernet/WiFi/AP, live link state) | `docs/design/wifi.md`, `GET /api/v1/network`; gui-v2's WiFi/GSM status-bar affordances are a dashboard reference |
+| Cloud logger diagnostics: per-channel errors, last contact, no-contact reboot watchdog | no Mica OS analog; the *named per-channel error* pattern is directly relevant to `docs/design/diagnostics.md` and any future fleet channel (`docs/design/remote-management.md`) |
+| Firmware update online/offline + explicit rollback page with named refusals | `docs/design/updates.md` (signed file A/B deployments) + `docs/design/uboot-ab-handshake.md`; the *offline from removable media* path matches `docs/design/recovery.md` |
 | Access levels + one-knob security profile | `docs/design/access.md`; the single Secured/Weak/Unsecured knob is a UX benchmark for lockdown layers |
-| Support status page (detects modification, names running integrations, self-reports supportability) | no mos analog; cheap and valuable for a shipped appliance |
-| First-run onboarding tour | RFCT-282 (install, onboarding, provisioning) |
-| Demo mode with shipped mock data | no mos analog; consider for the dashboard (sales/dev value, near-zero runtime cost) |
-| Time/timezone settings page | RFCT-280 |
-| Debug tree browser over the live data plane | apid's OpenAPI + bus inspection; a raw-surface debug page is worth considering under RFCT-288 |
+| Support status page (detects modification, names running integrations, self-reports supportability) | no Mica OS analog; cheap and valuable for a shipped appliance |
+| First-run onboarding tour | `docs/user/first-run.md`, `docs/design/provisioning.md` |
+| Demo mode with shipped mock data | no Mica OS analog; consider for the dashboard (sales/dev value, near-zero runtime cost) |
+| Time/timezone settings page | `docs/design/time.md` |
+| Debug tree browser over the live data plane | apid's OpenAPI + bus inspection; a raw-surface debug page is worth considering under `docs/design/diagnostics.md` |
 | Plugin/integration points, replaceable UI | apid's validated custom-UI mechanism (`/api/v1/ui`) already exceeds gui-v2's plugin story in replaceability, but offers no *partial* integration points |
 | Theming as data, geometry-theme responsiveness, i18n, units layer | dashboard proposal; none are contracts yet |
 
 Reading order for an apid/dashboard feature audit: sections 3–7 and 10 are
 the appliance-management core; sections 2 and 11 explain the architectural
 moves that made one UI serve two transports; section 13 is relevant only if
-mos ever wants third-party surface extension rather than whole-UI
+Mica OS ever wants third-party surface extension rather than whole-UI
 replacement.

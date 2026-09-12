@@ -54,7 +54,7 @@ in `rootfs.img`.
 | Group | Unpacked | Compressed | Share of image |
 |---|---:|---:|---:|
 | podman family (`podman`, `netavark`, `aardvark-dns`, `quadlet`, `conmon`, `crun`, `catatonit`) | 55.6 MB | **21.1 MB** | 28% |
-| mos's own five Rust binaries (`apid`, `mosd`, `mos-mqttd`, `mos-mqtt-broker`, `mos-deploy`) | 27.6 MB | **11.5 MB** | 16% |
+| Mica OS's own five Rust binaries (`apid`, `mosd`, `mos-mqttd`, `mos-mqtt-broker`, `mos-deploy`) | 27.6 MB | **11.5 MB** | 16% |
 | `libc6` — of which `gconv` alone is 19.0 MB / 3.35 MB | 22.8 MB | 4.76 MB | |
 | `bluez` + `wpasupplicant` + `hostapd` | 8.6 MB | 3.5 MB | |
 | `libssl3t64` | 7.3 MB | 3.00 MB | |
@@ -220,7 +220,7 @@ reimplementing SSH, and section 5 says so explicitly.
 
 ---
 
-## 4. The cheapest reduction is in mos's own binaries
+## 4. The cheapest reduction is in Mica OS's own binaries
 
 The five Rust binaries are 27.6 MB unpacked and **11.5 MB compressed** — the
 second-largest group in the image after podman, and the only one this
@@ -254,7 +254,7 @@ to measure — build once with the profile set and compare.
 ## 5. What should not be rewritten
 
 - **`bluez`, `wpa_supplicant`, `hostapd`.** Protocol and certification
-  surface. `connd.md` already places them correctly: mosd drives their unit
+  surface. `wifi.md` already places them correctly: mosd drives their unit
   lifecycles and owns the settings, and the daemons stay upstream.
 - **openssh-server.** Keep. Only the client and the sftp server are in
   question, and only because of one keygen call.
@@ -273,7 +273,7 @@ to measure — build once with the profile set and compare.
 ## 6. The floor
 
 Computed as a dependency closure over the installed set, Debian side only
-(mos's own packages excluded):
+(Mica OS's own packages excluded):
 
 | Configuration | Packages | Unpacked |
 |---|---:|---:|
@@ -290,7 +290,7 @@ The floor's contents: glibc; systemd with `systemd-sysv`, `systemd-resolved`,
 `libpam-*` with `passwd` and `login`; ncurses and `libtinfo6`; `tzdata`;
 `libselinux1`, `libsepol2` and `libsemanage2`; `libcap2`; `libzstd1`,
 `liblzma5` and `zlib1g`; `libpcre2-8-0`; `libgcc-s1` and `gcc-14-base`;
-`base-files` and `base-passwd`. On top of that sit mos's own packages, of
+`base-files` and `base-passwd`. On top of that sit Mica OS's own packages, of
 which `mos-ca-trust` and `mos-busybox` are unconditional.
 
 Two entries in the floor are there for reasons worth knowing. `libdb5.3t64`
@@ -424,7 +424,7 @@ wicked; the current core-kit tree carries a `networkd/` module and no `wicked/`
 module at all. A Rust-first immutable OS considerably larger than this one
 deliberately retired a network daemon it maintained in favour of networkd.
 
-**On the read path, mos is already the more direct of the two.**
+**On the read path, Mica OS is already the more direct of the two.**
 `networkd_status.rs` obtains state by running `networkctl status --json=pretty`
 and parsing stdout. mosd calls `org.freedesktop.network1.Manager.Describe` over
 the system bus. Whatever else changes, that is not a place to move toward the
@@ -549,7 +549,7 @@ different stacks and for different reasons:
 |---|---|---|---|
 | Bottlerocket | `netdog`, a Rust one-shot CLI | systemd-networkd, migrated from wicked | no |
 | Venus OS | `venus-platform`, in progress | ConnMan, plus 31 local patches | no |
-| mos today | `mosd`, shipped | systemd-networkd | no |
+| Mica OS today | `mosd`, shipped | systemd-networkd | no |
 
 **Recommendation.** Keep networkd for DHCP and RA, and treat "no systemd
 network at all" as a separate question that must arrive with a DHCP
@@ -606,7 +606,7 @@ owns the initramfs and FIT payloads; this one owns the read-only root itself.
 ## Related
 
 - [containers.md](../design/containers.md) — what the container engine is for
-- [connd.md](../design/connd.md) — the Wi-Fi station and AP model §7 sits under
+- [wifi.md](../design/wifi.md) — the Wi-Fi station and AP model §7 sits under
 - [ro-root.md](../design/ro-root.md) — the read-only root this closure fills
 - [build.md](../design/build.md) — the compose and pack stages every deletion above would live in
 

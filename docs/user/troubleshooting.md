@@ -1,6 +1,6 @@
 # Troubleshooting
 
-Diagnosis on mos follows one order: get access, identify exactly what is
+Diagnosis on Mica OS follows one order: get access, identify exactly what is
 running, read the evidence the system already keeps, and only then act. This
 page follows that order, and ends with the bounded, redacted snapshot that
 carries that evidence into a support case.
@@ -38,7 +38,7 @@ kernel release, the `os-release` fields, the system version carrying the
 package pool's git stamp and the build date, the daemon's own version, the
 installed package set, the running signed deployment with its component identities and boot
 status, and uptime. Every member says whether it was available and, when it
-was not, why — a package manifest whose mos rows disagree reports the
+was not, why — a package manifest whose Mica OS rows disagree reports the
 disagreement and every stamp it found rather than picking one. Quote that read
 in every support case.
 
@@ -63,10 +63,10 @@ escalation carrying the board identity, never a green result.
   and `journalctl -u <unit>`. The journal is volatile — it does not survive a
   reboot, so capture it before power-cycling a sick device.
 - **Boot health:** the health gate logs its required set, each member's
-  verdict, and every failed unit it saw (`journalctl -u mos-health`). A slot
-  that keeps rolling back after an update failed one of the required members —
+  verdict, and every failed unit it saw (`journalctl -u mos-health`). A deployment
+  that keeps falling back after an update failed one of the required members —
   the boot transaction settling, mosd answering, or apid listening — and the
-  log names which. A failed unit on its own does **not** roll a slot back; it
+  log names which. A failed unit on its own does **not** cause a fallback; it
   is reported at live-state `health.units` and read with `GET
   /api/v1/state/health` or out of a diagnostic snapshot. What the gate requires
   is `/etc/mos/health.conf`, inside the read-only root.
@@ -132,7 +132,7 @@ badly enough to lose `/lib` has lost this too — at that point the answer is
 ## 5. Reading build and verify refusals
 
 A field operator meets the build system in two places: producing a bench image
-and verifying a flashed one. mos tooling refuses loudly and by name instead of
+and verifying a flashed one. Mica OS tooling refuses loudly and by name instead of
 degrading, so the refusal text is the diagnosis:
 
 - A missing or stale package pool, a missing BSP artifact, or a pool built
@@ -145,7 +145,7 @@ degrading, so the refusal text is the diagnosis:
   any other; the keyring check states which grade of material it read, and that
   sentence is what to quote when the grade is not the one expected.
 
-The rule of thumb: a mos refusal is designed to be quoted verbatim to support
+The rule of thumb: a Mica OS refusal is designed to be quoted verbatim to support
 or into an issue; do not work around it, because the checks exist to stop
 artifacts that pass everything and fail on hardware.
 

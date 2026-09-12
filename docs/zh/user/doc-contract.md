@@ -1,4 +1,4 @@
-# mos 用户文档契约
+# Mica OS 用户文档契约
 
 本页是 `docs/user/` 之下一切内容背后的契约：这些页面为谁而写、每页拥有
 什么、关于产品的声明如何标注并给出证据、这套文档如何版本化、以及英文树
@@ -7,11 +7,11 @@
 
 ## 1. 读者
 
-mos 是嵌入式一体机操作系统。用户文档服务三类读者，按此顺序：
+Mica OS 是嵌入式一体机操作系统。用户文档服务三类读者，按此顺序：
 
 1. **设备操作员**——站在已部署设备前的人：安装、配置、更新、恢复，以及
    决定告诉支持什么。
-2. **产品集成商**——基于 mos 构建产品的团队：组合镜像、交付应用、选择
+2. **产品集成商**——基于 Mica OS 构建产品的团队：组合镜像、交付应用、选择
    并认证板卡。
 3. **支持工程师**——故障报告到达的人，需要设备的身份，以及已发布行为与
    路线图之间诚实的边界。
@@ -29,7 +29,7 @@ mos 是嵌入式一体机操作系统。用户文档服务三类读者，按此�
 
 | 页面 | 拥有 |
 |---|---|
-| [quickstart.md](quickstart.md) | 通往运行中 mos 系统的最短且诚实的路径 |
+| [quickstart.md](quickstart.md) | 通往运行中 Mica OS 系统的最短且诚实的路径 |
 | [download.md](download.md) | 发布版选择与镜像获取 |
 | [install.md](install.md) | 把镜像写到板卡并到达首次启动 |
 | [first-run.md](first-run.md) | 首次启动、离线配置文档、认领设备 |
@@ -45,7 +45,7 @@ mos 是嵌入式一体机操作系统。用户文档服务三类读者，按此�
 | [api.md](api.md) | 编程面及其机器可读契约 |
 | [support.md](support.md) | 支持层级、生命周期归属、支持工单需要什么 |
 
-官方网站内容简报在 `docs/website/` 之下，BSP 移植与认证集在 `docs/bsp/`
+官方网站内容简报在 `docs/website/` 之下，BSP 移植与认证集在 `docs/boards/`
 之下；用户页面在旅程与之相交处（硬件选择、下载、支持层级）链接进两者。
 
 ## 3. 真实状态分类法——规范性
@@ -59,8 +59,7 @@ mos 是嵌入式一体机操作系统。用户文档服务三类读者，按此�
   需要确实存在的证据。
 - **board-dependent**——该能力至少在一块板卡上发布，其有无或形态是板卡
   事实（在 `boards/<board>/` 中或由板卡的 BSP 声明）。
-- **proposed**——该能力已列入 `docs/plan/` 下已批准或草案状态的计划，
-  且未发布。描述一个提案中的契约是允许的；把它呈现为当前行为则不允许。
+- **proposed**——该能力已由一个未关闭的计划或任务记录跟踪，且未发布。描述一个提案中的契约是允许的；把它呈现为当前行为则不允许。
 - **unsupported**——该能力不存在且当前无计划，或明确在产品契约之外。
 
 ### 语法
@@ -71,7 +70,7 @@ em dash，每个证据引用放在反引号里，多个引用以 `, ` 分隔：
 ```
 > status: shipped — evidence: `pkgs/mosd/apid/openapi.json`
 > status: board-dependent — evidence: `boards/cx3576/board.env`
-> status: proposed — evidence: `docs/plan/PLAN-054.md`
+> status: proposed — evidence: `docs/task/20260912-2058-fleet-runtime.md`
 > status: unsupported
 ```
 
@@ -79,9 +78,9 @@ em dash，每个证据引用放在反引号里，多个引用以 `, ` 分隔：
 
 - `shipped` 与 `board-dependent` 必须引用一个存在的仓库路径（文件或
   目录），或顶层 `Makefile` 中存在的 `make <target>`。
-- `proposed` 必须引用 `docs/plan/` 下一个存在的计划记录——该目录下任一
-  记录文件，无论是 `<timestamp>-<feature-slug>.md` 还是较早的编号
-  `PLAN-NNN.md`；索引不算记录。
+- `proposed` 必须引用至少一个未关闭的跟踪记录：`docs/plan/` 或 `docs/task/`
+  下的详情文件，且其索引条目为待办（`[ ]`）或进行中（`[-]`）。记录完成或
+  关闭后，门禁会失败，直到该页重新标注。
 - `unsupported` 不携带证据；缺席本身就是声明。
 - 证据在被引用之前先验证其存在。死掉的证据引用是坏掉的声明，不是外观
   缺陷。
@@ -89,16 +88,15 @@ em dash，每个证据引用放在反引号里，多个引用以 `, ` 分隔：
   并未改变其含义的编辑证伪。需要精确契约时，改为点名承载它的产物——
   例如，HTTP 接口面就是 `pkgs/mosd/apid/openapi.json`。
 
-### 提案内容与 TODO 标记
+### 提案内容
 
-当一页描述某个计划仍在构建的能力时，它陈述计划中的契约，以该计划为证据
-标注 `proposed`，并用一行 `TODO(<plan record>): revisit after
-this plan merges` 形式的标记标出该节，以便计划落地时清扫并重新标注。每节至多一个
-此类标记。
+当一页描述仍在构建的能力时，它陈述计划中的契约，并以未关闭的记录为证据
+标注 `proposed`。上面的证据规则会在记录完成或关闭时强制重新标注，因此不再
+使用单独的 TODO 标记。
 
 ## 4. 版本化
 
-用户文档集随它所属的 mos 发布版一起版本化。一页描述的是它被检出时所在的
+用户文档集随它所属的 Mica OS 发布版一起版本化。一页描述的是它被检出时所在的
 发布版；没有独立的文档版本号，也没有任何一页描述比包含它的树更新或更旧
 的发布版。绑定到特定板卡或 profile 的陈述会明确说明。
 
@@ -112,11 +110,11 @@ this plan merges` 形式的标记标出该节，以便计划落地时清扫并�
 `not-translated` 之一的状态。任何冲突以英文页面为准。
 
 中文文档集位于 `docs/zh/` 之下，保持覆盖表诚实的检查是
-`docs/zh/verify-coverage.sh`，由 `make docs-verify` 运行：它在两个方向上
+`tools/docs/verify-coverage.sh`，由 `make docs-verify` 运行：它在两个方向上
 对照两棵树核对这张表，并要求 `current` 的页面携带与其英文源页面相同、
 且顺序相同的 status 行。
 
-> status: shipped — evidence: `docs/zh/README.md`, `docs/zh/verify-coverage.sh`
+> status: shipped — evidence: `docs/zh/README.md`, `tools/docs/verify-coverage.sh`
 
 ## 6. 风格规则
 

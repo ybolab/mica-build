@@ -1,28 +1,26 @@
 # Design: Configuration Without a Network (Provisioning Model)
 
-> English | [中文](../zh/design/provisioning.md)
->
 > How the appliance obtains and changes its machine configuration when no
 > network can be assumed. Approved 2026-08-17. Companion to access.md §7 and
-> connd.md.
+> wifi.md.
 >
 
 ## 1. The break from upstream
 
-A mos appliance must reach a fully working state with **zero external input**,
+A Mica OS appliance must reach a fully working state with **zero external input**,
 unlike a data-center machine that may boot without config and wait for one over
 the network. Three layers:
 
 ## 2. Layer 1 — first-boot self-provisioning (shipped)
 
-When STATE holds no configuration, the device generates its own, persists it,
+When DATA/state holds no configuration, the device generates its own, persists it,
 and is thereafter a fully working, configurable appliance. `mosd`'s
 `provisioning.rs` runs this once, between loading the settings store and the
 first reconcile, so the first reconcile already sees the seeded tree rather than
 the built-in defaults.
 
-Starting from an empty STATE, a first boot writes exactly one `settings.toml`
-on STATE, plus the two secret files described in §3:
+Starting from an empty DATA/state, a first boot writes exactly one `settings.toml`
+on DATA/state, plus the two secret files described in §3:
 
 - **hostname `mos-<first 8 hex of deviceId>`**;
 - **`provisioning.deviceId`** — 16 CSPRNG bytes as 32 lowercase hex characters;
@@ -56,7 +54,7 @@ to reach a named, credentialled, configurable state.
   exist. It also keeps mosd's network reconciler from claiming ownership of an
   interface the operator never configured.
 - **`wifi` is left at its defaults.** There is no network to join yet, and
-  raising AP mode is a connd decision from the uplink state machine, not first
+  raising AP mode is a Wi-Fi reconciler decision from the uplink state machine, not first
   boot's.
 
 ### Atomicity, and never a half-seeded `complete`
@@ -71,12 +69,12 @@ seeding attempt, so the next boot retries.
 The failure this defends against is specific: a tree on disk saying
 `state = "complete"` but carrying no `deviceId` and no `passwordHash` would be
 *trusted* by every subsequent boot, which would skip provisioning forever. That
-device is unrecoverable without a STATE wipe. An unprovisioned device just tries
+device is unrecoverable without a DATA/state wipe. An unprovisioned device just tries
 again.
 
 **The guarantee covers the settings tree and not the two secret files**, which
 are written before the save returns. If the save fails after they exist, the
-plaintexts are on STATE with no hash in the settings, so the next boot
+plaintexts are on DATA/state with no hash in the settings, so the next boot
 regenerates and overwrites both. That ordering is deliberate — an orphaned
 plaintext is recoverable, a hash with no recorded plaintext is not.
 
@@ -90,7 +88,7 @@ operator has already named the device: the hostname is seeded **only** while it
 still equals the built-in default `"mos"`.
 
 A provisioning failure **aborts mosd startup**, deliberately. An unwritable
-STATE means no identity and no device credential, so there is no usable device
+DATA/state means no identity and no device credential, so there is no usable device
 to serve; a loud exit beats a daemon quietly serving an unprovisioned tree the
 operator cannot log in to. Under `MOSD_DRY_RUN=1` provisioning is skipped
 entirely, because dry-run must never touch the host and provisioning both mints
@@ -106,7 +104,7 @@ are separate and predate this work: `mos-seed-state` generates them into
 
 ## 3. The credential model — stated once, here
 
-Three documents touch this (`access.md` §4, `connd.md` §7, `ro-root.md` §4) and
+Three documents touch this (`access.md` §4, `wifi.md` §7, `ro-root.md` §4) and
 all of them defer to this section. It is subtle in three places and each one has
 been "simplified" wrongly at least once already.
 
@@ -117,7 +115,7 @@ in the fleet**, and covered by the FIT signature. A credential baked into it is
 a fleet-wide shared secret by construction, and a randomly generated one would
 make the verity root hash depend on a keygen. So every per-device secret is
 drawn from the system CSPRNG **on the device, at first boot**, and persisted to
-STATE.
+DATA/state.
 
 This is asserted, not merely intended: a unit test serializes a freshly built
 settings tree and asserts the document contains neither `psk` nor
@@ -152,18 +150,18 @@ counter anything derived from the password must key off.
 ### 3.3 The SAME password is stored under TWO hash formats — SUPERSEDED
 
 **Superseded 2026-08-19 (§3.6). Retained because the libcrypt measurement below
-still governs every hash mos writes into `/etc/shadow`, and because the defect
+still governs every hash Mica OS writes into `/etc/shadow`, and because the defect
 it records is worth keeping.** What is no longer true is the arrangement itself:
 the device password is not written into `/etc/shadow` any more, by the sshd
 reconciler or by anything else, so only the Argon2id copy is written today — and
-nothing verifies it. The paragraphs below describe the M5 arrangement.
+nothing verifies it. The paragraphs below describe that rejected arrangement.
 
 This was the part a future reader would otherwise "simplify" back into one hash
 and silently break login.
 
 | Store | Format | Verified by |
 |---|---|---|
-| `access.device.passwordHash` (settings tree, on STATE) | **Argon2id** PHC string | mosd and apid, in Rust, against themselves |
+| `access.device.passwordHash` (settings tree, on DATA/state) | **Argon2id** PHC string | mosd and apid, in Rust, against themselves |
 | `/etc/shadow`, root entry | **bcrypt**, cost 12 | `pam_unix` → `crypt(3)` → libcrypt, for SSH and console login |
 
 **Why not Argon2id in both: Debian's libxcrypt has no Argon2 support.** This was
@@ -183,15 +181,14 @@ offered against it.
 where mosd and apid verify against themselves, and libcrypt is not involved
 there at all.
 
-A hash cannot be converted into another hash, so the plaintext on STATE is
+A hash cannot be converted into another hash, so the plaintext on DATA/state is
 hashed a **second** time, into the format the device can actually verify. That
-is also why the plaintext must exist on STATE at all.
+is also why the plaintext must exist on DATA/state at all.
 
-**The first version of this shipped Argon2id straight into the shadow field, as
-originally specified.** The result was a device with SSH enabled, a per-device
-password on the label, and no way to log in — while every check, both verifiers
-and the bundle stayed green. That is the campaign's signature defect shape, and
-it is why the image verifier now asserts that the libcrypt packed in the image
+**A shadow field must use a prefix the packed libcrypt implements.** An
+Argon2id hash in the shadow field yields a device with SSH enabled and no way
+to log in while every offline check stays green, which is why the image
+verifier asserts that the libcrypt packed in the image
 implements the prefix `sshd.rs` pins on its own output, rather than either side
 asserting it alone.
 
@@ -201,7 +198,7 @@ therefore meant `bcrypt::verify(plaintext, stored)` returning true. Without that
 check, every reconcile would rewrite the shadow file with a new salt — a flash
 write per boot, and a live state that never settles.
 
-**What survives into the current model:** bcrypt is still the format mos writes
+**What survives into the current model:** bcrypt is still the format Mica OS writes
 into `/etc/shadow`, for exactly the libcrypt reason measured above — but the
 only thing written there now is the **transient** root password
 (`pkgs/mosd/mosd/src/transient.rs`, cost 12), and the idempotency question does not
@@ -209,18 +206,18 @@ arise because it is written once per operator action rather than on every
 reconcile. `mos-shadow-reconcile` recognises it by an exact hash match against
 its marker, not by `bcrypt::verify`.
 
-### 3.4 Why a plaintext on STATE is acceptable
+### 3.4 Why a plaintext on DATA/state is acceptable
 
 Neither secret can be hash-only: the operator has to be able to *learn* the
 initial device password (read it over the console, print it, have apid show it
 once), and the AP PSK has to be re-rendered into `hostapd.conf` verbatim on
 every boot.
 
-STATE is unencrypted flash. That is a smaller concession than it first looks,
+DATA/state is unencrypted flash. That is a smaller concession than it first looks,
 because access.md §7 already establishes the boundary: **physical possession of
 the boot medium implies full control** — the preferred provisioning path is
 literally "edit a file on the SD card with any reader", and anyone holding the
-card can rewrite the rootfs regardless. A plaintext on STATE does not weaken a
+card can rewrite the rootfs regardless. A plaintext on DATA/state does not weaken a
 threat model that already grants the card-holder everything.
 
 The two protections that do matter are both asserted by tests: the **hash** in
@@ -248,7 +245,7 @@ authenticates nothing at all (§3.6), so "the credential of record" above now
 means "the record that a credential was minted", not a credential anything
 checks.
 
-**There is no credential-rotation path.** Nothing in M5 can change a device
+**There is no credential-rotation path.** Nothing can change the per-device
 password or an AP PSK after first boot — not the UI, not the bus, not a
 reconciler. This is a real gap, not a design position, and it is the first thing
 a later phase should close.
@@ -265,10 +262,8 @@ caller outside its own tests.
 
 Both halves — the Argon2id hash in `access.device.passwordHash` and the
 plaintext at `/var/lib/mos/secrets/device-password` — are still minted at first
-boot and still persisted. **They are inert, and deliberately kept:** the
-campaign reserved them for a later phase (a support-side credential, or the
-phase-2 PIN of `access.md` §4.3) rather than removing a first-boot behaviour and
-its migration alongside a change to how SSH authenticates.
+boot and still persisted. **They are inert, and reserved** for a later
+support-side credential or the phase-2 PIN of `access.md` §4.3.
 
 Recorded so the next reader finds a decision rather than an oversight, and so
 that "the device has a password" is not mistaken for "the device accepts a
@@ -281,31 +276,30 @@ path, ordered by preference (details in access.md §7):
 
 1. BOOT-partition provisioning file (offline pre-seed at factory or field);
 2. USB signed config drop (udev-triggered, vendor-key verified);
-3. AP captive portal (connd.md) and HDMI kiosk wizard (display.md);
+3. AP captive portal (wifi.md) and HDMI kiosk wizard (display.md);
 4. apid over LAN once any network exists;
 5. tty2 serial wizard as the last resort.
 
 **Status.** Channels **1 and 2 are shipped** and are §4.1 below — one
-provisioning document, two offline transports. Channel **4** was delivered by
-M3 and is what an operator uses once a network exists. Channel **3** has the AP
-captive portal's *transport* (connd.md §4) and not the portal itself, and
+provisioning document, two offline transports. Channel **4** ships and is what an operator uses once a network exists. Channel **3** has the AP
+captive portal's *transport* (wifi.md §4) and not the portal itself, and
 channel **5** does not exist.
 
 The invariant across all five: every channel converges on one validated write
 path — mosd's D-Bus surface (`com.mos.mosd1`) — and none of them edits a file
-behind the daemon's back. That is what `docs/design/mosd.md` §3 describes. §4.1
+behind the daemon's back. That is what `docs/design/mosd.md` §1 describes. §4.1
 holds that line from the inside rather than over the bus: it is mosd itself
 reading the file, and every value it writes goes through the same typed settings
 tree and the same validators an API write goes through.
 
 ### 4.0 The pour: writing `/mos/config/` directly, and why it is not a sixth channel
 
-PLAN-070 §5.2 moved system configuration — the hostname, the network, the
+System configuration — the hostname, the network, the
 Wi-Fi networks, the ssh switch, the broker policy, the time settings and the
-update policy — into `/mos/config/` on DATA, **so that an integrator can
+update policy — lives in `/mos/config/` on DATA, **so that an integrator can
 flash a device, write the configuration onto it, and have it work with no
 provisioning ceremony between the two**. That is the *pour*, and it is the
-motivating case for the whole namespace. `docs/design/mosd.md` §5.1a is the
+motivating case for the whole namespace. `docs/design/mosd.md` §2.1a is the
 rule list; what belongs here is where it sits relative to the five channels
 above.
 
@@ -318,8 +312,7 @@ the next boot as its own state rather than as somebody's request. There is
 nothing to apply, no already-claimed rule to evaluate and no status surface
 reporting what a document did, because nothing was consumed.
 
-**Three properties it inherits and does not get to choose** (PLAN-070
-§5.2.7):
+**Three properties it inherits and does not get to choose:**
 
 - **Offline only.** A pour is written onto a device that is **not running**.
   Pouring onto a running device is not supported, for the reason §4.1.7
@@ -343,7 +336,7 @@ documents written into `/mos/config/` before mosd exists are validated on the
 next boot exactly as mosd validates its own output, and the addressed tree
 comes back carrying them. A document that does **not** parse refuses its own
 subsystem, names the file, and costs nothing else —
-`docs/design/mosd.md` §5.1a is the rule and the per-document cover behind it.
+`docs/design/mosd.md` §2.1a is the rule and the per-document cover behind it.
 
 **That last part is a change to previously shipped behaviour and is worth
 saying plainly.** Before F6g, a parse error in *any* document aborted the
@@ -354,7 +347,7 @@ different rules and not the same one applied twice:
 
 - **the missing `/mos` medium** (F6f) — a device that cannot reach its
   configuration must not render a different one;
-- **the STATE document.** It is not in this namespace, it cannot be poured,
+- **the DATA/state document.** It is not in this namespace, it cannot be poured,
   and it carries the device identity and the administrator credential.
   Degrading it to a per-document refusal would let first-boot provisioning
   mint a fresh identity and credential *over* real ones that merely failed to
@@ -365,8 +358,7 @@ different rules and not the same one applied twice:
 One file, one format, two transports. `pkgs/mosd/mosd/src/provisioning_doc.rs`
 parses, validates and applies it; `rootfs/overlay/usr/lib/mos/mos-provisioning-import`
 and its unit put the media where mosd can read them;
-`pkgs/mosd/apid/src/provisioning_api.rs` reports what happened. Implements
-PLAN-046 / RFCT-282.
+`pkgs/mosd/apid/src/provisioning_api.rs` reports what happened.
 
 **The split is deliberate.** The transport is shell, because mounting a
 GPT-labelled partition read-only is shell's job; everything that decides what a
@@ -377,7 +369,7 @@ to.
 
 #### 4.1.1 The format
 
-TOML, matching how mos already stores settings and how an operator edits a file
+TOML, matching how Mica OS already stores settings and how an operator edits a file
 on a boot partition with any text editor. The file is `mos-provisioning.toml`
 at the ROOT of the medium's filesystem — one fixed name at one fixed place,
 never a glob and never a path the medium supplies.
@@ -428,14 +420,12 @@ settings document's.** A document format revision does not reshape the settings
 tree, and a settings bump does not invalidate a document an operator already
 wrote onto a card. This build applies version `1` and refuses any other.
 
-Since PLAN-070 §5.2.3 the settings side is also per document and also starts at
-`1`, so the two numbers now coincide by accident. **They are still unrelated**,
+The settings side is also per document and also starts at `1`, so the two numbers now coincide by accident. **They are still unrelated**,
 and nothing may derive one from the other.
 
-**There is no certificate section, and no hostname.** PLAN-046 lists
-certificates among the things a provisioning document should carry; there is no
-settings path to carry them onto. The only certificate on the device is apid's
-self-signed TLS pair, a file pair on STATE (`pkgs/mosd/apid/src/tls.rs`), not a
+**There is no certificate section, and no hostname.** There is no settings
+path to carry certificates onto. The only certificate on the device is apid's
+self-signed TLS pair, a file pair on DATA/state (`pkgs/mosd/apid/src/tls.rs`), not a
 setting — so a certificate section would mean inventing a setting, which this
 document deliberately does not do. A document carrying one is refused naming
 the key. The hostname is out for a related reason: the device names itself from
@@ -490,7 +480,7 @@ the status route can confirm a guess at the WHOLE document by hashing their
 guess. That reader is an administrator who can already read the settings the
 document wrote.
 
-**Atomicity** covers the complete settings import across DATA and STATE.
+**Atomicity** covers the complete settings import across DATA/mos/config and DATA/state.
 The importer validates the document and changes a private clone before calling
 `Store::save`. The store first persists a mode-0600 undo journal at
 `/var/lib/mos/settings.transaction.json`, containing the previous bytes or
@@ -501,7 +491,7 @@ A write failure rolls back the prior documents before returning. If rollback
 cannot finish, the journal remains and the store refuses further use until
 recovery succeeds. After interruption, startup restores a pending transaction
 before loading settings or starting reconcilers. The applied-document marker on
-STATE participates in the same transaction, so configuration and import status
+DATA/state participates in the same transaction, so configuration and import status
 cannot be accepted from different commits. Unchanged documents and deliberately
 preserved invalid configuration files are not rewritten. Independent filesystem
 readers can observe intermediate renames; the guarantee applies to the settings
@@ -668,13 +658,12 @@ fleet-wide credential can reach an artifact.
   qualification, and both image verifiers assert the shadow half of it.
 - Provisioning channels never bypass config validation or the audit log.
   Validation is enforced — every write goes through the typed settings tree,
-  and a rejected write leaves the tree untouched. **The audit log does not
-  exist yet** (access.md §6); nothing in M5 records provisioning or access
-  events to a persistent trail.
-- Wiping STATE resets configuration but never clears META lockdown
-  (access.md §5). **META lockdown is not implemented**, so this invariant has
+  and a rejected write leaves the tree untouched. apid keeps a bounded local audit ring
+  (access.md §6); there is no comprehensive provisioning or access audit trail.
+- Wiping DATA/state resets configuration but never clears DATA/meta lockdown
+  (access.md §5). **DATA/meta lockdown is not implemented**, so this invariant has
   nothing to protect yet.
-- Factory reset (wiping STATE) returns the device to its unprovisioned state,
+- Factory reset (wiping DATA/state) returns the device to its unprovisioned state,
   and the next boot re-runs §2 — including minting a **new** device password
   and a **new** AP PSK. The old ones are gone with the partition. This is the
   only credential-rotation path that exists (§3.5).

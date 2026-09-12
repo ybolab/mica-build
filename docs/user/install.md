@@ -1,6 +1,6 @@
 # Install a current development image
 
-Installation uses a complete freshly built MOS system image. The supported image
+Installation uses a complete freshly built Mica OS system image. The supported image
 targets are x64, virt-arm64 and cx3576. There is no conversion or upgrade path
 from an earlier partition layout. A full write replaces the target system and
 data inside the written image extent; keep any files you need elsewhere first.

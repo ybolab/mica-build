@@ -1,116 +1,45 @@
-# Design: mosd (management plane) — M2 design brief
+# Design: mosd (management plane)
 
-> English | [中文](mosd.md)
->
-> Status: the D-Bus/zbus IPC choice and the settings model below are the
-> standing contract, approved 2026-08-18.
->
-> Sections 1-4 are the original decision record and are kept as reasoning.
-> Section 5 states where the design stands now: the settings tree is at
-> independently versioned documents (currently v1), eight reconcilers are registered, and the bus carries the
-> update-orchestration and WireGuard-rotation members alongside the original
-> settings, state and power surface.
->
-> **The HTTPS management daemon is `apid`.** It serves the API, and the
-> dashboard is one client of it. Older material calls it `webd`.
+`mosd` is the single Rust service that owns appliance state: the settings
+documents, device-owned state on DATA/state, reconcilers that apply settings to
+the execution layer (systemd units, networkd, native deployments, Podman), and
+the D-Bus surface that `apid` and future remote channels consume.
 
-## 1. What mosd is
+## 1. Contract
 
-The single Rust service that owns appliance state: a central settings/state
-tree, persistence on STATE, reconcilers that apply settings to the execution
-layer (systemd units, networkd, native deployments, Podman), and the bridge that
-UIs (apid/kiosk) and future remote channels consume. Venus OS's D-Bus tree +
-Bottlerocket's apiserver, in one scoped service.
+- **IPC is D-Bus through `zbus`.** mosd must consume D-Bus anyway (systemd,
+  networkd, wpa_supplicant, BlueZ), so it exposes its own tree as
+  `com.mos.mosd` on the system bus instead of running a second IPC stack.
+  `apid` calls mosd's methods per request; there is no WebSocket, no long-lived
+  subscription and no generic HTTP-to-D-Bus passthrough. Remote bridges attach
+  at the edge, never in the core.
+- **Settings are a typed Rust tree** (serde), addressed by dot-paths such as
+  `network.eth0.dhcp` or `access.ssh.enabled`.
+- **Persistence is atomic per document** (write temporary file, set mode,
+  fsync, rename, fsync the directory). System configuration lives in
+  `/mos/config/` as one JSON document per reconciler (§2.1a); what the device
+  mints or observes about itself lives in `/var/lib/mos/settings.toml`, a bind
+  of `/mnt/data/state/mos`. Each document carries its own `schema_version`.
+- **Reconcilers** each watch one subtree and own rendering to their executor;
+  status is published onto a separate live-state tree.
 
-## 2. Decision 1 — IPC protocol
+## 2. Current implementation
 
-Options: D-Bus (zbus) / varlink / gRPC.
+### 2.1 The settings tree
 
-**Recommendation: D-Bus via the pure-Rust `zbus` crate.** The deciding fact:
-mosd must CONSUME D-Bus regardless — systemd (units/hostname), networkd,
-wpa_supplicant and bluez all expose D-Bus APIs. Speaking one bus in both
-directions (consume system services, expose `com.mos.*` like Venus's
-`com.victronenergy.*`) avoids running a second IPC ecosystem. apid bridges
-HTTP/WebSocket ↔ D-Bus for browsers; gRPC/MQTT-style remote bridges attach
-later at the edge, not in the core (Venus gui-v2 pattern: local bus, remote
-bridge). varlink is elegant but its ecosystem is too thin to carry the
-integration burden D-Bus removes for free.
-
-> **Correction (2026-08-19): apid is not a WebSocket bridge.** The sentence
-> above is the M2 sketch and no longer describes the code. apid renders
-> server-side HTML (maud) over plain HTTP and calls mosd's D-Bus methods per
-> request; there is no WebSocket, no long-lived subscription and no generic
-> HTTP↔D-Bus passthrough. The live-value transport question is open and is
-> tracked in `docs/design/dashboard.md`, not here.
-
-## 3. Decision 2 — settings schema & persistence
-
-**Recommendation:**
-
-- Settings modeled as a typed Rust tree (serde), addressed by dot-paths
-  (`network.eth0.dhcp`, `access.ssh.enabled`) — Venus-style addressing,
-  self-documenting for UI binding.
-- Persisted as versioned documents, committed atomically (write-temp, mode,
-  fsync, rename, directory fsync).
-
-  > **Correction (2026-08-19).** This line read `/state/mos/settings.toml`,
-  > which is not a path that exists on any image. The real default is
-  > `/var/lib/mos/settings.toml` (`pkgs/mosd/mosd-settings/src/store.rs`,
-  > `DEFAULT_PATH`), a bind from `/mnt/data/state/mos` (`docs/design/ro-root.md` §4),
-  > and `pkgs/mosd/mosd/src/main.rs`
-  > documents the same. The doc contradicted both the code and §5.1 below.
-
-  > **Superseded in part (PLAN-070 §5.2).** "One versioned TOML on STATE" is
-  > no longer true and §5.1a below is what is. System configuration moved to
-  > `/mos/config/` on DATA as one JSON document per reconciler; what the device
-  > mints or observes about itself stays in `settings.toml` on STATE at the
-  > path the correction above names. Each document carries its own
-  > `schema_version`. The atomic-commit half of the line is unchanged.
-- Migrations: Bottlerocket migrator pattern — forward AND backward migration
-  units shipped with each release (the A/B design requires the rollback
-  direction to work).
-
-  > **Superseded (PLAN-070 §5.2.3).** The registry and the `V0→V12` chain were
-  > deleted with the single document they migrated: this tree is in system
-  > development and carries no fielded device holding a v12 `settings.toml`, so
-  > a split chain would have been code written to convert a document that does
-  > not exist. Each document now starts at its own v1. The *discipline* the
-  > pattern taught survives as §5.1a's version rules, and the rollback
-  > direction is carried at runtime by the tolerant load (§5.2 below), which
-  > is what actually runs on a device.
-- Reconciler contract: each subsystem reconciler watches a subtree and owns
-  rendering to its executor (networkd units, sshd drop-ins and native deployment actions);
-  status is published back onto the bus tree (settings vs live-state split,
-  like Venus settings vs service paths).
-
-## 4. M2 scope guard
-
-M2 delivers: workspace (pma-rust baseline), bus service with `com.mos.*`
-tree, settings persistence + migration skeleton, TWO reconcilers only
-(hostname, network/networkd). Everything else (updates, access, connd
-integration) lands in its own milestone against this contract.
-
-## 5. Where this stands after M5 (2026-08-19)
-
-The M2 contract above held: nothing in it needed revisiting to add the access,
-provisioning and connd features. This section records what is actually in the
-tree, so a reader does not have to reconstruct it from five task records.
-
-### 5.1 The settings tree
-
-Addressed by dot-path, and **stored in several documents** — §5.1a is where
+Addressed by dot-path, and **stored in several documents** — §2.1a is where
 each key lives and why. `Settings::default()` serializes to exactly the tree
 below, which is also what a fresh device holds before first-boot provisioning
 seeds it. It is shown as one document because that is how every reader
-addresses it; the `schema_version` line is gone from it because after
-PLAN-070 §5.2.3 there is no tree-wide version to show.
+addresses it; it has no `schema_version` line because versions are per
+document (§2.2).
 
 ```toml
 hostname = "mos"
 
 [network]                        # keyed by interface name, individually addressable
 
-[access.ssh]                     # M5 — see access.md §3
+[access.ssh]                     # see access.md §3
 enabled = false
 port = 22
 permitRootLogin = true
@@ -118,29 +47,29 @@ passwordAuthentication = true
 listenAddresses = []             # empty = listen on ALL
 authorizedKeys = []              # v4 — array of tables; see access.md §3.1
 
-[access.console]                 # M5 — schema only, no reconciler consumes it yet
+[access.console]                 # schema only, no reconciler consumes it yet
 shellEnabled = false
 
-[access.device]                  # M5 — credential metadata, never the credential
+[access.device]                  # credential metadata, never the credential
 generation = 0
 
-[provisioning]                   # M5 — see provisioning.md §2
+[provisioning]                   # see provisioning.md §2
 state = "pending"                # pending | complete
 seededGeneration = 0
 
-[wifi.client]                    # M5 — see connd.md §3
+[wifi.client]                    # see wifi.md §3
 enabled = false
 interface = "wlan0"
 networks = []
 
-[wifi.ap]                        # M5 — see connd.md §4
+[wifi.ap]                        # see wifi.md §4
 mode = "off"                     # off | provisioning | always
 interface = "wlan0"
 channel = 6
 countryCode = "US"
 address = "192.168.4.1/24"
-holdDownSeconds = 120            # deliberately unconsumed — connd.md §5
-graceSeconds = 60                # deliberately unconsumed — connd.md §5
+holdDownSeconds = 120            # deliberately unconsumed — wifi.md §5
+graceSeconds = 60                # deliberately unconsumed — wifi.md §5
 ```
 
 `access.webAdmin` is unchanged from v2 — same serialized path, same
@@ -157,17 +86,16 @@ is load-bearing rather than tidy — see provisioning.md §3.1.
 `deny_unknown_fields` is on every struct, so a document carrying a key this
 version does not know fails to load rather than silently dropping it.
 
-### 5.1a `/mos/config/`: where system configuration lives, and the rules a subsystem inherits
+### 2.1a `/mos/config/`: where system configuration lives, and the rules a subsystem inherits
 
-**PLAN-070 §5.2 decided that system configuration lives in `/mos/config/` on
-DATA**, so that an integrator can flash a device, pour the configuration in,
-and have it work with no provisioning ceremony between the two. This section is
-the rule list a subsystem author meets, restated here rather than left in the
-plan record, because an author who needs it will be reading this file.
+**System configuration lives in `/mos/config/` on DATA**, so that an integrator
+can flash a device, pour the configuration in, and have it work with no
+provisioning ceremony between the two. This section is the rule list a
+subsystem author meets.
 
 **Where each key lives.** The boundary is not a judgement, it is the tier-1
 reset partition (`docs/design/recovery.md` §2.1): *`/mos/config/` holds what an
-integrator sets; the settings store on STATE holds what the device mints or
+integrator sets; the settings store on DATA/state holds what the device mints or
 observes about itself, the credential material derived from it, and the intents
 it is carrying out.* Tier 1 clears what an integrator set, so the set it clears
 **is** the set that lives here — and "is this a document or a settings key?"
@@ -192,7 +120,7 @@ narrowing that was tried, measured to hide a cross-subtree dependency from the
 overlap test, and reverted. Grouping by reconciler keeps that coupling inside
 one atomic write.
 
-**The staged `reset` intent stays on STATE and that is not a technicality.**
+**The staged `reset` intent stays on DATA/state and that is not a technicality.**
 Tiers 1 and 3 clear `/mos/config/`; put the record that asks for a reset inside
 it and the tier would clear the thing that tells it to run, halfway through
 running.
@@ -207,7 +135,7 @@ on dot-paths and are untouched. Two consequences that are not free:
   no longer names one file — it composes the two stores, because the read
   surface is addressing rather than storage.
 - **`schema_version` is no longer a key of the tree.** There is no tree-wide
-  version left; `GET /api/v1/meta`'s `settingsSchemaVersion` reports the STATE
+  version left; `GET /api/v1/meta`'s `settingsSchemaVersion` reports the DATA/state
   document's.
 
 **The rules a later subsystem inherits.**
@@ -253,7 +181,7 @@ on dot-paths and are untouched. Two consequences that are not free:
   **Two things still refuse to start**, because they are different rules and
   not this one applied twice: **an absent document is a default; an absent
   `/mos/config/` is not** — that is the medium being gone, and mosd refuses to
-  start and names the mount (§5.2a) — and the **STATE** document, which is not
+  start and names the mount (§2.2a) — and the **DATA/state** document, which is not
   in this namespace, cannot be poured, and carries the device identity and the
   administrator credential, so degrading it would let first-boot provisioning
   mint fresh ones over real ones that merely failed to parse.
@@ -293,7 +221,7 @@ on dot-paths and are untouched. Two consequences that are not free:
   alternative is an author who picks `sharedSecret`, ships it, and finds out
   from a support case.
 - **One version per document, additive bumps, and no migration that moves a key
-  between documents.** §5.2 below is the whole of it.
+  between documents.** §2.2 below is the whole of it.
 - **One writer per document, and it is a daemon.** mosd writes; apid holds the
   authenticated route and **asks**. Two processes never write one document,
   which no amount of atomic renaming makes safe.
@@ -301,9 +229,9 @@ on dot-paths and are untouched. Two consequences that are not free:
   `/mos/config/`, tier 2 leaves it alone, tier 4 clears it with everything else
   (`docs/design/recovery.md` §2.1).
 
-### 5.2 Schema versions, and what a rollback costs
+### 2.2 Schema versions, and what a rollback costs
 
-**One version per document, not one for the namespace** (PLAN-070 §5.2.3).
+**One version per document, not one for the namespace.**
 A namespace-wide version is refused on a specific failure: a bump would rewrite
 every document, and several atomic renames have **no transaction across them**,
 so a power loss halfway would leave documents at mixed versions — a third
@@ -311,21 +239,18 @@ state, which is exactly what the staged-intent design of `ResetSettings` exists
 to refuse. Per document, each migrates alone under its own rename, so a power
 loss leaves each document either old or new.
 
-Every document starts at **v1**, including the STATE remainder: it is a
+Every document starts at **v1**, including the DATA/state remainder: it is a
 document too and is not exempt for being what is left over.
 
-**The `V0→V12` chain is not ported; it was deleted with the document it
-migrated.** There is no fielded device holding a v12 `settings.toml`, so a
-split chain would have been code written to convert a document that does not
-exist. What carries forward is the discipline, which is the part that was ever
-load-bearing:
+No migration chain exists for older documents. Every schema change follows
+these rules:
 
 - a bump is **additive**, and `skip_serializing_if` keeps a new optional table
   out of a document that does not use it, so two adjacent versions of one
   document differ by the version integer alone;
 - every migration has a `down` as well as an `up`, and the `down` states what
   it discards;
-- the reason for both is **A/B rollback survivability**: the system slot can go
+- the reason for both is **A/B rollback survivability**: the running deployment can go
   backwards and the configuration on DATA does not, so an older binary must be
   able to read a newer document;
 - **no migration may move a key from one document to another**, because that is
@@ -334,14 +259,7 @@ load-bearing:
   either of which is survivable alone. The same constraint from the other side:
   do not write a validation rule that spans two documents.
 
-**What was lost, named rather than glossed.** The twelve steps of the deleted
-chain carried twelve recorded arguments about what a bump may do and what a
-`down` may discard. The four rules above are the extract; they are not the
-whole of it. That is the price of not writing a migration for a device that
-does not exist, and it was paid deliberately.
-
-**How the rollback is actually carried (2026-08-21, per document since
-PLAN-070).** The costs above are not paid by down-migrations running on the
+**How a rollback is actually carried.** The costs above are not paid by down-migrations running on the
 device: a rolled-back-to binary cannot carry the down-step a future schema
 needs. What runs instead is the tolerant load. On a document whose
 `schema_version` is newer than this build writes, `Store::load_with_report`
@@ -353,22 +271,21 @@ back to its schema default with an `error!`-level report naming it.
 
 **The blast radius of that loss is now one document**, which is the second
 thing the per-document version buys. Before the split, a reshaped key anywhere
-abandoned every setting including the admin credential and put the device back
-in setup mode on its LAN. Now a reshaped `wifi.json` costs the Wi-Fi settings
+would abandon every setting including the admin credential. A reshaped `wifi.json` costs the Wi-Fi settings
 and leaves the network configuration, the ssh policy and the management
 credential alone. **The loss is still accepted in writing**, priced against the
 crash-loop alternative — refusing the document makes mosd exit, and under
-`Restart=on-failure` the rolled-back-to slot becomes a crash loop that also
+`Restart=on-failure` the rolled-back-to deployment becomes a crash loop that also
 fails its health gate — and it still binds schema authors: prefer additive
 bumps; a reshaping bump forfeits its document's settings on rollback and must
 say so.
 
-### 5.2a Fail closed on the medium
+### 2.2a Fail closed on the medium
 
 System configuration is on DATA, so **a device whose DATA pool does not mount
-has no configuration** — and it must not render a different one. PLAN-070
-§5.2.6 measured the differential first: STATE and DATA are two partitions on
-one medium, so a DATA fault is not an independent failure domain, and apid's
+has no configuration** — and it must not render a different one. DATA/state
+and `/mos/config` are namespaces of the same DATA partition, so a DATA fault is
+not an independent failure domain, and apid's
 unit already carries `RequiresMountsFor=/var/lib/mos /mos`. What a DATA fault
 already costs is the management API and the container and update workspaces;
 what the move would additionally cost is the configured network.
@@ -387,14 +304,14 @@ absent document is a default, an absent namespace is a refusal.** A document
 that was never written is a subsystem that was never configured; a namespace
 that is not there is a medium that did not mount.
 
-The alternative — keeping `network` and `hostname` on STATE so a DATA fault
+The alternative — keeping `network` and `hostname` on DATA/state so a DATA fault
 leaves a device reachable on its configured address — is rejected because it
 re-creates two homes for configuration and makes "which tier does this
 subsystem take" a judgement call rather than a measured boundary. It is
 re-openable, and the thing that would re-open it is evidence that a DATA-only
 fault is a real failure mode on this hardware rather than a theoretical one.
 
-### 5.3 Reconcilers registered today
+### 2.3 Reconcilers registered today
 
 `reconciler::all()` returns seven. The first five, in order:
 
@@ -410,7 +327,7 @@ The last two, registered since and taking the final positions in the list:
 
 | Reconciler | Subtree | Executor |
 |---|---|---|
-| `ContainerReconciler` | `container` | the Quadlet directory's STATE bind unit + `daemon-reload` + the units Quadlet generates from it |
+| `ContainerReconciler` | `container` | the Quadlet directory's DATA/state bind unit + `daemon-reload` + the units Quadlet generates from it |
 | `MqttReconciler` | `mqtt` | broker config file + `mos-mqtt-broker.service` + `mos-mqttd.service` |
 
 Each cell, measured. Both subtrees are the reconciler's own name:
@@ -430,33 +347,21 @@ is correct, the files are visible and no unit exists. The MQTT executor writes
 `const BRIDGE_UNIT: &str = "mos-mqttd.service";`
 (`pkgs/mosd/mosd/src/reconciler/mqtt.rs`).
 
-**The `SshdReconciler` row is corrected, and both cells were wrong.** It used to
-read subtree `access.ssh`, `access.device` and effects "sshd drop-in +
-`/etc/shadow` + `ssh.service`". `subtree()` returns `"access.ssh"` and has
-returned only that since the reconciler was written; the extra cell was stale by
-**supersession**, not by a typo. Under M5 the device credential flowed into
-`/etc/shadow` through this reconciler, so a write to `access.device` genuinely
-had to re-run it. Under the current access model it does not: nothing derives a
-login credential from `access.device` at all (`provisioning.md` §3.6), so
-watching it would schedule work with no effect to produce.
-
-**The final subtree contract, stated so the absence reads as a decision:**
+**The `SshdReconciler` subtree contract:**
 `SshdReconciler` watches **`access.ssh` and nothing else**. `access.device` is
 **deliberately not watched.** A reader who finds the credential subtree missing
 should not reconstruct it as an oversight and add it back.
 
-And the effects cell: this reconciler **no longer writes `/etc/shadow`**. It
+This reconciler **does not write `/etc/shadow`**. It
 reads the marker beside it to decide whether password authentication may be
 offered (`access.md` §3.1), but the only writers of that file today are mosd's
 transient-password bus method and `mos-shadow-reconcile` at boot.
 
-The M2 contract's reconciler shape survived contact with four more subsystems
-unchanged, and the M5 reconcilers converged on a common discipline worth stating
-as the contract for the next one:
+Every reconciler follows the same discipline:
 
 - **pure render, then compare, then write.** The render is a deterministic
   function of the subtree; `apply` re-renders, compares against what is on disk,
-  and skips the write when the bytes match. These files live on STATE, so an
+  and skips the write when the bytes match. These files live on DATA/state, so an
   unconditional rewrite costs a flash write on every reconcile.
 - **read live state before acting.** Ask systemd for the unit's `ActiveState` and
   unit-file state first, and issue only the calls that change something. A
@@ -465,7 +370,7 @@ as the contract for the next one:
   that reads its configuration once at start, whose file changed under it, is
   restarted. Otherwise the rewrite silently did not take effect.
 - **enablement is runtime-scoped** (`EnableUnitFiles` with `runtime = true`).
-  Persistent enablement needs `/etc/systemd/system` to be writable, and on the mos
+  Persistent enablement needs `/etc/systemd/system` to be writable, and on the Mica OS
   read-only root it is not — a persistent enable would fail with EROFS on device
   while passing every test on a normal filesystem. mosd reconciles the whole tree
   at every start, so units return to their configured state each boot anyway.
@@ -476,11 +381,10 @@ as the contract for the next one:
 - **secrets reach the config file and nothing else** — not the live-state tree
   (which is served over D-Bus), not a log line, not an error message.
 
-The settings/live-state split the M2 contract called for is what carries all of
-this: each reconciler publishes its status onto the live-state tree, which apid
+The settings/live-state split carries all of this: each reconciler publishes its status onto the live-state tree, which apid
 reads over the bus.
 
-### 5.3a The network reconciler: kinds, netdevs and teardown
+### 2.3a The network reconciler: kinds, netdevs and teardown
 
 Everything above still holds for a physical interface: one `50-mos-<iface>.network`
 file, rendered, compared, swept. What schema v7 added is a `kind` on each
@@ -534,7 +438,7 @@ unconverged.
 **A WireGuard private key never enters the settings tree.** The schema is
 explicit that it never will: *"There is no private-key field here and there
 never will be"* (`pkgs/mosd/mosd-settings/src/model.rs`). The key lives
-in a file under the STATE directory that holds `settings.toml`, in
+in a file under the DATA/state directory that holds `settings.toml`, in
 `networkd-secrets/` — *"A sibling of `secrets/` rather than anything under it,
 and the name says so because the path is load-bearing"*
 (`pkgs/mosd/mosd/src/wgkeys.rs`), a sibling and not a child because the
@@ -577,7 +481,7 @@ rewrote the file would change what the public key says without changing what the
 tunnel uses. No `SettingsChanged` is emitted: nothing in the settings tree
 changed.
 
-### 5.4 Bus surface
+### 2.4 Bus surface
 
 `com.mos.mosd1` carries:
 
@@ -631,13 +535,12 @@ Each method resolves the caller's unique bus name and **logs the action and its
 source and records it in live state BEFORE invoking the power control**, because
 after the call there may be no system left to log on.
 
-The layering the M2 contract set is preserved: apid is the UI and mosd owns
-system actions. apid does not spawn processes, does not talk to systemd, and does
-not touch `/sbin/reboot`; its only route to a power action is this bus. apid
-exposes them as POST-only routes behind the existing session gate and an explicit
-confirmation token, answering 202 with a rendered page and handing the D-Bus call
-to a detached task — so the operator gets a page rather than a dropped connection
-when the machine goes down mid-call.
+apid is the API and mosd owns system actions. apid does not spawn processes,
+does not talk to systemd, and does not touch `/sbin/reboot`; its only route to a
+power action is this bus. apid exposes power actions as POST-only routes behind
+the session and CSRF gate, waits until mosd has admitted the action, and then
+answers 202 — or reports the refusal — so the client gets an answer rather than
+a dropped connection when the machine goes down mid-call.
 
 **Update orchestration.** `NativeDeploy` in `pkgs/mosd/mosd/src/deployment.rs`
 invokes `mos-deploy` using a bounded subprocess transport. Status is parsed
@@ -660,17 +563,13 @@ services pass; daemon startup cannot bless a deployment.
 
 The safe-to-reboot gate and its bounded audited override remain application
 aware. A candidate pending confirmation is visible directly from native state.
-No wall-clock installation ordering or old slot status is used to infer it.
+No wall-clock installation ordering is used to infer it.
 [The lifecycle contract](updates.md) specifies fields, commands and limits.
 
-### 5.5 Verification status
+### 2.5 Verification status
 
-Current acceptance includes Rust workspace checks and x64/virt-arm64 complete
-image tests for the native service, component updates, quota enforcement,
-health confirmation and fallback. API acceptance runs against the actual QEMU
-guest. The active delivery task records exact image IDs, outcomes and remaining
-fault cases. Older milestone counts below describe their dated snapshots.
-
-**No behaviour in this document has been observed on hardware.** See the milestone record
-for the separation between what is proven locally and what remains the user's
-acceptance.
+Rust workspace checks cover the settings store, reconcilers and bus surface.
+Complete-image tests on x64 and virt-arm64 cover the native deployment service,
+component updates, quota enforcement, health confirmation and fallback, and
+the API suite runs against the QEMU guest. Physical-board acceptance is tracked
+per board in [support tiers](../boards/support-tiers.md#current-boards).

@@ -4,7 +4,7 @@
 - **createdAt**: 2026-09-12 20:43
 - **revisedAt**: 2026-09-12 20:50
 - **approvedAt**: (pending)
-- **relatedTask**: [20260912-2043-unify-board-behavior](../task/20260912-2043-unify-board-behavior.md)
+- **relatedTask**: 20260912-2043-unify-board-behavior
 
 ## Context
 

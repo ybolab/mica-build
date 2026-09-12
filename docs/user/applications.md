@@ -1,6 +1,6 @@
 # Applications
 
-mos supports two application delivery paths, and they differ by who releases
+Mica OS supports two application delivery paths, and they differ by who releases
 them and when:
 
 1. **Native applications** are composed into the signed system image as
@@ -38,7 +38,7 @@ back on its own: the health gate requires a small named set — the boot
 transaction finished, mosd answering, apid answering — and an application unit
 is not in it, so a crash loop after an update leaves you a running device with
 a broken application rather than a rollback. That is deliberate; a device
-rolled into a slot that may not run is worse than a device you can reach and
+rolled into a deployment that may not run is worse than a device you can reach and
 fix. And a container survives an OS rollback unchanged, which is a feature when
 the two release on different schedules and a hazard when the application
 depended on something the older OS does not have.
@@ -76,7 +76,7 @@ file it names cannot quietly stop existing.
 ## 3. Containers: podman and Quadlet
 
 The image ships the engine (podman, crun, conmon, netavark, aardvark-dns, the
-Quadlet generator), built from pinned upstream source. mos does not
+Quadlet generator), built from pinned upstream source. Mica OS does not
 orchestrate containers: you describe workloads in systemd's terms —
 `.container`, `.network`, `.volume` files — and Quadlet turns them into units.
 The integrator's guide with tested examples is
@@ -91,7 +91,7 @@ The operating facts an operator needs:
   default. While it is false, nothing runs and no container unit exists.
   It is set through the authenticated API or the Services page of the UI.
 - **Where definitions go.** `/etc/containers/systemd`, which is a bind of a
-  STATE-backed directory — definitions survive reboots and A/B updates. After
+  DATA/state-backed directory — definitions survive reboots and A/B updates. After
   adding or changing a file: `systemctl daemon-reload`, then start the unit.
 - **Where data goes.** Named volumes land under `/mos/containers/storage` on
   DATA; bind-mount host paths under `/srv`. Never `/var` — it is small,
@@ -126,9 +126,9 @@ examples in the containers guide:
   alongside it means the unit runs the image already on the device or does not
   start, rather than reaching a registry unattended at boot.
 - **Registry credentials are yours to place and rotate.** `podman login
-  --authfile` writes them where you say; put that path on STATE so it survives
+  --authfile` writes them where you say; put that path on DATA/state so it survives
   an update, because podman's default for root is on a tmpfs. The file is
-  encoded, not encrypted, and mos does not manage it.
+  encoded, not encrypted, and Mica OS does not manage it.
 - **Rollback is manual and needs the old image.** Edit `Image=` back to the
   previous digest and restart. That works only while the previous image is
   still on the device — a `podman image prune` removes it, and after that a
@@ -170,7 +170,7 @@ design with no shipped implementation in this repository.
 
 > status: unsupported
 
-## 6. What mos does not enforce
+## 6. What Mica OS does not enforce
 
 Everything above is documentation and tested convention for a trusted product
 integrator. None of it is a mechanism that refuses a release, and the
@@ -182,8 +182,8 @@ accepts any image, and nothing checks a signature at start; **mandatory
 resource ceilings** — CPU, memory, PID and I/O limits are documented and
 tested on both paths, and nothing requires them, so a unit with none is
 started like any other; **a secret store** — registry credentials and
-application secrets are files somebody places on STATE, readable by root, and
-mos does not create, rotate, escrow or audit them; and **automatic
+application secrets are files somebody places on DATA/state, readable by root, and
+Mica OS does not create, rotate, escrow or audit them; and **automatic
 application rollback** — no health gate watches an application update on
 either path.
 
@@ -191,13 +191,13 @@ either path.
 
 The last one has a native qualification that is easy to over-read in either
 direction, and it is narrower than it used to be. Native code inherits the
-whole-slot A/B rollback, but the health gate does not trigger it on an
-application's failure: it requires only that the slot can be RECOVERED — the
+whole-deployment A/B rollback, but the health gate does not trigger it on an
+application's failure: it requires only that the deployment can be RECOVERED — the
 boot transaction finished, mosd answers, apid answers — and reports everything
 else. An application that takes the device off the network entirely will fail
 the gate; one that simply crashes will not. When the rollback does happen it is
 not per-application — it moves every application on the device at once, and it
-moves none of their **data**. STATE
+moves none of their **data**. DATA/state
 and DATA sit outside the A/B pair by design, which is what makes them survive
 an update; the consequence is that an application which migrated its own
 schema on first start is, after any rollback, an old version pointed at new
@@ -208,9 +208,8 @@ data. That contract is the integrator's to write and to test, on both paths.
 Managed and untrusted application controls — independently signed application
 bundles, a distributable container trust policy, admission that can refuse a
 release, a protected secret store, an audit trail and per-application
-health-gated rollback — are a separate product with a separate cost. They are
-recorded as a conditional plan and are not designed into the guides above.
+health-gated rollback — are a separate product with a separate cost. Their design is
+[managed applications](../design/applications.md); they are not implemented
+and not described by the guides above.
 
-> status: proposed — evidence: `docs/plan/PLAN-069.md`
-
-TODO(PLAN-069): revisit after this plan merges
+> status: proposed — evidence: `docs/task/20260912-2058-managed-applications.md`

@@ -1,21 +1,21 @@
-# mos official website — content contract
+# Mica OS official website — content contract
 
-This document is the contract for the mos official website: which pages exist,
+This document is the contract for the Mica OS official website: which pages exist,
 what each may say, and the rules that keep the site honest. It defines content
 and truth rules only. Rendering technology, CMS selection, hosting and public
 deployment are explicitly out of scope and are decided separately after this
-contract is stable (PLAN-042, completed; see the changelog).
+contract is stable.
 
 ## Purpose and audience
 
 The website exists to let a visitor answer four questions without reading the
-engineering record: what mos is, whether their board can run it, how to obtain
+engineering record: what Mica OS is, whether their board can run it, how to obtain
 and verify a release, and what support they can expect. The primary audience is
 the **product integrator** — an engineering team selecting an embedded OS for a
 board they own and a product they ship. Secondary audiences are field/support
 engineers following a link from a support case, and security reviewers auditing
 the update and signing posture. The website is not aimed at desktop end users
-and never pretends mos is a general-purpose distribution.
+and never pretends Mica OS is a general-purpose distribution.
 
 ## Site navigation map
 
@@ -25,8 +25,8 @@ position, content outline and draft copy.
 
 | # | Page | Brief | Role |
 |---|------|-------|------|
-| 1 | Product | [product.md](product.md) | What mos is, who it is for, what it is not |
-| 2 | Embedded differences | [embedded.md](embedded.md) | Why mos is not a server/cloud CoreOS |
+| 1 | Product | [product.md](product.md) | What Mica OS is, who it is for, what it is not |
+| 2 | Embedded differences | [embedded.md](embedded.md) | Why Mica OS is not a server/cloud CoreOS |
 | 3 | Downloads | [downloads.md](downloads.md) | Release and per-board image selection, verification facts |
 | 4 | Supported hardware | [hardware.md](hardware.md) | Board support taxonomy and per-board evidence |
 | 5 | Documentation | [documentation.md](documentation.md) | Portal into the user documentation set |
@@ -41,7 +41,7 @@ Cross-linking rules:
   `docs/user/` page owns.
 - The downloads page links to supported hardware (compatibility) and security
   (verification); supported hardware links to the BSP porting entry point
-  ([../bsp/porting.md](../bsp/porting.md)); security links to support for the
+  ([../boards/porting.md](../boards/porting.md)); security links to support for the
   advisory contact.
 - Footer links on every page: documentation, security, support, licensing.
 
@@ -59,7 +59,7 @@ these briefs. A claim carries exactly one status from this closed set:
   cites the plan record (`docs/plan/PLAN-0xx.md`). Proposed work is always
   rendered as forward-looking ("planned", "designed") and **never** in the
   present tense of an existing feature.
-- **unsupported** — mos does not provide this and does not currently plan to;
+- **unsupported** — Mica OS does not provide this and does not currently plan to;
   no evidence is cited because there is nothing to cite.
 
 The status line is a Markdown blockquote of this exact shape (em dash with
@@ -83,7 +83,7 @@ the machine-readable release manifest each release directory carries, and
 per-board evidence from the board dossiers, so a new release updates the site by
 regeneration rather than by editing prose.
 
-> status: shipped — evidence: `docs/design/release-artifacts.md`, `docs/bsp/qualification.md`
+> status: shipped — evidence: `docs/design/release-artifacts.md`, `docs/boards/qualification.md`
 
 Support windows are the exception, and it is a rule rather than a delay:
 nothing binds a window to a release, so there is no release fact to regenerate

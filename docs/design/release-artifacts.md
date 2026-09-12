@@ -135,7 +135,7 @@ reference classes increase with the assurance ladder:
 This checks evidence completeness, not the truth of prose or physical execution.
 References to disposable QEMU firmware enrollment do not qualify physical
 hardware. See [the security model](security-model.md) and
-[board qualification](../bsp/qualification.md).
+[board qualification](../boards/qualification.md).
 
 ## 5. Verify a received directory
 

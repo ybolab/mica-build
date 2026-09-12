@@ -1,8 +1,8 @@
 # Design: time — NTP, timezone and the trusted-clock floor
 
-> Always-running network time on the systemd/mosd base, a STATE-backed
+> Always-running network time on the systemd/mosd base, a DATA/state-backed
 > last-known-good clock floor, and a presentation-only timezone. Companion to
-> mosd.md, api.md and ro-root.md. Implements PLAN-044 / RFCT-280.
+> mosd.md, api.md and ro-root.md.
 
 ## 1. What ships
 
@@ -32,7 +32,7 @@ Machine, RTC, API and log time are UTC, always. The image bakes no zone —
 
 `time.timezone` is therefore **never applied to `/etc/localtime`**, and that
 is a measured decision, not a shortcut. The `/etc/hostname` pattern (a
-STATE-backed file bind written through `fswrite`) does not transfer:
+DATA/state-backed file bind written through `fswrite`) does not transfer:
 `/etc/localtime` is a *symlink into zoneinfo*, so a bind onto it resolves onto
 `/usr/share/zoneinfo/…/UTC` itself and hands the operator's local zone to
 every reader of UTC — journald timestamps included — which is exactly the
@@ -60,7 +60,7 @@ that validates certificate or metadata expiry runs:
 1. **RTC.** The kernel (and systemd's built-in epoch clamp) set the initial
    clock from the RTC where the board has one. cx3576 declares an
    AT8563/HYM8563 RTC; driver and backup-power validation are
-   hardware-dependent (see RFCT-280's completion note).
+   hardware-dependent and not yet exercised on a unit.
 2. **Saved floor.** timesyncd starts after `var.mount` and creates its owned
    state directory at `/var/lib/systemd/timesync`. It touches `…/clock` every 60 s
    (`SaveIntervalSec`, pinned) and at startup **advances a clock that is
@@ -84,7 +84,7 @@ shadows the saved clock silently.
 
 `time.ntp.servers` renders to `/run/systemd/timesyncd.conf.d/60-mos-servers.conf`
 (`NTP=` under `[Time]`; `60-` so it sorts after the pinned `50-mos.conf` and
-shadows nothing). `/run`, not STATE: the file derives entirely from the
+shadows nothing). `/run`, not DATA/state: the file derives entirely from the
 settings tree and is re-rendered before the unit is touched on every boot.
 An empty list renders **no `NTP=` line** — a bare `NTP=` would clear the
 compiled-in fallback pool and leave the device polling nothing.
@@ -120,7 +120,7 @@ own bound on how wrong the clock may be. The response carries that bit as
 `synchronized` beside the state, so a reader never has to infer which signal
 was used.
 
-**Why the other state is `polling` and not `synchronizing`** (RFCT-299). The
+**Why the other state is `polling` and not `synchronizing`.** The
 two claims above are legitimately different, and a device can hold a usable
 sample while failing the second one for as long as the cause lasts: timesyncd
 writes `maxerror` back down only through the `clock_adjtime` call it makes for
@@ -133,7 +133,7 @@ reading `polling` with a healthy `sample` is being told the truth: the clock
 is *not* known to be within the kernel's bound, and the evidence for both
 halves is in the same response.
 
-**What `unknown` covers** (RFCT-300). It is the state for a signal that could
+**What `unknown` covers.** It is the state for a signal that could
 not be *read* — not for one particular daemon being down. Two services feed
 the classification and either read can go missing: `timesync1` may not be on
 the bus at all, or `timedate1` may not answer `NTPSynchronized`. Three of the
@@ -165,6 +165,6 @@ evidence stays absent; no member is manufactured.
 
 ## 6. Out of scope
 
-PTP, NTS, user-configurable polling periods and any NTP pause switch
-(PLAN-044). Per-board RTC backup-power validation is hardware work tracked in
-RFCT-280.
+PTP, NTS, user-configurable polling periods and any NTP pause switch.
+Per-board RTC backup-power validation is hardware qualification work recorded
+in each board dossier.

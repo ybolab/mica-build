@@ -25,7 +25,7 @@ Planning the root closure reduction from the research measurements.
 
 ## Dependencies
 
-- **blocked by**: user approval of the plan; campaign B owns `rootfs/runtime/` (RFCT-336)
+- **blocked by**: user approval of the plan
 - **blocks**: (none)
 
 ## Notes

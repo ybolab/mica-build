@@ -3,7 +3,7 @@
 - **status**: completed
 - **createdAt**: 2026-09-10 19:10
 - **approvedAt**: 2026-09-10 19:10
-- **relatedTask**: 20260910-1910-fleet-device-plane-protocol
+- **relatedTask**: (none)
 
 ## Context
 
@@ -31,7 +31,7 @@ It does not replace the original evidence baseline in the following table.
 
 | Evidence at that commit | Consequence |
 |---|---|
-| C2 brief (20260910-1012-c-fleet-app-trust-obligations), [PLAN-072](PLAN-072.md) sections 3, 7a, 8; [PLAN-076](PLAN-076.md) sections 2, 5–9 | Off/null, outbound only, TOFU, registration and report allowlists, autonomy and separate reporting consent remain binding. The historical 65-row audit is not reopened. |
+| C2 brief (20260910-1012-c-fleet-app-trust-obligations), PLAN-072 sections 3, 7a, 8; PLAN-076 sections 2, 5–9 | Off/null, outbound only, TOFU, registration and report allowlists, autonomy and separate reporting consent remain binding. The historical 65-row audit is not reopened. |
 | [configuration.rs](../../pkgs/mosd/mosd-settings/src/configuration.rs), `BakedFleet`, `code_defaults`, `provisioning_status_at` | Off/null exists. Fleet projection is still baked-only at this HEAD. Separately authorized FLEET-CONFIG `r3suq4rc` is **not merged here**; do not claim its resolver delivered. |
 | [provisioning_api.rs](../../pkgs/mosd/apid/src/provisioning_api.rs), `api_v1_provisioning_status`; [route tests](../../pkgs/mosd/apid/src/tests/provisioning_api.rs) | D5's authenticated local projection and updates precedence/redaction are delivered. It contains no enrollment/network activity. |
 | [routes.rs](../../pkgs/mosd/apid/src/routes.rs), `ApiCredential`, `api_v1_system_info`, `api_v1_reset`; [reset API tests](../../pkgs/mosd/apid/src/tests/reset.rs) | LAN bearer/session plus CSRF and reset physical presence are local authority, never plane operator authority. System info delegates to the local bus. |

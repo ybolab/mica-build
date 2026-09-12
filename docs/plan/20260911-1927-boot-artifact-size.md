@@ -1,11 +1,11 @@
 # 20260911-1927-boot-artifact-size Shrink the signed boot artifact: compression and early-userspace closure
 
-- **status**: in_progress
+- **status**: implementing
 - **createdAt**: 2026-09-11 19:27
 - **revisedAt**: 2026-09-12 02:57
 - **reviewStatus**: 438 producers complete; final combined consumer review and system/hardware acceptance pending
 - **approvedAt**: 2026-09-11 (explicit worker #347 dispatch)
-- **relatedTask**: [20260911-1925-boot-artifact-size](../task/20260911-1925-boot-artifact-size.md)
+- **relatedTask**: 20260911-1925-boot-artifact-size
 
 ## Context
 

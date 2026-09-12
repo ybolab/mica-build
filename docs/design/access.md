@@ -1,7 +1,5 @@
 # Design: Debug & Maintenance Access
 
-> English | [中文](../zh/design/access.md)
->
 > Shell/SSH/console access for an immutable appliance — configuration-driven,
 > auditable, and disabled by default on every profile. **Not absent from
 > production images:** since the 2026-08-17 decision the prod image carries
@@ -16,14 +14,11 @@ Every section below that describes a **mechanism** carries one of:
 - **[implemented]** — code exists and is named, by path.
 - **[partial]** — some of it exists; what is missing is named.
 - **[not implemented]** — deliberately, no code at all. Prose only.
-- **[decided]** — a question that was open is now settled by the user, with the
-  campaign that settled it named. Added deliberately (campaign `apid`). It marks
+- **[decided]** — a question that was open is now settled by the user. It marks
   a *decision*, not a state of the code: a section can be **[decided]** and
   **[not implemented]** at the same time, and where it is, both markers appear.
 
-The milestone records apply this discipline at milestone level, and its six
-explicitly-not-claimed items are why that record is trustworthy. A design
-document needs it for the same reason, and for one worse case: **dead code has a
+A design document needs this discipline for one especially bad case: **dead code has a
 compiler, a test run and a grep-for-callers that can surface it; a security
 control that exists only as prose has no mechanism that will ever notice it is
 absent.** An undated design paragraph describing a control is not evidence the
@@ -31,10 +26,9 @@ control exists. One section below — §5.2 — is exactly that, and is marked
 accordingly; §6 was the other until later moved two of its four intents
 into code, and it now names which two per intent.
 
-**No section of this document carries [partial] any more, and that is a
-decision.** RFCT-316 triaged every marker here and in
-`docs/design/recovery.md` against the code, and PLAN-037's Gate C requires each
-to end as either the capability it claims or an explicit non-capability, because
+**No section of this document carries [partial], and that is a decision.**
+Every marker here and in `docs/design/recovery.md` was checked against the code
+and ends as either the capability it claims or an explicit non-capability, because
 a half-built capability described as if it works is exactly the prose control
 this section warns about. Where a section held one, it now names the part that
 ships under **[implemented]** and the part that does not under
@@ -68,7 +62,7 @@ preferences or history rather than a mechanism.
 | Local HDMI console (tty2) | root | Transient root password set through the management API/UI; cleared at reboot | **cx3576, prod and dev** — Alt+F2 or Ctrl+Alt+F2 starts an authenticated getty. The logo VT stays idle until selected. See [display policy](display.md). |
 | Console shell (tty3) | root | same as SSH | **not implemented.** `access.console.shellEnabled` exists in the schema with **no reconciler consuming it**, so a managed tty3 shell is unsupported and setting the flag changes nothing on the device. Use SSH explicitly enabled with an enrolled key, or a boot-time provisioning document for initial setup |
 | Serial console (`serial-getty@ttyFIQ0`) | login prompt only | `/etc/shadow`, i.e. nothing by default | **present** — spawned by systemd's getty-generator from the kernel `console=` parameter on both profiles. It has no account that will accept a credential; see §9 |
-| Rescue (all-slots-failed FIT entry) | chroot repair environment | physical access (cmdline / boot failure) | **not implemented.** There is no rescue boot entry and no offline repair environment; the emergency BusyBox binary lives in the same root that would be damaged and is deliberately not one (`docs/design/recovery.md` §6.3). An unbootable device needs an external service host or a whole-disk reflash, which replaces its data and its identity |
+| Rescue (all-deployments-failed boot entry) | chroot repair environment | physical access (cmdline / boot failure) | **not implemented.** There is no rescue boot entry and no offline repair environment; the emergency BusyBox binary lives in the same root that would be damaged and is deliberately not one (`docs/design/recovery.md` §6.3). An unbootable device needs an external service host or a whole-disk reflash, which replaces its data and its identity |
 | Factory (rockusb / SoC loader mode) | full reflash | physical access | hardware-level; see §9.2 |
 
 **One policy source.** The image carries **OpenSSH**, and mosd renders the only
@@ -88,11 +82,11 @@ Implemented by `pkgs/mosd/mosd-settings/src/model.rs` (the tree),
 
 ### 3.1 As shipped
 
-Access policy is a subtree of the mosd settings tree (`docs/design/mosd.md` §3),
-persisted since PLAN-070 §5.2 as one document per reconciler under
-`/mos/config/` on DATA plus the remainder on STATE at
+Access policy is a subtree of the mosd settings tree (`docs/design/mosd.md` §1),
+persisted as one document per reconciler under
+`/mos/config/` on DATA plus the remainder on DATA/state at
 `/var/lib/mos/settings.toml`, each document carrying its own schema version
-(`docs/design/mosd.md` §5.1a says which key lives where). Addressed as one tree
+(`docs/design/mosd.md` §2.1a says which key lives where). Addressed as one tree
 regardless:
 
 ```toml
@@ -147,8 +141,7 @@ verifier can assert it byte-for-byte. Setting it also **replaces** sshd's
 defaults (`~/.ssh/authorized_keys`), which is the point — a key dropped into
 `/root/.ssh` by some other path does not silently grant access.
 
-**The reconciler no longer writes `/etc/shadow`.** Under M5 it hashed the device
-password into the root entry as its second effect; it does not any more. It
+**The reconciler does not write `/etc/shadow`.** It
 *reads* the shadow file's neighbourhood — through
 `transient::transient_password_active`, which tests for the marker beside it —
 because whether password authentication may be offered at all is a question
@@ -157,13 +150,13 @@ method (§4.1) and `mos-shadow-reconcile` at boot.
 
 Unit enablement is **runtime-scoped** (`EnableUnitFiles` with `runtime = true`,
 so symlinks land in `/run/systemd/system`). Persistent enablement would need
-`/etc/systemd/system` to be writable, and on the mos read-only root it is not —
+`/etc/systemd/system` to be writable, and on the Mica OS read-only root it is not —
 a persistent enable would fail with EROFS on device while passing every test on
 a normal filesystem. mosd reconciles the whole tree at every start, so the unit
 returns to its configured state on each boot without a persisted symlink.
 
 The reconciler re-renders, compares against what is on disk, and skips the write
-when the bytes match — the drop-in lives on STATE, so an unconditional rewrite
+when the bytes match — the drop-in lives on DATA/state, so an unconditional rewrite
 would cost a flash write on every reconcile. One case is deliberately not a
 no-op: when the drop-in changed and sshd is already running, the unit is
 **reloaded**, because a rewritten configuration that nothing re-reads
@@ -174,9 +167,7 @@ needs neither: sshd re-reads the authorized-keys file on every attempt.
 
 ### 3.2 `listenAddresses: []` means LISTEN ON ALL
 
-**This is a correction. Earlier revisions of this document commented the field
-`# empty = none`. That is not what ships, and the "none" reading was
-deliberately rejected on L2 review.**
+**An empty list is not "listen nowhere".**
 
 The reconciler treats an empty list as "every address" and emits **no
 `ListenAddress` directive at all**, which is what sshd itself does when given
@@ -211,7 +202,7 @@ that showed only one of them would be lying in one direction or the other.
 and §6 and need a schema change when they land.
 
 **Read as capabilities: SSH idle timeout, timed SSH auto-disable, a
-configurable brute-force policy and META lockdown are unsupported settings, and
+configurable brute-force policy and DATA/meta lockdown are unsupported settings, and
 an operator should not plan around any of them arriving.** An opened shell stays
 open until somebody closes it: **disable SSH explicitly when you are finished**,
 which is the reversible runtime switch of §5.1. The absence of a *configurable*
@@ -286,7 +277,7 @@ UI.
 front of a device with no key installed yet.** It is set through apid, which
 calls a mosd bus method, which:
 
-- bcrypt-hashes the password (cost 12) into the root entry of the STATE-backed
+- bcrypt-hashes the password (cost 12) into the root entry of the DATA/state-backed
   shadow file, and
 - writes exactly that hash into a **marker** beside it,
   `transient-root-password`, 0600.
@@ -310,43 +301,32 @@ not write — one set by hand over the serial console, or by a future
 provisioning path — never equals a marker. Locking unconditionally would be
 this code overwriting a credential it does not own. The marker makes the
 reconciler clear only what it wrote. (A baked `ROOT_PASSWORD` is *not* such a
-case on mos: the pack stage fails any build whose factory shadow carries a
-usable hash, so no buildable mos image ships one — see §5.3.)
+case on Mica OS: the pack stage fails any build whose factory shadow carries a
+usable hash, so no buildable Mica OS image ships one — see §5.3.)
 
 Password authentication is offered to sshd **only while a transient password is
 really active** (§3.2). So a device whose password has expired at boot does not
 present a password prompt that can never be satisfied.
 
-### 4.2 Superseded: the M5 per-device password model
+### 4.2 Rejected: a per-device SSH password
 
-**Superseded by §4.1, 2026-08-19. Recorded, not deleted.**
+A per-device password minted at first boot and written into `/etc/shadow` is
+not used for SSH, for three reasons:
 
-M5 minted a per-device password at first boot, hashed it with bcrypt into
-`/etc/shadow`'s root entry through the sshd reconciler, and stored an Argon2id
-hash of the same password in `access.device.passwordHash`. The whole credential
-model is stated in `docs/design/provisioning.md` §3.
-
-Why it was superseded:
-
-- **A password is a persistent credential with no rotation path.** M5 shipped
-  with nothing that could change one after first boot (the own
-  recorded follow-up); a key list is rotated by editing a list.
-- **A password is guessable at network speed** the moment sshd is up, and M5's
-  brute-force accounting (§6) was never implemented. A public key is not.
-- **Nothing ever exposed the generated password to the operator.** That is
-  M5's known gap, and it made the credential unusable in practice. Under §4.1
+- **A password is a persistent credential with no rotation path**; a key list
+  is rotated by editing a list.
+- **A password is guessable at network speed** the moment sshd is up; a public
+  key is not.
+- **Nothing exposes a generated password to the operator.** Under §4.1
   nothing needs to: the operator chooses the transient password, and persistent
   access needs no shared secret at all.
 
-**The per-device credential still exists on STATE and authenticates nothing.**
+**The per-device credential still exists on DATA/state and authenticates nothing.**
 `access.device.passwordHash` (Argon2id) and the plaintext at
 `/var/lib/mos/secrets/device-password` are still minted at first boot and still
-persisted — the campaign reserved them for future use rather than removing
-them. They are **inert**: no code path verifies either one — not SSH, not the
+persisted, reserved for a later support-side credential or PIN. They are **inert**: no code path verifies either one — not SSH, not the
 serial console, not the apid admin UI, which has always used its own
-`access.webAdmin` hash. The correction is carried in `provisioning.md` §3.2 as
-well. Recorded here so the next reader finds a decision rather than an
-oversight.
+`access.webAdmin` hash. `provisioning.md` §3.2 states the same.
 
 ### 4.3 Later phases — **[not implemented]**
 
@@ -374,7 +354,7 @@ this answer either.
 
 Both later phases authenticate **directly against mosd** — a derived PIN checked
 against a stored hash, and a signature verified against a compiled-in public
-key — neither of which `crypt(3)` can express at all. The STATE-backed shadow
+key — neither of which `crypt(3)` can express at all. The DATA/state-backed shadow
 machinery in `ro-root.md` §4 now exists only for the transient password and for
 keeping every other account locked; it is not permanent architecture.
 
@@ -425,7 +405,7 @@ second thing that can disagree.
 
 #### The bound is a forced rotation, not an expiry
 
-PLAN-046 offers either. This is a rotation, for two reasons.
+An expiry and a rotation are both possible bounds. This is a rotation, for two reasons.
 
 **An expiry would be the first deadline this appliance ever enforced against
 its own clock.** The schema says so twice already, in as many words:
@@ -563,7 +543,7 @@ either demand a rotation that already happened or excuse one that never did.
 `enabled: false` → the reconciler stops and runtime-disables `ssh.service`
 (`pkgs/mosd/mosd/src/reconciler/sshd.rs`). Reversible, and the default.
 
-### 5.2 META lockdown — **[not implemented]**
+### 5.2 DATA/meta lockdown — **[not implemented]**
 
 Design intent: a one-way bit in DATA/meta; when set, the management
 plane ignores config and never registers the services. Cleared only by full wipe
@@ -574,12 +554,12 @@ self-serviceable, "un-lock the shell" is not.
 `.conf` in this repository returns nothing outside `docs/`. There is no one-way
 bit, nothing that reads one, and no reset that preserves one.
 
-**Read as a capability: META lockdown is unsupported, and nothing else in the
+**Read as a capability: DATA/meta lockdown is unsupported, and nothing else in the
 product substitutes for it.** SSH is disabled *reversibly*, through the runtime
 setting of §5.1 and by nothing stronger; **do not describe that switch as a
 one-way state**, because an administrator who can reach the API can turn it back
 on. There is no irreversible shell disablement on this device, and a deployment
-whose requirement is that no shell can ever be re-enabled is a deployment mos
+whose requirement is that no shell can ever be re-enabled is a deployment Mica OS
 does not serve today. Whether the lockdown is ever built is an open product
 decision.
 
@@ -619,11 +599,11 @@ resolves to `prod` too. The build rejects any `MOS_PROFILE` value that is not
 exactly `dev` or `prod` in lowercase.
 
 The `ROOT_PASSWORD` build arg is **v1-only** and is not selected by the profile
-on mos: `rootfs/build.sh` and `rootfs/compose/` carry no such plumbing,
+on Mica OS: `rootfs/build.sh` and `rootfs/compose/` carry no such plumbing,
 because the pack stage unconditionally fails any build whose factory shadow
 holds a usable hash — for every account and on both profiles — and both
-verifiers assert the same about the packed artifact. A baked mos root credential
-is therefore unbuildable, dev profile included. Dev root access on mos is §4.1's
+verifiers assert the same about the packed artifact. A baked Mica OS root credential
+is therefore unbuildable, dev profile included. Dev root access on Mica OS is §4.1's
 transient password set at runtime through mosd, plus the serial console, whose
 root account stays locked until that password is set.
 
@@ -632,14 +612,14 @@ root account stays locked until that password is set.
 it is an absence rather than a build waiting to be wired up: **only dev and prod
 exist, and both carry OpenSSH and the emergency BusyBox binary with SSH disabled
 by default.** A deployment whose requirement is that a shell be *absent from the
-signed image* is one mos should not be selected for; a deployment that needs the
+signed image* is one Mica OS should not be selected for; a deployment that needs the
 shell off in practice uses the runtime disablement of §5.1 and key-only
 persistent authentication, and accepts that both are reversible by whoever holds
 the management credential.
 
 Trade-off accepted with the prod decision: for `prod`, compile-time absence
 no longer protects SSH; the effective defenses are default-off config, key-only
-persistent auth (§4.1), and — when they exist — META lockdown (§5.2) and audit
+persistent auth (§4.1), and — when they exist — DATA/meta lockdown (§5.2) and audit
 (§6).
 
 ## 6. Brute force & audit — two intents **[implemented]**, two **[not implemented]**
@@ -648,7 +628,7 @@ Four intents were stated here. Two now have code and tests; two do not, and
 saying which is which is the point of this section.
 
 **As one sentence, because the pair is what an operator has to plan around:**
-mos provides a bounded, persistent apid login backoff and a best-effort local
+Mica OS provides a bounded, persistent apid login backoff and a best-effort local
 audit ring. It provides **no permanent lockout, no comprehensive shell or
 session audit, and no automatic audit upload.** A legitimate administrator who
 has armed the backoff waits out the window — it is capped, never permanent — and
@@ -670,9 +650,9 @@ separate lifecycle and deployment records on the same physical filesystem.
 
 The directory is 0700 (`StateDirectoryMode=0700` in `pkgs/mosd/dist/apid.service`;
 apid's own `ensure_state_dir` uses the same mode when it creates the path
-itself), every file in it is 0600, and the unit orders itself after the STATE
+itself), every file in it is 0600, and the unit orders itself after the DATA/state
 mount with `RequiresMountsFor=/var/lib/mos` — counters written to a tmpfs
-standing in for an unmounted STATE would reset on the next power cycle, which
+standing in for an unmounted DATA/state would reset on the next power cycle, which
 is the exact bypass the persistence exists to close.
 
 The persisted form is an absolute deadline, so it is capped at `BACKOFF_MAX`
@@ -737,7 +717,7 @@ exists. The stronger claim this
 section made — *no audit trail ⇒ no shell* — is **not** taken: a failed audit
 write is logged and swallowed rather than refusing to serve management.
 Refusing management when the disk fails is a lockdown decision with the same
-brick risk as the paragraph above, and it is not this campaign's to take.
+brick risk as the paragraph above, and it has not been taken.
 
 ## 7. Provisioning paths — paths 1-2 **[implemented]**, paths 3-5 **[not implemented]**
 
@@ -749,8 +729,8 @@ mechanism and this list is only the preference order it came from.
 **Read as a capability: provision a device through a boot-time TOML document on
 the boot medium or on attached removable media, or through browser setup over a
 reachable network. Signed import, hotplug import, captive setup, HDMI local
-setup and the tty2 wizard are all unsupported**, and paths 3 to 5 are an
-ordering a later campaign might follow rather than work in progress. Apart from
+setup and the tty2 wizard are all unsupported**, and paths 3 to 5 are a
+preference order, not work in progress. Apart from
 the two offline documents, the only path in is apid over an existing network.
 
 1. **[implemented]** BOOT-partition provisioning file (edit on SD/USB with any
@@ -769,7 +749,7 @@ the two offline documents, the only path in is apid over an existing network.
      anything is listening. A stick pushed into a running appliance is a
      next-boot document; there is deliberately no rule by which inserting media
      reconfigures a live device.
-3. **[not implemented]** AP-mode captive setup (connd + apid). **Captive-portal
+3. **[not implemented]** AP-mode captive setup (Wi-Fi reconciler + apid). **Captive-portal
    setup is unsupported**, and AP connectivity is not evidence that it is
    nearly here: the AP itself is real — `WifiApReconciler` renders hostapd and
    the DHCP configuration and operates the service — but nothing intercepts or
@@ -791,17 +771,17 @@ the two offline documents, the only path in is apid over an existing network.
    Wi-Fi, use a boot-time provisioning document, and wired management
    connectivity where the deployment has it.
 
-## 8. Phasing & campaign mapping
+## 8. Status by phase
 
-| Phase | Scope | Campaign | Status |
-|---|---|---|---|
-| 1 | `access.ssh` / `access.console` / `access.device` subtrees + `SshdReconciler`; OpenSSH driven by mosd; `dev`/`prod` image profile | M5 | **shipped 2026-08-19**, with the credential model **superseded** the same day (§4.2) |
-| 1 | key-based access (schema v4 `authorizedKeys`), transient root password, SSH off and root passwordless on both profiles, `/home` and `/root` on DATA | campaign `sshweb` | **shipped 2026-08-19** (locally verified; every on-device behaviour is the user's hardware acceptance) |
-| 1 | brute-force counters (persistent) + bounded audit trail | audit work | **shipped 2026-08-23** — on STATE, not META (§6 records the deviation) |
-| 1 | tty3 console shell; META lockdown; hard lockout + physical presence; session/upload audit | — | **not implemented** (§5.2, §6) |
-| 1 | reset tiers 1-3 and presence-gated credential recovery | PLAN-048 | **code shipped, field entry not implemented** — the tiers and the flow exist and are tested; no board declares a physical recovery action, so tier 3 and credential recovery are unsupported in the field (`docs/design/recovery.md` §4) |
-| 2 | wizard TUI + derived PIN + provisioning file/USB import | with connd P2 | not started |
-| 3 | challenge-response, physical presence, variant split enforcement in CI | hardening campaign | not started |
+| Phase | Scope | Status |
+|---|---|---|
+| 1 | `access.ssh` / `access.console` / `access.device` subtrees + `SshdReconciler`; OpenSSH driven by mosd; `dev`/`prod` image profile | shipped; credential model per §4.2 |
+| 1 | key-based access (`authorizedKeys`), transient root password, SSH off and root passwordless on both profiles, `/home` and `/root` on DATA | shipped; on-device behaviour is part of board acceptance |
+| 1 | brute-force counters (persistent) + bounded audit trail | shipped — on DATA/state, not DATA/meta (§6 records the deviation) |
+| 1 | tty3 console shell; DATA/meta lockdown; hard lockout + physical presence; session/upload audit | **not implemented** (§5.2, §6) |
+| 1 | reset tiers 1-3 and presence-gated credential recovery | **code shipped, field entry not implemented** — the tiers and the flow exist and are tested; no board declares a physical recovery action, so tier 3 and credential recovery are unsupported in the field (`docs/design/recovery.md` §4) |
+| 2 | wizard TUI + derived PIN + provisioning file/USB import | not started |
+| 3 | challenge-response, physical presence, variant split enforcement in CI | not started |
 
 ## 9. Recovery: what happens when the operator is locked out
 
@@ -825,11 +805,9 @@ An operator who loses the webAdmin password **and** every authorized key has
 
 **This reads like a regression and is not one, and the difference matters
 because a reader who believes a regression happened will go looking for the
-wrong fix.** Under M5 the per-device password did reach `/etc/shadow`, so the
-console path was *nominally* usable — but nothing in the system ever exposed
-that password to the operator (M5's own known gap). The path was already
-unusable. This campaign makes it **honestly** unusable rather than closing a
-working door.
+wrong fix.** A per-device password in `/etc/shadow` would make the console
+path only *nominally* usable, because nothing exposes that password to the
+operator. The path is unusable, and is documented as unusable.
 
 **The path back in is now code, and it is not yet a door.**
 `docs/design/recovery.md` section 5 designed it and
@@ -903,14 +881,14 @@ than trusting a fixed profile-wide count.
 |---|---|---|---|
 | `mos.mount` | `/mnt/data/mos` | `/mos` | **DATA** |
 | `srv.mount` | `/mnt/data/srv` | `/srv` | **DATA** |
-| `etc-ssh.mount` | `/mnt/data/state/ssh` | `/etc/ssh` | STATE |
-| `etc-hostname.mount` | `/mnt/data/state/hostname` | `/etc/hostname` | STATE |
-| `var-lib-mos.mount` | `/mnt/data/state/mos` | `/var/lib/mos` | STATE |
+| `etc-ssh.mount` | `/mnt/data/state/ssh` | `/etc/ssh` | DATA/state |
+| `etc-hostname.mount` | `/mnt/data/state/hostname` | `/etc/hostname` | DATA/state |
+| `var-lib-mos.mount` | `/mnt/data/state/mos` | `/var/lib/mos` | DATA/state |
 | `home.mount` | `/mos/home` | `/home` | **DATA** |
 | `root.mount` | `/mos/root` | `/root` | **DATA** |
-| `usr-local-lib-systemd-system.mount` | `/mnt/data/state/systemd-units` | `/usr/local/lib/systemd/system` | STATE |
+| `usr-local-lib-systemd-system.mount` | `/mnt/data/state/systemd-units` | `/usr/local/lib/systemd/system` | DATA/state |
 
-The cx3576 WiFi, AP and Bluetooth packages add the STATE-backed
+The cx3576 WiFi, AP and Bluetooth packages add the DATA/state-backed
 `etc-wpa_supplicant.mount`, `etc-hostapd.mount` and
 `var-lib-bluetooth.mount`. The container package ships
 `etc-containers-systemd.mount`, which the reconciler enables only when the
@@ -939,7 +917,7 @@ provide a qualified physical entry for full-factory reset through the API.
 
 ### 10.5 The rejected alternative
 
-**An overlayfs with its upper layer on STATE was rejected**: it creates two
+**An overlayfs with its upper layer on DATA/state was rejected**: it creates two
 sources of truth, where a stale operator edit silently shadows an updated image
 file and the upgrade appears to do nothing.
 
@@ -958,24 +936,24 @@ replaces, and Victron *wants* an end user with physical access to always be able
 to regain access after locking themselves out. Firmware update is their reset
 path.
 
-mos does the opposite. `/etc/shadow` is a symlink onto STATE
+Mica OS does the opposite. `/etc/shadow` is a symlink onto DATA/state
 (`docs/design/ro-root.md` §4), so credentials **survive image replacement** — an
 A/B update changes nothing about who can log in. The UX was copied; the
 credential lifecycle was inverted.
 
-The consequence is §9: mos has no "update your way back in" path, and its
+The consequence is §9: Mica OS has no "update your way back in" path, and its
 equivalent of Victron's physical-access guarantee is a whole-disk reflash that
 costs the operator everything on DATA. That trade is accepted — a fleet
 appliance whose credentials reset on every update is a different product — but
 it must be stated, not discovered.
 
-One thing mos deliberately does **not** copy is the persistence of the password
-itself: mos's operator-set root password is transient by design (§4.1), which is
+One thing Mica OS deliberately does **not** copy is the persistence of the password
+itself: Mica OS's operator-set root password is transient by design (§4.1), which is
 closer to Venus's outcome than to its mechanism.
 
-### 11.2 The META lockdown is the inverse of that same Victron policy
+### 11.2 The DATA/meta lockdown is the inverse of that same Victron policy
 
-§5.2's one-way META bit, which a factory reset deliberately does not clear, is
+§5.2's one-way DATA/meta bit, which a factory reset deliberately does not clear, is
 the **exact inverse** of the Venus policy above: Venus guarantees that physical
 access always recovers the device; the lockdown bit guarantees that it
 sometimes cannot. That is a defensible position for a deployed fleet appliance,

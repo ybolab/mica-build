@@ -1,7 +1,6 @@
 # PLAN-912 Validate s905x5m Bluetooth peer interaction
 
 - **status**: draft
-- **owner**: (unassigned)
 - **createdAt**: 2026-08-31 07:17 UTC
 - **approvedAt**: (pending)
 - **relatedTask**: RFCT-922
@@ -81,7 +80,7 @@ agent, and service evidence can be established safely before the peer arrives.
   endpoint was unreachable. No radio state was changed. Await a reachable
   endpoint, a controlled peer, and approval to perform the state-changing
   pairing/profile phase.
-- 2026-08-31 07:20 UTC: `bash docs/verify-index.sh` passed 48/48. Its scope is
+- 2026-08-31 07:20 UTC: `bash tools/docs/verify-index.sh` passed 48/48. Its scope is
   `docs/design` and `docs/README.md`, not PMA tracking or Bluetooth operation.
 - 2026-08-31 07:21 UTC: targeted task/plan linkage checks passed; the two
   records point to each other and their index entries name the correct files.

@@ -6,7 +6,7 @@
 > **support owner** taking over at RMA intake. Companion to
 > `docs/design/provisioning.md` (what the device mints for itself),
 > `docs/design/security-model.md` (the boundaries manufacturing must not
-> undermine) and `docs/design/boards.md` (the board contract these steps
+> undermine) and `docs/boards/contract.md` (the board contract these steps
 > instantiate).
 
 ## 0. How to read this document, and the current reality
@@ -16,7 +16,7 @@ executable with shipped tooling; **[partial]** — executable with a named gap;
 **[proposed]** — no tooling; prose only.
 
 The current reality, stated first so the rest reads as the plan it is:
-**mos has no factory tooling today.** What ships is first-boot
+**Mica OS has no factory tooling today.** What ships is first-boot
 self-provisioning — the device mints its own `deviceId`, hostname and secrets
 on first boot, on the device, never in the image
 (`docs/design/provisioning.md` §2–3) **[implemented]** — and the SoC-loader
@@ -56,7 +56,7 @@ classes:
 - **Calibration data** — per-device measurements (radio, sensors, display)
   produced by versioned test stations; the station software version is part
   of the calibration record.
-- **Identity material** — see §2: mos identity is minted on-device by
+- **Identity material** — see §2: Mica OS identity is minted on-device by
   design, so the factory input is not an identity but the *procedure and
   station version* that triggers and witnesses first boot. If a future
   fleet identity (device certificates, `docs/design/security-lifecycle.md`
@@ -118,7 +118,7 @@ quarantine, retained for the support lifetime of the product. It contains:
 - for reworked devices, the old→new identity link (§5).
 
 The record is the factory-side twin of the board qualification evidence
-(`docs/design/boards.md` §7's checklist discipline): rows are pass, fail or
+(`docs/boards/contract.md` §7's checklist discipline): rows are pass, fail or
 not-tested — never implicitly green.
 
 ## 4. Quarantine of failures — **[proposed]**
@@ -134,7 +134,7 @@ A device that fails any station stops moving forward. Quarantine means:
 - the only exits from quarantine are **rework** (§5, producing a new
   record generation) or **scrap**, which closes the record with the
   disposition and the destruction of any credential-bearing storage
-  (a scrapped device's STATE holds secrets; `docs/design/security-model.md`
+  (a scrapped device's DATA/state holds secrets; `docs/design/security-model.md`
   §6 — plaintext at rest — makes physical destruction the honest disposal).
 
 ## 5. Rework and RMA — identity is never cloned — **[proposed]**, with the invariant partly enforced by design
@@ -146,7 +146,7 @@ hardware. Concretely:
 - A **replacement board gets a NEW identity.** A replacement built from a
   fresh flash mints a fresh `deviceId` on first boot — the shipped design
   already guarantees this, since identity is CSPRNG-drawn on device and a
-  reflash replaces STATE outright (`docs/design/provisioning.md` §2,
+  reflash replaces DATA/state outright (`docs/design/provisioning.md` §2,
   `docs/design/access.md` §9.2). What manufacturing adds is the rule's
   other half: nobody copies one device's DATA/state identity onto another to
   "preserve" its identity, serial-number continuity is handled in the
@@ -156,7 +156,7 @@ hardware. Concretely:
   identity, the replacement's identity, and the disposition of the
   returned unit (reworked under a new record generation, or scrapped per
   §4). Support history follows the link; the identity does not.
-- The returned device's credentials are treated as exposed: STATE is
+- The returned device's credentials are treated as exposed: DATA/state is
   unencrypted (`docs/design/security-model.md` §6), so an RMA intake
   assumes every secret on the device is readable by whoever shipped it,
   and any fleet-side trust tied to that device identity is revoked at
@@ -176,7 +176,7 @@ credentials and data; the boundary is
 | Serial console | open; stations may use it for provisioning witness | present, login prompt only, **no account accepts a credential** (`docs/design/access.md` §2, §9.1) **[implemented]** |
 | SSH / management | station network, station credentials | off by default on both profiles; key-only persistent access, operator-enrolled (`docs/design/access.md` §4.1) **[implemented]** |
 | SoC loader / recovery (cx3576: rockusb) | the flashing primitive | open to physical access — this **is** the recovery path and the physical-access boundary; closing it is an I4-class decision (§7) |
-| JTAG/SWD | open on the bench | policy is **per board/revision** and recorded in the board's evidence (`docs/design/boards.md`); no mos board today documents or enforces a closed state **[proposed]** |
+| JTAG/SWD | open on the bench | policy is **per board/revision** and recorded in the board's evidence (`docs/boards/contract.md`); no Mica OS board today documents or enforces a closed state **[proposed]** |
 
 The honest field posture today is therefore: software access closed by
 default and credential-gated; physical access open by design and stated as
@@ -204,6 +204,6 @@ absolute:
 - Vendor documentation is input, not evidence: SoC fuse maps differ across
   revisions and vendor docs have been wrong before; only the sacrificial
   run on the same revision counts.
-- Until a board carries that validation, mos ships **no** fused debug or
+- Until a board carries that validation, Mica OS ships **no** fused debug or
   boot policy for it. Current I1-I3 software mechanisms do not establish an
   I4 hardware trust claim; see [boot assurance](security-model.md#5-the-i1i4-boot-assurance-ladder).

@@ -1,6 +1,6 @@
 # 安装当前开发镜像
 
-使用刚构建的完整 MOS 镜像，目标为 x64、virt-arm64 或 cx3576。不提供旧分区布局
+使用刚构建的完整 Mica OS 镜像，目标为 x64、virt-arm64 或 cx3576。不提供旧分区布局
 转换或升级路径。完整写入替换镜像覆盖范围内的系统及数据，需要保留的文件先另存。
 
 > status: shipped — evidence: `build/src/file-image.ts`, `boards/x64/board.env`, `boards/virt-arm64/board.env`, `boards/cx3576/board.env`

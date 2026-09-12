@@ -86,10 +86,10 @@ or emulation facilities are prerequisite failures, not evidence against the
 guest. API observation tests must wait for admitted tasks; HTTP acceptance does
 not prove a reconciler has finished.
 
-cx3576 software checks precede the separate [physical bench sequence](../bsp/cx3576-bench.md).
+cx3576 software checks precede the separate [physical bench sequence](../boards/cx3576-bench.md).
 VM reset and deterministic I/O faults cannot establish physical eMMC power-loss
-durability. The delivery record (20260908-2229-file-ab-delivery-x64-first)
-binds each result to its artifact and states the remaining hardware gates.
+durability. Each acceptance result is bound to its artifact; remaining hardware gates are in
+[support tiers](../boards/support-tiers.md#current-boards).
 
 ## 6. Documentation gates
 
@@ -104,35 +104,28 @@ history rather than beside current instructions.
 
 ## 7. Development integration and acceptance workflow
 
-The 2026-09-12 user direction separates reviewed source integration from image
-qualification. With user authorization, a local development-main merge may proceed after source review
-and affected integration checks, while exact-image guest or board acceptance
-remains pending. A merge is neither a release nor an acceptance pass. This
-supersedes earlier campaign instructions requiring all x64 guest results before
-any source merge; authentication, signatures and release gates are unchanged.
+Source integration and image qualification are separate. A reviewed source
+change may merge to development main after its affected checks pass while
+exact-image guest or board acceptance is still pending. A merge is neither a
+release nor an acceptance pass; authentication, signature and release gates
+are unchanged.
 
-Use one integration owner and one immutable candidate per acceptance round.
-The owner continues the already-approved sequence without per-stage approval:
+Each acceptance round uses one immutable candidate image:
 
-1. Preflight the entire selected input set: package ownership, generated files,
-   symlinks and masks, ELF/interpreter closure, pinned downloads, source identity,
-   trust inputs, and executor/tool/resource availability. Report all discovered
-   input defects together before a root/image build.
+1. Preflight the whole input set: package ownership, generated files, symlinks
+   and masks, ELF/interpreter closure, pinned downloads, source identity, trust
+   inputs and tool availability. Report every input defect before building.
 2. Produce only changed packages or boot/kernel tools. Architecture-independent
-   packages are produced once; architecture-dependent recipes share their source
-   inputs but retain separate amd64/arm64 outputs and receipts.
+   packages are produced once; architecture-dependent recipes keep separate
+   amd64/arm64 outputs and receipts.
 3. Compose the affected root from verified packages, run its closure and binary
    smoke checks, then sign components and assemble one candidate image.
-4. Test isolated copies of that image for boot, reboot, shutdown, update/fallback,
-   reset, storage, services and authenticated API behavior. Bind each verdict to
-   its actual source and artifact; retain the original immutable image.
-5. Review new product changes and summarize acceptance separately. Routine
-   collection and successful later stages do not trigger another source review.
+4. Test isolated copies of that image for boot, reboot, shutdown,
+   update/fallback, reset, storage, services and authenticated API behaviour.
+   Bind each verdict to its source and artifact; keep the original image.
 
-Generic development iterates on x64. Only a concrete ARM-specific source change
-requires a targeted ARM check. The consolidated ARM round follows the stable
-accepted x64 baseline and includes the owed equal-input virt-arm64 cold-root
-comparison. An early development source merge alone does not start that round.
+Generic development iterates on x64. An ARM-specific source change requires a
+targeted ARM check; a consolidated ARM round follows a stable x64 baseline.
 
 ### Changes and invalidation
 
@@ -145,34 +138,9 @@ comparison. An early development source merge alone does not start that round.
 | Kernel, device tree, firmware or boot trust | The affected board components and their actual consumers |
 | Test transport or executor wrapper only | Prove the wrapper, then resume the failed check against the same immutable input |
 
-Reuse follows the implemented source/recipe/toolchain/configuration/trust
-contracts and byte identities. A different main commit is not evidence that
-all producers changed; matching architecture alone is not evidence of reuse.
-Do not weaken freshness checks or rename old outputs to claim new production.
-The separate package-repository proposal remains outside this workflow change.
-
-### Ownership and recovery
-
-Within the approved feature scope and existing resource grant, the execution
-owner may fix the complete evidenced call chain, run RED/GREEN checks, and
-continue. Reviewers inspect new source changes once. A corrected fixture,
-recovered transport error or successfully retried stage remains in history but
-does not require a separate coordinator approval solely because it once failed.
-Unresolved product failures remain failures. Escalate actual scope decisions,
-shared ownership conflicts, trust changes or resource expansion with concrete
-choices; do not re-request authorization already supplied.
-
-Keep one compact state record with current candidate, actual running job,
-completed stages, failed stage/reason, next action and accumulated phase times.
-Reuse verified receipts; only recompute them when their bytes or relevant inputs
-change. Recover the same issue after checking its actual process and detached
-jobs. Do not interrupt a live build because its coordinating turn is idle.
-
-The existing half-hour L1 watchdog is the only periodic campaign scan. B reviews
-real completion/failure events and continues the same B7 owner; remove its
-redundant periodic scan. Completed A/C/D work is not reactivated for unchanged
-snapshots. Background messages reach the user only for a concrete outstanding
-decision; direct progress questions still receive a concise answer.
-
-This section changes development workflow and scheduling. It does not claim
-that a new unified build driver or per-package cache-key implementation exists.
+Reuse follows the source, recipe, toolchain, configuration and trust contracts
+and byte identities. A different main commit is not evidence that all
+producers changed; matching architecture alone is not evidence of reuse. Do not
+weaken freshness checks or rename old outputs to claim new production. A
+recovered transport error or a successfully retried stage stays in history;
+unresolved product failures remain failures.

@@ -29,7 +29,7 @@ the fast path; everything else waits for explicit approval such as `proceed`.
 - Database / storage: none — mosd persists to `DATA/state` and `DATA/meta` as files (`docs/design/`)
 - Dev URL routing: not used; the API is exercised through `pkgs/mosd/tests/apid-api/` against a QEMU guest
 - Deployment target: embedded Linux images (signed file deployments, independent kernel/support and root components) for the boards under `boards/`
-- Quality-gate command: `make docs-verify` for documentation; the full gate set is the `make os-*` targets `.github/workflows/check.yml` runs — there is no single aggregate target yet (see `docs/decisions/`)
+- Quality-gate command: `make docs-verify` for documentation; the full gate set is the `make os-*` targets `.github/workflows/check.yml` runs — there is no single aggregate target yet
 - Fast path: enabled (default)
 - Build resources: do not impose fixed CPU, memory, swap, compiler-job or aggregate build-job quotas unless the user explicitly requests them. Use the available host resources and tool defaults. This supersedes historical task/plan resource envelopes and reservation requirements; apply the same policy to restored build wrappers.
 
@@ -41,6 +41,9 @@ with a sunset date. Do not silently override skill rules in this file.
 
 ### Documentation entry points
 
+- Catalog and ownership rules: `docs/README.md` (product name Mica OS; `mos` prefixes stay in identifiers)
+- Board status: `docs/boards/support-tiers.md`
+- Docs gates: `tools/docs/` (run through `make docs-verify` and `make docs-verify-test`)
 - Tasks: `docs/task/index.md`
 - Plans: `docs/plan/index.md`
 - Decisions: `docs/decisions/`

@@ -1,6 +1,6 @@
 # Configuration
 
-mos configuration is a single typed settings tree, owned by the management
+Mica OS configuration is a single typed settings tree, owned by the management
 daemon (`mosd`), stored as JSON documents under `/mos/config/` on the data
 partition, and applied by reconcilers that drive the underlying system
 services. Every supported way to change the
@@ -14,7 +14,7 @@ The provisioning design (its record is
 [../design/provisioning.md](../design/provisioning.md)) structures
 configuration as three layers:
 
-1. **Layer 1 — first-boot self-provisioning.** From empty STATE the device
+1. **Layer 1 — first-boot self-provisioning.** From empty DATA/state the device
    seeds identity, hostname, secrets and defaults, offline, exactly once.
    Shipped; described in [first-run.md](first-run.md).
 2. **Layer 2 — local configuration channels.** The authenticated HTTPS API
@@ -43,9 +43,9 @@ matching reconciler has applied it.
 configuration — hostname, network, WiFi, SSH, MQTT, time, the container
 switch and the update settings — is written as one JSON document per subsystem
 under `/mos/config/` on the data partition. What the device mints or observes
-about *itself* stays on STATE: the device identity, the administrator
+about *itself* stays on DATA/state: the device identity, the administrator
 credential, API tokens. Both survive a reboot and an A/B update, because an
-update writes only the system slots.
+update writes only SYSTEM deployments.
 
 The split is the reset boundary rather than a storage detail: **a
 configuration reset returns everything under `/mos/config/` to the values the
@@ -105,7 +105,7 @@ The root filesystem is a verity-protected read-only squashfs. There is no
 outright or lands in memory and vanishes on reboot. Anything that must persist
 must be modelled in the settings tree and exposed by the API — if the API
 cannot set it, the appliance does not support persisting it. The deliberate
-exceptions (paths bound onto STATE or DATA, such as `/etc/ssh` or the Quadlet
+exceptions (paths bound onto DATA, such as `/etc/ssh` or the Quadlet
 directory) are enumerated in the design record, and integrator files, scripts
 and data belong on DATA ([storage.md](storage.md)).
 
@@ -135,7 +135,7 @@ formats with, and nothing else.
 
 Below network time sits a clock floor, so a device with no RTC or a dead RTC
 battery still boots no earlier than the last minute it was known to be
-running: the saved clock lives on STATE and survives reboots and A/B updates.
+running: the saved clock lives on DATA/state and survives reboots and A/B updates.
 PTP, NTS and configurable polling periods are out of scope.
 
 **Unproven on hardware:** the cx3576's device tree declares an RTC, and

@@ -73,7 +73,7 @@ no standing decision excludes.
 6. **Authorization.** Section 8 items 3 (curl probe in Rust, drop the
    closure), 4 (host-key generation in Rust, drop `openssh-client`) and the
    iptables half of item 6 are the content of
-   [PLAN-086](PLAN-086.md) S5, which the user declined on 2026-09-08 (not
+   PLAN-086 S5, which the user declined on 2026-09-08 (not
    deferred, not owed) and reaffirmed on 2026-09-10: no general shell or
    network-tool reduction and no outbound-SSH removal. This plan excludes
    them; Alternatives records what reversing that decision would require.

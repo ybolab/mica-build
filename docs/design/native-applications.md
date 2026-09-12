@@ -1,6 +1,6 @@
-# Native applications on mos
+# Native applications on Mica OS
 
-A native application on mos is code that is **in the image**. It is built into
+A native application on Mica OS is code that is **in the image**. It is built into
 a Debian package at build time, composed into the verity-sealed root with
 everything else, started by systemd as an ordinary unit, and replaced only by
 a signed A/B system update. There is no `apt` on the device and no way to
@@ -12,7 +12,7 @@ This document is the integrator's guide to that path.
 between them is [../user/applications.md](../user/applications.md).
 
 Everything cited here is linked into the source tree rather than transcribed
-out of it, because `docs/verify-links.sh` resolves those links and fails
+out of it, because `tools/docs/verify-links.sh` resolves those links and fails
 `make docs-verify` when one of them stops existing. The files are the
 examples; this document is the map.
 
@@ -28,7 +28,7 @@ them is checkable rather than a matter of taste:
   version. There is no separate application version to report, no way to ship
   a fix without shipping an image, and no combination of application and OS
   versions in the field that was not built and tested together.
-- **Rollback is the slot's.** An A/B rollback takes the application back with
+- **Rollback is the deployment's.** An A/B rollback takes the application back with
   the OS, in one atomic step, because they are the same filesystem.
 - **A failure is the boot's.** A native unit that fails after an update fails
   the health gate, and a boot that does not reach `mark-good` is rolled back
@@ -85,7 +85,7 @@ out, so that an omission and a decision cannot look alike.
 Two ordering facts are mos-specific and both are load-bearing:
 
 - **`RequiresMountsFor=`** is how a unit says it must not start before the
-  partition it writes to is mounted. STATE and DATA are bind mounts brought up
+  partition it writes to is mounted. DATA/state and the other DATA namespaces are bind mounts brought up
   during boot, and a daemon that starts ahead of them writes to the read-only
   root or to a tmpfs standing in for storage — which works, and then loses
   everything at the next power cycle.
@@ -94,9 +94,9 @@ Two ordering facts are mos-specific and both are load-bearing:
 - **The unit cannot be edited on the device.** The root is an immutable
   dm-verity squashfs, and `systemctl edit` has nowhere to write. Anything that
   differs per device — a broker address, a site identifier — is read at
-  runtime from a file on STATE, with the unit carrying only the fallback.
+  runtime from a file on DATA/state, with the unit carrying only the fallback.
   [`pkgs/mosd/mqttd/dist/mos-mqttd.service`](../../pkgs/mosd/mqttd/dist/mos-mqttd.service)
-  is the pattern: `EnvironmentFile=-` for the optional STATE file, defaults in
+  is the pattern: `EnvironmentFile=-` for the optional DATA/state file, defaults in
   `Environment=` lines, and the same defaults restated in the binary's own
   argument parsing so that a wiped environment cannot silently change the
   mode the daemon runs in.
@@ -115,7 +115,7 @@ unit exists — so a rule naming a dynamic user parses, loads, and matches
 nothing. A grant that cannot match is worse than a missing grant, because in
 a diff and in a review it reads exactly like a working one. The same argument
 applies to anything that has to name the identity ahead of time: a udev rule
-granting a device node, a `chown` in a maintainer script, an ACL on a STATE
+granting a device node, a `chown` in a maintainer script, an ACL on a DATA/state
 directory.
 
 `DynamicUser=` also implies `RemoveIPC=`, `PrivateTmp=` and a `UMask=`; a unit
@@ -147,7 +147,7 @@ required diagnostic evidence before reboot.
 
 Health is where the native path differs most from the container one, and it
 is worth being exact about what it does and does not promise — **it promises
-less than it used to, deliberately** (PLAN-089).
+deliberately little**.
 [`rootfs/overlay/usr/lib/mos/mos-health`](../../rootfs/overlay/usr/lib/mos/mos-health)
 runs once per boot, waits for systemd to settle, and confirms the authenticated booted deployment
 when a **required set** passes: the boot transaction finished, mosd answers on
@@ -157,11 +157,9 @@ lines in
 else the gate observes, **including a unit in the failed state**, is reported
 and never fatal. An unconfirmed deployment consumes the native UEFI/FIT trial budget before fallback.
 
-Until PLAN-089 the rule was the inverse — any failed unit not named in a
-`tolerate-failed` allowlist refused the slot, and that allowlist shipped empty.
-It cost a cx3576 a boot credit on every boot for a oneshot that governs nothing
-on that SKU. The criterion is now "can this slot be recovered", not "is
-everything on this device working".
+The criterion is "can this deployment be recovered", not "is everything on
+this device working": a gate that failed on any failed unit would spend a trial
+attempt on every boot for a oneshot that governs nothing on that SKU.
 
 So a native application unit is **not** inside the update health gate. Three
 things follow:
@@ -169,7 +167,7 @@ things follow:
 - **A crash loop after an update does not roll the device back.** It leaves a
   running, reachable, updatable device with a broken application on it — which
   is the better of the two failures, because the alternative is a device
-  rolled into a slot that may not run either. Detect it with the health report
+  rolled into a deployment that may not run either. Detect it with the health report
   and the diagnostics, and fix it with an update.
 - **What an application CAN still fail is a required member.** A unit that
   takes the network down, wedges mosd, or takes port 443 away from apid fails
@@ -204,7 +202,7 @@ Device access is systemd's, with nothing mos-specific over it:
   section 6.
 
 Device names are board facts. Take them from the board's dossier under
-[../bsp/](../bsp/cx3576-example.md) rather than from another board's unit;
+[../boards/](../boards/cx3576.md) rather than from another board's unit;
 [`boards/cx3576/hwinit/`](../../boards/cx3576/hwinit) is where the shipped
 board-specific units live.
 
@@ -227,14 +225,14 @@ the only thing asking.
 
 ## 9. The update, and what does not roll back with it
 
-A native application updates when the image does: the new root is written to
-the inactive slot, the bootloader switches, and the binary, the unit and the
+A native application updates when the image does: the new deployment is installed
+beside the current one, the boot records select it, and the binary, the unit and the
 OS move together or not at all. Rollback is the same edge in reverse, and it
 is automatic on a boot that fails the health gate
 ([../user/update-rollback.md](../user/update-rollback.md)).
 
-**The code rolls back. The data does not.** STATE and DATA are outside the
-A/B pair by design — that is what makes them survive an update — so an
+**The code rolls back. The data does not.** DATA/state and the other DATA namespaces are outside the
+deployments by design — that is what makes them survive an update — so an
 application that migrated its own schema on first start after an update is,
 after a rollback, an old binary pointed at new data. The A/B mechanism cannot
 see that and will not warn about it.
@@ -242,12 +240,12 @@ see that and will not warn about it.
 This is the same hazard as the container one and it has the same owner: the
 integrator writes migrations that the previous version can still read, or
 keeps a copy it can restore, or accepts that the rollback restores service
-rather than state. mos holds no opinion and offers no per-application
+rather than state. Mica OS holds no opinion and offers no per-application
 rollback of either kind.
 
 ## 10. The writable unit directory, and why it is not this path
 
-`/usr/local/lib/systemd/system` is a bind of STATE
+`/usr/local/lib/systemd/system` is a bind of DATA/state
 ([`usr-local-lib-systemd-system.mount`](../../rootfs/overlay/etc/systemd/system/usr-local-lib-systemd-system.mount)),
 and a unit dropped there survives a reboot and an A/B update. It exists, it
 works, and it is deliberately **not** the supported way to deliver a native
@@ -263,7 +261,7 @@ bad day.
 Use it for what it is good at: a debugging drop-in, a temporary unit during
 bring-up, an override an operator installs knowingly and removes. Note also
 that systemd reads it **below** `/etc/systemd/system` and `/run/systemd/system`
-in the unit load path, so it cannot override a unit mos ships — which is
+in the unit load path, so it cannot override a unit Mica OS ships — which is
 intentional.
 
 ## 11. What is not enforced
@@ -278,15 +276,15 @@ convention rather than a mechanism that refuses:
 - **No ceiling is mandatory.** Sections 8 and containers.md section 8 describe
   what to set; nothing checks that anything was set.
 - **There is no secret store.** A native application's credentials are files
-  the package or the operator puts on STATE, owned by root or by the
-  application's account, and mos does not create, rotate, escrow or audit
+  the package or the operator puts on DATA/state, owned by root or by the
+  application's account, and Mica OS does not create, rotate, escrow or audit
   them.
-- **There is no per-application rollback.** Native code inherits the whole-slot
+- **There is no per-application rollback.** Native code inherits the whole-deployment
   A/B rollback, which is not the same promise: it moves every application on
   the device, and it moves none of their data.
 
 The controls that would change these answers — signed independent bundles,
 admission that can refuse a unit, non-bypassable ceilings, a protected secret
 store, per-application health-gated rollback — are a separate product with a
-separate cost, and are left to [PLAN-069](../plan/PLAN-069.md) rather than
-designed here.
+separate cost, and are designed in [managed applications](applications.md)
+rather than here.

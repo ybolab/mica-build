@@ -3,7 +3,7 @@ set -euo pipefail
 
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 repo=$(cd "$here/../.." && pwd)
-collector=$repo/docs/bsp/cx3576-bench-collect.sh
+collector=$repo/tests/cx3576-bench/collect.sh
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 

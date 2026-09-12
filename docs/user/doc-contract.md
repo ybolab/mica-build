@@ -1,4 +1,4 @@
-# The mos user documentation contract
+# The Mica OS user documentation contract
 
 This page is the contract behind everything under `docs/user/`: who these
 pages are for, what each page owns, how a claim about the product is labelled
@@ -8,13 +8,13 @@ in the page, not a licence to relax the contract.
 
 ## 1. Audience
 
-mos is an embedded appliance operating system. The user documentation serves
+Mica OS is an embedded appliance operating system. The user documentation serves
 three readers, in this order:
 
 1. **Device operators** — the person in front of a fielded appliance:
    installing, configuring, updating, recovering, and deciding what to tell
    support.
-2. **Product integrators** — the team building a product on mos: composing
+2. **Product integrators** — the team building a product on Mica OS: composing
    images, delivering applications, selecting and qualifying boards.
 3. **Support engineers** — the person a failure report reaches, who needs the
    device's identity and the honest boundary between shipped behaviour and
@@ -34,11 +34,11 @@ from everywhere else.
 
 | Page | Owns |
 |---|---|
-| [quickstart.md](quickstart.md) | the shortest honest path to a running mos system |
+| [quickstart.md](quickstart.md) | the shortest honest path to a running Mica OS system |
 | [download.md](download.md) | release selection and obtaining an image |
 | [install.md](install.md) | writing an image to a board and reaching first boot |
 | [first-run.md](first-run.md) | first boot, the offline provisioning document, and claiming the device |
-| [manufacturing.md](manufacturing.md) | putting mos on units at volume: identity and credential ownership, factory records, quarantine |
+| [manufacturing.md](manufacturing.md) | putting Mica OS on units at volume: identity and credential ownership, factory records, quarantine |
 | [configuration.md](configuration.md) | the configuration model and every supported way to change settings |
 | [applications.md](applications.md) | delivering and running applications: native packages and containers |
 | [update-rollback.md](update-rollback.md) | the A/B update path, health confirmation and rollback |
@@ -51,7 +51,7 @@ from everywhere else.
 | [support.md](support.md) | support tiers, lifecycle ownership, and what a support case needs |
 
 Website content briefs live under `docs/website/` and the BSP porting and
-qualification set under `docs/bsp/`; user pages link into both where the
+qualification set under `docs/boards/`; user pages link into both where the
 journey crosses them (hardware selection, downloads, support tiers).
 
 ## 3. Truth-status taxonomy — normative
@@ -67,8 +67,8 @@ The four statuses:
 - **board-dependent** — the capability ships for at least one board and its
   presence or shape is a board fact (declared in `boards/<board>/` or by a
   board's BSP).
-- **proposed** — the capability is planned and recorded in an approved or
-  draft plan under `docs/plan/`, and does not ship. Describing a proposed
+- **proposed** — the capability is planned and tracked by an open plan or
+  task record, and does not ship. Describing a proposed
   contract is allowed; presenting it as current behaviour is not.
 - **unsupported** — the capability does not exist and is not currently
   planned, or is explicitly outside the product contract.
@@ -82,7 +82,7 @@ backticks, multiple references separated by `, `:
 ```
 > status: shipped — evidence: `pkgs/mosd/apid/openapi.json`
 > status: board-dependent — evidence: `boards/cx3576/board.env`
-> status: proposed — evidence: `docs/plan/PLAN-054.md`
+> status: proposed — evidence: `docs/task/20260912-2058-fleet-runtime.md`
 > status: unsupported
 ```
 
@@ -91,9 +91,10 @@ backticks, multiple references separated by `, `:
 - `shipped` and `board-dependent` must cite an existing repository path (a
   file or a directory) or a `make <target>` that exists in the top-level
   `Makefile`.
-- `proposed` must cite an existing plan record under `docs/plan/` — any
-  record file there, whether `<timestamp>-<feature-slug>.md` or an older
-  numbered `PLAN-NNN.md`; the index is not a record.
+- `proposed` must cite at least one open tracking record: a detail file under
+  `docs/plan/` or `docs/task/` whose index entry is pending (`[ ]`) or in
+  progress (`[-]`). When the record completes or closes, the gate fails until
+  the page is relabelled.
 - `unsupported` carries no evidence; the absence is the claim.
 - Evidence is verified to exist before it is cited. A dead evidence reference
   is a broken claim, not a cosmetic defect.
@@ -102,17 +103,16 @@ backticks, multiple references separated by `, `:
   contract is needed, the artifact that carries it is named instead — for
   example, the HTTP surface is `pkgs/mosd/apid/openapi.json`.
 
-### Proposed content and TODO markers
+### Proposed content
 
-Where a page describes a capability a plan is still building, it states the
-planned contract, labels it `proposed` with the plan as evidence, and marks the
-section with a single line of the form `TODO(<plan record>): revisit after
-this plan merges`, so the section is swept and relabelled when the plan lands. At most
-one such marker per section.
+Where a page describes a capability that is still being built, it states the
+planned contract and labels it `proposed` with the open record as evidence.
+The evidence rule above forces the relabel when that record completes or
+closes, so no separate TODO marker is used.
 
 ## 4. Versioning
 
-The user documentation set is versioned with the mos release it ships in.
+The user documentation set is versioned with the Mica OS release it ships in.
 A page describes the release it is checked out with; there is no separate
 documentation version number, and no page describes a newer or older release
 than the tree that contains it. Statements tied to a specific board or profile
@@ -129,12 +129,12 @@ source version it was translated from, and a status that is one of `current`,
 `lagging` or `not-translated`. On any conflict the English page wins.
 
 The Chinese set exists under `docs/zh/`, and the check that holds the coverage
-table honest is `docs/zh/verify-coverage.sh`, run by `make docs-verify`: it
+table honest is `tools/docs/verify-coverage.sh`, run by `make docs-verify`: it
 asserts the table against both trees in both directions, and requires a
 `current` page to carry the same status lines, in the same order, as its
 English source.
 
-> status: shipped — evidence: `docs/zh/README.md`, `docs/zh/verify-coverage.sh`
+> status: shipped — evidence: `docs/zh/README.md`, `tools/docs/verify-coverage.sh`
 
 ## 6. Style rules
 

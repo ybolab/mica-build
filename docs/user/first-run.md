@@ -1,6 +1,6 @@
 # First boot, offline setup and claiming the device
 
-A mos appliance must reach a fully working state with zero external input —
+A Mica OS appliance must reach a fully working state with zero external input —
 no DHCP server, no DNS, possibly no cable. That property is designed in, not
 incidental. This page covers what the first boot does by itself, the offline
 route for configuring a device with no network at all, and how the device
@@ -57,18 +57,6 @@ On cx3576 neither Ethernet port has a MAC address in hardware, so the device
 derives one for each of them from the eMMC chip identifier and from where the
 port is attached to the board. The addresses are therefore stable across
 reboots, reflashes and image updates.
-
-**They changed once.** Before RFCT-359 the second half of that derivation was
-the interface name, `eth0` or `eth1`, which is the order the two ports happened
-to be found in and not a property of either — so a device could come back from a
-reboot with the two addresses exchanged, and one port could come up with a
-random address that was different again on the next boot. Fixing it moves the
-addresses of every unit already in service. **DHCP reservations, switch port
-allowlists, firewall rules and anything else keyed on a device's old MAC
-addresses stop matching the moment it takes an image built after this change**;
-read the new addresses off the device and re-key them. mos makes no
-compatibility promise before 1.0, and this is a change that is visible across a
-whole fleet at once.
 
 > status: board-dependent — evidence: `boards/cx3576/hwinit/hwinit-mac`, `boards/cx3576/bsp/init/mac.conf`, `make os-mac-test`
 
@@ -150,7 +138,7 @@ not: no test and no bench run has staged a real boot partition or a real USB
 stick into a booting device, and the boot-partition transport in particular
 has never run on a physical board. The mechanism ships; the procedure is
 unproven, and a board dossier is where a run of it gets recorded
-([../bsp/qualification.md](../bsp/qualification.md)).
+([../boards/qualification.md](../boards/qualification.md)).
 
 > status: shipped — evidence: `rootfs/overlay/usr/lib/mos/mos-provisioning-import`, `docs/design/provisioning.md`
 

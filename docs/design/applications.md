@@ -13,7 +13,7 @@ fleet rollout and arbitrary local root workloads are out of scope.
 
 Applications and Services are separate product areas:
 
-- **Services** controls mos system capabilities, currently the global
+- **Services** controls Mica OS system capabilities, currently the global
   container runtime and MQTT switches.
 - **Applications** inventories products, explains their origin and trust,
   installs catalog releases, and owns their local lifecycle and data-retention
@@ -52,7 +52,7 @@ The managed contract therefore has these non-negotiable rules:
 5. Artifact acquisition runs without activation privilege. Privileged
    activation re-validates the exact digest, signature, manifest and staged
    tree before publishing runtime definitions.
-6. Native catalog admission remains disabled until mos provides a non-root
+6. Native catalog admission remains disabled until Mica OS provides a non-root
    application identity, a reviewed systemd sandbox profile and boot-time OS
    compatibility enforcement.
 7. No UI text claims hostile multi-tenant isolation on the current rootful OCI
@@ -67,7 +67,7 @@ payload includes at least:
 |---|---|
 | Identity | schema version, stable app id, display name, vendor, version, release notes |
 | Artifact | kind, exact digest, signature identity, acquisition size |
-| Compatibility | architecture, board/profile, mos API/schema range, minimum/maximum system version |
+| Compatibility | architecture, board/profile, Mica OS API/schema range, minimum/maximum system version |
 | Interfaces | host ports, networks, device nodes, D-Bus names, MQTT classes/topics and mounts |
 | Storage | persistent volume declarations, minimum/reserved size, retention and data schema version |
 | Secrets | named secret references and their consumers; never secret values |
@@ -133,7 +133,7 @@ Browser / kiosk -> APID -> mosd -> mos-appd -> OCI/native adapter -> systemd
                          +-> typed state, tasks and audit projection
 ```
 
-APID continues to expose only the versioned mos management API. mosd calls the
+APID continues to expose only the versioned Mica OS management API. mosd calls the
 manager and projects application state and tasks. It does not call Podman or
 write systemd definitions from HTTP handlers.
 
@@ -157,14 +157,14 @@ The manager owns:
 
 | Data | Planned location/owner | Durability |
 |---|---|---|
-| Registry, active revision, small activation metadata | `/mnt/data/state/mos/apps/` | STATE; survives reboot and A/B |
+| Registry, active revision, small activation metadata | `/mnt/data/state/mos/apps/` | DATA/state; survives reboot and A/B |
 | Download staging and artifact cache | `/mos/apps/.staging/` and manager-owned cache | DATA; bounded and garbage-collected |
 | Per-app persistent data | `/mos/apps/<app-id>/data/` | DATA; retained by default on remove |
-| Generated runtime definitions | manager-owned STATE-backed directories | STATE; atomically published |
+| Generated runtime definitions | manager-owned DATA/state-backed directories | DATA/state; atomically published |
 | Secrets | new protected per-app secret store | write-only through API; delivered as credential files |
 | Runtime logs | bounded journal query/export | Bounded volatile journal; not a permanent audit trail |
 
-Large images and bundles never go to STATE, and persistent app data never goes
+Large images and bundles never go to DATA/state, and persistent app data never goes
 to `/var`. Preflight accounts separately for download staging, retained
 last-known-good artifacts, requested persistent reservation and free-space
 headroom. These allocations share DATA with retained UI bundles and system

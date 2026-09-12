@@ -32,23 +32,22 @@ first: data-preserving actions before irreversible ones. The
 Support ownership follows the board support taxonomy on the
 [supported hardware](hardware.md) page:
 
-- For **mos-qualified** boards, the mos project is the named lifecycle owner
+- For **mos-qualified** boards, the Mica OS project is the named lifecycle owner
   of the OS on that board: the BSP, the update path and the recovery
   procedures its dossier claims.
 - For **integrator-qualified / bring-up** boards, the integrator owns the
-  board's qualification and lifecycle; mos supplies the board contract,
+  board's qualification and lifecycle; Mica OS supplies the board contract,
   guidance and the shared OS core. Support cases about board-specific
   behaviour route to the board's owner named in its evidence dossier.
 - For **unsupported** hardware, no support claim exists.
 
 The taxonomy and its ownership split are defined; which tier a board holds is
 a separate question its dossier answers. No board holds the mos-qualified tier
-today — the one dossier on file carries every qualification row as
-`not tested` — so the first bullet describes the ownership that tier would
+today — no board has a dated physical qualification row — so the first bullet describes the ownership that tier would
 carry, not a board the site can point at.
 
-> status: shipped — evidence: `docs/bsp/support-tiers.md`
-> status: board-dependent — evidence: `docs/bsp/cx3576-example.md`
+> status: shipped — evidence: `docs/boards/support-tiers.md`
+> status: board-dependent — evidence: `docs/boards/cx3576.md`
 
 ### Lifecycle and support windows
 
@@ -72,10 +71,10 @@ sentence is not a commitment the site can render.
 ### Filing a case
 
 A support case cites the device's release identity — version, board, profile
-and active slot — so the responder reproduces against the exact image. One
+and booted deployment — so the responder reproduces against the exact image. One
 authenticated read answers it: the system-information surface returns the
 machine id, board, kernel, image version and build date, the installed package
-set and the booted slot. A bounded, redacted diagnostic snapshot can be
+set and the booted deployment. A bounded, redacted diagnostic snapshot can be
 collected and downloaded to attach to the case; the device never uploads it
 anywhere.
 

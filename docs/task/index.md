@@ -1,4 +1,4 @@
-# MOS tasks
+# Mica OS - Task List
 
 > Updated: 2026-09-12
 
@@ -12,72 +12,35 @@ Each task is a single line linking to its detail file. All detailed information 
 
 ### Status Markers
 
-| Marker | Meaning | Record status head |
-|--------|---------|--------------------|
-| `[ ]`  | Pending | `pending` |
-| `[-]`  | In progress | `in_progress` |
-| `[x]`  | Completed | `completed` |
-| `[~]`  | Closed / Won't do | `closed` |
-
-Each record's front matter carries a status line of the shape
-`- **status**: <head>` or `- **status**: <head> — <free detail>`, where
-`<head>` is exactly one of the four heads above and the detail after ` — ` is
-free text. Nothing in this tree enforces that the record and its marker agree: the
-repository has no `scripts/` directory, and the `task-state.sh` serializer
-that keeps them in step ships with the PMA skill, not here, so a hand edit
-can still move one without the other. They had drifted apart five times
-by 2026-09-07 (RFCT-305, 310, 315, 335 and UI-011 were all marked `[x]` while
-their own records said in progress or pending). Read the record, not the row.
+| Marker | Meaning |
+|--------|---------|
+| `[ ]`  | Pending |
+| `[-]`  | In progress |
+| `[x]`  | Completed |
+| `[~]`  | Closed / Won't do |
+| `[d]`  | Deleted detail file; index entry retained |
 
 ### Priority: P0 (blocking) > P1 (high) > P2 (medium) > P3 (low)
 
 ### Rules
 
-- Update or delete task entries and their detail files as needed; keep them
-  consistent.
-- Record change history and deletion reasons in `docs/changelog.md`; update
-  affected task and plan references.
+- Only update the checkbox marker; never delete the line or change its other content. If the detail file is deleted, mark the entry `[d]`.
+- Record change history and deletion reasons in `docs/changelog.md`; update affected dependency and plan references.
 - New tasks append to the end.
-- **New records are named `<timestamp>-<feature-slug>.md`** — the creation
-  time in UTC at minute precision as `YYYYMMDD-HHmm` (no `T`, no `Z`), then a
-  lowercase kebab-case slug. No sequence number is allocated. Existing
-  numbered `RFCT-NNN` files remain valid and are not renamed.
-- See each detail file for full details.
-- **A completed task's record is deleted, and its line goes with it.** This
-  index is a list of what is left, not a history of what was done. A finished
-  task lives in git history: `git log --diff-filter=D -- docs/task/` lists
-  every record that has left, and `git show <commit>^:docs/task/RFCT-NNN.md`
-  prints one back. `docs/verify-index.sh` and `docs/verify-links.sh` both
-  exclude this directory, and say so in their own headers, so a deleted record
-  breaks no gate.
-- **The record's own `status` head is authoritative; the marker summarises it.**
-  Where the two disagreed, the record won -- see the note above; five rows were
-  marked `[x]` over records that said otherwise, and deleting on the marker
-  alone would have destroyed work still in flight.
-- **A citation to a deleted task stays as text, not as a link** --
-  `RFCT-281`, not `[RFCT-281](RFCT-281.md)`. The name survives so the reason
-  can be found in history; the link does not, because it would point at
-  nothing.
-
-Until 2026-09-07 this section read "Only update the checkbox marker; never
-delete the line", inherited verbatim from the PMA skill's `task-format.md`.
-It was removed rather than reworded, for the reason given in
-`docs/plan/index.md`: completed records have been leaving this tree since
-PLAN-001, and a rule the tree disobeys on sight teaches a reader the wrong
-thing about the tree. Both indexes now say the same thing.
+- See each `<timestamp>-<feature-slug>.md` for full details, except `[d]` entries whose files have been deleted; consult `docs/changelog.md` for their history.
 
 ---
 
 ## Tasks
 
-- [ ] [**RFCT-290 Design conditional fleet management**](RFCT-290.md) `P2`
-- [-] [**RFCT-305 Gate A mechanisms: the trust grade, the device surface and the publication refusal**](RFCT-305.md) `P1`
-- [-] [**RFCT-310 The host toolchain lint and the container-only build policy**](RFCT-310.md) `P1`
-- [-] [**RFCT-315 PLAN-070 F7/F8/F9: the client reads the baked anchor**](RFCT-315.md) `P1`
-- [ ] [**UI-011 Stabilize Bun V8 coverage aggregation**](UI-011.md) `P1`
-- [-] [**RFCT-336 Compose a minimal MOS runtime from explicit payloads**](RFCT-336.md) `P1`
+- [d] [**RFCT-290 Design conditional fleet management**](RFCT-290.md) `P2`
+- [d] [**RFCT-305 Gate A mechanisms: the trust grade, the device surface and the publication refusal**](RFCT-305.md) `P1`
+- [d] [**RFCT-310 The host toolchain lint and the container-only build policy**](RFCT-310.md) `P1`
+- [d] [**RFCT-315 PLAN-070 F7/F8/F9: the client reads the baked anchor**](RFCT-315.md) `P1`
+- [d] [**UI-011 Stabilize Bun V8 coverage aggregation**](UI-011.md) `P1`
+- [d] [**RFCT-336 Compose a minimal MOS runtime from explicit payloads**](RFCT-336.md) `P1`
 - [ ] [**RFCT-922 Exercise s905x5m Bluetooth pairing and a profile with a controlled peer**](RFCT-922.md) `P1`
-- [-] [**RFCT-941 The installer reinstalls on every boot because its receipt never persists**](RFCT-941.md) `P1`
+- [d] [**RFCT-941 The installer reinstalls on every boot because its receipt never persists**](RFCT-941.md) `P1`
 - [ ] [**20260908-2011-state-units-never-load STATE-seeded systemd units never load on first boot**](20260908-2011-state-units-never-load.md) `P2`
 - [ ] [**20260908-2011-ssh-generator-vs-image-policy systemd-ssh-generator overrides the image's SSH policy and port**](20260908-2011-ssh-generator-vs-image-policy.md) `P2`
 - [ ] [**20260908-2011-wtmp-unbounded-append Login accounting appends to /var/log/wtmp without a bound**](20260908-2011-wtmp-unbounded-append.md) `P2`
@@ -90,3 +53,12 @@ thing about the tree. Both indexes now say the same thing.
 - [x] [**20260912-1341-prune-settled-records Prune the settled plan and task records**](20260912-1341-prune-settled-records.md) `P2`
 - [-] [**20260912-1347-root-closure-reduction Reduce the read-only root closure**](20260912-1347-root-closure-reduction.md) `P2`
 - [-] [**20260912-2043-unify-board-behavior Unify board build, compression and acceptance behavior**](20260912-2043-unify-board-behavior.md) `P1`
+- [x] [**20260912-2049-docs-restructure Restructure the documentation system**](20260912-2049-docs-restructure.md) `P1`
+- [ ] [**20260912-2058-fleet-runtime Implement the fleet registration and reporting runtime**](20260912-2058-fleet-runtime.md) `P2`
+- [ ] [**20260912-2058-production-key-custody Establish production signing key custody**](20260912-2058-production-key-custody.md) `P2`
+- [ ] [**20260912-2058-auto-update-acceptance Accept automatic update scheduling scenarios**](20260912-2058-auto-update-acceptance.md) `P3`
+- [ ] [**20260912-2058-fit-sandbox-job-limit Remove the fixed make job count from the FIT sandbox build**](20260912-2058-fit-sandbox-job-limit.md) `P3`
+- [ ] [**20260912-2058-wifi-no-radio-reconcile Wi-Fi reconcilers fail on images without a radio**](20260912-2058-wifi-no-radio-reconcile.md) `P2`
+- [ ] [**20260912-2058-managed-applications Implement managed applications**](20260912-2058-managed-applications.md) `P3`
+- [ ] [**20260912-2125-source-record-citations Replace deleted record citations in source comments**](20260912-2125-source-record-citations.md) `P3`
+- [ ] [**20260912-2125-api-slot-vocabulary Remove slot-era vocabulary from the update API contract**](20260912-2125-api-slot-vocabulary.md) `P3`

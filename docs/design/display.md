@@ -1,7 +1,5 @@
 # Design: Local Display (HDMI Kiosk UI)
 
-> English | [中文](../zh/design/display.md)
->
 > A dedicated product UI on the HDMI output — status panel, setup wizard,
 > and application UI on an attached screen, with optional touch/USB input.
 
@@ -90,10 +88,9 @@ The image does not ship a userspace splash renderer or a kiosk service.
 The console policy is covered by signed QEMU acceptance; actual CX3576 USB
 keyboard, EDID negotiation and visual output require testing the flashed image.
 
-## 5. Board requirements (extends boards.md §4)
+## 5. Board requirements (extends [board contract](../boards/contract.md) §4)
 
-`boards/<board>/board.env` carries `BOARD_HAS_DISPLAY` (`0` or `1`), added by
-PLAN-088; cx3576 declares `1` and the QEMU boards declare `0`. It gates the boot
+`boards/<board>/board.env` carries `BOARD_HAS_DISPLAY` (`0` or `1`); cx3576 declares `1` and the QEMU boards declare `0`. It gates the boot
 experience above, not the kiosk. A board whose product has an HDMI output must
 provide:
 
@@ -128,6 +125,3 @@ provide:
 | 1 | mos-gui container (cog/WPE), DisplayConfig/controller, apid local wizard route, splash-to-kiosk handoff on cx3576 |
 | 2 | touch input polish, rotation, blanking, crash-splash |
 | 3 | custom app `url` mode + per-app UI containers (ties into workload/secondary-ECU design) |
-
-Campaign mapping: phase 1 joins the access-layer campaign after cx3576
-display bring-up (GPU driver decision happens in the board campaign).

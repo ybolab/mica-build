@@ -50,7 +50,7 @@ qualification still need the local bench. No hardware-rooted or fused boot claim
 is made. DATA is unencrypted; privileged workloads can modify allowed persistent
 state. There is no old-layout compatibility or migration path.
 
-> status: board-dependent — evidence: `docs/design/security-model.md`, `docs/bsp/cx3576-example.md`
+> status: board-dependent — evidence: `docs/design/security-model.md`, `docs/boards/cx3576.md`
 
 ### Advisories and reporting
 

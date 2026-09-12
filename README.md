@@ -1,8 +1,12 @@
-# mos
+# Mica OS
 
-Embedded Linux with an immutable, signed dm-verity root, independently signed
+Mica OS (云母) is an embedded Linux operating system for industrial devices.
+Project identifier: `mica`. Official website: [micaos.dev](https://micaos.dev).
+
+The system provides an immutable, signed dm-verity root, independently signed
 kernel/support components, file-based A/B deployments, and a local management UI.
-The current image targets are x64, virt-arm64 and cx3576. Development and
+Images build for x64, virt-arm64, cx3576 and s905x5m; see the
+[board status table](docs/boards/support-tiers.md#current-boards). Development and
 acceptance use fresh complete images; there are no old-layout readers or migrations.
 
 `mosd` owns device management and connectivity. `apid` exposes the authenticated
@@ -23,7 +27,7 @@ Start with the [documentation portal](docs/README.md) or the
 | `rootfs/` | Userspace package composition and immutable root packing |
 | `build/` | Signed components, offline archives and complete image assembly |
 | `verify/`, `tests/` | Image verification, service tests and boot/fault acceptance |
-| `docs/` | Architecture, user instructions, approved plans and evidence |
+| `docs/` | Architecture, design contracts, board and user documentation, tracking |
 
 ## Build and verify
 
@@ -33,7 +37,7 @@ signing inputs and the `root`, `kernel`, `firmware`, `deployment`, `image` and
 `archive` commands. Output directories must be new.
 
 Each factory disk contains exactly three partitions: ESP/SYSTEM/DATA on UEFI,
-or FIRMWARE/SYSTEM/DATA on cx3576. SYSTEM holds immutable content objects and
+or FIRMWARE/SYSTEM/DATA on U-Boot boards. SYSTEM holds immutable content objects and
 signed deployment records; DATA owns persistent state and bounded writable
 namespaces. Firmware maintenance is a separate operation.
 
@@ -45,7 +49,6 @@ bash verify/run.sh --verify --board x64 \
 ```
 
 Offline verification does not establish firmware enforcement or hardware
-reliability. The acceptance record distinguishes QEMU Secure Boot, signed FIT
-checks and physical cx3576 tests. See [architecture](docs/architecture.md),
-[build](docs/design/build.md), [updates](docs/design/updates.md), and the
-[delivery task](docs/task/20260908-2229-file-ab-delivery-x64-first.md).
+reliability; board dossiers under `docs/boards/` separate QEMU, signed-FIT and
+physical evidence. See [architecture](docs/architecture.md),
+[build](docs/design/build.md) and [updates](docs/design/updates.md).

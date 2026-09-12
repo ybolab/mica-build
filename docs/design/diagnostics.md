@@ -4,9 +4,9 @@
 > "what is this device", the network state as the stack actually sees it,
 > the board's temperature/watchdog/reset evidence, and a bounded, redacted,
 > offline support snapshot that can be exported through the API. Companion
-> to api.md, mosd.md, storage.md and time.md. Implements the Rust/API core of
-> PLAN-052 / RFCT-288; the built-in UI pages and the operational procedures
-> are a follow-on (section 10).
+> to api.md, mosd.md, storage.md and time.md. The Rust/API core ships; the
+> built-in UI pages and the operational procedures are a follow-on
+> (section 10).
 
 ## 1. What ships, and what deliberately does not
 
@@ -40,7 +40,7 @@ remote shell and no packet capture: the API carries no route for either, and
 the diagnostics surface to that. No cellular modem support: the observed
 network state reports `cellular.supported: false` explicitly, with any
 `wwan` interface the kernel shows listed beside it, because a SKU that needs
-a modem is a separate selection under PLAN-052's scope.
+a modem is a separate product selection.
 
 Two rules govern every member below, the ones storage.md states for its own
 surface, because a diagnostic that guesses is worse than one that says
@@ -81,9 +81,9 @@ An absent public-defaults manifest makes the observation unavailable. Public
 defaults do not contain signature anchors: metadata/content policy comes from the
 authenticated kernel package and boot anchors from its firmware trust domain.
 
-`system.gitStamp` is the `+git<commit>[.dirty]-<rev>` stamp the mos rows of
+`system.gitStamp` is the `+git<commit>[.dirty]-<rev>` stamp the Mica OS rows of
 the manifest share: `commit`, `dirty`, `revision`, and `consistent` with the
-full `stamps` list beside it. A manifest whose mos rows disagree — a
+full `stamps` list beside it. A manifest whose Mica OS rows disagree — a
 half-rebuilt pool — reports `consistent: false` and every stamp it found,
 rather than picking one; `verify`'s `packed-mos-manifest` check refuses such
 an image, and this surface is the same fact read on the device.
@@ -117,7 +117,7 @@ made it answer a question it cannot answer.
 
 `packages` carries at most 4096 rows and says `truncated: true` past that; a
 row that is not three tab-separated fields is counted in `malformedRows`
-and skipped. A mos row is one whose package name starts with `mos`, the
+and skipped. A Mica OS row is one whose package name starts with `mos`, the
 rule `verify` applies.
 
 The deployment observation is bounded and nonfatal. An unavailable backend
@@ -151,7 +151,7 @@ JSON writer resolves the id against a three-entry table and then formats the
 decimal id, so an ordinary DHCP route describes itself as `"16"`. Neither
 mapping is total — protocol ids are assigned to routing daemons at runtime and
 route tables are named by configuration — so the pair is what lets a reader
-tell "this id has no name" from "this field is broken" (RFCT-298).
+tell "this id has no name" from "this field is broken".
 
 Addresses are read from networkd's `Describe` and formatted by family;
 `hardwareAddress` is the interface's own. Wi-Fi association is read over
@@ -204,19 +204,20 @@ boards has not been validated on hardware by this subtask; the fixture tests
 prove the parsing and the absence rules, not the boards. The record of that
 validation belongs to section 10.
 
-## 5. The snapshot schema, version 3
+## 5. The snapshot schema
 
-A snapshot is one JSON document. `schemaVersion` names its shape and is
-bumped when a member changes; a reader that does not know the version it sees
+A snapshot is one JSON document. `schemaVersion` names its shape (the
+current value is `SCHEMA_VERSION` in `pkgs/mosd/apid/src/diagnostics.rs`) and
+is bumped when a member changes; a reader that does not know the version it sees
 should treat the members it does know as advisory.
 
 | Member | Content |
 |---|---|
-| `schemaVersion` | `3` |
+| `schemaVersion` | `SCHEMA_VERSION` |
 | `collectedAt` | RFC 3339 UTC as this appliance's clock had it; `time` says whether that clock is disciplined, `boot.uptime` is the monotonic reference |
 | `release` | `board`, `release`, `kernel`, as section 2 defines them |
 | `system` | the whole section 2 surface |
-| `boot` | `slot`, `uptime` (section 2), `reset` (section 4), `update` (mosd's recorded live-state `update` entry: operation, progress, per-slot status, `booted_slot`, `primary`, `pending_not_confirmed`, the last install and mark). Version 3 added `update.install.time` — the clock, the time-status document and a `clock_implicated` reading — so a failed install's `certificate has expired` and the clock that may have caused it are read from one document |
+| `boot` | `deployment`, `uptime` (section 2), `reset` (section 4), `update` (mosd's recorded live-state `update` entry: `boot` identities and verification, `state` with `current`, `fallback`, `candidate` and `failed`, `deployments[]` with remaining trials, `rollback`, `install`, `last_action` and the credential-free part of `lifecycle`) |
 | `journal` | the bounded excerpt: `scope` (`current boot`), `priority` (`warning`), `lineCount`, `sourceLines`, `sourceBytes`, `truncated`, `bounds`, `lines[]` |
 | `failures` | `units` (systemd's failed units: `count`, `truncated`, `entries[]` of `name`, `description`, `loadState`, `activeState`, `subState`), `tasks[]` (apply tasks whose outcome was not success), `health` (the live-state health map) |
 | `storage` | the `GET /api/v1/storage/status` document, verbatim (storage.md section 2) |
@@ -227,20 +228,20 @@ should treat the members it does know as advisory.
 
 A section whose source did not answer is present as an absent object with the
 reason, and `collection.sections` says which way it failed; a member picked
-out of an absent section (say `boot.slot` when `system` timed out) is absent
+out of an absent section (say `boot.deployment` when `system` timed out) is absent
 and says `not collected: <the section's reason>`.
 
 The journal excerpt is this boot's, at warning and worse, newest first when
 the caps cut. journald runs `Storage=volatile` on the image, so there is no
 previous boot to ask for; the hostname column is left out of every line.
 
-## 6. The redaction schema, version 5
+## 6. The redaction schema
 
 Redaction is a tested security boundary, and it fails closed. It is the
 management-API redaction `docs/design/security-model.md` §6 counts among the
 confidentiality that does exist.
 
-This version is its own counter, not section 5's: it is bumped when the
+Its version (`REDACTION_SCHEMA_VERSION` in the same file) is its own counter, not section 5's: it is bumped when the
 allowlist changes, and each snapshot records the one that produced it in
 `collection.redaction.schemaVersion`. The two numbers are expected to differ.
 
@@ -254,7 +255,7 @@ Three passes, in order, in `apid/src/diagnostics.rs`:
    names every member of section 5 down to the leaf. A field the schema does
    not name is dropped; a value of the wrong shape (an object where a scalar
    is named) is dropped; a dynamic key (a unit name, a health component, a
-   slot name) is kept only if it is printable, at most 128 characters, and
+   deployment id) is kept only if it is printable, at most 128 characters, and
    not a secret field name. Fields named `token(s)`, `secret(s)`,
    `password`, `passwd`, `passphrase`, `credential(s)`, `authorization`,
    `cookie`, `apiTokens`, `key(s)` are replaced by the sentinel wherever
@@ -367,7 +368,7 @@ says.
 
 1. Sign in to the built-in console as an authenticated appliance operator.
    Open **System information** and record the machine id, board, image version,
-   source commit date and active slot. This is one `GET /api/v1/system/info` read; do
+   source commit date and booted deployment. This is one `GET /api/v1/system/info` read; do
    not assemble an identity from settings or labels on the enclosure.
 2. Leave the failing condition in place when it is safe to do so. Open
    **Diagnostics**, select **Generate snapshot**, and wait for the collection
@@ -395,7 +396,7 @@ around the console.
 
 ### 10.2 Privacy and retention
 
-A snapshot contains the machine id, image and package versions, slot/update
+A snapshot contains the machine id, image and package versions, deployment/update
 state, warning-and-worse journal lines from this boot, failed services/tasks,
 storage and time status, IP addressing/routes/DNS, telemetry and collection
 results. IP addresses, gateways, DNS servers and the machine id are retained
@@ -426,8 +427,8 @@ system's retention policy, not the device's count/size policy.
 An escalation must include:
 
 - the downloaded snapshot and its id;
-- the machine id, board, system version/source commit date and active slot from
-  `system` and `boot.slot`;
+- the machine id, board, system version/source commit date and booted deployment from
+  `system` and `boot.deployment`;
 - the symptom, first observed time, reproduction steps and whether the time
   was independently verified because `time.status` was not synchronized;
 - every non-`ok` entry from `collection.sections`, plus actions already taken
@@ -440,7 +441,7 @@ the failing device state for a support-directed next step.
 
 Reset reason, temperature and watchdog data are hardware-dependent. Fixture
 tests validate parsing and absence semantics, but the cx3576 and x64 physical
-boards have not been validated by RFCT-288. An unavailable or implausible
+boards have not been validated. An unavailable or implausible
 `boot.reset`, `telemetry.thermal` or `telemetry.watchdog` result must therefore
 be escalated with the board identity and snapshot; it must not be marked
 healthy or treated as completed board validation.
@@ -518,25 +519,26 @@ after the observed branch identifies the missing fact.
       escalate for the documented offline repair path; capacity cleanup cannot
       repair a filesystem or bind failure.
 
-#### Failed update or slot rollback
+#### Failed update or fallback
 
-- **Symptom:** an update fails, the new slot is not confirmed, or the device
-  boots the previous slot.
-  - **Evidence:** `boot.update` records a failed last install/mark operation or
-    a failed slot, and `failures.tasks[]` carries the apply failure.
-    - **Remediation:** keep the booted known-good slot running, correct the
-      recorded bundle/verification/storage cause, collect again, then retry
+- **Symptom:** an update fails, the new deployment is not confirmed, or the
+  device boots the previous deployment.
+  - **Evidence:** `boot.update.install.status` is `failed` with an
+    `error_code`, or the candidate is listed in `boot.update.state.failed`, and
+    `failures.tasks[]` carries the apply failure.
+    - **Remediation:** keep the booted known-good deployment running, correct
+      the recorded verification or storage cause, collect again, then retry
       through the supported update workflow.
-  - **Evidence:** `boot.update.pending_not_confirmed` is true and
-    `boot.slot.booted` is the new slot.
+  - **Evidence:** `boot.update.state.candidate` is set and
+    `boot.update.boot.deploymentId` is that candidate.
     - **Remediation:** do not force confirmation while health failures remain.
       Resolve `failures.units`, `failures.health`, storage and network evidence,
-      then let the normal health-confirmation path mark the slot.
-  - **Evidence:** `boot.slot.booted` differs from the attempted slot and the
-    prior slot is primary, or reset evidence follows the attempted boot.
-    - **Remediation:** treat this as rollback, retain both the update and reset
-      evidence, and escalate before another attempt if the cause is not an
-      explicit bundle or space error.
+      then let the normal health-confirmation path confirm the deployment.
+  - **Evidence:** `boot.update.boot.deploymentId` is `state.fallback` rather
+    than the attempted candidate, or reset evidence follows the attempted boot.
+    - **Remediation:** treat this as a fallback, retain both the update and
+      reset evidence, and escalate before another attempt if the cause is not
+      an explicit verification or space error.
   - **Evidence:** `storage.tiers[data].updateWorkspace.available` is false.
     - **Remediation:** follow the DATA-full tree before retrying; repeated
       downloads cannot bypass the reservation.

@@ -19,7 +19,7 @@
 ### How the documentation is organised
 
 The user documentation is the versioned, customer-facing contract for
-operating a mos device: it describes current supported behaviour, labels
+operating a Mica OS device: it describes current supported behaviour, labels
 anything not yet shipped, and links back to the engineering design record for
 rationale. Its own rules — versioning, truth labels, English/Chinese coverage
 — are stated in the documentation contract, which governs this portal too.
@@ -50,7 +50,7 @@ because the corresponding user page exists.
 
 - [Troubleshooting](../user/troubleshooting.md) — symptoms to causes,
   decision-tree first.
-- [Recovery](../user/recovery.md) — slot fallback, reflash, and the recovery
+- [Recovery](../user/recovery.md) — deployment fallback, reflash, and the recovery
   ladder per board.
 
 ### Reference
@@ -67,6 +67,6 @@ because the corresponding user page exists.
 The design record under [../design/](../README.md) is the authoritative
 engineering source the user documentation is derived from; start at the
 [architecture map](../architecture.md). Integrators porting a new board start
-at [../bsp/porting.md](../bsp/porting.md) instead.
+at [../boards/porting.md](../boards/porting.md) instead.
 
 > status: shipped — evidence: `docs/architecture.md`, `docs/README.md`

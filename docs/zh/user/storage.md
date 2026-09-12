@@ -1,6 +1,6 @@
 # 存储
 
-MOS 使用三个分区：UEFI 板为 ESP/SYSTEM/DATA，cx3576 为 FIRMWARE/SYSTEM/DATA。
+Mica OS 使用三个分区：UEFI 板为 ESP/SYSTEM/DATA，U-Boot 板（cx3576、s905x5m）为 FIRMWARE/SYSTEM/DATA。
 只有 DATA 随介质扩容。SYSTEM 存放不可变签名部署文件；固件独立于普通系统更新。
 
 > status: shipped — evidence: `boards/x64/board.env`, `boards/virt-arm64/board.env`, `boards/cx3576/board.env`

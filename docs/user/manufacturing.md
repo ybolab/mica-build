@@ -1,11 +1,11 @@
 # Manufacturing: identity, factory records and quarantine
 
-This page is for the team putting mos onto units at volume: who creates a
+This page is for the team putting Mica OS onto units at volume: who creates a
 device's identity and its first credential, which records a factory has to
 keep, and what happens to a unit that fails a station or is provisioned twice.
 
 **The headline, first, because everything else reads differently without it:
-mos ships no factory tooling.** What ships is the device half — a unit that
+Mica OS ships no factory tooling.** What ships is the device half — a unit that
 mints its own identity on first boot, an offline provisioning document that
 can carry a first configuration onto it, and the loader-level flash that puts
 an image there. Everything that makes those into a *factory* — versioned input
@@ -16,7 +16,7 @@ which at every section, and does not promote a design into a procedure.
 ## 1. Who creates identity, and who cannot
 
 **The device mints its own identity, and the factory does not supply one.** On
-the first boot from empty STATE the device draws a 32-hex-character `deviceId`
+the first boot from empty DATA/state the device draws a 32-hex-character `deviceId`
 from its own CSPRNG, derives its `mos-xxxxxxxx` hostname from it, and mints
 its per-device secrets and SSH host keys — on the device, with no network, and
 never in the image. An image is byte-identical across every unit of a release,
@@ -92,7 +92,7 @@ is read back through the *runtime* path — the booted system reporting it — a
 checked against the allocation.
 
 The full requirement, with the owning role for each step, is
-[../design/manufacturing.md](../design/manufacturing.md). mos ships no record
+[../design/manufacturing.md](../design/manufacturing.md). Mica OS ships no record
 format, no schema and no station tooling for any of it, and no work is in
 flight to build one: a line that needs these records builds them.
 
@@ -114,7 +114,7 @@ Quarantine means all of the following, together:
   it at read-back is the point of reading back through the runtime path;
 - the only two exits are **rework**, which opens a new record generation, or
   **scrap**, which closes the record with the disposition and with the
-  **destruction of any credential-bearing storage**. A scrapped unit's STATE
+  **destruction of any credential-bearing storage**. A scrapped unit's DATA/state
   holds secrets in the clear, so physical destruction is the honest disposal —
   the same conclusion [recovery.md](recovery.md) section 6 reaches for a unit
   leaving an operator's control.
@@ -122,8 +122,8 @@ Quarantine means all of the following, together:
 **Identity is never cloned.** The invariant is that a device identity exists
 on exactly one physical device, ever. A replacement board gets a **new**
 identity — which the shipped design already guarantees, since identity is
-drawn on the device and a reflash replaces STATE outright. Nobody images one
-unit's STATE onto another to "preserve" its identity; serial-number continuity
+drawn on the device and a reflash replaces DATA/state outright. Nobody images one
+unit's DATA/state onto another to "preserve" its identity; serial-number continuity
 is handled in the record, not on the flash. At RMA intake the returned unit's
 credentials are treated as **exposed** from the moment it is received, and any
 fleet-side trust tied to that identity is revoked at intake rather than at
@@ -151,11 +151,11 @@ an operator's credentials and data:
 | Serial console | open; a station may use it to witness provisioning | a login prompt exists and **no account accepts a credential** |
 | SSH / management | station network and station credentials | off by default on both profiles; key-only, operator-enrolled |
 | SoC loader (cx3576: rockusb) | the flashing primitive | open to physical access — this **is** the recovery path |
-| JTAG/SWD | open on the bench | per board and revision; no mos board today documents or enforces a closed state |
+| JTAG/SWD | open on the bench | per board and revision; no Mica OS board today documents or enforces a closed state |
 
 The honest field posture is therefore: **software access closed by default and
 credential-gated; physical access open by design.** That is not a gap to be
-closed quietly. Both mos boards stand at I1 on the boot-assurance ladder
+closed quietly. Both Mica OS boards stand at I1 on the boot-assurance ladder
 (`docs/design/security-model.md` section 5), and the loader port being open is
 what makes the recovery path in [recovery.md](recovery.md) exist at all.
 
@@ -183,11 +183,11 @@ Assembled from the sections above, with nothing designed counted as available:
 4. Witness the first boot and read back the `deviceId` the device minted
    ([install.md](install.md) section 6 lists what a good first boot looks
    like).
-5. Keep your own record of steps 1 to 4. mos provides no record format, no
+5. Keep your own record of steps 1 to 4. Mica OS provides no record format, no
    station tooling and no pool management, and will not until the work in
    sections 3 and 4 is built.
 
 Nothing in this sequence has been executed on physical hardware from this
 tree; the board dossier carries every hardware-dependent row as `not tested`.
 
-> status: board-dependent — evidence: `docs/bsp/cx3576-example.md`, `docs/bsp/qualification.md`
+> status: board-dependent — evidence: `docs/boards/cx3576.md`, `docs/boards/qualification.md`

@@ -1,26 +1,26 @@
 # Page brief: Source & licensing
 
-- **Purpose**: state the license facts the site must carry — what license mos
+- **Purpose**: state the license facts the site must carry — what license Mica OS
   is under, what the shipped image contains, and what source-availability
   obligations the project meets — verified against the repository's actual
   license files, never asserted from memory.
-- **Audience**: legal and compliance reviewers; integrators embedding mos in
+- **Audience**: legal and compliance reviewers; integrators embedding Mica OS in
   a shipped product who inherit its notice obligations.
 - **Navigation position**: page 8, the final navigation entry and a permanent
   footer link.
 
 ## Content outline
 
-1. The mos license.
+1. The Mica OS license.
 2. What the shipped image contains, license-wise.
 3. Notices on the device.
 4. SBOM and source offer — status, honestly.
 
 ## Draft copy
 
-### The mos license
+### The Mica OS license
 
-mos — the build system, the management plane, the tooling and this
+Mica OS — the build system, the management plane, the tooling and this
 documentation — is licensed under the Apache License, Version 2.0. The
 license text is the repository's top-level `LICENSE` file.
 
@@ -28,7 +28,7 @@ license text is the repository's top-level `LICENSE` file.
 
 ### What a shipped image contains
 
-A mos image is composed from two kinds of packages: Debian packages from the
+A Mica OS image is composed from two kinds of packages: Debian packages from the
 Debian archive, each carrying its own upstream license, and packages produced
 by this repository, which are Apache-2.0. The image ships a machine-readable
 inventory of every installed package and its version, so "what is in this

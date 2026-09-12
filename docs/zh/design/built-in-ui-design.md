@@ -1,4 +1,4 @@
-# mos 内置 UI 设计指南
+# Mica OS 内置 UI 设计指南
 
 > 文档版本：1.1
 > 基线日期：2026-09-02
@@ -6,7 +6,7 @@
 > 交付形式：单一 Markdown 设计源
 > 范围：远程浏览器中的设备管理界面，以及未来复用同一界面的本地触屏/kiosk
 
-本文定义 mos 内置 UI 应该成为怎样的产品：有哪些功能、如何组织、关键任务怎样完成、每个页面需要
+本文定义 Mica OS 内置 UI 应该成为怎样的产品：有哪些功能、如何组织、关键任务怎样完成、每个页面需要
 覆盖哪些状态、原型如何表达当前与未来能力。本文不是开发说明，不要求设计师理解代码、接口、构建或
 设备内部实现。
 
@@ -17,12 +17,12 @@
 
 ## 1. 设计目标
 
-mos 是一台可长期无人值守的边缘设备。内置 UI 的首要任务不是展示尽可能多的数据，而是帮助一个对
+Mica OS 是一台可长期无人值守的边缘设备。内置 UI 的首要任务不是展示尽可能多的数据，而是帮助一个对
 设备负责的管理员可靠地完成以下事情：
 
 1. 看懂设备现在是否可用、信息是否新鲜、哪些部分正在降级；
 2. 建立和恢复网络连接，区分“保存了什么”和“设备当前看到什么”；
-3. 管理 mos 自身服务与安装在本机的应用；
+3. 管理 Mica OS 自身服务与安装在本机的应用；
 4. 管理 Web、API 和维护访问，不意外泄露秘密或授予 root 权限；
 5. 识别版本、安装更新、等待验证，并在失败时知道能否回滚；
 6. 看懂存储、时间、硬件和运行状态，生成可安全分享的支持材料；
@@ -49,7 +49,7 @@ mos 是一台可长期无人值守的边缘设备。内置 UI 的首要任务不
 
 ### 2.3 一个概念只放在一个产品区域
 
-- Services 管 mos 自身的全局运行能力；
+- Services 管 Mica OS 自身的全局运行能力；
 - Applications 管第三方/附加应用的身份、版本、权限、数据和生命周期；
 - Access 管进入设备的凭据与维护通道；
 - System 管设备本身的身份、时间、更新、存储、诊断和恢复。
@@ -98,7 +98,7 @@ Applications 管理。
 | Applications | 清单、精选目录、安装/更新/回滚/移除 | P |
 | Access | API token、SSH key/开关、临时 root 密码 | L |
 | System | hostname、UI ZIP 上传/多版本选择、内置恢复、重启、关机 | L |
-| System | 版本/板卡/slot/软件清单 | P |
+| System | 版本/板卡/部署/软件清单 | P |
 | System | timezone、NTP 与同步状态 | P |
 | System | 签名系统更新、维护窗口、验证与回滚 | P |
 | System | 存储容量、健康、reservation 与数据生命周期 | P |
@@ -117,7 +117,7 @@ Applications 管理。
 
 1. **Overview** — 设备现在怎样，是否需要处理；
 2. **Network** — 如何连接，以及期望与观测是否一致；
-3. **Services** — mos 自身运行能力；
+3. **Services** — Mica OS 自身运行能力；
 4. **Applications** — 本机应用、精选目录和生命周期；
 5. **Access** — 管理员、API 与维护入口；
 6. **System** — 设备身份、时间、更新、存储、诊断和恢复。
@@ -276,7 +276,7 @@ Overview 回答三个问题：设备是谁、现在能否工作、最需要处�
 
 ### 7.3 规划内容 `[P]`
 
-- system release/board/active slot；
+- system release/board/booted deployment；
 - 系统更新 ready/reboot-required/rolled-back；
 - storage warning/critical；
 - time unsynchronized；
@@ -336,7 +336,7 @@ unsupported。设计上把“配置不正确”“物理 link down”“有地�
 
 ### 9.1 页面目标 `[L]`
 
-Services 管理 mos 系统级运行能力，当前是 Container runtime 与 MQTT。每一行包含名称、影响说明、期望
+Services 管理 Mica OS 系统级运行能力，当前是 Container runtime 与 MQTT。每一行包含名称、影响说明、期望
 开关、Observed 状态和最近 task。
 
 切换后的可见过程是：用户意图 → Applying → Applied → Observed running/stopped，或 Apply failed。开关在
@@ -362,9 +362,9 @@ Applications 是第六个一级区域，管理应用产品而非 unit/container�
 | 来源 | 用户含义 | 可用动作 |
 |---|---|---|
 | System · OS verified | 随系统镜像交付 | 只读；随系统更新 |
-| Catalog verified | mos 精选签名目录 | 安装、运行、更新、回滚、移除 |
+| Catalog verified | Mica OS 精选签名目录 | 安装、运行、更新、回滚、移除 |
 | Local signer | 设备登记的可信集成商 | 与目录分开标识；入口默认关闭 |
-| External · unmanaged | 发现到但不由 mos 管理 | 只读诊断，不接管 |
+| External · unmanaged | 发现到但不由 Mica OS 管理 | 只读诊断，不接管 |
 
 运行类型是 OCI 或 Native。第一阶段只交付精选 OCI。Native 后续使用声明式权限和启动描述，由系统生成
 受限 unit；目录不接收任意 systemd unit 或 shell script。设计文案不能把“已签名”写成“绝对安全”。
@@ -479,7 +479,7 @@ Access 按从日常到高权限排列，并持续说明每种凭据能做什么�
 ### 12.2 Information `[P]`
 
 只读展示 machine id（默认遮挡）、board/revision/qualification、kernel、system release、git/build identity、
-installed package manifest、active/alternate slot、uptime、boot assurance 和已知硬件限制。
+installed package manifest、current/fallback deployment、uptime、boot assurance 和已知硬件限制。
 
 信息按 Identity、Software、Boot & hardware 分组；可复制 support-safe 摘要。Pass、Fail、N/A、Not tested、
 Unsupported 必须分开，不能把缺失数据画成绿勾。
@@ -495,10 +495,10 @@ servers。只允许编辑 timezone 与 servers；系统持续同步，不设计 
 完整状态机：Idle → Checking → Downloading → Ready → Installing → Reboot required → Validating → Succeeded，
 失败可进入 Rolled back 或 Failed。
 
-页面展示 current/target release、channel、兼容性、签名/验证结论、download size、空间、release notes、active
-slot、maintenance window、metered/offline policy、应用 safe-to-reboot interlock。只有 Ready 才提供 Install；
+页面展示 current/target release、channel、兼容性、签名/验证结论、download size、空间、release notes、booted
+deployment、maintenance window、metered/offline policy、应用 safe-to-reboot interlock。只有 Ready 才提供 Install；
 Installing 期间明确不可断电；Reboot required 展示阻塞应用和有界 override；Validating 说明系统仍可能自动
-回到旧 slot。
+回到旧部署。
 
 需要原型：无更新、检查失败、下载暂停/恢复、空间不足、目标不兼容、签名失败、安装中断、重启后验证、自动
 rollback、offline bundle import。系统更新是整套系统，不设计单个 `.deb` 安装器。
@@ -514,7 +514,7 @@ Backup/export/restore、repair、media replacement、encryption、removable medi
 
 ### 12.6 Diagnostics `[P]`
 
-一个动作生成有界 diagnostic snapshot：release/board、boot/slot/reset、核心失败、storage、time、thermal/
+一个动作生成有界 diagnostic snapshot：release/board、boot/deployment/reset、核心失败、storage、time、thermal/
 watchdog、observed network 和 bounded journal。收集过程显示阶段、大小和取消/失败；结果展示包含范围、时间、
 脱敏说明和 Download support bundle。
 
@@ -526,7 +526,7 @@ watchdog、observed network 和 bounded journal。收集过程显示阶段、大
 从保留数据到不可逆依次排列：
 
 1. 重启/重新应用；
-2. 选择已验证 alternate slot rollback；
+2. 选择已验证的 fallback deployment 回滚；
 3. credential recovery；
 4. configuration reset；
 5. application-data reset；
@@ -534,7 +534,7 @@ watchdog、observed network 和 bounded journal。收集过程显示阶段、大
 7. secure wipe / physical reflash。
 
 每项展示 eligibility、会保留/删除什么、需要 physical presence 与否、中断能否继续、完成后的下一步。Reset
-不能只叫“Factory reset”而不解释 identity、calibration、STATE、DATA、META 和系统 slots 的变化。正常管理面
+不能只叫“Factory reset”而不解释 identity、calibration、DATA/state、DATA/meta、其他 DATA 命名空间和 SYSTEM 部署的变化。正常管理面
 不可达时，给出板卡对应的物理 recovery 决策树，而不是假装 Web 仍可执行。
 
 ### 12.8 Security & lifecycle `[P/X]`
@@ -599,7 +599,7 @@ partial/unsupported probe 和收集失败。
 
 ### Journey G — 恢复访问或系统
 
-Login 失败/系统异常 → 从数据保留方案开始的 decision tree → physical presence/credential rotation 或 slot
+Login 失败/系统异常 → 从数据保留方案开始的 decision tree → physical presence/credential rotation 或 deployment
 rollback → 最后才是 reset/wipe/reflash。每一步都确认保留与删除内容。
 
 ## 15. 组件与交互词汇
@@ -642,8 +642,8 @@ service unavailable、result unknown。Pending 时防重复；result unknown 时
 
 ## 16. 视觉方向
 
-延续 mos 安静、工具型的产品气质，以 Adobe Spectrum 2 作为视觉、状态、密度、动效和无障碍设计系统。
-这是设计语言的一致化，不是复制 Adobe 产品外壳：mos 的信息结构、品牌名称和设备语义保持独立。
+延续 Mica OS 安静、工具型的产品气质，以 Adobe Spectrum 2 作为视觉、状态、密度、动效和无障碍设计系统。
+这是设计语言的一致化，不是复制 Adobe 产品外壳：Mica OS 的信息结构、品牌名称和设备语义保持独立。
 
 ### 16.1 基础色
 
@@ -659,7 +659,7 @@ service unavailable、result unknown。Pending 时防重复；result unknown 时
 | Success | `#12805c` | 有证据的成功/健康 |
 | Warning | `#7a5200` | 需注意/降级 |
 | Danger | `#c9252d` | 失败与破坏性动作 |
-| mos marker | `#d8ff4f` | 仅作少量非交互品牌标记 |
+| Mica OS marker | `#d8ff4f` | 仅作少量非交互品牌标记 |
 
 浅色和深色不是简单反相，必须分别检查背景层、文字层级、边界、focus、hover、disabled 和语义状态。状态不能
 只靠颜色；始终配文字、图标或结构。卡片只在确有分组/交互意义时使用，避免每个字段一个圆角容器。
@@ -803,8 +803,8 @@ key、serial 或客户数据。
   screen class 等抽象模式；
 - Applications 的信任、manifest、存储和生命周期边界由 `docs/design/applications.md` 定义；
 - 当前实现与开发裁剪规则由 `docs/design/dashboard.md` 维护；
-- 安装、release、time、update、recovery、storage、diagnostics、安全、fleet 等路线图分别由 PLAN-042～057
-  记录。
+- 安装、release、time、update、recovery、storage、diagnostics、安全、fleet 等能力的当前契约见 `docs/design/`，
+  未完成工作见 `docs/task/index.md`。
 
 当功能从 P 进入 R/L 时，先更新本指南的成熟度和相关原型状态，再交付生产入口。若产品结构、危险语义或
 关键旅程改变，设计指南与开发指南必须在同一批次同步；不要只改高保真画面。

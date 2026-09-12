@@ -1,4 +1,4 @@
-# Research: a lightweight mos for SigmaStar SSD202D — feasibility draft
+# Research: a lightweight Mica OS for SigmaStar SSD202D — feasibility draft
 
 > **Status and intent.** This is a draft, not a design record and not an
 > approved plan. Nothing here is implemented, no branch exists, and no task or
@@ -25,7 +25,7 @@
 
 | # | Premise | Assumed | If false |
 |---|---|---|---|
-| 1.1 | Core | Dual Cortex-A7, **ARMv7 32-bit** | mos has no 32-bit target; `MOS_ARCH` is `amd64`/`arm64` only |
+| 1.1 | Core | Dual Cortex-A7, **ARMv7 32-bit** | Mica OS has no 32-bit target; `MOS_ARCH` is `amd64`/`arm64` only |
 | 1.2 | DRAM | **128 MB in-package**, minus an MMA/VPU reservation | **At 128 MiB flash this is the decisive premise** — see §3.5 |
 | 1.3 | Flash | 16 MiB SPI-NOR **or** 128 MiB SPI-NAND | **Selects the whole programme** — see §3 |
 | 1.4 | SDK kernel | 4.9.84 (infinity2m) | Changes the backport in §6.2 |
@@ -46,7 +46,7 @@ For the 16 MiB case, the three outcomes of 1.5 and what each forces:
 | Closed entirely | No recovery. Kernel must be A/B; see §5.1 for the cost. |
 | Reachable, accepts arbitrary images | Recovery works, but it is also a secure-boot bypass for anyone with physical access. Threat model must accept it explicitly. |
 
-## 2. Why the shipped mos image is not a starting point
+## 2. Why the shipped Mica OS image is not a starting point
 
 Measured, arm64, dev profile:
 
@@ -60,7 +60,7 @@ Measured, arm64, dev profile:
 | One deployment (`.mosupd`) | 154.5 MiB | 9.7× |
 
 The root is 260 MiB on disk before squashfs. Its three largest contributors are
-`mos-podman` at 83.5 MiB — a third of the image — the five mos Rust binaries at
+`mos-podman` at 83.5 MiB — a third of the image — the five Mica OS Rust binaries at
 40.1 MiB combined, and the systemd stack (`systemd`, `udev`,
 `libsystemd-shared`) at 30.9 MiB.
 
@@ -107,11 +107,11 @@ That is the threshold, and nothing else in this document moves it.
 | Userspace | Buildroot + musl + busybox | **Debian armhf unchanged** — the deb pool, the resolver and the APT composition all survive |
 | Init | finit or s6; the reconciler layer rewritten | **systemd unchanged**; reconcilers as they are |
 | mosd / apid / deploy | fused into one multi-call binary | three binaries as today |
-| `ServiceManager` seam in mos mainline | mandatory, or the trees diverge permanently | not needed |
+| `ServiceManager` seam in Mica OS mainline | mandatory, or the trees diverge permanently | not needed |
 | Organisational form | a permanently divergent branch | **`boards/ssd202d/` plus a profile** |
 | 179 pinned package descriptions, ~3,900 lines of deb-shaped build code, ~20 producers | discarded | retained |
 
-The 16 MiB path builds a new operating system that borrows mos's contracts.
+The 16 MiB path builds a new operating system that borrows Mica OS's contracts.
 The 128 MiB path adds a board to mos. The difference is not eight times the
 flash; it is an order of magnitude of engineering and the entire long-term
 cost of maintaining two trees.
@@ -135,14 +135,14 @@ sensible BOM. The consequences are mostly favourable:
   squashfs + dm-verity over `ubiblock` is a settled combination.
 - UBI volume update is atomic, which is cleaner than A/B over raw NOR offsets.
 - DATA runs UBIFS rather than JFFS2 on NOR.
-- It is **closer** to mos's model, not further: past `ubiblock` there is a
+- It is **closer** to Mica OS's model, not further: past `ubiblock` there is a
   block device again, not a raw offset.
 
 New work it brings: NAND ships with bad blocks and grows more, and UBI's
 overhead is a few percent of capacity; and the IPL/SPL region must be readable
 by the ROM with bad-block skipping, which is a SigmaStar bring-up detail.
 
-If the part is 128 MiB eMMC rather than NAND, GPT applies directly and mos's
+If the part is 128 MiB eMMC rather than NAND, GPT applies directly and Mica OS's
 partition model transfers almost unchanged — but 128 MiB eMMC is unusual, so
 NAND is the assumption here.
 
@@ -150,7 +150,7 @@ NAND is the assumption here.
 
 | Option | Composition | DATA |
 |---|---|---|
-| A — mos's native three components | boot 1.5 + FIT 2×3 + support 2×8 + root 2×48 = 119.5 | **8.5 MiB** |
+| A — Mica OS's native three components | boot 1.5 + FIT 2×3 + support 2×8 + root 2×48 = 119.5 | **8.5 MiB** |
 | B — modules built in, no support image | boot 1.5 + FIT 2×5 + root 2×48 = 107.5 | **20.5 MiB** |
 | C — B with a trimmed root (no bluez/alsa, dropbear for OpenSSH) | boot 1.5 + FIT 2×5 + root 2×40 = 91.5 | **36.5 MiB** |
 
@@ -179,7 +179,7 @@ signature authenticating kernel, dtb and roothash together.
   reserved, 64 MiB remains and it is probably not. Flash stops binding and
   DRAM starts.
 - **Modules built in** (§6.4), for the budget reason above.
-- **Streaming installation.** mos's native acquisition stages a whole
+- **Streaming installation.** Mica OS's native acquisition stages a whole
   deployment in DATA under `/mos/updates/{staging,downloads,verified}`. Here
   one deployment is FIT 5 + root 48 = **53 MiB**, against a DATA of 20–36 MiB.
   It does not fit. The install path must stream into the inactive slot and
@@ -212,7 +212,7 @@ deployment still shares with the incoming one.
 
 At 128 MiB none of this applies; see §3.4.
 
-### 4.1 What this costs that mos does not currently pay
+### 4.1 What this costs that Mica OS does not currently pay
 
 - Every kernel update is a full-image download, because there is nothing to
   reuse. Differential transport can recover the bandwidth; it cannot recover
@@ -255,7 +255,7 @@ Two facts about the current tree bear on it: `pkgs/mosd/Cargo.toml` declares no
 `[profile.release]`, and the deb producer runs a plain `cargo build --release`
 with no strip step, so the shipped binaries carry their symbol tables — `mosd`
 for x86_64 measures 8.93 MB and 6.77 MB after `strip`. None of that size
-reduction requires this project; it is available to mos mainline today, and
+reduction requires this project; it is available to Mica OS mainline today, and
 §3.1 already counts it.
 
 ### 5.1 If premise 1.5 fails
@@ -323,7 +323,7 @@ struct mos_rootfs_desc {
 
 `rsa_verify()` is already linked in by `CONFIG_FIT_SIGNATURE`, so this adds a
 structure and a call, not a cryptographic implementation. The authentication
-point stays where mos puts it: before Linux, in code the firmware already
+point stays where Mica OS puts it: before Linux, in code the firmware already
 authenticated.
 
 At 128 MiB this whole mechanism is unnecessary: the kernel is A/B, each FIT
@@ -347,7 +347,7 @@ Both public keys live in U-Boot's control DTB, and U-Boot is only rewritten
 through the maintenance path. A single burned key means the signing key for
 this product line can never be rotated without recalling every unit.
 
-**Provision 2–3 keys as an overlap set before the first unit ships.** mos
+**Provision 2–3 keys as an overlap set before the first unit ships.** Mica OS
 already holds this shape for metadata anchors in
 [the security lifecycle](../design/security-lifecycle.md), where the publisher
 refuses to remove an anchor while a published artifact still depends on it.
@@ -413,7 +413,7 @@ after confirmation, and its failure changes nothing.
 
 ## 8. Inheritance
 
-What transfers from mos, and in what form. The 16 MiB column is the demanding
+What transfers from Mica OS, and in what form. The 16 MiB column is the demanding
 one; at 128 MiB most rows become "unchanged".
 
 | Asset | Form it transfers in |
@@ -435,8 +435,8 @@ layer's relationship to systemd. Ten thousand lines under
 `pkgs/mosd/mosd/src/reconciler/` are written against systemd units; the adapter
 itself is concentrated in one file, but `network.rs`, `wifi_ap.rs`,
 `wifi_client.rs` and `sshd.rs` each render unit files alongside the daemon
-configuration that does transfer. Sharing that layer between mos and a 16 MiB
-variant requires a `ServiceManager` seam in mos mainline. Without one, the two
+configuration that does transfer. Sharing that layer between Mica OS and a 16 MiB
+variant requires a `ServiceManager` seam in Mica OS mainline. Without one, the two
 diverge permanently on first commit. **At 128 MiB the seam is not needed at
 all**, which is most of §3.2's argument.
 
@@ -460,7 +460,7 @@ new root to fail health, and assert the device does **not** boot the old root.
 Blocking, in order:
 
 1. **Premise 1.3 — the flash part.** It is not a sizing detail; it selects
-   between adding a board to mos and building a new operating system (§3.2).
+   between adding a board to Mica OS and building a new operating system (§3.2).
    Nothing else should be committed to before it is answered, and if the answer
    is 128 MiB, whether it is SPI-NAND or eMMC follows immediately (§3.3).
 2. **Premise 1.2 — DRAM left after the MMA reservation.** At 128 MiB this
@@ -471,6 +471,6 @@ Blocking, in order:
 4. **§7.1 — how many public keys to provision.** Not blocking the design;
    blocking the first production burn, permanently, at either capacity.
 
-Not blocking, but worth settling before P1: whether mos mainline grows a
+Not blocking, but worth settling before P1: whether Mica OS mainline grows a
 `ServiceManager` seam (§8). It is cheap now and expensive after both trees have
 moved — and it is only needed if 1.3 answers 16 MiB.

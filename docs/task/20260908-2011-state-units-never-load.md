@@ -7,26 +7,22 @@
 
 ## Description
 
-A unit installed into `/mnt/state/systemd-units` — the extension mechanism
-`docs/design/ro-root.md` §4 describes — never runs on first boot: systemd
-enumerates `multi-user.target.wants` when it builds the initial transaction,
-before `usr-local-lib-systemd-system.mount` binds STATE over
-`/usr/local/lib/systemd/system`, and nothing issues a `daemon-reload`
-afterwards. The mount succeeds and the seeded unit is never loaded. Reproducer:
-`tools/qemu-seed-state.sh unit.service /systemd-units/unit.service` plus the
-`multi-user.target.wants/` symlink, then boot.
+Units seeded into `DATA/state/systemd-units` were never loaded on first boot:
+systemd built the initial transaction before
+`usr-local-lib-systemd-system.mount` bound the directory over
+`/usr/local/lib/systemd/system`.
 
-Acceptance: a unit seeded into STATE starts on the first boot of a fresh image
-on x64 under QEMU (a failing test first), by whatever ordering or reload
-mechanism the fix chooses; the design section's `> status:` line is truthful
-about what the mechanism does; the same fix applies to `/etc/containers/systemd`
-(Quadlet, the same bind pattern) or the record says why it does not. The
-file-based A/B plan's P5 reworks the writable layout; coordinate the chosen
-mechanism with it rather than duplicating it.
+Implemented: `mos-load-extensions.service` runs after that mount and
+`etc-containers-systemd.mount`, issues `daemon-reload` and starts
+`multi-user.target` again; the container reconciler reloads after its own bind.
+
+Acceptance outstanding: on a fresh current x64 QEMU image, a unit seeded into
+`DATA/state/systemd-units` with a `multi-user.target.wants` link starts on the
+first boot, and a Quadlet definition under the container bind does the same.
 
 ## ActiveForm
 
-Not started.
+Accepting the implemented fix on a current image.
 
 ## Dependencies
 
@@ -35,4 +31,6 @@ Not started.
 
 ## Notes
 
-- Surfaced by the P1-B writable-path audit (`docs/task/20260908-1712-p1-writable-path-audit.md` §11), measured on x64 under QEMU; recorded there, not repaired there.
+- 2026-09-12: description rewritten against current source during the
+  documentation restructure; the removed `tools/qemu-seed-state.sh` reproducer
+  is no longer cited.

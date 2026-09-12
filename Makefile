@@ -44,7 +44,7 @@ help:
 	@echo "  os-bare-host-gate   climb PLAN-080 section 4's ladder for real: clone HEAD into the pinned docker-cli image and build from it (docker)"
 	@echo "  os-verify-test      run the verify bun+TypeScript suite (typecheck + bun test)"
 	@echo "  os-build-test       run the build bun+TypeScript suite: board geometry and the toolset wrappers (docker)"
-	@echo "  docs-verify         assert the docs index, internal links, truth-status lines and board dossiers"
+	@echo "  docs-verify         assert the docs catalog, links, truth-status lines, board dossiers, tracking records and stale terms"
 	@echo "  docs-verify-test    prove those assertions actually fail on fixtures where their facts are false"
 	@echo "  podman              build the container engine from source into pkgs/podman/out-\$$MOS_ARCH"
 	@echo "  podman-pins         ask the six pinned upstreams for their newest release; red when a pin is behind (network)"
@@ -460,20 +460,18 @@ os-rootfs-runtime-test:
 os-deb-preflight-test:
 	bash tests/deb-preflight-test.sh
 
-# Structural check on docs/README.md. It exists because the index is the one
-# thing no other check can reach: a document that is never listed there is not
-# broken, does not fail a build, and is simply never found again. Both
-# directions are asserted, because the forward half alone passes happily on an
-# index full of entries pointing at files a rename deleted. docs/plan/ and
-# docs/task/ are NOT gated: they are PMA process tracking rather than product,
-# and a record is deleted when it closes, so the set would be empty or nearly
-# so -- a check over an empty set reports green without having checked.
+# Documentation gates (tools/docs/): the docs/README.md catalog in both
+# directions, relative links, truth-status evidence, zh coverage, board
+# dossiers, the /pma tracking indexes against their records, and stale terms or
+# dead record citations in permanent documents.
 docs-verify:
-	bash docs/verify-index.sh
-	bash docs/verify-links.sh
-	bash docs/verify-status.sh
-	bash docs/zh/verify-coverage.sh
-	bash docs/bsp/verify-board.sh
+	bash tools/docs/verify-index.sh
+	bash tools/docs/verify-links.sh
+	bash tools/docs/verify-status.sh
+	bash tools/docs/verify-coverage.sh
+	bash tools/docs/verify-board.sh
+	bash tools/docs/verify-tracking.sh
+	bash tools/docs/verify-terms.sh
 
 # Negative tests for the target above. Each assertion is driven against an
 # index where its fact is false and required to fail with ITS OWN message -- a
@@ -482,11 +480,13 @@ docs-verify:
 # Needs no root and no network, and it fails loudly when it cannot run rather
 # than skipping.
 docs-verify-test:
-	bash docs/verify-index-test.sh
-	bash docs/verify-links-test.sh
-	bash docs/verify-status-test.sh
-	bash docs/zh/verify-coverage-test.sh
-	bash docs/bsp/verify-board-test.sh
+	bash tools/docs/verify-index-test.sh
+	bash tools/docs/verify-links-test.sh
+	bash tools/docs/verify-status-test.sh
+	bash tools/docs/verify-coverage-test.sh
+	bash tools/docs/verify-board-test.sh
+	bash tools/docs/verify-tracking-test.sh
+	bash tools/docs/verify-terms-test.sh
 
 # Every example in docs/design/containers.md, fed to the aarch64 Quadlet
 # generator the image ships. A configuration example nothing executes is a claim

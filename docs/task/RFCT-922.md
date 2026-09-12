@@ -161,7 +161,7 @@ advertisement is outside this task's pairing scope.
   preferred peer is a BLE GATT peripheral with a known pairable mode and one
   documented readable/writable characteristic; alternatively provide a
   specific classic-Bluetooth profile endpoint plus its expected exchange.
-- 2026-08-31 07:20 UTC: `bash docs/verify-index.sh` passed 48/48. Its
+- 2026-08-31 07:20 UTC: `bash tools/docs/verify-index.sh` passed 48/48. Its
   deliberate scope is `docs/design` and `docs/README.md`, so it does not
   validate PMA task or plan records and does not supply board or peer evidence.
 - 2026-08-31 07:21 UTC: targeted record checks confirmed that each new index

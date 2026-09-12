@@ -1,7 +1,7 @@
 # Storage
 
-MOS uses three partitions. UEFI boards have ESP/SYSTEM/DATA; cx3576 has
-FIRMWARE/SYSTEM/DATA. Only DATA grows to use the medium. SYSTEM contains immutable
+Mica OS uses three partitions. UEFI boards have ESP/SYSTEM/DATA; U-Boot boards (cx3576, s905x5m)
+have FIRMWARE/SYSTEM/DATA. Only DATA grows to use the medium. SYSTEM contains immutable
 signed deployment files, and firmware remains separate from normal OS updates.
 
 > status: shipped — evidence: `boards/x64/board.env`, `boards/virt-arm64/board.env`, `boards/cx3576/board.env`

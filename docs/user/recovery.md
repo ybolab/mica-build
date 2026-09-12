@@ -1,6 +1,6 @@
 # Recovery
 
-Recovery on mos is **data-preserving first**: the steps below are ordered so
+Recovery on Mica OS is **data-preserving first**: the steps below are ordered so
 that each one costs more than the one above it, and an operator who reaches
 step *n* has established that steps 1..*n*-1 were not enough. Working down the
 order is the procedure. Skipping to the bottom because it is the step everyone
@@ -58,7 +58,7 @@ the credential and every key is recovered by step 7 and by nothing else.
 rebooting. Everything below it destroys something that was on the device, and
 nothing on this page restores it: there is no backup-and-restore contract in
 this product, so an unrecoverable step is unrecoverable in the strongest sense
-mos currently offers.
+Mica OS currently offers.
 
 > status: shipped — evidence: `docs/design/recovery.md`
 
@@ -296,13 +296,13 @@ a recovery that does not exist.
   the whole-disk reflash, paying the device's identity for a forgotten
   password.
 - **Secure wipe does not exist**, per step 8.
-- **There is no repair tier at all, offline or otherwise.** mos has no
+- **There is no repair tier at all, offline or otherwise.** Mica OS has no
   dedicated non-destructive repair operation: no repair route, no repair flow,
   no rescue boot entry and no recovery environment. What exists on a device that
   still boots is the boot-time layout convergence and filesystem check that run
   by themselves, and ordinary verified updates — which can also reinstall a
   unreferenced damaged component. A device that cannot be restored that way needs a
-  service host with its filesystems unmounted, or step 7; **mos does not promise
+  service host with its filesystems unmounted, or step 7; **Mica OS does not promise
   that damaged data survives either route.**
 
 > status: unsupported
