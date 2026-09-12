@@ -183,6 +183,12 @@ if ! MOS_POOL_TEST_TOKEN= ${LOCKSH} --bump mica-fixture >"${OUT}" 2>&1 && says "
 else fail "L8 token: $(cat "${OUT}")"; fi
 ROWS="$(${LOCKSH} --rows --arch amd64 | cut -f1 | tr '\n' ' ')"
 [ "${ROWS}" = "mos-data mos-fixture " ] && pass "L9 --rows --arch amd64 lists the amd64 and all rows (${ROWS% })" || fail "L9 rows: ${ROWS}"
+# A package that used to come from another repository: its old row goes when
+# the new repository's release provides it, and never survives as a duplicate.
+{ grep -v '^mos-fixture' "${LOCK}"; printf 'mos-fixture\t%s\tamd64\t%s\tmica-old\t%s\n' "${V2}" "$(sha "${A2}")" "${OTHER_COMMIT}"; } >"${LOCK}.tmp"; mv "${LOCK}.tmp" "${LOCK}"
+if ${LOCKSH} --bump mica-fixture --tag "${TAG}" >"${OUT}" 2>&1 && says "${OUT}" "^-mos-fixture	${V2}	amd64.*mica-old" && [ "$(grep -c '^mos-fixture' "${LOCK}")" -eq 1 ]; then
+    pass "L10 a row of the same package from another repository is replaced, not kept beside the new one"
+else fail "L10 moved package: $(cat "${OUT}")"; fi
 
 # ------------------------------------------------------------ fetch.sh
 if ${FETCH} --arch amd64 --check >"${OUT}" 2>&1 && says "${OUT}" "every locked archive for amd64 (2) is published" && says "${OUT}" "digest matches the lock"; then
