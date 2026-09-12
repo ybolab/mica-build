@@ -85,6 +85,7 @@
         {"paths": ["/usr/bin/*", "/usr/sbin/*"], "kind": "executable", "reason": "retained operator and service tools: openssh-server", "packages": ["openssh-server"]},
         {"paths": ["/usr/bin/ip", "/usr/bin/lnstat", "/usr/bin/nstat", "/usr/bin/rdma", "/usr/bin/ss", "/usr/sbin/arpd", "/usr/sbin/bridge", "/usr/sbin/dcb", "/usr/sbin/devlink", "/usr/sbin/genl", "/usr/sbin/rtacct", "/usr/sbin/rtmon", "/usr/sbin/tc", "/usr/sbin/tipc", "/usr/sbin/vdpa", "/usr/bin/ctstat", "/usr/bin/rtstat", "/usr/sbin/ip"], "kind": "executable", "reason": "retained operator and service tools: iproute2", "packages": ["iproute2"]},
         {"paths": ["/usr/bin/*", "/usr/sbin/*"], "kind": "executable", "reason": "retained operator and service tools: nftables", "packages": ["nftables"]},
+        {"paths": ["/usr/lib/systemd/system/nftables.service"], "kind": "resource", "reason": "retain the package unit governed by the disabled firewall preset", "packages": ["nftables"]},
         {"paths": ["/usr/bin/*", "/usr/sbin/*"], "kind": "executable", "reason": "retained operator and service tools: iptables", "packages": ["iptables"]},
         {"paths": ["/usr/bin/*", "/usr/sbin/*"], "kind": "executable", "reason": "retained operator and service tools: curl", "packages": ["curl"]},
         {"paths": ["/usr/bin/*", "/usr/sbin/*"], "kind": "executable", "reason": "retained operator and service tools: systemd", "packages": ["systemd"]},
@@ -151,6 +152,7 @@
     },
     "mos-mqttd": {
       "roots": [
+        {"paths": ["/usr/lib/mos/mqtt-applications.d"], "kind": "directory", "reason": "package-owned MQTT application enrollment directory", "packages": ["mos-mqttd"], "expect": {"mode": 493, "uid": 0, "gid": 0}},
         {"paths": ["/usr/bin/mos-mqttd"], "kind": "executable", "reason": "selected package entrypoint"},
         {"paths": ["/etc/systemd/system/*.service", "/etc/systemd/system/*.mount", "/etc/systemd/system/*.d/*.conf", "/etc/systemd/system/*.wants/*", "/etc/systemd/*.conf.d/*.conf", "/etc/systemd/network/*", "/etc/systemd/system-generators/*", "/usr/lib/systemd/system/*.service", "/usr/lib/systemd/system/*.socket", "/usr/lib/systemd/system-preset/*.preset", "/usr/lib/systemd/network/*", "/usr/lib/tmpfiles.d/*.conf", "/etc/tmpfiles.d/*.conf", "/usr/lib/sysusers.d/*.conf", "/usr/lib/udev/rules.d/*.rules", "/etc/udev/rules.d/*.rules", "/etc/mos/*.conf", "/etc/dbus-1/system.d/*.conf", "/usr/share/dbus-1/system.d/*.conf", "/usr/share/dbus-1/system-services/*.service", "/usr/share/dbus-1/interfaces/*.xml", "/usr/share/doc/*/copyright"], "kind": "resource", "reason": "selected service, D-Bus and legal resources", "packages": ["mos-mqttd"]}
       ],

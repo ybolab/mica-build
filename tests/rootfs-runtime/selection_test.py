@@ -800,6 +800,40 @@ class SelectionTest(unittest.TestCase):
         (self.root / 'etc/services').unlink()
         self.refuse('missing path: /etc/services')
 
+    def test_disabled_nftables_unit_survives_runtime_selection(self):
+        path = '/usr/lib/systemd/system/nftables.service'
+        self.write(path, b'[Service]\nExecStart=/usr/bin/app\n')
+        self.write('/usr/share/doc/nftables/copyright', b'nftables license\n')
+        with self.manifest.open('a') as stream:
+            stream.write('nftables\t1\tall\n')
+        (self.db / 'nftables.list').write_text(path + '\n/usr/lib/systemd/system\n/usr/share/doc/nftables\n/usr/share/doc/nftables/copyright\n')
+        policy = json.loads(SELECTOR.with_name('consumers.json').read_text())
+        self.rules['consumers']['mos-system']['roots'].extend(
+            r for r in policy['consumers']['mos-system']['roots'] if path in r['paths'])
+        rows = {r['path']: r for r in self.selected()['files']}
+        self.assertIn(path, rows)
+        self.assertEqual((self.out / path[1:]).read_bytes(), (self.root / path[1:]).read_bytes())
+        self.assertFalse((self.out / 'etc/systemd/system/sysinit.target.wants/nftables.service').exists())
+
+    def test_empty_mqtt_enrollment_directory_survives_runtime_selection(self):
+        path = '/usr/lib/mos/mqtt-applications.d'
+        (self.root / path[1:]).mkdir(parents=True)
+        self.write('/usr/share/doc/mos-mqttd/copyright', b'mqtt license\n')
+        with self.manifest.open('a') as stream:
+            stream.write('mos-mqttd\t1\tall\n')
+        (self.db / 'mos-mqttd.list').write_text(path + '\n/usr/lib/mos\n/usr/share/doc/mos-mqttd\n/usr/share/doc/mos-mqttd/copyright\n')
+        with self.packages.open('a') as stream:
+            stream.write('mos-mqttd\n')
+        policy = json.loads(SELECTOR.with_name('consumers.json').read_text())
+        self.rules['consumers']['mos-mqttd'] = {
+            'roots': [r for r in policy['consumers']['mos-mqttd']['roots'] if path in r['paths']] + [
+                {'paths': ['/usr/share/doc/mos-mqttd/copyright'], 'kind': 'resource', 'reason': 'fixture package license'}],
+            'runtime_links': []}
+        rows = {r['path']: r for r in self.selected()['files']}
+        self.assertIn(path, rows)
+        self.assertTrue((self.out / path[1:]).is_dir())
+        self.assertEqual(list((self.out / path[1:]).iterdir()), [])
+
     def iproute_without_python(self):
         entries = ['/usr/bin/ip', '/usr/bin/lnstat', '/usr/bin/nstat', '/usr/bin/rdma', '/usr/bin/ss',
                    '/usr/sbin/arpd', '/usr/sbin/bridge', '/usr/sbin/dcb', '/usr/sbin/devlink', '/usr/sbin/genl',
