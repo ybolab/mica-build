@@ -222,7 +222,7 @@ interface NativeDiagnostic { readonly text: string, readonly following: readonly
 // Exact source diagnostics and complete following text observed in the signed
 // sample. Following text establishes the URL boundary; it is not part of the URL.
 const DBUS_DIAGNOSTICS: readonly NativeDiagnostic[] = [
-  { text: 'Invalid address. See https://dbus.freedesktop.org/doc/dbus-specification.html#addresses', following: ['mid > len', 'DBUS_SYSTEM_BUS_ADDRESSu `Result::unwrap()` on an `Err` value'] },
+  { text: 'Invalid address. See https://dbus.freedesktop.org/doc/dbus-specification.html#addresses', following: ['mid > len', 'DBUS_SYSTEM_BUS_ADDRESSunix:path=/var/run/dbus/system_bus_socketDBUS_SESSION_BUS_ADDRESSXDG_RUNTIME_DIRtracing::span::activecalled `Result::unwrap()` on an `Err` value'] },
   { text: 'Invalid member name. See https://dbus.freedesktop.org/doc/dbus-specification.html#message-protocol-names-member', following: ['Invalid interface name. See https://dbus.freedesktop.org/doc/dbus-specification.html#message-protocol-names-interface'] },
   { text: 'Invalid error name. See https://dbus.freedesktop.org/doc/dbus-specification.html#message-protocol-names-error', following: ['org.freedesktop.DBusInvalid unique name. See https://dbus.freedesktop.org/doc/dbus-specification.html#message-protocol-names-bus'] },
   { text: 'Invalid unique name. See https://dbus.freedesktop.org/doc/dbus-specification.html#message-protocol-names-bus', following: ['BusName::UniqueBusName::WellKnownOwnedErrorNameOwnedUniqueNameInvalid bus name. See https://dbus.freedesktop.org/doc/dbus-specification.html#message-protocol-names-bus'] },
