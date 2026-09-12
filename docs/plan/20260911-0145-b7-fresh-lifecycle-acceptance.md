@@ -2224,3 +2224,23 @@ a3c5dc3489bc9a234fb4d331fc71a98bc1e61c2ed9e6e187999fbc9233065a43
 binds six task-local files and the exact versioned changes. No production source,
 producer output, daemon state or accepted artifact changed. New source/input
 review and fresh per-launch resource/input checks still precede the root start.
+
+
+### GPT reviewed root actual start, 2026-09-12 08:37 UTC
+
+Independent B source/input review accepted exact ae40/tree e2ea8781 and
+canonical a54c66c0. The same-source x64 normal root actually started at
+08:37:24.494779 UTC after14 successful preflight steps. Orchestrator3346224,
+root timeout3347132 and persistent pane%101 were observed live in the distinct
+startup collection. All1841 source entries,18 copied pool files, fixed cache,
+J14/d2 native-deploy/438 tool, public trust and source-role identities passed.
+Fresh capacity, station/unrelated CPU, memory/disk, daemon724215ac quiescence
+and cgroup/headroom checks passed before launch. Child limits remain3CPU5GiB,
+with aggregate4CPU10GiB/swap0/0-3 and an actual in-child cgroup gate. Root process
+environment excludes BASH_ENV/DEBUG boundary injection. No source sync or
+successful producer/kernel replay occurred.
+GptJoin-ae40a791d763830a8e4a7cd7b0bb83a8b8945902/metadata/W2/
+root-start-collected-v1.json SHA256
+e8dd895f987370c5e96dd729b8cab04d7fae1c13c6e5a166793526b4448edc7e
+preserves exact argv/environment/PIDs,14 log hashes and input/resource bindings.
+This is actual start evidence only; no root/image/guest success is inferred.
