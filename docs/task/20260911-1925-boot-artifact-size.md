@@ -20,8 +20,8 @@ No compatibility or migration paths are required.
 
 ## ActiveForm
 
-Implement the approved exact 438 consumer join and run the authorized serial deploy
-and x64 boot-tools producers; retain completed boot-native outputs and evidence.
+Finalize the reviewed operator overlap and two clean-copy startup consumer joins;
+retain completed 438 native, deploy and x64 boot-tools producers and their witnesses.
 
 ## Dependencies
 
@@ -748,3 +748,32 @@ plan stay in progress and the handoff ends in review. Physical CX still requires
 the exact local device, serial endpoint, current/final image, flash and power
 inputs. Consolidated ARM acceptance remains deferred until an approved main
 merge.
+
+### 2026-09-12: final reviewed operator overlap
+
+Applied only the exact two-path patch from clean `70a7a408` to reviewed
+`66385757`: `consumers.json` and its existing composition tests. Patch SHA256
+`1097e14539cbb84b5a7331f64d2bf8d770276b69114b196f372383e6358cc9ab`;
+both resulting Git blobs equal the reviewed source. Docker alias, 13 operator
+paths, 18 resources including the quota service helper and nine native rc links
+retain exact ownership/type/mode/target rules. The four masks and three retained
+dpkg-owned operators remain; routel remains the only omitted operator.
+
+The source handoff reuses byte-bound B7 composition evidence at its original
+J/fb6/4716 identity and unchanged 70a7 startup checks. No producer, selector,
+compose, capture policy, joined-source allowance or trust byte changed. Final
+current-context verification and two canonical joins use the real 438 native,
+deploy and tool receipts, complete producer maps and the actual 15-archive pool.
+They run from two clean copies of this final committed source. Their exact
+source, per-path overlap, receipts, capture/release results and terminal evidence
+are retained in `_out/boot-size/consumer/operator-final-handoff/delivery.json`.
+Old fb6 captured root/deploy bytes retain their original attribution and must
+refuse admission as the new 438 candidate.
+
+Local PMA-CR covers the two-path integration and unchanged admission boundaries;
+independent B review remains required. The task and plan remain in progress,
+with the handoff in review. B7 owns the next combined x64 root/support/signed
+image/lifecycle batch; no duplicate producer or root was launched. Full 438
+system acceptance and physical CX device/serial/current and final image/flash/
+power evidence remain pending. Broad ARM acceptance follows the approved frozen
+batch-2 startup-chain main integration.

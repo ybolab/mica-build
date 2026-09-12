@@ -133,6 +133,241 @@ class CompositionTest(unittest.TestCase):
         r = self.compose(); self.assertNotEqual(r.returncode, 0)
         self.assertIn('excluded routel must be a regular iproute2 file', r.stderr)
 
+    def podman_alias(self):
+        declared = json.loads((REPO / 'rootfs/runtime/consumers.json').read_text())['consumers']['mos-podman']
+        entries = declared['roots'][0]['paths']
+        for path in entries:
+            self.f.write(path, elf(needed=['libpodman-fixture.so'], interp='/usr/lib/podman-loader.so'), 0o755)
+        self.f.write('/usr/lib/libpodman-fixture.so', elf())
+        self.f.write('/usr/lib/podman-loader.so', elf(), 0o755)
+        self.f.write('/usr/share/doc/mos-podman/copyright', b'Podman fixture license\n')
+        self.f.link('/usr/bin/docker', 'podman')
+        owned = [*entries, '/usr/bin/docker', '/usr/lib/libpodman-fixture.so',
+                 '/usr/lib/podman-loader.so', '/usr/share/doc/mos-podman/copyright']
+        owned = sorted(set(owned) | {str(parent) for path in owned for parent in Path(path).parents})
+        (self.inputs / 'info/mos-podman.list').write_text('\n'.join(owned) + '\n')
+        for path in (self.inputs / 'manifest.tsv', self.f.root / 'usr/share/mos/manifest.tsv'):
+            with path.open('a') as stream:
+                stream.write(f'mos-podman\t{PACKAGE_VERSION}\tamd64\n')
+        with (self.inputs / 'sources.tsv').open('a') as stream:
+            stream.write(f'mos-podman\tmos-podman\t{PACKAGE_VERSION}\n')
+        with (self.inputs / 'selected.pkgs').open('a') as stream:
+            stream.write('mos-podman\n')
+        with (self.inputs / 'Packages').open('a') as stream:
+            stream.write(f'Package: mos-podman\nVersion: {PACKAGE_VERSION}\nArchitecture: amd64\n'
+                         'Filename: pool/mos-podman.deb\nSHA256: ' + 'e' * 64 + '\n\n')
+        self.lineage()
+        path = self.inputs / 'source-lineage.json'
+        record = json.loads(path.read_text())
+        record['pool']['files']['pool/mos-podman.deb'] = 'e' * 64
+        record['pool']['packages'].append(dict(package='mos-podman', version=PACKAGE_VERSION,
+            architecture='amd64', archive='pool/mos-podman.deb', sha256='e' * 64, control_sha256='f' * 64))
+        path.write_text(json.dumps(record, sort_keys=True, separators=(',', ':')) + '\n')
+        self.f.rules['consumers']['mos-podman'] = dict(roots=[declared['roots'][0],
+            *(row for row in declared['roots'] if row['paths'] == ['/usr/bin/docker'])], runtime_links=[])
+        self.f.rules_path.write_text(json.dumps(self.f.rules))
+        return entries
+
+    def test_package_owned_docker_alias_composes_with_target_and_helpers(self):
+        entries = self.podman_alias()
+        self.capture()
+        result = self.compose()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        report = json.loads(self.f.report.read_text())
+        rows = {row['path']: row for row in report['files']}
+        row = rows['/usr/bin/docker']
+        self.assertEqual((row['type'], row['target'], row['mode'], row['uid'], row['gid']),
+                         ('symlink', 'podman', 0o777, 0, 0))
+        self.assertEqual(report['provenance']['files']['/usr/bin/docker']['archives'][0]['package'], 'mos-podman')
+        self.assertEqual(os.readlink(self.f.out / 'usr/bin/docker'), 'podman')
+        for path in entries:
+            self.assertEqual((self.f.out / path[1:]).read_bytes(), (self.f.root / path[1:]).read_bytes())
+        self.assertEqual(self.f.command('verify').returncode, 0)
+
+    def test_package_owned_docker_alias_preserves_refusals(self):
+        cases = [('owner', 'empty owned runtime roots'), ('wrong-owner', 'empty owned runtime roots'),
+                 ('target', 'required target changed'), ('mode', 'required mode changed'),
+                 ('missing-target', 'missing path:'), ('interpreter', 'missing path:'),
+                 ('library', 'unresolved shared library'), ('unrelated', 'operator executable omitted:')]
+        for mutation, expected in cases:
+            with self.subTest(mutation=mutation):
+                fixture = CompositionTest()
+                fixture.setUp()
+                self.addCleanup(fixture.doCleanups)
+                fixture.podman_alias()
+                if mutation in ('owner', 'wrong-owner'):
+                    owner = fixture.inputs / 'info/mos-podman.list'
+                    owner.write_text(owner.read_text().replace('/usr/bin/docker\n', ''))
+                    if mutation == 'wrong-owner':
+                        with (fixture.inputs / 'info/unused.list').open('a') as stream:
+                            stream.write('/usr/bin/docker\n')
+                elif mutation == 'target':
+                    (fixture.f.root / 'usr/bin/docker').unlink()
+                    fixture.f.link('/usr/bin/docker', 'crun')
+                elif mutation == 'mode':
+                    # Linux symlink modes are fixed; a conflicting required mode must refuse.
+                    fixture.f.rules['consumers']['mos-podman']['roots'][-1]['expect']['mode'] = 0o755
+                elif mutation in ('missing-target', 'interpreter', 'library'):
+                    path = {'missing-target': 'usr/bin/podman', 'interpreter': 'usr/lib/podman-loader.so',
+                            'library': 'usr/lib/libpodman-fixture.so'}[mutation]
+                    (fixture.f.root / path).unlink()
+                else:
+                    fixture.f.link('/usr/bin/unexpected-podman-alias', 'podman')
+                    with (fixture.inputs / 'info/mos-podman.list').open('a') as stream:
+                        stream.write('/usr/bin/unexpected-podman-alias\n')
+                fixture.f.rules_path.write_text(json.dumps(fixture.f.rules))
+                fixture.capture()
+                result = fixture.compose()
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn(expected, result.stderr)
+                self.assertFalse(fixture.f.report.exists())
+
+    def operator_companions(self):
+        operators = {f'/usr/sbin/{name}': ('systemd-sysv', '../bin/systemctl')
+                     for name in ('halt', 'poweroff', 'reboot', 'runlevel', 'shutdown', 'telinit')}
+        operators.update({'/usr/bin/resolvectl': ('systemd-resolved', None),
+                          '/usr/sbin/resolvconf': ('systemd-resolved', '../bin/resolvectl'),
+                          '/usr/sbin/invoke-rc.d': ('init-system-helpers', None),
+                          '/usr/sbin/service': ('init-system-helpers', None),
+                          '/usr/bin/dpkg-realpath': ('dpkg', None),
+                          '/usr/bin/update-alternatives': ('dpkg', None),
+                          '/usr/sbin/start-stop-daemon': ('dpkg', None)})
+        resources = {
+            'dbus': ['/etc/init.d/dbus', '/etc/default/dbus'],
+            'procps': ['/etc/init.d/procps'],
+            'quota': ['/etc/init.d/quota', '/etc/init.d/quotarpc', '/etc/default/quota',
+                      '/usr/share/quota/quotaon.sh', '/usr/share/quota/quotaoff.sh',
+                      '/usr/share/quota/quotarpc.sh', '/usr/share/quota/quota-initial-check.sh', '/var/lib/quota'],
+            'openssh-server': ['/etc/init.d/ssh', '/etc/default/ssh'],
+            'sysvinit-utils': ['/usr/lib/lsb/init-functions', '/usr/lib/lsb/init-functions.d/00-verbose',
+                              '/usr/lib/init/init-d-script', '/usr/lib/init/vars.sh'],
+            'systemd': ['/usr/lib/lsb/init-functions.d/40-systemd'],
+        }
+        links = {f'/etc/rc{level}.d/S01{name}': '../init.d/' + name
+                 for level in '2345' for name in ('dbus', 'ssh')}
+        links['/etc/rcS.d/S01procps'] = '../init.d/procps'
+        expected = set(operators) | {p for paths in resources.values() for p in paths} | set(links)
+        declared = json.loads((REPO / 'rootfs/runtime/consumers.json').read_text())
+        rows = [row for row in declared['consumers']['mos-system']['roots']
+                if set(row['paths']) & expected]
+        system = self.f.rules['consumers']['mos-system']['roots']
+        system.extend(rows)
+        owners = {}
+        for path, (owner, target) in operators.items():
+            owners[path] = owner
+            if target:
+                self.f.link(path, target)
+            else:
+                data = b'#!/usr/bin/sh\nexit 0\n' if owner == 'init-system-helpers' else elf(
+                    needed=['liboperator.so'], interp='/usr/lib/operator-loader.so')
+                self.f.write(path, data, 0o755)
+        for owner, paths in resources.items():
+            for path in paths:
+                owners[path] = owner
+                if path == '/var/lib/quota':
+                    (self.f.root / path[1:]).mkdir(parents=True)
+                else:
+                    executable = path.startswith(('/etc/init.d/', '/usr/share/quota/')) or path.endswith('/init-d-script')
+                    self.f.write(path, b'#!/usr/bin/sh\nexit 0\n' if executable else b'fixture resource\n',
+                                 0o755 if executable else 0o644)
+        for path in ('/usr/bin/systemctl', '/usr/lib/operator-loader.so', '/usr/lib/liboperator.so'):
+            self.f.write(path, elf(), 0o755)
+            owners[path] = 'systemd'
+        system.append(dict(paths=['/usr/bin/systemctl'], packages=['systemd'], kind='executable',
+                           reason='existing retained systemctl target'))
+        for path, target in links.items():
+            self.f.link(path, target)
+        for owner in sorted(set(owners.values())):
+            copyright_path = f'/usr/share/doc/{owner}/copyright'
+            self.f.write(copyright_path, b'fixture license\n')
+            paths = {p for p, package in owners.items() if package == owner} | {copyright_path}
+            paths |= {str(parent) for p in list(paths) for parent in Path(p).parents}
+            (self.inputs / 'info' / (owner + '.list')).write_text('\n'.join(sorted(paths)) + '\n')
+            with (self.inputs / 'manifest.tsv').open('a') as stream:
+                stream.write(f'{owner}\t1\tamd64\n')
+            with (self.inputs / 'upstream.tsv').open('a') as stream:
+                stream.write(f'{owner}\t1\tamd64\t' + 'e' * 64 + f'\thttps://example.invalid/{owner}.deb\tmos-system\n')
+            with (self.inputs / 'sources.tsv').open('a') as stream:
+                stream.write(f'{owner}\t{owner}\t1\n')
+        self.f.rules_path.write_text(json.dumps(self.f.rules))
+        return operators, resources, links, expected
+
+    def test_retained_operator_companions_compose_with_native_resources(self):
+        operators, resources, links, expected = self.operator_companions()
+        self.capture()
+        result = self.compose()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        report = json.loads(self.f.report.read_text())
+        rows = {row['path']: row for row in report['files']}
+        self.assertTrue(expected <= rows.keys())
+        for path, (owner, target) in operators.items():
+            self.assertEqual(rows[path]['mode'], 0o777 if target else 0o755)
+            self.assertEqual((rows[path]['uid'], rows[path]['gid']), (0, 0))
+            self.assertIn(owner, {o['package'] for o in rows[path]['origins'] if 'package' in o})
+            if target:
+                self.assertEqual(os.readlink(self.f.out / path[1:]), target)
+            else:
+                self.assertEqual((self.f.out / path[1:]).read_bytes(), (self.f.root / path[1:]).read_bytes())
+        for path, target in links.items():
+            self.assertEqual(os.readlink(self.f.out / path[1:]), target)
+            self.assertTrue(any('generated' in o for o in rows[path]['origins']))
+        for path in ('usr/bin/dpkg', 'usr/bin/dpkg-query', 'usr/bin/apt-get', 'usr/bin/perl', 'var/lib/dpkg'):
+            self.assertFalse(os.path.lexists(self.f.out / path))
+        self.assertEqual(self.f.command('verify').returncode, 0)
+
+    def test_retained_operator_companions_preserve_refusals(self):
+        cases = {'owner': 'empty owned runtime roots', 'wrong-owner': 'empty owned runtime roots',
+                 'script-interpreter': 'missing path:', 'device': 'unsupported node:',
+                 'mode': 'required mode changed',
+                 'target': 'required target changed', 'target-missing': 'No such file or directory',
+                 'interpreter': 'missing path:', 'library': 'unresolved shared library',
+                 'resource': 'missing path:', 'rc-target': 'required target changed',
+                 'omitted': 'operator executable omitted:', 'package-manager': 'operator executable omitted:',
+                 'database': 'build residue selected:'}
+        for mutation, message in cases.items():
+            with self.subTest(mutation=mutation):
+                f = CompositionTest(); f.setUp(); self.addCleanup(f.doCleanups)
+                f.operator_companions()
+                if mutation in ('owner', 'wrong-owner'):
+                    p = f.inputs / 'info/dpkg.list'
+                    p.write_text(p.read_text().replace('/usr/bin/dpkg-realpath\n', ''))
+                    if mutation == 'wrong-owner':
+                        with (f.inputs / 'info/unused.list').open('a') as stream:
+                            stream.write('/usr/bin/dpkg-realpath\n')
+                elif mutation == 'script-interpreter':
+                    f.f.write('/usr/sbin/service', b'#!/usr/bin/missing-shell\n', 0o755)
+                elif mutation == 'device':
+                    f.capture()
+                    path = f.f.root / 'dev/unexpected'
+                    path.parent.mkdir(exist_ok=True)
+                    os.mkfifo(path)
+                    f.f.rules['consumers']['mos-system']['roots'].append(dict(
+                        paths=['/dev/unexpected'], kind='resource', reason='negative special node', generated='negative fixture'))
+                elif mutation == 'mode':
+                    (f.f.root / 'usr/bin/dpkg-realpath').chmod(0o700)
+                elif mutation in ('target', 'rc-target'):
+                    path = '/usr/sbin/halt' if mutation == 'target' else '/etc/rc2.d/S01dbus'
+                    (f.f.root / path[1:]).unlink()
+                    f.f.link(path, '../bin/resolvectl' if mutation == 'target' else '../init.d/ssh')
+                elif mutation in ('target-missing', 'interpreter', 'library', 'resource'):
+                    path = {'target-missing': 'usr/bin/resolvectl', 'interpreter': 'usr/lib/operator-loader.so',
+                            'library': 'usr/lib/liboperator.so', 'resource': 'etc/init.d/ssh'}[mutation]
+                    (f.f.root / path).unlink()
+                elif mutation in ('omitted', 'package-manager'):
+                    f.f.link('/usr/bin/unexpected-alias' if mutation == 'omitted' else '/usr/bin/dpkg', 'systemctl')
+                else:
+                    f.f.write('/var/lib/dpkg/status', b'fixture forbidden database\n')
+                    f.f.rules['consumers']['mos-system']['roots'].append(dict(
+                        paths=['/var/lib/dpkg', '/var/lib/dpkg/status'], kind='resource',
+                        reason='negative forbidden database', generated='negative fixture'))
+                f.f.rules_path.write_text(json.dumps(f.f.rules))
+                if mutation != 'device':
+                    f.capture()
+                result = f.compose()
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn(message, result.stderr)
+                self.assertFalse(f.f.report.exists())
+
     def bootstrap_device(self, name='console', major=5, minor=1, mode=0o666):
         path = self.f.root / 'dev' / name
         path.parent.mkdir(exist_ok=True)
