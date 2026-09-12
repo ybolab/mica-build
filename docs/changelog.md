@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-09-12 11:57 [verification]
+
+Completed the fresh main x64 build at `a6b7b55c6183` using pinned Docker tools
+and new development identities in ignored `meta/`. Produced the signed complete
+image and update archive; root smoke passed 12/12 and real API acceptance
+151/151. Native shutdown/QMP actions, same-VM reboot persistence, storage,
+component update/fallback and all three interrupted-reset tiers passed.
+The clean-x64 task records exact artifact hashes, measured sizes and evidence.
+No-radio Wi-Fi reconciler errors remain a diagnostic follow-up. ARM, physical
+hardware and unexecuted fault matrices are not covered by this result. No push.
+
 ## 2026-09-12 11:33 [progress]
 
 Added `make os-keys-init` for idempotent development signing initialization in

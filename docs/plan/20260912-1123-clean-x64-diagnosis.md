@@ -1,6 +1,6 @@
 # 20260912-1123-clean-x64-diagnosis Clean main x64 rebuild and diagnosis
 
-- **status**: implementing
+- **status**: completed
 - **createdAt**: 2026-09-12 11:23
 - **approvedAt**: 2026-09-12 11:23 (explicit user request)
 - **relatedTask**: 20260912-1123-clean-x64-diagnosis
@@ -75,3 +75,19 @@ high-confidence issue. New development boot/content/metadata keys were created
 and verified in ignored `meta/`; no private material is staged. The user
 authorized local commits. Freeze the resulting clean main commit for production
 and keep runtime progress in ignored evidence until the next source boundary.
+
+## Final verification — 2026-09-12
+
+The clean `a6b7b55c6183` x64 build produced all packages, Linux 6.12.107,
+signed kernel/support, root, firmware, two factory deployments and the full
+image. Root smoke passed 12/12 and real authenticated API acceptance passed
+151/151. Native shutdown, QMP poweroff/reset, same-VM reboot persistence,
+storage/quota isolation, component updates and unhealthy-deployment fallback,
+and all three interrupted-reset tiers passed. Measured size and exact image
+identity are recorded in the related task and `_out/clean-x64/` evidence.
+
+This completes the requested fresh x64 rebuild and diagnosis. It does not close
+historical ARM or physical-hardware plans. The diagnostic record retains the
+no-radio Wi-Fi reconciler errors and the corrected temporary image-selection
+failure without treating either as a passed wireless test. Production keys stay
+in ignored `meta/`; disposable acceptance identities are isolated. No push.

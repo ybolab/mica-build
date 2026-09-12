@@ -1,6 +1,6 @@
 # 20260912-1123-clean-x64-diagnosis Clean main x64 rebuild and diagnosis
 
-- **status**: in_progress
+- **status**: completed
 - **priority**: P1
 - **owner**: worker/x64-clean-20260912-1123
 - **createdAt**: 2026-09-12 11:23
@@ -12,17 +12,18 @@ x64 system and diagnose actual startup. Preserve current source edits.
 
 ## ActiveForm
 
-Cleaning previous state and rebuilding pinned Docker tools.
+Clean x64 rebuild and QEMU diagnosis completed; recording measured evidence.
 
 ## Dependencies
 
-- **blocked by**: signing identity selection before kernel/signing stages
+- **blocked by**: none
 - **blocks**: complete x64 runtime qualification
 
 ## Notes
 
 Full tier. User explicitly authorized cleanup and full rebuild. No fixed
-resource quotas, handoff reuse, parallel agents, new campaign, commit or push.
+resource quotas, handoff reuse, parallel agents or new campaign. Local commits
+are authorized; no push.
 SYSTEM remains 1 GiB and current signing/auth/storage/watchdog contracts apply.
 
 ## Preparation result — 2026-09-12
@@ -65,3 +66,53 @@ high-confidence issue. New development boot/content/metadata keys were created
 and verified in ignored `meta/`; no private material is staged. The user
 authorized local commits. Freeze the resulting clean main commit for production
 and keep runtime progress in ignored evidence until the next source boundary.
+
+## Clean x64 result — 2026-09-12
+
+Production source: `a6b7b55c61834dd3200bbfbf7807b0e62d888806`, clean main.
+All seven pinned Docker toolchains, packages, Linux 6.12.107, boot tools,
+root/kernel-support signatures, firmware, two factory deployment records,
+complete image and update archive were rebuilt. Successful inputs were reused
+between composition and acceptance without recompiling them. SYSTEM is 1 GiB.
+
+Image: `_out/clean-x64/factory/mos-x64-20260912-114332.img`.
+SHA256: `ea5bec779a14c46abbeb664fe29fdcda16cf2faa25192d0e3ec2908612c7295e`.
+Development signing inputs remain in ignored `meta/`. The following results
+come from this run, not historical acceptance:
+
+| Check | Result and evidence under `_out/clean-x64/` |
+|---|---|
+| Root runtime closure and executable smoke | PASS, 12/12; `rootfs.log` |
+| Altered UKI, signed root hash and deployment metadata | Refused; `tamper*.log` |
+| Enrolled Secure Boot and authenticated API | PASS, 151/151; `api-acceptance.log` |
+| Native poweroff/reboot and QMP guest action | PASS; `actions-acceptance.log` |
+| Same-VM reboot, changed boot ID, retained machine ID/data | PASS; `reboot-cycle.log` |
+| DATA growth, mount isolation, quotas, persistent var/container paths, firmware readback | PASS on two boots; `runtime-acceptance.log` |
+| Root-only, kernel-only, unhealthy deployment fallback, combined update | PASS; `updates-acceptance.log` |
+| Configuration/application/full-factory interrupted reset and retry | PASS, three boots per tier; `reset-acceptance.log` |
+
+API and action tests use the complete factory image with DATA test units.
+Storage/update/reset fixtures use this complete root plus test probes and
+isolated fixture keys; they do not replace the production identity. QMP proves
+guest-requested reset/shutdown, with no watchdog event. Expected unhealthy
+deployment failures and reset interruptions remain in their logs. A temporary
+API runner initially selected a partition intermediate; it was stopped before
+guest startup, corrected, and its original log/exit retained separately.
+The initial tamper command found no OpenSSL CLI in boot tools after verifying
+the UKI refusal; content verification then used the pinned OpenSSL image and
+passed both valid-input and altered-input checks. Both logs are retained.
+
+Measured bytes: initramfs 4,449,280 expanded / 1,094,176 compressed (75.41%
+smaller), UKI 16,178,216, support 69,632, root 71,200,768. Observed update peak
+usage: SYSTEM 143,929,344 and ESP 32,583,680 bytes, sampled every 100 ms;
+this is guest filesystem usage, not physical write amplification.
+
+Diagnostic follow-up: the no-radio x64 boot logs contain `wifiClient` failure
+`create /etc/wpa_supplicant` and `wifiAp` D-Bus `FileNotFound`. The client still
+renders configuration while disabled; radio reconciliation needs a separate
+fix/acceptance decision. Wireless functionality is not qualified by these tests.
+Physical hardware, ARM, online delivery and additional fault matrices were not
+executed and are not marked passed. The dedicated build daemon and cache volume
+were removed; successful artifacts and evidence are retained. No push occurred.
+
+- complete: Fresh x64 build and requested QEMU diagnosis completed; limits and follow-up observations recorded.

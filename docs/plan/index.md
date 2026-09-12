@@ -172,4 +172,4 @@ disobeys on sight teaches a reader the wrong thing about the tree.
 
 - [x] [**20260912-1113-remove-build-resource-limits Remove build resource limits**](20260912-1113-remove-build-resource-limits.md) `2026-09-12`
 
-- [-] [**20260912-1123-clean-x64-diagnosis Clean main x64 rebuild and diagnosis**](20260912-1123-clean-x64-diagnosis.md) `2026-09-12`
+- [x] [**20260912-1123-clean-x64-diagnosis Clean main x64 rebuild and diagnosis**](20260912-1123-clean-x64-diagnosis.md) `2026-09-12`

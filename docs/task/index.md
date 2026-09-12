@@ -232,4 +232,4 @@ thing about the tree. Both indexes now say the same thing.
 
 - [x] [**20260912-1113-remove-build-resource-limits Remove build resource limits**](20260912-1113-remove-build-resource-limits.md) `P1`
 
-- [-] [**20260912-1123-clean-x64-diagnosis Clean main x64 rebuild and diagnosis**](20260912-1123-clean-x64-diagnosis.md) `P1`
+- [x] [**20260912-1123-clean-x64-diagnosis Clean main x64 rebuild and diagnosis**](20260912-1123-clean-x64-diagnosis.md) `P1`
