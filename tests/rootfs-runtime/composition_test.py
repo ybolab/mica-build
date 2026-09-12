@@ -222,6 +222,152 @@ class CompositionTest(unittest.TestCase):
                 self.assertIn(expected, result.stderr)
                 self.assertFalse(fixture.f.report.exists())
 
+    def operator_companions(self):
+        operators = {f'/usr/sbin/{name}': ('systemd-sysv', '../bin/systemctl')
+                     for name in ('halt', 'poweroff', 'reboot', 'runlevel', 'shutdown', 'telinit')}
+        operators.update({'/usr/bin/resolvectl': ('systemd-resolved', None),
+                          '/usr/sbin/resolvconf': ('systemd-resolved', '../bin/resolvectl'),
+                          '/usr/sbin/invoke-rc.d': ('init-system-helpers', None),
+                          '/usr/sbin/service': ('init-system-helpers', None),
+                          '/usr/bin/dpkg-realpath': ('dpkg', None),
+                          '/usr/bin/update-alternatives': ('dpkg', None),
+                          '/usr/sbin/start-stop-daemon': ('dpkg', None)})
+        resources = {
+            'dbus': ['/etc/init.d/dbus', '/etc/default/dbus'],
+            'procps': ['/etc/init.d/procps'],
+            'quota': ['/etc/init.d/quota', '/etc/init.d/quotarpc', '/etc/default/quota',
+                      '/usr/share/quota/quotaon.sh', '/usr/share/quota/quotaoff.sh',
+                      '/usr/share/quota/quotarpc.sh', '/usr/share/quota/quota-initial-check.sh', '/var/lib/quota'],
+            'openssh-server': ['/etc/init.d/ssh', '/etc/default/ssh'],
+            'sysvinit-utils': ['/usr/lib/lsb/init-functions', '/usr/lib/lsb/init-functions.d/00-verbose',
+                              '/usr/lib/init/init-d-script', '/usr/lib/init/vars.sh'],
+            'systemd': ['/usr/lib/lsb/init-functions.d/40-systemd'],
+        }
+        links = {f'/etc/rc{level}.d/S01{name}': '../init.d/' + name
+                 for level in '2345' for name in ('dbus', 'ssh')}
+        links['/etc/rcS.d/S01procps'] = '../init.d/procps'
+        expected = set(operators) | {p for paths in resources.values() for p in paths} | set(links)
+        declared = json.loads((REPO / 'rootfs/runtime/consumers.json').read_text())
+        rows = [row for row in declared['consumers']['mos-system']['roots']
+                if set(row['paths']) & expected]
+        system = self.f.rules['consumers']['mos-system']['roots']
+        system.extend(rows)
+        owners = {}
+        for path, (owner, target) in operators.items():
+            owners[path] = owner
+            if target:
+                self.f.link(path, target)
+            else:
+                data = b'#!/usr/bin/sh\nexit 0\n' if owner == 'init-system-helpers' else elf(
+                    needed=['liboperator.so'], interp='/usr/lib/operator-loader.so')
+                self.f.write(path, data, 0o755)
+        for owner, paths in resources.items():
+            for path in paths:
+                owners[path] = owner
+                if path == '/var/lib/quota':
+                    (self.f.root / path[1:]).mkdir(parents=True)
+                else:
+                    executable = path.startswith(('/etc/init.d/', '/usr/share/quota/')) or path.endswith('/init-d-script')
+                    self.f.write(path, b'#!/usr/bin/sh\nexit 0\n' if executable else b'fixture resource\n',
+                                 0o755 if executable else 0o644)
+        for path in ('/usr/bin/systemctl', '/usr/lib/operator-loader.so', '/usr/lib/liboperator.so'):
+            self.f.write(path, elf(), 0o755)
+            owners[path] = 'systemd'
+        system.append(dict(paths=['/usr/bin/systemctl'], packages=['systemd'], kind='executable',
+                           reason='existing retained systemctl target'))
+        for path, target in links.items():
+            self.f.link(path, target)
+        for owner in sorted(set(owners.values())):
+            copyright_path = f'/usr/share/doc/{owner}/copyright'
+            self.f.write(copyright_path, b'fixture license\n')
+            paths = {p for p, package in owners.items() if package == owner} | {copyright_path}
+            paths |= {str(parent) for p in list(paths) for parent in Path(p).parents}
+            (self.inputs / 'info' / (owner + '.list')).write_text('\n'.join(sorted(paths)) + '\n')
+            with (self.inputs / 'manifest.tsv').open('a') as stream:
+                stream.write(f'{owner}\t1\tamd64\n')
+            with (self.inputs / 'upstream.tsv').open('a') as stream:
+                stream.write(f'{owner}\t1\tamd64\t' + 'e' * 64 + f'\thttps://example.invalid/{owner}.deb\tmos-system\n')
+            with (self.inputs / 'sources.tsv').open('a') as stream:
+                stream.write(f'{owner}\t{owner}\t1\n')
+        self.f.rules_path.write_text(json.dumps(self.f.rules))
+        return operators, resources, links, expected
+
+    def test_retained_operator_companions_compose_with_native_resources(self):
+        operators, resources, links, expected = self.operator_companions()
+        self.capture()
+        result = self.compose()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        report = json.loads(self.f.report.read_text())
+        rows = {row['path']: row for row in report['files']}
+        self.assertTrue(expected <= rows.keys())
+        for path, (owner, target) in operators.items():
+            self.assertEqual(rows[path]['mode'], 0o777 if target else 0o755)
+            self.assertEqual((rows[path]['uid'], rows[path]['gid']), (0, 0))
+            self.assertIn(owner, {o['package'] for o in rows[path]['origins'] if 'package' in o})
+            if target:
+                self.assertEqual(os.readlink(self.f.out / path[1:]), target)
+            else:
+                self.assertEqual((self.f.out / path[1:]).read_bytes(), (self.f.root / path[1:]).read_bytes())
+        for path, target in links.items():
+            self.assertEqual(os.readlink(self.f.out / path[1:]), target)
+            self.assertTrue(any('generated' in o for o in rows[path]['origins']))
+        for path in ('usr/bin/dpkg', 'usr/bin/dpkg-query', 'usr/bin/apt-get', 'usr/bin/perl', 'var/lib/dpkg'):
+            self.assertFalse(os.path.lexists(self.f.out / path))
+        self.assertEqual(self.f.command('verify').returncode, 0)
+
+    def test_retained_operator_companions_preserve_refusals(self):
+        cases = {'owner': 'empty owned runtime roots', 'wrong-owner': 'empty owned runtime roots',
+                 'script-interpreter': 'missing path:', 'device': 'unsupported node:',
+                 'mode': 'required mode changed',
+                 'target': 'required target changed', 'target-missing': 'No such file or directory',
+                 'interpreter': 'missing path:', 'library': 'unresolved shared library',
+                 'resource': 'missing path:', 'rc-target': 'required target changed',
+                 'omitted': 'operator executable omitted:', 'package-manager': 'operator executable omitted:',
+                 'database': 'build residue selected:'}
+        for mutation, message in cases.items():
+            with self.subTest(mutation=mutation):
+                f = CompositionTest(); f.setUp(); self.addCleanup(f.doCleanups)
+                f.operator_companions()
+                if mutation in ('owner', 'wrong-owner'):
+                    p = f.inputs / 'info/dpkg.list'
+                    p.write_text(p.read_text().replace('/usr/bin/dpkg-realpath\n', ''))
+                    if mutation == 'wrong-owner':
+                        with (f.inputs / 'info/unused.list').open('a') as stream:
+                            stream.write('/usr/bin/dpkg-realpath\n')
+                elif mutation == 'script-interpreter':
+                    f.f.write('/usr/sbin/service', b'#!/usr/bin/missing-shell\n', 0o755)
+                elif mutation == 'device':
+                    f.capture()
+                    path = f.f.root / 'dev/unexpected'
+                    path.parent.mkdir(exist_ok=True)
+                    os.mkfifo(path)
+                    f.f.rules['consumers']['mos-system']['roots'].append(dict(
+                        paths=['/dev/unexpected'], kind='resource', reason='negative special node', generated='negative fixture'))
+                elif mutation == 'mode':
+                    (f.f.root / 'usr/bin/dpkg-realpath').chmod(0o700)
+                elif mutation in ('target', 'rc-target'):
+                    path = '/usr/sbin/halt' if mutation == 'target' else '/etc/rc2.d/S01dbus'
+                    (f.f.root / path[1:]).unlink()
+                    f.f.link(path, '../bin/resolvectl' if mutation == 'target' else '../init.d/ssh')
+                elif mutation in ('target-missing', 'interpreter', 'library', 'resource'):
+                    path = {'target-missing': 'usr/bin/resolvectl', 'interpreter': 'usr/lib/operator-loader.so',
+                            'library': 'usr/lib/liboperator.so', 'resource': 'etc/init.d/ssh'}[mutation]
+                    (f.f.root / path).unlink()
+                elif mutation in ('omitted', 'package-manager'):
+                    f.f.link('/usr/bin/unexpected-alias' if mutation == 'omitted' else '/usr/bin/dpkg', 'systemctl')
+                else:
+                    f.f.write('/var/lib/dpkg/status', b'fixture forbidden database\n')
+                    f.f.rules['consumers']['mos-system']['roots'].append(dict(
+                        paths=['/var/lib/dpkg', '/var/lib/dpkg/status'], kind='resource',
+                        reason='negative forbidden database', generated='negative fixture'))
+                f.f.rules_path.write_text(json.dumps(f.f.rules))
+                if mutation != 'device':
+                    f.capture()
+                result = f.compose()
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn(message, result.stderr)
+                self.assertFalse(f.f.report.exists())
+
     def bootstrap_device(self, name='console', major=5, minor=1, mode=0o666):
         path = self.f.root / 'dev' / name
         path.parent.mkdir(exist_ok=True)
