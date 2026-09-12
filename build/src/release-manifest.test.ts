@@ -1,12 +1,13 @@
 import { afterEach, beforeEach, expect, spyOn, test } from 'bun:test'
 import { createHash, generateKeyPairSync } from 'node:crypto'
 import { spawnSync } from 'node:child_process'
+import { zstdCompressSync, constants as zstdConstants } from 'node:zlib'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { Signer } from '../../shared/update-envelope.ts'
 import { canonicalJson, componentId } from './components.ts'
 import { packArchive } from './component-archive.ts'
-import { assembleRelease, gateRelease, sourceLineage, verifyArchive, verifyJoinedNativePayload, type ReleaseInputs } from './release-manifest.ts'
+import { assembleRelease, gateRelease, sourceLineage, validateStartupInputContract, verifyArchive, verifyJoinedNativePayload, type ReleaseInputs } from './release-manifest.ts'
 import { sourceIdentity } from './release-cli.ts'
 import { acceptProvenance } from '../../tests/file-ab-x64/provenance-acceptance.ts'
 import { Toolbox } from './toolbox.ts'
@@ -675,6 +676,258 @@ test.each(['missing', 'unknown', 'self-authorized'])('runtime joined lineage ref
   expect(() => assembleRelease(inputs)).toThrow()
 })
 
+const STARTUP_SOURCE = '438c9551ec751fcb346881541752a7596f10cb15'
+function startupJoinedUki(change = '', actual = false) {
+  const native = process.env.MOS_TEST_STARTUP_NATIVE
+  const init = actual ? readFileSync(join(native!, 'mos-init')) : Buffer.from('fixture static init')
+  const shutdown = actual ? readFileSync(join(native!, 'mos-shutdown')) : Buffer.from('fixture static shutdown')
+  const expected = { 'mos-init': { bytes: init.length, sha256: hash(init) }, 'mos-shutdown': { bytes: shutdown.length, sha256: hash(shutdown) } }
+  const entries: [string, Buffer, number][] = ['.', 'dev', 'etc', 'etc/mos', 'exitrd', 'newroot', 'proc', 'run', 'sbin', 'support', 'sys', 'system'].map(n => [n, Buffer.alloc(0), 0o40755])
+  entries.push(['init', init, 0o100755], ['exitrd/shutdown', shutdown, 0o100755], ['sbin/mos-shutdown', Buffer.from('/exitrd/shutdown'), 0o120777],
+    ['startup.files', Buffer.from('init\n'), 0o100644], ['exitrd.files', Buffer.from('shutdown\n'), 0o100644], ['etc/mos/boot.json', Buffer.from('{}\n'), 0o100644])
+  if (change === 'config-oversized') entries.find(r => r[0] === 'etc/mos/boot.json')![1] = Buffer.alloc(4097, 32)
+  if (change === 'bytes') entries.find(r => r[0] === 'init')![1] = Buffer.from('mutated init')
+  if (change === 'mode') entries.find(r => r[0] === 'init')![2] = 0o100777
+  if (change === 'symlink-target') entries.find(r => r[0] === 'sbin/mos-shutdown')![1] = Buffer.from('/missing')
+  if (change === 'symlink-mode') entries.find(r => r[0] === 'sbin/mos-shutdown')![2] = 0o120755
+  if (change === 'symlink-type') entries.find(r => r[0] === 'sbin/mos-shutdown')![2] = 0o100777
+  if (change === 'manifest') entries.find(r => r[0] === 'startup.files')![1] = Buffer.from('init\nhelper\n')
+  if (change === 'omitted-manifest') entries.splice(entries.findIndex(r => r[0] === 'exitrd.files'), 1)
+  if (change === 'duplicate') entries.push(['init', init, 0o100755])
+  if (change === 'unsafe') entries.push(['../escape', init, 0o100755])
+  if (change === 'extra-executable') entries.push(['helper', init, 0o100755])
+  if (change === 'extra-library') entries.push(['lib/extra.so', init, 0o100644])
+  if (change === 'extra-symlink') entries.push(['alias', Buffer.from('/init'), 0o120777])
+  const parts: Buffer[] = []
+  for (const [name, bytes, mode] of [...entries.sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0), ['TRAILER!!!', Buffer.alloc(0), 0] as [string, Buffer, number]]) {
+    const fields = [0, mode, change === 'owner' ? 1 : 0, change === 'group' ? 1 : 0, mode === 0o40755 ? 2 : change === 'hardlink' ? 2 : 1,
+      name === 'TRAILER!!!' ? 0 : 1577836800, bytes.length, 0, 0, 0, 0, name.length + 1, 0]
+    const named = Buffer.from('070701' + fields.map(n => n.toString(16).padStart(8, '0')).join('') + name + '\0')
+    parts.push(named, Buffer.alloc((4 - named.length % 4) % 4), bytes, Buffer.alloc((4 - bytes.length % 4) % 4))
+  }
+  let cpio = Buffer.concat(parts)
+  cpio = Buffer.concat([cpio, Buffer.alloc((512 - cpio.length % 512) % 512)])
+  if (change === 'cpio-trailing') cpio = Buffer.concat([cpio, Buffer.alloc(512)])
+  if (change === 'cpio-garbage') cpio[cpio.length - 1] = 1
+  let packed = zstdCompressSync(cpio, { params: { [zstdConstants.ZSTD_c_checksumFlag]: 1 } })
+  if (change === 'checksum') packed[packed.length - 1] = packed[packed.length - 1]! ^ 1
+  if (change === 'truncated') packed = packed.subarray(0, packed.length - 1)
+  if (change === 'concatenated') packed = Buffer.concat([packed, packed])
+  if (change === 'trailing') packed = Buffer.concat([packed, Buffer.from([0])])
+  if (change === 'skippable') packed = Buffer.from('502a4d1800000000', 'hex')
+  if (change === 'checksum-missing') packed[4] = packed[4]! & ~4
+  if (change === 'reserved') packed[4] = packed[4]! | 8
+  if (change === 'oversized') packed = Buffer.from('28b52ffda40100000401000000000000', 'hex')
+  if (change === 'window') packed = Buffer.from('28b52ffd84580100000001000000000000', 'hex')
+  const payload = change === 'raw' ? cpio : packed
+  const size = Math.ceil(payload.length / 512) * 512, boot = Buffer.alloc(512 + size)
+  boot.write('MZ'); boot.writeUInt32LE(64, 60); boot.write('PE\0\0', 64)
+  boot.writeUInt16LE(0x8664, 68); boot.writeUInt16LE(change === 'duplicate-section' || change === 'overlap' || change === 'virtual-overlap' ? 2 : 1, 70)
+  boot.writeUInt16LE(240, 84); boot.writeUInt16LE(0x20b, 88)
+  boot.writeUInt32LE(4096, 120); boot.writeUInt32LE(512, 124); boot.writeUInt32LE(Math.ceil((4096 + payload.length) / 4096) * 4096, 144)
+  boot.write('.initrd', 328); boot.writeUInt32LE(payload.length, 336); boot.writeUInt32LE(4096, 340)
+  boot.writeUInt32LE(size, 344); boot.writeUInt32LE(512, 348); payload.copy(boot, 512)
+  if (change === 'padding') boot[boot.length - 1] = 1
+  if (change === 'duplicate-section' || change === 'overlap' || change === 'virtual-overlap') {
+    boot.copy(boot, 368, 328, 368)
+    if (change !== 'duplicate-section') boot.write('.other\0\0', 368)
+    if (change === 'virtual-overlap') { boot.writeUInt32LE(0, 384); boot.writeUInt32LE(0, 388) }
+  }
+  return { boot, expected, cpio }
+}
+
+test('startup joined payload accepts only the canonical compressed representation for the reviewed role', () => {
+  const f = startupJoinedUki()
+  expect(() => verifyJoinedNativePayload(f.boot, f.expected, STARTUP_SOURCE)).not.toThrow()
+  expect(() => verifyJoinedNativePayload(f.boot, f.expected, STARTUP_SOURCE, { bytes: 1, sha256: '0'.repeat(64) })).toThrow('legacy BusyBox witness')
+  expect(() => verifyJoinedNativePayload(f.boot, f.expected)).toThrow('cpio header')
+  expect(() => verifyJoinedNativePayload(f.boot, f.expected, 'f'.repeat(40))).toThrow('source')
+  expect(() => verifyJoinedNativePayload(startupJoinedUki('raw').boot, f.expected, STARTUP_SOURCE)).toThrow()
+})
+
+test('startup joined payload rejects native, manifest, owner and membership mutations', () => {
+  for (const change of ['bytes', 'mode', 'owner', 'group', 'hardlink', 'symlink-target', 'symlink-mode', 'symlink-type', 'manifest', 'omitted-manifest', 'duplicate', 'unsafe', 'extra-executable', 'extra-library', 'extra-symlink', 'cpio-trailing', 'cpio-garbage']) {
+    const f = startupJoinedUki(change)
+    expect(() => verifyJoinedNativePayload(f.boot, f.expected, STARTUP_SOURCE), change).toThrow()
+  }
+})
+
+test('startup joined payload rejects noncanonical frames and PE ranges before acceptance', () => {
+  for (const change of ['checksum', 'truncated', 'concatenated', 'trailing', 'skippable', 'checksum-missing', 'reserved', 'oversized', 'window', 'duplicate-section', 'overlap', 'padding']) {
+    const f = startupJoinedUki(change)
+    expect(() => verifyJoinedNativePayload(f.boot, f.expected, STARTUP_SOURCE), change).toThrow()
+  }
+})
+
+test('startup joined frame refuses an RLE block exceeding its window before decode', () => {
+  // The frame window is 256 bytes; the RLE block advertises 65537 bytes.
+  const f = startupJoinedUki(), boot = Buffer.from(f.boot)
+  const packed = Buffer.from('28b52ffd6400000b00082a00000000', 'hex')
+  boot.fill(0, 512); packed.copy(boot, 512); boot.writeUInt32LE(packed.length, 336)
+  expect(() => verifyJoinedNativePayload(boot, f.expected, STARTUP_SOURCE)).toThrow('block bound')
+})
+
+test('startup joined frame refusal remains bounded when the content-size claim lies', () => {
+  const packed = zstdCompressSync(Buffer.alloc(64 * 1048576 + 1), { params: { [zstdConstants.ZSTD_c_checksumFlag]: 1 } })
+  const at = (packed[4]! & 32) === 0 ? 6 : 5
+  expect(packed[4]! >>> 6).toBe(2)
+  packed.writeUInt32LE(64 * 1048576, at)
+  const f = startupJoinedUki(), boot = Buffer.alloc(512 + Math.ceil(packed.length / 512) * 512)
+  f.boot.copy(boot, 0, 0, 512)
+  boot.writeUInt32LE(packed.length, 336); boot.writeUInt32LE(boot.length - 512, 344)
+  boot.writeUInt32LE(Math.ceil((4096 + packed.length) / 4096) * 4096, 144); packed.copy(boot, 512)
+  expect(() => verifyJoinedNativePayload(boot, f.expected, STARTUP_SOURCE)).toThrow('bounded decode/checksum')
+})
+
+test.skipIf(!process.env.MOS_TEST_STARTUP_NATIVE)('startup joined signed archive validates actual 438 bytes after authentication', () => {
+  const f = startupJoinedUki('', true)
+  expect(f.expected).toEqual({
+    'mos-init': { bytes: 2403504, sha256: '57c865ed0b58740faaba642cc417a0b0a3a487f3b6718a1e2fcc7e1355bdea97' },
+    'mos-shutdown': { bytes: 2047144, sha256: '77bf04b463ece3b0aaba03fa0f91fe0939faa87c5b9b81937b24636b3e2ef1ea' },
+  })
+  const signer = new Signer(generateKeyPairSync('ed25519').privateKey, true)
+  const d = JSON.parse(readFileSync(new URL('../../tests/component-contracts/deployment.json', import.meta.url), 'utf8'))
+  const support = { bytes: 12288, sha256: hash(Buffer.alloc(12288, 42)) }
+  d.kernel.boot.artifact = { bytes: f.boot.length, sha256: hash(f.boot) }
+  d.kernel.support.image = d.kernel.support.signature = d.rootfs.content.image = d.rootfs.content.signature = support
+  d.kernel.id = componentId(d.kernel); d.rootfs.id = componentId(d.rootfs)
+  writeFileSync(join(work, 'kernel/boot.efi'), f.boot)
+  writeFileSync(join(work, 'kernel/support.img'), Buffer.alloc(12288, 42))
+  const archive = join(work, 'startup.mosupd')
+  packArchive(JSON.stringify(signer.sign(JSON.parse(canonicalJson(d)))), join(work, 'kernel'), join(work, 'root'), [signer.publicKey], archive)
+  expect(() => verifyArchive(archive, [signer.publicKey], STARTUP_SOURCE)).not.toThrow()
+  expect(() => verifyArchive(archive, [signer.publicKey], true)).toThrow('cpio header')
+  expect(() => verifyArchive(archive, keys, STARTUP_SOURCE)).toThrow()
+  const original = readFileSync(archive), changed = Buffer.from(original)
+  if (process.env.MOS_TEST_STARTUP_EVIDENCE) {
+    const out = process.env.MOS_TEST_STARTUP_EVIDENCE
+    for (const [name, bytes] of [['signed-startup.mosupd', original], ['fixture-boot.efi', f.boot], ['fixture-public.pem', Buffer.from(signer.publicKey)]] as const) {
+      writeFileSync(join(out, name), bytes, { flag: 'wx' })
+    }
+    writeFileSync(join(out, 'signed-fixture.json'), JSON.stringify({
+      scope: 'Signed metadata/native-format fixture; not production UKI, content-signature, guest or hardware acceptance',
+      source: STARTUP_SOURCE, native: f.expected, archive: { bytes: original.length, sha256: hash(original) },
+      boot: { bytes: f.boot.length, sha256: hash(f.boot) }, publicKeySha256: hash(Buffer.from(signer.publicKey)),
+    }, null, 2) + '\n', { flag: 'wx' })
+  }
+  const payload = changed.indexOf(f.boot)
+  expect(payload).toBeGreaterThan(0)
+  changed[payload + 512] = changed[payload + 512]! ^ 1
+  writeFileSync(archive, changed)
+  expect(() => verifyArchive(archive, [signer.publicKey], STARTUP_SOURCE)).toThrow('digest')
+  const envelopeLength = original.readUInt32BE(8)
+  const envelope = JSON.parse(original.toString('utf8', 12, 12 + envelopeLength))
+  const missing = { ...envelope }; delete missing.signature
+  const unsigned = Buffer.from(JSON.stringify(missing)), size = Buffer.alloc(4); size.writeUInt32BE(unsigned.length)
+  writeFileSync(archive, Buffer.concat([original.subarray(0, 8), size, unsigned, original.subarray(12 + envelopeLength)]))
+  expect(() => verifyArchive(archive, [signer.publicKey], STARTUP_SOURCE)).toThrow()
+  const badSignature = Buffer.from(original)
+  const encoded = JSON.stringify(envelope)
+  // Keep framing intact while corrupting the actual signed envelope bytes.
+  const sig = encoded.indexOf('signature')
+  expect(sig).toBeGreaterThan(0)
+  const signatureByte = original.indexOf(Buffer.from(envelope.signature))
+  expect(signatureByte).toBeGreaterThan(0)
+  badSignature[signatureByte] = badSignature[signatureByte] === 65 ? 66 : 65
+  writeFileSync(archive, badSignature)
+  expect(() => verifyArchive(archive, [signer.publicKey], STARTUP_SOURCE)).toThrow()
+})
+
+test('startup joined release refuses unreviewed lineage before inspecting native payload', () => {
+  assembleRelease(inputs)
+  const path = join(inputs.out, 'rootfs-report.runtime.json'), r = JSON.parse(readFileSync(path, 'utf8'))
+  r.provenance.source_lineage.schema = 'mos/source-lineage/join-v1'
+  r.provenance.source_lineage.producer_join = { schema: 'mos/producer-join/startup-v1', rebuilt_source: { commit: STARTUP_SOURCE } }
+  r.provenance.capture_sha256['source-lineage.json'] = hash(Buffer.from(canonicalJson(r.provenance.source_lineage) + '\n'))
+  writeFileSync(path, JSON.stringify(r)); repin('rootfs-report.runtime.json')
+  // The fixture boot bytes are not a UKI. Source/witness refusal must precede
+  // any attempt to accept or decode them as a joined startup representation.
+  expect(() => gateRelease(inputs.out, keys)).toThrow('producer join receipt set')
+})
+
+
+test('startup joined refusal includes virtual-only overlaps and unrecognized archive roles', () => {
+  const f = startupJoinedUki('virtual-overlap')
+  expect(() => verifyJoinedNativePayload(f.boot, f.expected, STARTUP_SOURCE)).toThrow('overlapping section')
+  expect(() => verifyArchive(inputs.update, keys, 'f'.repeat(40) as typeof STARTUP_SOURCE)).toThrow('source role')
+})
+
+
+test('startup joined config size cannot exceed the witnessed init reader budget', () => {
+  const f = startupJoinedUki('config-oversized')
+  expect(() => verifyJoinedNativePayload(f.boot, f.expected, STARTUP_SOURCE)).toThrow('boot config size')
+})
+
+
+test.skipIf(!process.env.MOS_TEST_STARTUP_INPUT_CONTRACT)('startup joined complete input contract binds selected packages and rejects mutations', () => {
+  const proof = JSON.parse(readFileSync(process.env.MOS_TEST_STARTUP_INPUT_CONTRACT!, 'utf8'))
+  const selected = proof.selected_packages as string[]
+  expect(validateStartupInputContract(proof, selected)).toEqual(proof)
+  const mutations: Record<string, (v: typeof proof) => void> = {
+    'reader': v => { v.makefile_read_contract.readers['build-env/deb/build.sh'].sha256 = '0'.repeat(64) },
+    'makefile': v => { v.makefile_read_contract.after.sha256 = '0'.repeat(64) },
+    'missing-map': v => { delete v.producers['board-virt-arm64'] },
+    'extra-map': v => { v.producers.extra = v.producers.wifi },
+    'prepare': v => { v.producers.mosd.after.prepare = ['other.sh'] },
+    'selected-input': v => { v.producers.wifi.after.inputs.Makefile.blob = '0'.repeat(40) },
+    'arm-qualified': v => { v.producers['board-cx3576'].qualification = 'reused-selected-with-read-contract' },
+    'false-source': v => { v.producers['board-cx3576'].source_commit = v.original_source.commit },
+    'arm-membership': v => { v.producers['board-cx3576'].after.packages = ['mos-other'] },
+    'source': v => { v.rebuilt_source.epoch++ },
+  }
+  for (const mutate of Object.values(mutations)) {
+    const changed = structuredClone(proof); mutate(changed)
+    expect(() => validateStartupInputContract(changed, selected)).toThrow('startup reviewed complete input contract')
+  }
+  for (const names of [[...selected, 'mos-board-cx3576'], [...selected, 'mosd'], selected.slice(1)]) {
+    expect(() => validateStartupInputContract(proof, names)).toThrow('startup selected x64 package membership')
+  }
+})
+
+test.skipIf(!process.env.MOS_TEST_STARTUP_RECORD)('startup actual join binds producer roles, pool capture and default refusals', async () => {
+  const { sourceLineage } = await import('./release-manifest.ts')
+  const value = JSON.parse(readFileSync(process.env.MOS_TEST_STARTUP_RECORD!, 'utf8'))
+  const source = { commit: value.composition_source.commit as string, dirty: false }
+  const captured = (v: typeof value) => ({ ...v.pool.files, 'source-lineage.json': hash(Buffer.from(canonicalJson(v) + '\n')) })
+  expect(sourceLineage(value, source, 'amd64', captured(value)).record).toEqual(value)
+  const mutations: Record<string, (v: typeof value) => void> = {
+    'source': v => { v.producer_join.rebuilt_source.epoch++ },
+    'missing-witness': v => { delete v.producer_join.witnesses.boot_tools },
+    'extra-witness': v => { v.producer_join.witnesses.extra = '0'.repeat(64) },
+    'failed-witness': v => { v.producer_join.witnesses.deploy = '0'.repeat(64) },
+    'duplicate-receipt': v => { v.receipt_sha256.push(v.receipt_sha256[0]) },
+    'native': v => { v.producer_join.native['mos-init'].bytes++ },
+    'attribution': v => { v.producer_join.mapping.mosd = STARTUP_SOURCE },
+    'prepare': v => { v.producer_join.producer_inputs.producers.deploy.after.prepare.push('other.sh') },
+    'lock': v => { v.producer_join.production.deploy.inputs_sha256 = '0'.repeat(64) },
+    'tool': v => { v.producer_join.production.boot_tools.image = 'sha256:' + '0'.repeat(64) },
+    'pool': v => { v.pool.files.Packages = '0'.repeat(64) },
+    'archive': v => { v.pool.packages[0].control_sha256 = '0'.repeat(64) },
+    'old-role': v => { v.producer_join.schema = 'mos/producer-join/v1' },
+    'default': v => { v.schema = 'mos/source-lineage/v1' },
+    'producer-delta': v => { v.delta.push({ path: 'pkgs/mos-deploy/Cargo.lock', before: null, after: { mode: '100644', blob: '0'.repeat(40) } }) },
+  }
+  for (const mutate of Object.values(mutations)) {
+    const changed = structuredClone(value); mutate(changed)
+    expect(() => sourceLineage(changed, source, 'amd64', captured(changed))).toThrow()
+  }
+  expect(() => sourceLineage(value, source, 'arm64', captured(value))).toThrow()
+  expect(() => sourceLineage(value, { ...source, dirty: true }, 'amd64', captured(value))).toThrow()
+  expect(() => sourceLineage(value, source, 'amd64', { ...captured(value), Packages: '0'.repeat(64) })).toThrow('pool capture')
+  expect(() => sourceLineage(value, source, 'amd64', { ...captured(value), 'source-lineage.json': '0'.repeat(64) })).toThrow('capture bytes')
+})
+
+test.skipIf(!process.env.MOS_TEST_STARTUP_RECORD)('startup actual join refuses an unselected ARM producer installed as all', () => {
+  const value = JSON.parse(readFileSync(process.env.MOS_TEST_STARTUP_RECORD!, 'utf8'))
+  const report = runtime(), p = report.provenance
+  p.source_lineage = value
+  p.capture_sha256 = { ...p.capture_sha256, ...value.pool.files, 'source-lineage.json': hash(Buffer.from(canonicalJson(value) + '\n')) }
+  p.build_packages.push({ ...p.build_packages[0], package: 'mos-board-cx3576', architecture: 'all', archive: 'upstream/mos-board-cx3576.deb' })
+  inputs.source = { commit: value.composition_source.commit, dirty: false }
+  writeRuntime(report)
+  expect(() => assembleRelease(inputs)).toThrow('startup unqualified ARM package installed')
+})
+
 test('joined mask consumer admission still requires the complete producer witness', () => {
   const lineage = runtime().provenance.source_lineage
   lineage.schema = 'mos/source-lineage/join-v1'
@@ -702,9 +955,9 @@ test('joined mask consumer admission still requires the complete producer witnes
 test('joined boot tool payload binds the authenticated startup BusyBox bytes', () => {
   const f = joinedUki('', true), bytes = Buffer.from('fixture busybox')
   const busybox = { bytes: bytes.length, sha256: hash(bytes) }
-  expect(() => verifyJoinedNativePayload(f.boot, f.expected, busybox)).not.toThrow()
+  expect(() => verifyJoinedNativePayload(f.boot, f.expected, undefined, busybox)).not.toThrow()
   for (const change of ['missing-busybox', 'wrong-busybox']) {
     const bad = joinedUki(change, true)
-    expect(() => verifyJoinedNativePayload(bad.boot, bad.expected, busybox)).toThrow()
+    expect(() => verifyJoinedNativePayload(bad.boot, bad.expected, undefined, busybox)).toThrow()
   }
 })

@@ -2,8 +2,8 @@
 
 - **status**: in_progress
 - **createdAt**: 2026-09-11 19:27
-- **revisedAt**: 2026-09-11 22:44
-- **reviewStatus**: R1 and route resolution accepted; pending B integration and full-system/physical acceptance
+- **revisedAt**: 2026-09-12 00:21
+- **reviewStatus**: exact consumer/input extension approved; changed producers and final acceptance pending
 - **approvedAt**: 2026-09-11 (explicit worker #347 dispatch)
 - **relatedTask**: [20260911-1925-boot-artifact-size](../task/20260911-1925-boot-artifact-size.md)
 
@@ -531,3 +531,119 @@ The selected EFI target, strict refusal rules, x64 isolation, zstd and startup
 helper retirement coexist without restoring BusyBox. B's later exact consumer
 binding and new producer identities remain required; full-system and physical
 acceptance are pending. This source-only resolution does not complete the plan.
+
+### Combined native producer
+
+B reviewed and integrated source as 438c9551 (tree 775874cf, epoch 1789167215).
+The next authorized obligation is one x64 boot-native production run in a clean
+private detached checkout, using the existing GNU static hook and pinned Rust
+image, followed only by direct ELF/empty-userspace proof. Prior native 9673
+outputs are historical inputs, not substitutes for this changed source. Exact
+boot-tools/deploy inputs may be prepared read-only for the later consumer join;
+full-system and mandatory physical CX acceptance remain pending.
+
+The actual combined-source boot-native hook succeeded once: mos-init 2403504
+bytes (57c865ed...), retained mos-shutdown 2047144 bytes (77bf04b4...).
+Source/tree/epoch remain 438c9551/775874cf/1789167215. Existing ELF parser and
+new-byte empty-userspace/refusal proof passed, with full stdout/stderr and
+terminal resource records retained under the combined output root. The task
+contains exact hashes. This is a new native witness, not a new compressed image
+or a guest/full-system acceptance result. The next exact deploy/boot-tools
+input inventories are prepared read-only; their production and shared-consumer
+binding remain pending. The producer allocation is released and the plan stays
+in progress for full-system and mandatory physical CX acceptance.
+
+L1 subsequently approved the exact 438 joined-consumer/source and native-format
+continuation within this plan. The worker synchronized only the reviewed 438
+commit at a clean boundary (merge 5d7d8c13), preserving its tracking records.
+Implementation now binds fixed producer roles, all 15 input maps and bounded
+canonical zstd/newc with exact native manifests/observer identity. Completed
+438 native production is retained; changed deploy/boot-tools production and
+consumer RED/GREEN remain active obligations. Existing B7 acceptance stays
+independent. Full-system and physical CX acceptance remain pending.
+
+The native-format/witness checkpoint implements bounded single-frame decoding,
+strict archive/observer membership and source/capture-before-decode ordering.
+It validates the actual completed 438 native outputs and preserves old-role
+refusals; focused RED/GREEN, signature negatives and typecheck are recorded in
+task 1925. No producer input has been relabeled. Complete new join admission is
+still pending the fixed Makefile existence-only input disposition and actual
+deploy/boot-tools witnesses; all 15 full input maps and both Git legs are
+retained. Exact producer checkout/commands are ready for B scheduling. Source
+fixture resources are terminal and released; no second native, independent
+root/image or ARM production occurred. This is a review checkpoint within the
+active plan, not completion or full-system/hardware acceptance.
+
+### 2026-09-12: successor input contract approved
+
+Implement L1-438-MAKEFILE-MEMBERSHIP-20260911-2336 within the existing joined
+source blocks, retaining complete differing input maps and the exact five-reader
+proof. The four named ARM maps remain recorded but unselected and unqualified.
+B-347-BUILDKIT-EXECUTION-20260911-2348 authorizes the private pinned daemon only,
+after deploy PREPARE cleanup, followed by one x64 boot-tools build. Successful
+438 boot-native outputs are reused unchanged. Full signed-system and physical CX
+acceptance remain pending.
+
+### 2026-09-12 00:21: exact input contract checkpoint
+
+The J-to-438 proof now retains all 15 full maps, the exact 72-byte Makefile
+deletion and five unchanged readers, both reviewed Git delta legs, the exact
+15 selected package names and four explicitly unqualified ARM maps. Actual
+clean-source canonical proof SHA256 is
+`93902df4c3351b3d3e2c3ca3977f6b4bbd07fb2361c2f0aedc1f0c1c3d1b87ba`.
+Direct Python contract/mutation tests and the single Bun complete-input case
+plus typecheck pass; original REDs and the editor syntax failure are retained.
+These helpers are prepared for the pending complete consumer join, without
+admitting missing or failed output witnesses.
+
+Changed deploy compilation succeeded once (2,632,224-byte staged binary,
+SHA256 `411419421b364a27fe466ba1b0f509ee2f054a502493d6f474f1a8f4fff2855d`).
+Packaging did not start: the private daemon adapter rejected the native x64
+ISA variant list returned by pinned BuildKit. The original package invocation
+failed, its daemon was stopped/removed, and the successful compile is preserved.
+B has the exact packaging-only continuation proposal; no PREPARE or boot-native
+retry, extra resource allocation, shared builder change or source relabeling
+is implied. The subsequent x64 boot-tools output and full consumer receipt
+binding remain necessary. Physical CX and final signed-system acceptance are
+still pending.
+
+The 2026-09-12 00:39 recovery disposition resolves the daemon parser boundary:
+one explicit recreation, fresh cgroup/remote checks, then the exact remaining
+pack/export/index work and one x64 boot-tools invocation are authorized in the
+existing serial slot. Previous failure and successful PREPARE identities remain
+immutable; the full consumer join and physical/system acceptance remain pending.
+
+The 2026-09-12 bounded packaging recovery completed the actual changed deploy
+and single x64 boot-tools producers from clean reviewed `438c9551`. The native
+producer and successful deploy PREPARE were not replayed. Exact receipts,
+output identities, original collector failures and resource terminals are
+recorded in task 1925 and `pack-recovery-v1/witnesses`. All producer containers
+are removed and the heavy reservation is released. Full startup consumer
+admission now binds the actual new outputs; its final direct tests, two-copy
+canonical proof and independent integration review remain in progress. The
+whole plan remains open for full-system and mandatory hardware acceptance.
+
+The exact startup join implementation now binds actual 438 native, deploy and
+boot-tools receipts while preserving original J package and old fb6/4716 role
+semantics. Focused record, file, capture, default-source and unselected ARM
+refusals pass; the final TypeScript check passes after preserving and fixing its
+original missing-binding failure. The real creator has consumed all actual
+producer inputs successfully. Final committed-source two-copy lineage and B
+integration evidence are attached through the existing task handoff path.
+This is consumer/source readiness, not complete plan or physical acceptance.
+
+The additive reviewed four-mask and named-4716 overlap is being incorporated
+at the next consumer boundary. A replacement bounded source gate verifies the
+combined admission while frozen 438 producer outputs remain unchanged. New
+combined-source two-copy lineage and independent B review are required; prior
+33c619c9 evidence remains an immutable earlier-source result.
+
+The exact named-tool/four-mask overlap now passes local review, eight bounded
+Python cases and six explicit one-file release cases with 39 assertions plus
+typecheck. Original mask RED and the incomplete-schema fixture failure remain
+bound to their actual source and container runs. Both existing source roles
+remain independently constrained; producer inputs and `COMPOSITION_PATHS` are
+unchanged. All source containers are terminal and removed. The final committed
+source is used for two-clean-copy canonical admission in
+`consumer/mask-final-handoff`; independent B review, final signed-system and
+physical CX evidence remain open. No successful producer was replayed.

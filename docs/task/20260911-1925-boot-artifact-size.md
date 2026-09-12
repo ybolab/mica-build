@@ -20,8 +20,8 @@ No compatibility or migration paths are required.
 
 ## ActiveForm
 
-Approved R1 correction and exact target-route integration are ready for B integration.
-Successor producer/input join, full-system and physical CX acceptance remain pending.
+Implement the approved exact 438 consumer join and run the authorized serial deploy
+and x64 boot-tools producers; retain completed boot-native outputs and evidence.
 
 ## Dependencies
 
@@ -402,3 +402,349 @@ control. Broad ARM acceptance remains deferred until approved main integration.
   its original identity and does not validate R1. A truthful successor producer
   and bounded compressed-cpio/exact observer-symlink consumer binding remain
   pending, together with full-system and mandatory physical CX acceptance.
+
+## Reviewed combined boot-native producer
+
+- B integrated the 52 reviewed implementation/tracking paths into
+  438c9551ec751fcb346881541752a7596f10cb15, tree
+  775874cfdce2ef40b7f51ae3090c6c6706a5deae, epoch 1789167215. The only
+  integration source correction removes whitespace on an empty guest-init line.
+- A detached clean production checkout is scoped beneath
+  _out/boot-size/combined-438c9551ec751fcb346881541752a7596f10cb15/source.
+  The working branch is not synchronized to B/main; previous outputs are retained.
+- B authorized one actual boot-native hook run and direct static/empty-userspace
+  proof: 4 CPU, cpuset 4-7, 10 GiB RAM with equal swap limit, four workers,
+  7200s TERM/30s kill, verified before start. The Rust image is pinned to
+  b13d4a7b877c9d6dd9a2766c4e80f1fd020218715d62877c69ce0dc2abe4fc12.
+  Freeze source/lock/hook/tool/flags and use fresh private release targets/cache.
+- Actual production succeeded once from that exact source. Container
+  c7384fc81f12e549ed757e09ae8062169294d771ebbff11dabd7e74e91bcaae8,
+  host PID 2262193, 2026-09-11T23:00:22.693748579Z to 23:01:10.147862158Z,
+  exit 0, removed. Actual compiler rustc 1.98.0 (88d9e12ae), cargo 1.98.0;
+  compiler binary SHA256 3690cc576ede140504698405d5d8fa3826aaadbe71699c6c4ed0a565d6f493e2.
+  The original and actual argv, source, toolchain record and inspected limits
+  are under metadata/native/ within the combined output root.
+- New mos-init: 2403504 bytes, SHA256
+  57c865ed0b58740faaba642cc417a0b0a3a487f3b6718a1e2fcc7e1355bdea97.
+  New retained mos-shutdown: 2047144 bytes, SHA256
+  77bf04b463ece3b0aaba03fa0f91fe0939faa87c5b9b81937b24636b3e2ef1ea.
+  Both use x86_64-unknown-linux-gnu and the existing +crt-static/strip flags.
+  These are separate executable/retained bytes; no new cpio/compression/image
+  size or full-system qualification is claimed. Old 9673/fb6 outputs are intact.
+- The real hook's readelf checks and the existing combined-source
+  build/src/kernel-package.ts kernelExecutables parser passed on both new
+  binaries: x64 ELF, no PT_INTERP, DT_NEEDED, RPATH or RUNPATH. Source inventory
+  binds 49 files and rechecked unchanged after production; Cargo.lock stays
+  9bc386de11e4acaa4cae14223330e93ffa3e5547b0dbcaa8c9d8b35e94c4a782.
+- Actual stdout and stderr were collected before removal. Container stdout
+  SHA256 b4203d65cc783e5a0d49461a2ef23987903eb20ec43425457aad0e836766c3a6;
+  stderr b7d61b621ad51b14ea907406ec6e14cb82c8897f188a0673a8e76a567f9aa315.
+  The existing GNU getaddrinfo/getpwuid_r static-link warnings and linker note
+  about garbage collection remain verbatim; no warning-free claim is made.
+- Serial benign proof used only SYS_CHROOT capability and network none.
+  Container 19f655309b4718c9711acd16b989bdca2ca437d63ce1197efc3829eba14efb1c,
+  host PID 2273695, 23:03:50.624232267Z to 23:03:50.718397749Z, exit 0,
+  removed. The real startup binary executed with no loader/libraries/helpers,
+  public invocation refused non-PID1 and the native mount worker refused EPERM.
+  The new shutdown binary also refused non-PID1 before watchdog/shutdown work.
+  Proof log SHA256 d8a1eb217ad8f161caff9fb6ae2b67c0dca0fae29dc8284469594411a7672728.
+  No host/shared block device, watchdog, reboot, guest suite or ARM execution.
+- Prepared read-only successor inputs: 59 deploy context/driver/workspace files
+  and 19 boot-tools context/pin files, in metadata/successor-inputs.json
+  (SHA256 5e04111b5b6103fac2ab34525532b5be88834bd4b8515a4196b7c6dc411f0fd2).
+  Prospective deploy version 0.1.0+git438c9551ec75-1 is not a produced package.
+  The native inputs equal accepted R1 source; changed deploy and x64-only
+  boot-tools still need their own actual producer and exact consumer binding.
+- All owned jobs are terminal, containers removed, and the 4 CPU/10 GiB
+  reservation is released. tmux vhqwow6o-38f603 is an idle persistent shell.
+  The detached production checkout remains clean; the worker branch contains
+  only tracking updates for this continuation. B7 and shared resources were
+  untouched. Full-system and physical CX acceptance remain pending.
+
+### Approved startup consumer continuation (2026-09-11 23:14 UTC)
+
+- L1 approved the exact 438 source/witness and compressed-native consumer scope;
+  B granted one serial 2 CPU/4 GiB x64 source fixture slot. No generic approval
+  remains. The finished 438 native producer and direct proofs are not replayed.
+- Authorized exact local synchronization: 5d7d8c13303ba385730403921cad4721ab2d2c39,
+  tree a34334fbba80aaa4473cbd4d0d33569a90361867, parents 2d436370 and 438c9551.
+  The merge is clean, preserves both records/indexes, and leaves the separate
+  production checkout and all previous artifacts immutable.
+- Work in progress: fixed 438 producer membership and all 15 producer input
+  maps; bounded single-frame zstd/newc validation, exact static manifests and
+  observer symlink; directly affected negative tests. Existing J/fb6 cases and
+  default mixed-source refusals remain separate. No producer path is treated
+  as a composition-only change.
+- Exact deploy and single-target boot-tools input inventories were submitted
+  to B for successor scheduling. Their output identities remain producer
+  results; no second native, full root, ARM or duplicate B7 candidate is run.
+
+#### Native-format and witness checkpoint
+
+- Implemented the fixed 438 native witness in the existing source-lineage
+  boundary. The normalized consumer receipt is
+  `_out/boot-size/consumer/native-witness.json`, 24067 bytes, SHA256
+  e66650563f340e0ce8f722a7812f36bba8012ee98e3e220aa2bbea5d1864afc0.
+  It references the unchanged original delivery 259d757f..., original argv,
+  stdout/stderr, terminal and tool records from the single completed native
+  invocation. Read-only verification checks 49 source inputs, 27 execution
+  evidence files and both actual output hashes. The old fb6 role refuses it.
+- Added a separate 438 native-format route, leaving the old raw representation
+  scoped to the old role. It bounds unique PE ranges, compressed/load bytes,
+  window and expanded output to 64 MiB; requires one checksummed zstd frame;
+  rejects concatenated/skippable/trailing streams and malformed/truncated
+  payloads. Decoding uses the existing pinned Bun runtime and its bundled zstd
+  through a child with a 10-second kill deadline and independent output cap.
+  No dependency, producer recipe, toolchain, target payload or trust pin changed.
+- The newc validator examines entries without extraction: exact root-owned
+  native files, modes, one-executable manifests and only the canonical observer
+  symlink. It rejects extra/unsafe/duplicate members, hardlinks, wrong ownership,
+  bytes, type, mode, target and noncanonical padding. Source/witness/capture
+  validation now precedes joined native inspection; envelope authentication and
+  signed object digest verification still precede decoding.
+- RED history is immutable under `_out/boot-size/consumer/`: initial canonical
+  positive failed `joined cpio header`; the first signed test exposed a missing
+  fixture support file, then its corrected RED reproduced the same format
+  refusal. New witness-role tests initially raised 22 unrecognized-role errors.
+  The ordering RED returned `joined UKI header` instead of the required producer
+  receipt refusal. A later test run passed six tests but its aggregate exited 2
+  for four TypeScript test assertions; those assertions were corrected.
+- GREEN: nine new TypeScript cases across focused single-file invocations,
+  including actual 438 bytes, missing/corrupt/untrusted envelope signatures,
+  authenticated object mutation, a lying expansion claim, manifests/membership,
+  raw and virtual-only PE overlap, and source/capture ordering. Direct old raw,
+  witness and lineage controls passed. The new Python witness test exercises
+  its positive and 21 negative variants; both directly affected witness tests
+  pass. Final TypeScript typecheck passes. These are consumer/source fixtures,
+  not new native, kernel, guest, root or hardware qualification.
+- Retained signed metadata fixture:
+  `consumer-signed-binding/evidence/signed-startup.mosupd`, 2019798 bytes,
+  SHA256 16db8ef40f246c34d5cf5e2194a8e30d75df672f3d01846226fb8a52ee8cbd1f.
+  Its minimal PE payload is 2004992 bytes, SHA256
+  bb0daac49de5cb8d11c5746e32334089ee68c1a0109908d50143db19b5bb83b0.
+  The retained public-key text is base64 Ed25519 despite its fixture `.pem`
+  filename. No private key is exported. These fixture packing sizes are not
+  production -19 compression measurements or UKI Authenticode acceptance.
+- Full original/fb6/438 input maps and both reviewed Git legs are retained in
+  `input-inspection.json`; fb6-to-438 canonical delta SHA256 is
+  b111da81645b0fd91697e18ef464635a7a5cd7c814ed84ba02cabd3a75efca88.
+  All 15 full map hashes change because Makefile loses exactly the obsolete
+  BusyBox test target. The version script only checks that this file exists.
+  Three ARM-only producer maps also contain the focused U-Boot source changes;
+  none supplies an archive in the original 15-member x64 pool. B received the
+  exact proposed existence-only proof, retaining both full maps and refusing
+  any other shared-input change. No input was excluded or declared equal.
+- The full new join creator/record admission is still pending the exact
+  Makefile disposition, new deploy/tool outputs and B7 immutable consumer
+  handoff. This checkpoint does not admit a self-authorized 438 package pool;
+  existing strict defaults and prior records retain their current meaning.
+- Fresh producer checkout prepared at
+  `_out/boot-size/combined-producers-438c9551ec751fcb346881541752a7596f10cb15/source`:
+  clean exact 438/tree775874cf/epoch1789167215; all 59 deploy and 19 boot-tools
+  input files rechecked. B has the exact deploy and single-target x64 commands
+  and a replacement serial 4 CPU/10 GiB request, including task-owned BuildKit
+  capability/driver details. No producer, builder, ARM or full image was run.
+- PMA-CR checked the implemented format/witness boundary and callers. The
+  source-before-decode ordering and virtual-only PE overlap were corrected and
+  tested. No remaining introduced finding in this checkpoint; complete join
+  admission and combined acceptance are explicitly unfinished. All owned
+  fixture containers are terminal and removed; the 2 CPU/4 GiB source
+  reservation is released at this checkpoint, with the temporary worker slot
+  retained. Full-system, physical CX bench inputs and post-main ARM remain
+  pending. Task and plan stay in progress; handoff is for review, never done.
+- A final PMA-CR check found that the new archive validator allowed boot.json
+  above mos-init actual 4096-byte reader budget. The added 4097-byte case first
+  failed with `Received function did not throw`; the validator now uses the
+  witnessed reader limit. Its focused GREEN and final typecheck are retained
+  separately, without rerunning unchanged suites.
+
+### 2026-09-12: exact input and producer execution continuation
+
+B/L1 approved the fixed Makefile existence-only read proof, all 15 full maps with
+four explicitly unselected ARM producer maps, and the dedicated pinned BuildKit
+execution mechanics. These resolve the previous checkpoint's concrete input and
+resource questions. The producer checkout remains exact 438c9551; consumer source
+remains separate at 70c992c2. Deploy PREPARE must terminate before the private
+BuildKit daemon starts. The serial 4 CPU / 10 GiB / cpuset 4-7 envelope replaces
+the released source-gate allocation. No native replay or B7 mutation is planned.
+
+### 2026-09-12 00:21: fixed input proof and preserved deploy boundary failure
+
+- Actual deploy PREPARE ran once from clean 438c9551 and exited 0 at
+  00:06:48.571688832Z. Container `7dfecb6f427a31c005106eb09c5fe1676d6acc3f9038c6ce3500e3ac23b209e6`
+  used 4 CPU / 10 GiB / equal swap / cpuset 4-7. The staged `mos-deploy` is
+  2,632,224 bytes, SHA256 `411419421b364a27fe466ba1b0f509ee2f054a502493d6f474f1a8f4fff2855d`.
+  Prepare-only terminal receipt is 22,317 bytes, SHA256
+  `11dbe5aee5a0d6063e7eb963f1509b5e86a6d878735afb7bdaa5d7c43477d7ec`.
+  This is no deploy archive qualification and no second boot-native build.
+- The package wrapper exited 1 before packing. Pinned private BuildKit started
+  as `f97652ea80d48891db7d52eafebaf3e61ee066b853f3484cf293e8caab8187e4`,
+  PID 2344641, at 00:06:54.892734484Z. Its actual worker report included
+  `linux/amd64,linux/amd64/v2,linux/amd64/v3,linux/amd64/v4`; the local adapter
+  incorrectly required a lone `linux/amd64` and refused before cgroup/client
+  acceptance. The daemon was stopped and removed. Its labelled private volume
+  is retained. No ARM platform was reported, but no isolation PASS is claimed.
+  Original logs, create/start/stop events and failure are immutable under
+  `_out/boot-size/combined-producers-438c9551ec751fcb346881541752a7596f10cb15/metadata/`.
+- Implemented the fixed five-reader/Makefile contract and both reviewed source
+  delta legs. The complete actual input proof is 591,271 bytes, SHA256
+  `93902df4c3351b3d3e2c3ca3977f6b4bbd07fb2361c2f0aedc1f0c1c3d1b87ba`;
+  full maps retain their different Makefile identities. Four ARM producers are
+  explicitly unselected and unqualified, with no attributed reused source.
+  No producer or Makefile source was changed.
+- Focused Python source checks: original missing-contract RED (3 errors), one
+  local editor syntax failure retained, then 4 passing tests with input, mode,
+  membership, source and delta-leg mutations. These were ordinary bounded host
+  checks (taskset 4-5, 60-second TERM/30-second kill), not guest/container claims.
+  The new Bun complete-input case has an original missing-export RED, then
+  1 passing test / 15 assertions and typecheck PASS in the pinned source image.
+  Its terminal container `86aa31d648357c7a4547c44854484a81e3763833e87dd5cd4761124607e219ba`
+  ran 00:18:28.695298346Z through 00:18:32.91490337Z, exited 0 and was removed;
+  limits were 2 CPU / 4 GiB / equal swap / cpuset 4-5 / network none. No own
+  consuming container remains. No unchanged native/guest/root suite was rerun.
+- A private mechanical comparison against immutable B7 fbd70048 preserves its
+  named 4716 role, output witness and downgrade guards. It is not applied to
+  this branch or B7. The exact legacy BusyBox witness remains limited to the
+  old native role; new compressed startup keeps its own source argument.
+- PMA-CR inspected these input-contract helpers and direct tests: no introduced
+  high-confidence finding in the implemented portion. Full new join creation
+  and admission are still unfinished; the helpers deliberately do not authorize
+  missing deploy/tool receipts. Next: B disposition of the one recorded daemon
+  parser failure, a packaging-only continuation using the preserved PREPARE
+  stage, then one x64 boot-tools producer and exact receipt/consumer binding.
+  Keep task/plan in progress and handoff in review. Full system, physical CX
+  and consolidated post-approved-main ARM acceptance remain pending.
+
+### 2026-09-12: authorized packaging recovery
+
+B-347-PACKAGING-RECOVERY-20260912-0039 approved one explicit daemon recreation
+on the retained owned state, exact x64 platform-set parsing, and the remaining
+frozen driver suffix using the successful PREPARE stage. The recovery preserves
+all old failure records and writes new evidence under `metadata/pack-recovery-v1`.
+No original compile, boot-native invocation or producer source is replayed.
+
+### 2026-09-12: changed producers recovered and frozen
+
+The authorized daemon recreation passed exact platform, cgroup and remote
+transport checks. The original successful PREPARE was reused once through the
+frozen driver suffix; deploy pack and index exited zero. New deploy archive:
+758,104 bytes, SHA256
+`31f1cdec9fc8babe3f3a21fa590adf8b6fd89d464efa447c09e0f3086a935be4`.
+Its installed executable equals the original 2,632,224-byte PREPARE output.
+The private pool contains that archive and exactly 14 byte-identical J archives.
+
+The single x64 boot-tools producer exited zero at 00:48:40 UTC. Its new manifest
+is `sha256:af672edb59f2e23c38a7e2245804760e5b90d3884aee6dac327cf1bd64d5a661`;
+its actual OCI config is
+`sha256:ccf6474e8a983bad48625c9204951a8a1a93af3a583b44126657f58e3b70c44a`.
+Exported manifest/config/layers, selected EFI, compression scripts, license and
+source inputs are bound under the producer metadata `pack-recovery-v1` directory.
+The final package-query collector initially failed because shell expansion
+consumed the dpkg format variables. Only that query was corrected and rerun;
+all preceding passed checks and the failed record remain intact.
+
+The first cleanup sampler preceded asynchronous daemon deletion. A later
+read-only collector retained actual die/destroy events and absence; requested
+daemon shutdown exited one, independently of successful producer exits. All
+owned containers are absent, the labelled private state volume is retained,
+and the 4 CPU/10 GiB producer reservation was released to B.
+
+Normalized actual deploy witness SHA256 is
+`224cac3207ca49a128e6881552cdd20d8b4972d22c579f3ee41bc5c4524845b0`;
+boot-tools witness SHA256 is
+`76b65b10a72537194d08f6b18dd997067a8d06920ede0e48607fe1c35387a47d`.
+They retain 59/19 source inputs and 157 evidence bindings each. The complete
+consumer admission is being implemented against these actual receipts. The
+original architecture/stamp refusal is preserved; direct Python admission and
+successor witness guards now pass. TypeScript, two clean copies and B review
+remain pending. No full-system, physical CX or post-approved-main ARM result is
+claimed.
+
+### 2026-09-12: exact startup consumer admission
+
+The existing Python and TypeScript joined-source validators now admit only
+`mos/producer-join/startup-v1` with the four fixed J/438 receipt roles. They
+retain both complete producer delta legs, all 15 full input maps, the exact
+72-byte Makefile read-contract proof, the unqualified ARM declarations, 14 J
+archives and the new deploy/control/index identities. Later consumer changes
+must still preserve complete producer maps. Only the two existing 1925/1927
+tracking files receive a startup-specific exception outside producer contexts;
+`COMPOSITION_PATHS` is unchanged.
+
+The release validator binds the new x64 boot-tools image and rejects packages
+from the four unqualified ARM producers even when installed as `Architecture:
+all`. Existing signed compressed native/manifest/observer checks remain intact.
+The actual creator passed against the clean 438 producer checkout, all three
+new producer witnesses and the immutable original J frozen receipt. That input
+diagnosis is not a final consumer-checkout or full-image acceptance claim.
+
+Direct RED retained the Python package-stamp and TypeScript lineage-stamp
+refusals. GREEN covers the actual admission and 20 record mutations, both real
+successor receipts and 22 semantic/file mutations, and two explicit release
+tests with 23 assertions including capture/default/ARM-installed refusal.
+These were bounded station source checks using recorded Bun 1.4.0/Python tool
+bytes; no source-test container or heavy reservation was consumed. The first
+TypeScript check found a missing local runtime binding, which was corrected;
+the final typecheck and docs/diff checks pass. Unchanged native, guest, format,
+kernel and producer suites were not replayed.
+
+PMA-CR examined the changed joined-source blocks, actual producer receipts,
+source/format dispatch, consumer/input boundaries and retained failure evidence.
+No unresolved introduced source finding remains in the local review. The exact
+private B7 overlap proposal is under `b7-overlap-v2/startup-on-fbd70048.patch`;
+it preserves named 4716 and legacy downgrade refusals, retains both test sets,
+and confines legacy BusyBox to its existing source role. It is syntax-checked,
+not applied or qualified as an integrated candidate. A missing test closure in
+the first private mechanical resolution was recorded and corrected.
+
+The final committed consumer source is the input to the two-clean-copy CLI gate;
+its canonical lineage, exact file hashes and terminal evidence are frozen in
+`_out/boot-size/consumer/startup-final-handoff/delivery.json`. Independent B
+source/overlap integration review and later combined signed-system acceptance
+remain required. Task and plan stay in progress, handoff in review.
+
+### 2026-09-12: reviewed mask and named-tool overlap
+
+The additive B handoff authorizes the exact committed four-mask delta from
+`b5d9917c` to `f4c1c4c4`, preserving named 4716 and startup 438 roles. The
+existing private compatible named-tool proposal is now being combined in this
+worker with that delta; no broad Git synchronization or producer input change
+is performed. The replacement 2 CPU/4 GiB source slot is used for affected
+combined-source tests only. Earlier producer/source receipts and failures remain
+immutable. Exact TypeScript patch contexts required mechanical import/test
+placement resolution because startup tests occupy the old adjacent anchors.
+
+The combined overlap is now implemented in eight existing source/test/tracking
+paths. `consumers.json` is byte-identical to reviewed `f4c1c4c4`; its four new
+mask rows are the only declaration change. Named 4716 constants and witness
+functions retain their reviewed committed semantics. The complete startup
+input proof and creator are unchanged; no producer or default composition
+allowlist has been relaxed. Frozen 438 native/deploy/tool outputs are retained.
+
+The mask RED failed with `broken link
+/usr/lib/systemd/system/cryptdisks-early.service: missing path: /dev` before the
+reviewed declarations were applied. The bounded Python GREEN passed eight
+composition, mask, named-role and actual-startup admission tests. The explicit
+single-file Bun gate initially exposed an incomplete startup-schema test
+fixture; it correctly reached the legacy downgrade refusal. Adding the actual
+startup schema to that fixture preserves its intended missing-receipt refusal.
+The final six targeted release cases (39 assertions) and typecheck pass. The
+first failure and all original gate inventories are retained separately.
+
+All source containers ran serially with actual cgroups `200000 100000`, CPUs
+`4-5`, memory `4294967296` and swap `0`; each is terminal and removed. The Python
+container used captured read-only image inspection fixtures with exact-command
+refusals, not a host Docker socket. Final actual two-copy admission uses the
+real immutable producer files and read-only local image inspection. No producer,
+PREPARE, native, full-image, guest or ARM invocation was repeated.
+
+PMA-CR local review passes with zero unresolved introduced findings. The final
+commit is the input to the new two-clean-copy gate, whose source, canonical
+lineage, actual tool/receipt bindings and terminal evidence are retained at
+`_out/boot-size/consumer/mask-final-handoff/delivery.json`. Earlier
+`startup-final-handoff` evidence remains immutable. Independent B integration
+review and later affected signed-system acceptance remain pending; the task and
+plan stay in progress and the handoff ends in review. Physical CX still requires
+the exact local device, serial endpoint, current/final image, flash and power
+inputs. Consolidated ARM acceptance remains deferred until an approved main
+merge.
