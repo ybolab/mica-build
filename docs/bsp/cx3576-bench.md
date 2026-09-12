@@ -1,35 +1,36 @@
-# cx3576 bench qualification: the run order and the collector
+# CX3576 current-image bench qualification
 
-The bench session that fills [cx3576-example.md](cx3576-example.md)'s
-Qualification results table. Thirteen rows are `not tested` with `needs bench
-hardware`, and `docs/plan/PLAN-037.md` Gate D names four further
-measurements by hand. This page is the order they are taken in, what each step
-assumes about the one before it, which half of each row a script can collect
-and which half needs a person, and what a `pass` looks like — written before
-the board arrives so that the session is executed rather than explored.
+This is the reusable operator procedure for the thirteen qualification rows in
+[cx3576-example.md](cx3576-example.md) and the finer current obligations in the
+[live acceptance matrix](../task/20260910-1014-a2-cx3576-acceptance-matrix.md).
+It defines the order, admission gates, human observations and evidence boundary
+for a fresh complete image using signed file deployments.
 
 The collector is [cx3576-bench-collect.sh](cx3576-bench-collect.sh). It is
 copied to the device and run there; it needs nothing from this repository.
 
-**This page does not fill any row.** Every result cell is the bench session's
-output. Nothing here may be transcribed into the dossier as evidence: a
-procedure is not a measurement, and the dossier's own rule is that off-hardware
-gates are noted as evidence about their own surface, never as a hardware
-`pass`.
+**This page does not fill any row.** A procedure is not a measurement. Only a
+dated run bound to the exact image, source, board, storage part and radio SKU
+may update the live matrix or dossier, and off-hardware gates remain evidence
+about their own surface rather than a hardware `pass`.
 
-> status: proposed — evidence: `docs/plan/PLAN-037.md`
+> status: board-dependent — evidence: `docs/task/20260910-1014-a2-cx3576-acceptance-matrix.md`
 
 ## 1. What the session has to produce
 
-Two artefacts, and the second is the point:
+Three artifacts, all required:
 
-1. **A run directory on the device**, holding one capture file per probe: the
-   raw output of everything that was read, with its command line and its exit
-   status beside it. This is what an evidence note points at.
-2. **A markdown table**, printed by `cx3576-bench-collect.sh report`, whose
-   rows are exactly the dossier's — `| Row | Result | Date | Evidence /
-   reason |` — so the session's output is pasted into
-   [cx3576-example.md](cx3576-example.md) rather than translated into it.
+1. **An identity record outside the device**, holding the clean source commit,
+   complete-image path and SHA-256, verification inputs/results, signed
+   release/component IDs, image profile, host/flash-tool identity, board
+   revision, radio SKU, actual system medium and full flash readback result.
+2. **A run directory copied off the device**, holding one capture file per
+   probe: the raw output, command line, UTC time and exit status. Device-local
+   evidence alone is insufficient for reboot, reset and power-cut rows.
+3. **A markdown report**, printed by `cx3576-bench-collect.sh report`, with the
+   legacy thirteen dossier rows and a separate 39-row current-acceptance table.
+   The latter retains 38 mandatory rows and optional historical D5 so aggregate
+   dossier results cannot hide an unobserved current obligation.
 
 The collector enforces [qualification.md](qualification.md) §2's row grammar on
 its own output: a result cell is exactly `pass`, `fail`, `N/A` or `not tested`,
@@ -41,32 +42,56 @@ gave it.
 
 ### The binding, filled first
 
-[qualification.md](qualification.md) §1 binds results to one combination, and
-two of its four elements are unrecorded in this tree: the concrete eMMC part
-and the RTC. The collector's first stage reads the eMMC CID, manufacturer and
-name out of `/sys/block/mmcblk0/device/` and writes them into the run
-directory. **A run whose binding block is incomplete is not a qualification
-run**, because a result that names no storage part cannot be carried forward or
-retired by §5's triggers.
+[qualification.md](qualification.md) §1 binds results to one combination. The
+concrete storage part, actual system block device and RTC are unrecorded in this
+workspace. Before copying or running the collector, the operator must identify
+the system medium from the authorized bench unit and create a public binding
+file with exactly one value for every key below:
+
+```text
+SOURCE_COMMIT=<40 lowercase hex>
+SOURCE_TREE=<40 lowercase hex>
+IMAGE_NAME=<verified complete-image filename>
+IMAGE_SHA256=<64 lowercase hex>
+VERIFICATION_RECORD=<operator-visible verification record path or ID>
+PROFILE=<dev or prod>
+BOARD_REVISION=CX3576-Z
+RADIO_SKU=AIC8800D80
+SYSTEM_BLOCK=<explicit /dev node>
+```
+
+The file contains public identities, never tokens or signing keys. The
+collector parses it as data and records a canonical `exact-image.env`, including
+the explicit API URL and dry-run mode. Repeat the same API and mode on every
+stage; changing image, target, API or mode requires a separate run directory.
+It derives sysfs only from `SYSTEM_BLOCK` and refuses a real stage when that
+node is not a block device. **A run with an inferred or incomplete binding is
+not a qualification run.**
 
 ## 2. The bench, and what is missing from it
 
 | Need | For rows | Note |
 |---|---|---|
+| Clean-source handoff, complete newest image, public verification inputs and exact SHA-256 | all | the archived dirty-stamp candidate is reference material, not an automatic flash choice |
 | CX3576-Z unit, AIC8800D80 SKU | all | the AP6275S SKU is out of the dossier's scope |
 | Serial console on `ttyFIQ0`, 1500000 baud | all | the assumed interface; the network is a measurement, not a given |
 | Host with `rkdeveloptool` and USB to the OTG port | 13, 12 | the flash and the last-resort recovery path |
 | A switched power feed the operator can cut | 4 | see §5 |
+| Explicitly confirmed local API route and test credential/token | power, update, reset, offline | the collector has no default endpoint; pass `--api` only after confirmation |
 | Ethernet with a DHCPv4 server, on both ports | 6 | `eth0` and `eth1` are separately measured |
 | A 2.4/5 GHz AP with known credentials | 6 | |
+| A controlled Bluetooth peer and named profile | current row N3 | controller enumeration alone is insufficient |
 | A second CAN node (250 kbit/s, classic, FD off) | 7 | `can.conf` ships those values |
 | A host PC for the USB gadget console | 7 | `mos-gadget` binds a CDC ACM getty |
-| A USB keyboard, and a display on HDMI | measurement M3/M4 | |
+| A USB keyboard and named HDMI sink/capture | current rows D1-D4; historical D5 observation is optional | records connected boot, tty2, VT return and late attach separately |
+| Versioned NPU, encoder and decoder fixtures with expected outputs | current rows A1-A3 | the repository currently names no accepted workload fixture |
 | Signed component archives, including a deliberate failed-health candidate | 3, 4 | §6 |
 
-**The power-cut rig does not exist.** No rig is on file in this tree, and §5
-specifies the cut in terms of what an operator observes on the console rather
-than of an instrument, so that row 4 is runnable with a switched outlet.
+No current bench endpoint, flashed-image identity, authorized target medium or
+power rig is confirmed. Stop before flash or device mutation until all four are
+recorded. A switched supply can satisfy the power-control requirement only when
+its cut timing is externally correlated with the serial trace and the actual
+storage-write boundary.
 
 > status: unsupported
 
@@ -96,7 +121,9 @@ not run**, and the collector refuses it rather than producing a row.
 | 8 | `update` | 3 | stage 7's reset was absorbed: native state and the preceding reset are recorded |
 | 9 | `powercut` | 4 | stage 8 left the device on a named confirmed deployment with a usable retained fallback |
 | 10 | `storagefill` | 5 (fill) | stage 9 completed, and the run directory has been copied off |
-| 11 | `recovery` | 12 | everything above is copied off the device; this stage destroys |
+| 11 | `display` | D1-D4; historical D5 is optional | stage 10 completed; the named sink, USB keyboard and visual recorder are attached for D1-D4; D5 adds no pass gate or independent destructive run |
+| 12 | `accelerators` | A1-A3 | stage 11's mandatory D1-D4 observations completed; accepted fixtures and expected outputs are named before execution |
+| 13 | `recovery` | 12, R1-R2 | all required preceding evidence and any optional evidence actually captured are copied off the device; this stage destroys |
 
 ### Why that order and not another
 
@@ -128,7 +155,7 @@ not run**, and the collector refuses it rather than producing a row.
 - **10 late, because the fill test fills the filesystem the run directory lives
   on.** The collector reserves headroom and stops short, but the copy-off is
   the real protection.
-- **11 last, and irreversible.** Row 12 walks
+- **13 last, and irreversible.** Row 12 walks
   [../user/recovery.md](../user/recovery.md)'s ordering: read-only diagnosis,
   guarded rollback, configuration reset, application-data reset, then the two
   rungs this board **refuses** — credential recovery and the full factory reset,
@@ -153,6 +180,12 @@ acceptance series from a fresh complete image; do not restore old partitions
 or replenish attempts. Record all signing domains as development or externally
 managed public trust inputs. Do not infer fuse enrollment from a signed FIT.
 
+Use an explicit `MOS_IMAGE`; never allow the make target's newest-file fallback
+to select an acceptance artifact. Before writing, record the clean source/release
+handoff, run the complete-image verifier, identify the one authorized RockUSB
+unit and independently identify its system medium. The current workspace has no
+admissible image/target pair, so the procedure is presently blocked here.
+
 ### Stage 1 — `firstboot` (rows 1, 5-growth, 11)
 
 Power on cold with external serial capture and no network time available.
@@ -167,6 +200,20 @@ grows; firmware and SYSTEM bytes and partition boundaries stay unchanged.
 Machine identity is persisted on DATA before systemd and remains stable across
 reboots. Provisioning uses current DATA namespaces and the declared medium.
 No boot variable is the machine-identity source.
+
+For every cold start, begin the stability window only after the named required
+health set and authenticated deployment confirmation succeed. Keep serial and
+service observation running for at least 180 seconds, then capture the required
+members, optional failed-unit list, deployment state, uptime and boot ID again.
+Collector v3 evaluates `boot-settled`, `mosd` and `apid` from the shipped
+required-health log, retains optional failed-unit names without treating them
+as required failures, and probes live `mosd.GetState("")` and the confirmed
+API's `/healthz` both before and after 180 seconds. Missing live-probe inputs
+prevent counting a cycle; a failed probe records failure. These two snapshots
+do not replace uninterrupted external serial/service observation throughout
+the window. Repeat invocations preserve distinct capture directories and do
+not count the same boot ID twice.
+Five distinct cold-cycle entries are still required before B2 can pass.
 
 ### Stage 2 — `inventory` (the Gate D measurements; rows 8 and 10 readouts)
 
@@ -316,6 +363,14 @@ previous shutdown. This is the *baseline*: stage 7 compares against it.
   clock survived" and "the AT8563 survived" are the same sentence only once
   something has confirmed what `rtc0` is.
 
+Reboot and power-off are separate current obligations. For each of three
+authenticated reboots, preserve the accepted dispatch result, complete exitrd
+serial teardown, new boot ID and a fresh 180-second health window. Separately
+issue authenticated power-off, observe complete teardown and actual loss of
+power, then reapply bench power and capture a new cold-start window. A software
+disconnect is not proof that either action completed, and power-off followed by
+manual power-on is not a power-cut test.
+
 ### Stage 4 — `network` (row 6)
 
 - **Human.** Attach Ethernet to `eth0`, confirm a lease, then move to `eth1`
@@ -334,6 +389,13 @@ previous shutdown. This is the *baseline*: stage 7 compares against it.
   failure is a `fail`, and the SDIO power sequence is the first place to look
   for its cause rather than the predicted one. A `fail` with a named cause is
   worth more than a `not tested` either way.
+
+For Ethernet, retain physical-port mapping, topology-derived MAC, lease, DNS and
+link-bound application traffic for each port across at least three boots. For
+Wi-Fi, retain the AIC8800D80 identity, firmware load, `iw reg get`, per-phy
+regulatory state, association, addressing, DNS and link-bound traffic. Test
+Bluetooth separately against a named peer/profile and prove a bidirectional
+operation; controller enumeration alone does not pass the radio obligation.
 
 > status: board-dependent — evidence: `boards/cx3576/board.env`
 
@@ -383,6 +445,22 @@ boot hang to qualify firmware-to-kernel coverage. If the reset cause cannot be
 established, record that limitation rather than counting an elapsed timeout as
 proof of watchdog action.
 
+The current collector implements only the post-PID-1 kernel crash. It has no
+supported early-handoff injection point, so it cannot close watchdog handoff.
+Before accepting that row, an implementation owner must supply a bounded
+U-Boot-to-Linux hang method. Capture one uninterrupted trace showing U-Boot
+arming before eMMC access, Linux driver takeover, PID 1 ownership and configured
+timeouts; then run the early expiry and post-PID-1 expiry as separate cases.
+
+Under L1's 2026-09-10 ruling, current row D5, inherited from the historical
+[PLAN-088](../plan/PLAN-088.md) section 2.2 panic obligation (old bench D4), is
+superseded by the current console policy and is not a campaign pass criterion. The existing
+watchdog/crash tests still require authoritative serial diagnostics, reset
+cause and their independent watchdog/recovery results. If the operator elects
+to capture the optional HDMI state at the same time, connect the named sink
+before the already-approved post-PID-1 crash. Do not repeat the crash solely for
+display evidence.
+
 ### Stage 8 — `update` (row 3)
 
 Begin with a complete current image and record both native deployment records.
@@ -407,14 +485,73 @@ inconclusive.
 ### Stage 10 — `storagefill` (row 5, fill half)
 
 Copy evidence off the device first. Fill bulk and disposable DATA namespaces
-through their production writer privileges until byte and inode quotas refuse
-further writes. Confirm essential state/metadata remain writable within their
-configured reserve, immutable var parents remain read-only, and service health
-and capacity reporting remain accurate. Remove only the fixture's filler files
-and verify counters recover. Record eMMC health as unavailable where the part
-does not provide it; never invent a numeric health grade.
+only through fixture-owned paths and production writer privileges. The current
+contract is:
 
-### Stage 11 — `recovery` (row 12)
+- all of `/var` is writable and assigned a bounded project;
+- `/mos`, `/srv` and `/mos/containers` have zero byte and inode quota limits;
+- container bind, storage and temporary paths are independent and private, so
+  reset traversal does not cross their mounts;
+- DATA as a whole is finite. State/meta remain separate, but no aggregate
+  quota-backed reserve protects them from an unlimited writer that fills DATA.
+
+Record mount sources/propagation, project IDs and byte/inode limits before any
+fill. Exercise representative writes under each namespace. Exhaust only the
+bounded `/var` fixture quota and prove state/meta plus management remain
+writable; confirm zero limits rather than expecting quota refusal for the three
+unbounded namespaces. Remove only fixture files and verify accounting recovers.
+Do not fill the entire DATA filesystem merely to prove that it is finite.
+Record eMMC health as unsupported with a reason when the part has no surface.
+
+Collector v3 captures quota and namespace state and asks for this current
+contract explicitly. Its prompts and report structure do not replace the raw
+mount, quota, write, exhaustion and reset-isolation evidence required for S2.
+
+### Stage 11 — `display` (rows D1-D4; historical D5 is optional)
+
+Run D1-D4 independently and bind each state to the exact sink,
+cable/connector, image and boot ID. D5 is not a prerequisite for this or any
+following stage; handle it only as the optional review in step 5:
+
+1. Boot with HDMI connected. Capture the connector status, EDID modes and fb0
+   state, and visually record one centered **YBO - Hub OS** logo with its
+   approved gradient through the 180-second window. No normal login prompt may
+   replace it.
+2. With a USB keyboard, use Alt+F2 and Ctrl+Alt+F2 in separate attempts. tty2
+   must start an ordinary getty, accept a test credential and permit logout;
+   tty1 must have no getty and tty2 must not autologin.
+3. Return from tty2 and record the resulting presentation. Reviewed A3 commit
+   `209982d98f83ef149d2c3850adc63debc42f4c5a` supplies the bounded redraw path
+   and host fixtures; physical behavior remains unqualified until observed on
+   the exact image.
+4. Boot headless, bank connector/fb0 state, attach the named sink after the
+   180-second window, and record hotplug, modes, fb0 and the visual result. The
+   reviewed A3 path retains the artwork and handles the viewport callback, but
+   host fixtures are not whole-kernel or physical hotplug evidence.
+5. Review any visual state captured during the approved stage 7 watchdog crash
+   as `not qualified / optional observation` beside the authoritative serial
+   trace. If no sink was connected then, record no D5 observation and do not
+   repeat the crash. L1's 2026-09-10 ruling supersedes the inherited
+   [PLAN-088](../plan/PLAN-088.md) HDMI-panic requirement for this campaign; the
+   screen observation neither passes nor blocks this or any following stage and
+   proves neither support nor impossibility.
+
+### Stage 12 — `accelerators` (current rows A1-A3)
+
+Do not substitute probe success or device-node presence for functionality.
+Before running, name versioned NPU, encoder and decoder fixtures, exact inputs,
+runner/tool versions, settings and expected output checks. None is defined by
+the current repository, so these rows remain blocked until A4 or the operator
+supplies them.
+
+For each fixture, capture driver/device binding, clocks, resets, power domain,
+IOMMU/MMIO ownership and relevant errors before and after. Run repeated NPU
+inference with checked output, a representative hardware encode with a decoded
+output check, and a representative hardware decode with checked frames/output.
+The evidence must establish use of the intended hardware engine rather than a
+software fallback.
+
+### Stage 13 — `recovery` (row 12)
 
 Destroys. Last. In [../user/recovery.md](../user/recovery.md)'s order, one rung
 at a time, re-reading the system state after each:
@@ -426,25 +563,22 @@ at a time, re-reading the system state after each:
 5. **Credential recovery and full factory reset** — both must be **refused**,
    saying that the board declares no physical recovery action. A refusal is the
    expected result here and a success would be a `fail`.
-6. **Rescue SD** — boots only when the eMMC is unbootable (deviation D-1:
-   eMMC first, SD second), so this is tested by making the eMMC unbootable,
-   which means:
-7. **Reflash from maskrom** — the path of last resort, and the one that returns
-   the unit to a usable state afterwards.
+6. **Exhausted/invalid native records** — firmware must enter RockUSB rather
+   than selecting unsigned content or refilling attempts.
+7. **Loader unavailable** — enter maskrom, then reflash the explicit complete
+   current image with verified full readback. No rescue-SD behavior is claimed.
 
 - **Pass — row 12.** Every path in the dossier's Recovery method section
   restores a unit from the state it claims to handle, and the two refused rungs
   refuse. A path that cannot be exercised at all records `not tested` naming
   what was missing.
 
-### Additions from the first hardware boot (RFCT-355)
+### Historical first-boot probes to rerun (RFCT-355)
 
-The first successful boot on hardware, 2026-09-08, produced four findings whose
-repairs are in the image and whose *effect* only a board can show. They are
-added as probes inside the stages above rather than as a stage of their own —
-each one needs a state an existing stage already sets up — and they are listed
-together here because they were found together and a reader chasing that boot
-log needs one place to look.
+The 2026-09-08 hardware boot produced four useful probe shapes. Its image and
+source predate the current acceptance baseline, so none of its observations is
+a current pass or proof of a current regression. Rerun these probes inside the
+current stages and bind every result to I1.
 
 Each is stated as a claim with a `pass` and the shape of its `fail`, in the
 same grammar §4's stages use. None of them changes a dossier row: they are
@@ -456,13 +590,13 @@ evidence *within* the rows named in the Stage column.
 | `pstore-survives` | 3 `warmboot` | the previous boot's console is readable after a warm reset |
 | `regdb-loaded` | 4 `network` | cfg80211 is running on the packaged regulatory database |
 | `gadget-bound` | 5 `fieldbus` | the CDC ACM gadget binds its UDC and enumerates |
-| `no-efi-automount` | 2 `inventory` | nothing auto-mounts a boot slot |
+| `no-implicit-firmware-mount` | 2 `inventory` | only the explicitly declared firmware mount exists |
 
 **`pstore-region` (stage 2).** Read `dmesg | grep -i ramoops`, the
 `/proc/iomem` line for it, and the `node 0: [mem ...]` range from the same
 boot. **Pass:** the `ramoops: using 0x…@0x…` base lies inside that range —
-`0xe0000@0x40400000` against a bank starting at `0x40200000` on the image this
-task built. **Fail:** a base below the bank, which is what the 2026-09-08 boot
+`0xe0000@0x40400000` against a bank starting at `0x40200000` in the repair's
+static evidence. **Fail:** a base below the bank, which is what the 2026-09-08 boot
 had (`0xe0000@0x40110000`, entirely inside the 2 MiB TF-A/BL31 keeps) and which
 means every console line is being written into firmware memory. This is the
 half the image contract already asserts off the device tree; what the bench
@@ -487,7 +621,7 @@ in the journal and reports it at live-state `health.units`. It is **no longer a
 health-gate failure and no longer a rollback**: PLAN-089 inverted the gate to a
 required set, and this unit is not in it. It was, and that is why this
 paragraph exists — on 2026-09-08 this exact unit failed on hardware and cost
-the slot a boot credit on every boot, on an SKU whose phy is self-managed and
+the candidate a trial on every boot, on an SKU whose phy is self-managed and
 never consults what the unit loads. The dash is still absent deliberately, so
 that the failure is visible rather than swallowed; what changed is what a
 visible failure costs. If it fails here, the finding is still the image's, not
@@ -519,7 +653,7 @@ test can observe.
 |---|---|---|
 | `health-required-set` | 1 `firstboot` | every member of the shipped required set passes on a real boot |
 | `health-tolerates-failed-unit` | 4 `network` | a failed unit outside the set does not cost a boot credit |
-| `health-rejects-broken-slot` | 8 `update` | a slot missing a required member still rolls back |
+| `health-rejects-broken-deployment` | 8 `update` | a deployment missing a required member still rolls back |
 
 **`health-required-set` (stage 1).** Read `journalctl -u mos-health` and
 `systemctl show -p Result --value mos-health.service`. **Pass:** the log carries
@@ -536,12 +670,12 @@ and record its name in diagnostics. Required services still pass and the native
 backend confirms the authenticated running deployment. Confirmation retires the
 trial entry; it does not refill counters.
 
-**`health-rejects-broken-slot` (stage 8).** Stage 8 already needs *"one that
+**`health-rejects-broken-deployment` (stage 8).** Stage 8 already needs *"one that
 installs and boots, one that installs and fails its health gate"*, and under
 the new criterion the second bundle has to break a **required member** —
 masking `apid.service`, or `mosd.service`, in the bundle's root is the smallest
-one that is not also a broken kernel. **Pass:** the bad slot boots, the gate
-logs `required member apid` (or `mosd`) with no `mark-good`, and the slot rolls
+one that is not also a broken kernel. **Pass:** the bad deployment boots, the gate
+logs `required member apid` (or `mosd`) with no confirmation, and the deployment rolls
 back after its credits. **Fail, and it is the one worth naming:** a bundle that
 merely breaks *some* unit now boots, confirms and measures nothing — a green
 that means the bundle was wrong, not that rollback works.
@@ -558,11 +692,11 @@ image with a test that drives it (`make os-gadget-test`). If it still fails
 *with the function symlink present*, the cause is elsewhere and the
 `rockchip-usb2phy … IRQ index 0 not found` line becomes worth pursuing.
 
-**`no-efi-automount` (stage 2).** Inspect all automount units, the generator
-output and `/efi`. The current policy must use only the declared firmware mount
-and exact partition identity; an automatically selected writable firmware mount
-is a failure. The whole-image verifier checks the generator mask, while this
-board test checks its runtime result.
+**`no-implicit-firmware-mount` (stage 2).** Inspect all automount units,
+generator output and mounted firmware paths. The current policy must use only
+the declared firmware mount and exact partition identity; an automatically
+selected writable firmware mount is a failure. The whole-image verifier checks
+the generator mask, while this board test checks its runtime result.
 
 ### Additions from RFCT-359 (the stable-MAC assignment)
 
@@ -570,9 +704,9 @@ RFCT-359 changed what this board's Ethernet MAC addresses are derived from —
 the port's path through the bus topology instead of its interface name — and
 added the two files that make the assignment reach both ports at all. Every
 mechanism was read out of the pinned systemd 257.13 and kernel sources and the
-derivation is driven offline by `make os-mac-test`, but **no board has ever been
-seen carrying an address it produced**. Three probes, inside stages that already
-set up the state they need.
+derivation is driven offline by `make os-mac-test`, but **no current I1 image has
+been observed carrying an address it produced**. Three probes, inside stages
+that already set up the state they need.
 
 | Probe | Stage | Claim |
 |---|---|---|
@@ -592,9 +726,10 @@ exchange addresses. No host PC, no USB and no second CAN node.
 (address and `addr_assign_type`), `readlink -f /sys/class/net/<i>/device`, and
 `udevadm info /sys/class/net/<i>` for `ID_NET_LINK_FILE` and `ID_PATH`. Then
 `journalctl -b -u systemd-udevd | grep -i "MAC address"`. Recompute both
-addresses on the device from the two facts the derivation reads —
-`printf '%s-%s' "$(cat /sys/block/mmcblk0/device/cid)" "<topology>" | md5sum` —
-and compare.
+addresses from the current implementation's `MD5(CID + "-" + topology)` rule,
+using the CID of the operator-identified system medium and the recorded
+topology. Use only the `SYSTEM_BLOCK` bound by the operator; the collector has
+no default medium to substitute for that identification.
 
 **Pass:** each port's address is `02:` followed by the first five bytes of that
 md5, `ID_NET_LINK_FILE` names `60-mos-mac-stable.link`, and udevd logged no
@@ -664,35 +799,54 @@ and virt-arm64 images execute complete runtime sequences in QEMU. cx3576's
 produced loader and FIT have sandbox/host policy tests, required signature
 negatives, whole-image verification and DATA-only growth evidence.
 
+The archived 2026-09-10 CX3576 image predates the final zero-quota correction
+for `/mos`, `/srv` and `/mos/containers`; no complete image bound to the current
+clean source is recorded. The live matrix therefore blocks the flash admission
+gate instead of composing those separate software results into an image claim.
+
 Physical cx3576 boot, reset cause, watchdog handoff and power-cut acceptance
 remain open until measured on the named board. The collector records those
 observations; passing its own syntax or refusal tests cannot close a hardware
-row. Keep the exact evidence in the active delivery task and board dossier.
+row. Keep the exact evidence in the live matrix and board dossier.
 
 ## 7. Running the collector
 
-```sh
-# on the bench host, with the run directory mounted or the file pasted in
-scp cx3576-bench-collect.sh root@<device>:/root/
+Transfer the collector only through the operator-confirmed local bench route.
+Run it over the serial console one stage at a time with an explicit persistent
+output directory, the public exact-image binding, and an explicitly confirmed
+API URL for live required-health probes. Keep that URL on every invocation in
+the same run. The collector has no default endpoint or system medium.
 
-# on the device, over the serial console, one stage at a time
-bash /root/cx3576-bench-collect.sh firstboot
-bash /root/cx3576-bench-collect.sh inventory
-...
-bash /root/cx3576-bench-collect.sh report > /root/qualification-rows.md
+```sh
+bash /root/cx3576-bench-collect.sh --out /operator/confirmed/data/path \
+  --identity /operator/evidence/exact-image.env \
+  --api https://operator-confirmed-local-endpoint firstboot
+bash /root/cx3576-bench-collect.sh --out /operator/confirmed/data/path \
+  --identity /operator/evidence/exact-image.env \
+  --api https://operator-confirmed-local-endpoint inventory
+# Continue in section 3 order, including display and accelerators.
+bash /root/cx3576-bench-collect.sh --out /operator/confirmed/data/path report \
+  > /operator/confirmed/data/path/qualification-rows.md
 ```
 
 - **Output.** `--out DIR`, defaulting to `/srv/bench` — the user-owned
   namespace on DATA, which survives a reboot and a power cut. The collector may fall back to `/tmp/mos-bench`, which is volatile and
   cannot retain evidence across a reboot. Copy such evidence to the external
   bench recorder before continuing. It `sync`s after every append for the same reason.
+  Each invocation preserves its captures under
+  `evidence/<stage>/<UTC timestamp>.<unique suffix>/`; the log prints the exact
+  directory and cycle records link it. Historical `evidence/<stage>/file`
+  references now mean that file in the recorded invocation directory.
 - **The API.** `GET /api/v1/update` and the other reads are authenticated.
-  Pass a bearer token with `--token` or `MOS_BENCH_TOKEN`; without one the
-  collector records `not collected: no API token` and falls back to the
+  Pass both the confirmed URL with `--api` and a bearer token with `--token`
+  or `MOS_BENCH_TOKEN`; without either one the collector records which input is
+  absent and falls back to the
   unauthenticated sources (`mos-deploy`, `systemctl`, the bus) for
   everything they cover. It does not log in for you: minting a session on the
   device writes to apid's audit ring and its login-backoff counters, and a test
   harness must not be the thing that locks the operator out.
+  The unauthenticated live `/healthz` probe still requires the confirmed URL;
+  without it, no required-health window can be counted.
 - **`--dry-run`** runs every read-only probe and refuses every mutation,
   reboot, install and power-cut prompt. This is how the script is exercised
   somewhere other than the bench.
@@ -705,11 +859,20 @@ Every probe is guarded by a `command -v` check. **A missing tool produces a
 `not tested` row naming the tool**, never a silent skip and never a pass — the
 same rule the dossier already applies to itself.
 
-### The tool inventory, measured on the shipped cx3576 root
+Collector v3 closes the earlier evidence-structure gaps: it refuses missing
+image/media binding, never guesses an API endpoint, applies the required-health
+set over a 180-second window, captures current storage policy, and emits all 39
+logical rows including display, accelerator and Bluetooth operator evidence.
+It intentionally has no supported pre-PID-1 watchdog hang injection point, and
+it cannot turn an operator response into source, whole-image or physical proof.
+Review raw captures before accepting any result.
 
-Read off the composed arm64 root itself (`_out/cx3576/factory-root.oci`, its
-filesystem listed rather than executed), so the collector's guards are written
-against what is there rather than against what ought to be:
+### The tool inventory must be measured on the accepted image
+
+The historical collector was written against an earlier composed ARM64 root.
+Its inventory below is useful for guard behavior but cannot qualify the newest
+image. Repeat the inventory from the exact I1 root and record any delta before
+the bench run:
 
 - **Present:** `bash`, `sh`, `curl`, `networkctl`, `journalctl`, `systemctl`,
   `mos-deploy`, `podman`, `udevadm`, `dmesg`, `lsblk`, `date`, `stat`, `awk`, `sed`,
@@ -724,18 +887,22 @@ against what is there rather than against what ought to be:
 - **BusyBox ships with no applet links**: the root contains `/usr/bin/busybox`
   and its copyright file, and nothing else — so `busybox` covers no absence.
 
-> status: board-dependent — evidence: `rootfs/build.sh`, `boards/cx3576/board.env`
+> status: board-dependent — evidence: `rootfs/build.sh`, `boards/cx3576/board.env`, `docs/task/20260910-1014-a2-cx3576-acceptance-matrix.md`
 
 ## 8. Filling the dossier
 
 `cx3576-bench-collect.sh report` prints the thirteen rows in the dossier's own
-column order. Paste them over
-[cx3576-example.md](cx3576-example.md)'s table, then, in the same commit:
+column order followed by the 39 current details. Review every cell against the
+raw evidence;
+then update both the
+[live matrix](../task/20260910-1014-a2-cx3576-acceptance-matrix.md) and
+[cx3576-example.md](cx3576-example.md) in the owning reconciliation change:
 
-- fill the **Binding** paragraph above the table with the eMMC part and the RTC
-  finding from stage 2 — the two elements
-  [qualification.md](qualification.md) §1 requires and this tree does not have;
-- update **Known limitations**, which currently says both are unrecorded;
+- fill the **Binding** paragraph above the table with the board revision,
+  concrete eMMC part, radio SKU, BSP/source revision, exact image identity and
+  profile required by [qualification.md](qualification.md) §1 and row 13;
+- update the RTC section/result from stage 2 and **Known limitations**, which
+  currently records the eMMC part and RTC as unmeasured;
 - update the **Console** and **Peripherals** sections with M3's port map and
   M4's input set;
 - and re-run `make docs-verify`, which asserts the row grammar the collector
@@ -750,87 +917,132 @@ units that shipped under it.
 
 ## 9. Current verification status
 
-The current collector is syntax-checked and its dry-run/refusal paths must be
-checked before bench use. The active file-deployment task records current
-software test results; earlier collector runs apply only to their dated source.
-No current physical cx3576 acceptance result has been captured in this work.
+Collector v3 is syntax-checked and its explicit-binding, health-window,
+dry-run/refusal and 39-row report behavior has a focused host test. The active
+file-deployment task records reusable software results; earlier collector runs
+apply only to their dated source. The live matrix records the exact current
+blockers; A4's [integrated acceptance detail](../task/20260910-1014-a4-cx3576-integrated-acceptance.md)
+records subsequent collector/build deltas without rewriting that baseline.
+No current same-image physical CX3576 acceptance result has been
+captured.
+
+The coherent kernel gate at `38a362cd3ce46bab6d1f04489503dca9b92b664c`
+passed on 2026-09-10 (19:16:56Z..19:31:44Z), including full ARM64 kernel/object
+integration, resolved config, compiled DTB and retained-logo/call evidence.
+Exact hashes and warning limitations are in the integrated acceptance detail.
+This is not a newly signed FIT/support component or complete flashed image.
+The earlier input audit rejected both known CX packed roots because they predate
+the final zero application-quota policy. The subsequent exact L1/L2 handoff
+authorizes a new root at `9d1218e2689eb5e3fce99ad1736f3a1fdc8c8801` and
+selects the source-equivalent development native init. The six policy/board
+producers passed on 2026-09-10T20:29:32Z..20:31:34Z, including the actual packed
+current layout script. The five native producers then passed at
+2026-09-10T20:48:22Z..20:57:03Z; all 14 selected package archives are present,
+with dependency warnings preserved. The first root gate failed before
+installation when a pinned archive download reached its 600s ceiling. All 173
+required upstream cache inputs were subsequently verified for authorized
+recovery retry 2. That gate emitted a new current-layout root (254 MB against
+the 400 MB installed-size budget), then terminated at 2026-09-10T21:48:19Z,
+exit 2, before mandatory smoke execution: the task-owned OCI load-copy editor
+corrupted its copy. The original OCI remains readable, SHA-256
+`d23db6942e49b002aee615d60027a962eaf4752097d09755a7eae55529365f5f`;
+the emitted verity image is
+`1ff6626307d43294aa6c01777ce1e2a8c0478e06d9630e9f890a87545f662569`.
+Read-only extraction confirms the current layout/public defaults, private
+container paths and no-autologin getty template; it is not runtime enforcement,
+login or workload evidence. A4's linked detail records exact artifact and
+failure identities, warnings and an unimplemented adapter recovery proposal.
+Both automatic retries were exhausted. On 2026-09-11 L1 separately authorized
+one adapter-only recovery, preserving those retries and failed bytes; no
+automatic fourth recovery is allowed. Actual-archive RED/GREEN and scoped
+review precede unchanged smoke on the existing root, without rebuilding it.
+The exact C verifier tool is now handed off separately at `48acef7f`; its
+native file set is mosd, apid and mos-deploy, not mos-mqttd. The unchanged smoke
+subsequently passed on 2026-09-11T00:45:29Z..00:45:57Z, exit 0: 11 PASS and
+one EXECUTOR-LIMITED crun row through BuildKit/qemu-user, not native crun or
+board qualification. It used the original OCI `d23db694...` with actual
+manifest content ID `1cfe2b6a...`; source `9d1218e2`, original root,
+load-copy evidence and shared factory alias remain unchanged. The linked A4
+detail preserves the full crun diagnostic, exact hashes and retry chronology.
+New signed root/support/FIT production passed at 2026-09-11T01:00:14Z..01:00:34Z,
+exit 0, with all 16 files revalidated. The new FIT is `18810e4e...`, support
+is `66650650...` and root remains `1ff66263...`. It reused the passed
+root/kernel without rebuilding them. The linked task records exact component
+IDs and the next gate's real firmware-key/CMS checks, ELF closure, fresh
+generations 2026091101/2026091102 and separately pinned C-final verifier.
+The subsequent candidate gate produced fresh signed generations
+2026091101/2026091102 and the full image
+`mos-cx3576-20260911-012036.img` (1362100224 bytes), SHA-256
+`9939186656bd553e337237e0f4cb44584f24088e17f4e453a9d2d7032754827e`.
+Actual firmware-embedded FIT trust, CMS tamper/wrong-key cases, CX partition and
+record readback passed. The separate C-final `48acef7f` authenticated runner
+passed 126 checks / 0 skipped, scanning actual mosd/apid/mos-deploy:
+3 files / 19824184 bytes. SYSTEM is 1 GiB; only DATA grows. Source remains
+`9d1218e2`, kernel `38a362cd`; firmware/init reuse retains original provenance.
+
+The original candidate aggregate stays RED, exit 1, because its task-owned
+per-object ELF checker incorrectly treated a systemd DSO as a fresh namespace.
+Under a separate concrete L1 checker-correction decision, the actual packed
+ARM64 loader `--list` proved resolution at 01:34:26Z..01:34:27Z, exit 0.
+All 22 relevant OCI/packed-root files match, including loader and target cache.
+The corrected private consumer-context check passed 13 focused tests and
+1050/1050 static ELF rows at 01:40:13Z..01:40:24Z, exit 0. It does not globally
+search systemd's private directory or weaken missing-provider/version checks.
+The linked task records a new current-A software aggregate with the existing
+crun executor limitation; old failure evidence remains intact. No successful
+root/package/kernel/image/smoke/C gate was regenerated for this correction.
+
+This is software candidate evidence, **not physical qualification or a flash
+instruction**. Live health, login, quotas/reset isolation, display, watchdog,
+recovery, workloads and power cuts still require the named exact-image bench
+admission above. All 38 mandatory physical rows remain unqualified; historical
+D5 is optional. NPU ownership and native crun remain open; the two old roots
+remain inadmissible. No later B/C product payload is included.
 
 journald is volatile. Capture each boot's journal and serial trace before
 rebooting; a later collector invocation cannot recover the previous journal.
 Only observed hardware outcomes belong in physical qualification rows.
 
-## 10. The display rows (PLAN-088), and the sink they all depend on
+## 10. Current display evidence boundary and historical D5 ruling
 
-PLAN-088 makes HDMI show a boot logo instead of a login prompt, and keeps the
-display reachable as a console. Every mechanism was read out of the pinned
-kernel source and every resulting byte is asserted against the assembled image
-by `verify/src/checks-display.ts` — but **no board has ever displayed it**.
+The shipped software contract is one centered **YBO - Hub OS** logo with the
+approved gradient, an idle tty1, and an authenticated tty2 selected by
+Alt+F2/Ctrl+Alt+F2 with no autologin. Static artwork, cmdline and QEMU tty2
+checks support that contract, but do not show the board's pixels or complete a
+password authentication.
 
-### 10.1 Record whether a monitor was attached. Every row, every time.
+Record connector status, EDID modes, fb0 presence and the named physical sink
+for every visual result. A historical disconnected-display log cannot decide a
+connected-display row. Stage 11 defines the current D1-D4 observations for
+connected boot, tty2, return from tty2 and late HDMI attachment. The older
+[display design](../design/display.md) and
+[late-HDMI task](../task/20260910-0117-cx3576-late-hdmi-logo.md) record the
+pre-A3 init-only baseline. Reviewed A3 commit
+`209982d98f83ef149d2c3850adc63debc42f4c5a` now provides retained logo data,
+VT-return redraw and Rockchip hotplug redraw with controlled host fixtures.
+That host evidence alone was not a coherent ARM64 kernel/object result. A4's
+`38a362cd` gate now supplies compiled integration and retained object/call proof,
+but still no physical D3/D4 or kernel lock-scheduling pass;
+the exact-image HDMI/VT observations remain unqualified until a bench is named.
 
-The first bench dmesg (`_out/cx3576/a.txt`) is the reason this is a rule and not
-a nicety. It shows the display pipeline coming up healthy —
+D5 retains historical [PLAN-088](../plan/PLAN-088.md) section 2.2 and its
+`console=tty1` reasoning only for chronology. L1 ruled on 2026-09-10 that it is
+superseded by the current console policy and is not mandatory campaign
+acceptance. That policy was completed at
+`3579a2cdac58160779cfa3f02860f15104c5dc96` and retained in approved source
+`5d0dca577a782aa707d9530779c4b23f2a7eda31`: the
+[display design](../design/display.md) section 4,
+[board environment](../../boards/cx3576/board.env) line 55 and
+[forced kernel configuration](../../boards/cx3576/bsp/kernel/config/kernel-cx3576z.config)
+line 491 route kernel and service output only to `ttyFIQ0` and omit
+`console=tty1`. Authenticated tty2 remains the recovery path.
 
-```
-rockchip-hdptx-phy-hdmi 2b000000.hdmiphy: hdptx phy init success
-rockchip-vop2 27d00000.vop: Adding to iommu group 11
-dwhdmi-rockchip 27da0000.hdmi: registered ddc I2C bus driver
-[drm] Initialized rockchip 4.0.0 20140818 for display-subsystem on minor 0
-```
+Serial is the guaranteed diagnostic path for the required watchdog/crash and
+recovery results. A simultaneous screen observation is `not qualified /
+optional observation`; it neither blocks later stages nor proves that HDMI can
+or cannot show panic pixels. Do not introduce another crash test. A future
+dedicated panic screen or diagnostic request needs a separate concrete
+implementation and acceptance boundary; this procedure does not claim delivery
+of such a feature.
 
-— and then failing to produce a framebuffer:
-
-```
-rockchip-drm display-subsystem: [drm] Cannot find any crtc or sizes
-```
-
-**That log cannot distinguish "no monitor was plugged in" from "a monitor was
-plugged in and its EDID did not read."** They are different faults with
-different owners — the first is the operator's setup, the second is a board or
-cable defect — and no amount of re-reading the file will separate them. So the
-run directory must record, per boot: whether a sink was connected, what it was,
-and on which HDMI connector. Without that, every row below is uninterpretable
-and the next reader is where this one started.
-
-Capture alongside each result:
-
-- `for c in /sys/class/drm/card*-HDMI-A-*; do echo "$c $(cat $c/status)"; done`
-- `cat /sys/class/drm/card*-HDMI-A-*/modes` (empty means no EDID modes)
-- `ls /sys/class/graphics/` — **whether `fb0` exists at all is the single most
-  discriminating fact on the whole page**, because it separates the dark state
-  from both the logo and the console state.
-
-### 10.2 Three states, and rows that say which one they saw
-
-A result cell of `fail` is ambiguous unless it names the state observed, because
-"no logo" is true of both a broken logo and an absent framebuffer:
-
-| State | Test | Meaning |
-|---|---|---|
-| **dark** | `/sys/class/graphics/fb0` absent | no fbdev; nothing is driving the output. Not a logo defect |
-| **logo** | `fb0` present, board splash on screen | the intended healthy state |
-| **console** | `fb0` present, text on screen | fbcon bound and something is writing to the VT |
-
-| Row | What a `pass` is | Why no gate can decide it |
-|---|---|---|
-| D1 — logo appears | Sink attached at boot: the splash is on the monitor, at the negotiated mode, with no login prompt at any point | Nothing here renders. The 720x405 geometry follows `fb_prepare_logo`'s height test and `fb_show_logo_line`'s width test, but the negotiated mode is an EDID fact of the attached panel |
-| D2 — exactly one, centred | One logo, centred, not a row of them | `fbcon=logo-count:1` is asserted in the image; that it took effect is a pixel fact. `fb_logo_count` otherwise defaults to one copy per online CPU |
-| D3 — no login prompt | No `login:` on HDMI during a normal boot, nor after several idle minutes | The preset resolution and the link's absence are both asserted; that nothing else spawns a getty on tty1 is a claim about the running system |
-| D4 — a panic reaches the screen | **With a monitor attached before the crash**, `echo c > /proc/sysrq-trigger` and read the trace on the monitor | The property that justifies letting a logo own the display, and the one most worth distrusting. It rests on `console_verbose()` raising the level on the oops path — source-verified, never observed here |
-| D5 — the console comes back | `systemctl start getty@tty1` yields a usable login prompt on HDMI; `systemctl stop` gives the screen back | A disabled unit being startable is systemd behaviour, not an image fact |
-| D6 — **hotplug** | Boot with **no** monitor, confirm `fb0` is absent, then attach one: `fb0` appears and the logo is drawn without a reboot | The common case for this product. The path is `output_poll_changed` -> `drm_fb_helper_hotplug_event` -> the `deferred_setup` branch (PLAN-088 §2.4), and all three of its conditions were verified in source and in the boot log. Whether HPD actually fires on this board's connector is not something any of that establishes |
-| D7 — dark is dark | Boot with no monitor and **leave it unplugged**: nothing is expected on HDMI, and a panic is expected to be invisible there | Recorded as a row because it is a real product state, not a defect, and because a reader who finds a blank screen needs it written down that this is the designed behaviour rather than a regression. Serial carries the panic in this state |
-
-**D4 and D6 are the rows to run first if time is short.** D1-D3 failing leaves an
-ugly screen; D4 failing means a technician with no serial cable cannot see why a
-unit is dead, and D6 failing means a device that booted headless can never show
-anything without a reboot. Both argue for revisiting the design rather than the
-artwork.
-
-**A `fail` on D1 with a `pass` on D6 is coherent**, not a contradiction — it is
-what a monitor whose EDID reads only after HPD looks like. **A `fail` on D6 with
-`fb0` still absent** is the case that would put `video=HDMI-A-1:...e` on the
-table (PLAN-088 §2.4 names it and declines it); record the connector status and
-`modes` output with that result or it cannot be acted on.
-
-> status: proposed — evidence: `docs/plan/PLAN-088.md`
+> status: board-dependent — evidence: `docs/design/display.md`, `docs/task/20260910-0616-cx3576-storage-display-cleanup.md`

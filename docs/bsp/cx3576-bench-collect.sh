@@ -6,9 +6,8 @@
 #
 # The procedure this implements is docs/bsp/cx3576-bench.md. It runs ON THE
 # DEVICE, over the serial console, one stage at a time, and its output is a
-# markdown table whose rows are exactly docs/bsp/cx3576-example.md's
-# Qualification results rows -- pasted into the dossier, not translated into
-# it.
+# markdown report with docs/bsp/cx3576-example.md's legacy Qualification
+# results rows plus the live matrix's 39 current details.
 #
 # IT NEEDS NOTHING FROM THE REPOSITORY. It is copied to the device and run
 # there. Everything it needs is in this file or on the image.
@@ -48,7 +47,7 @@
 set -u
 set -o pipefail
 
-COLLECTOR_VERSION=2
+COLLECTOR_VERSION=3
 
 # --- the dossier's rows, in the dossier's order -----------------------------
 # key|label. The label is what docs/bsp/cx3576-example.md's table says, spelled
@@ -87,6 +86,52 @@ ROW_STAGE=(
     "install|install"
 )
 
+# The current contract's logical acceptance rows. These are deliberately
+# separate from the thirteen legacy dossier rows above: one aggregate pass
+# must never hide an unobserved mandatory behavior.
+# id|class|stage|short requirement
+DETAIL_ROWS=(
+    "I1|mandatory|install|exact clean source, image, target and readback binding"
+    "B1|mandatory|install|blank-unit install and claimable first boot"
+    "B2|mandatory|firstboot|five cold boots with 180-second required-health windows"
+    "B3|mandatory|warmboot|three authenticated reboots with teardown and health"
+    "B4|mandatory|warmboot|authenticated power-off and later healthy power-on"
+    "W1|mandatory|watchdog|U-Boot to Linux to PID 1 watchdog handoff"
+    "W2|mandatory|watchdog|watchdog expiry, spent attempt and readable reset cause"
+    "R1|mandatory|recovery|authenticated recovery operations and declared survivors"
+    "R2|mandatory|recovery|invalid-record RockUSB recovery and maskrom reflash"
+    "U1|mandatory|update|root-only signed update"
+    "U2|mandatory|update|kernel/support-only signed update"
+    "U3|mandatory|update|combined signed update"
+    "U4|mandatory|update|three failed trials and retained-deployment fallback"
+    "U5|mandatory|update|DATA-only acquisition and atomic publication"
+    "U6|mandatory|update|separately signed firmware update and exact readback"
+    "P1|mandatory|powercut|cut during download or offline import"
+    "P2|mandatory|powercut|cut during object write and file sync"
+    "P3|mandatory|powercut|cut during directory publication"
+    "P4|mandatory|powercut|cut during candidate activation"
+    "P5|mandatory|powercut|cut during trial-attempt decrement"
+    "P6|mandatory|powercut|cut during health confirmation"
+    "P7|mandatory|powercut|cut during garbage collection or record repair"
+    "S1|mandatory|firstboot|fixed FIRMWARE, 1 GiB SYSTEM and DATA-only growth"
+    "S2|mandatory|storagefill|current namespace quotas and container isolation"
+    "D1|mandatory|display|centered product presentation on connected HDMI"
+    "D2|mandatory|display|authenticated tty2 with no autologin"
+    "D3|mandatory|display|product presentation restored after tty2"
+    "D4|mandatory|display|late HDMI attach restores product presentation"
+    "D5|optional|display|historical PLAN-088 panic-screen observation (old D4)"
+    "A1|mandatory|accelerators|checked repeated NPU inference"
+    "A2|mandatory|accelerators|checked repeated hardware encode"
+    "A3|mandatory|accelerators|checked repeated hardware decode"
+    "N1|mandatory|network|both Ethernet ports obtain and carry traffic"
+    "N2|mandatory|network|AIC8800D80 Wi-Fi and regulatory operation"
+    "N3|mandatory|network|Bluetooth peer and profile exchange"
+    "F1|mandatory|fieldbus|USB host, OTG gadget and CAN exchange"
+    "F2|mandatory|warmboot|RTC identity and power-loss behavior"
+    "F3|mandatory|thermal|sustained thermal load and cooldown"
+    "F4|mandatory|firstboot|offline local management and provisioning"
+)
+
 # --- the stages, in order, with what each assumes ---------------------------
 # name|assumes|one-line description. `assumes` is the stage that must be `done`
 # before this one runs; empty for the first. A stage whose assumption is unmet
@@ -104,13 +149,16 @@ STAGES=(
     "update|watchdog|signed deployment install, confirmation, and failed-trial fallback"
     "powercut|update|power removed inside the named window"
     "storagefill|powercut|bulk and disposable DATA quota containment"
-    "recovery|storagefill|every recovery path, in the destructive order"
+    "display|storagefill|HDMI presentation, tty2 and late attach"
+    "accelerators|display|NPU, hardware encoder and hardware decoder workloads"
+    "recovery|accelerators|every recovery path, in the destructive order"
 )
 
 COLD_CYCLES=5      # docs/bsp/cx3576-bench.md stage 1
 WARM_CYCLES=3      # stage 3
 THERMAL_SECONDS=1800
 THERMAL_SAMPLE=10
+STABILITY_SECONDS=180
 
 # --- options ----------------------------------------------------------------
 OUT=""
@@ -118,7 +166,18 @@ STAGE=""
 TOKEN="${MOS_BENCH_TOKEN:-}"
 DRY_RUN=0
 DATE_OVERRIDE=""
-API_BASE="https://127.0.0.1"
+API_BASE=""
+IDENTITY_FILE=""
+SOURCE_COMMIT=""
+SOURCE_TREE=""
+IMAGE_NAME=""
+IMAGE_SHA256=""
+VERIFICATION_RECORD=""
+PROFILE=""
+BOARD_REVISION=""
+RADIO_SKU=""
+SYSTEM_BLOCK=""
+SYSTEM_SYS=""
 
 usage() {
     cat <<USAGE
@@ -142,6 +201,8 @@ options:
   --out DIR       run directory (default: the first writable of /srv/bench,
                   /tmp/mos-bench)
   --token TOK     apid bearer token; or set MOS_BENCH_TOKEN
+  --api URL       confirmed apid base URL; never inferred by this collector
+  --identity FILE public exact-image/target binding (required for a bench stage)
   --date YYYY-MM-DD  the date written into pass/fail rows, when the device's
                   own clock is not to be trusted (see the RTC row)
   --dry-run       run every read-only probe; refuse every mutation, reboot,
@@ -153,8 +214,13 @@ USAGE
 
 while [ $# -gt 0 ]; do
     case "$1" in
+        --out|--token|--identity|--date|--api)
+            [ $# -ge 2 ] && [ -n "$2" ] || { echo "missing value for $1" >&2; exit 2; } ;;
+    esac
+    case "$1" in
         --out)     OUT=${2:-}; shift 2 ;;
         --token)   TOKEN=${2:-}; shift 2 ;;
+        --identity) IDENTITY_FILE=${2:-}; shift 2 ;;
         --date)    DATE_OVERRIDE=${2:-}; shift 2 ;;
         --api)     API_BASE=${2:-}; shift 2 ;;
         --dry-run) DRY_RUN=1; shift ;;
@@ -209,13 +275,77 @@ else
     mkdir -p "$OUT" 2>/dev/null || { echo "FATAL: cannot create --out $OUT" >&2; exit 1; }
 fi
 
+identity_value() {
+    local key=$1 count value
+    count=$(grep -c "^${key}=" "$IDENTITY_FILE" 2>/dev/null || true)
+    [ "$count" -eq 1 ] || die "identity must contain exactly one ${key}= entry"
+    value=$(sed -n "s/^${key}=//p" "$IDENTITY_FILE")
+    [ -n "$value" ] || die "identity value $key is empty"
+    printf '%s' "$value"
+}
+
+load_identity() {
+    [ -n "$IDENTITY_FILE" ] || die "a bench stage requires --identity FILE; no image, endpoint or block device is inferred"
+    [ -r "$IDENTITY_FILE" ] || die "identity file is not readable: $IDENTITY_FILE"
+    SOURCE_COMMIT=$(identity_value SOURCE_COMMIT) || exit 1
+    SOURCE_TREE=$(identity_value SOURCE_TREE) || exit 1
+    IMAGE_NAME=$(identity_value IMAGE_NAME) || exit 1
+    IMAGE_SHA256=$(identity_value IMAGE_SHA256) || exit 1
+    VERIFICATION_RECORD=$(identity_value VERIFICATION_RECORD) || exit 1
+    PROFILE=$(identity_value PROFILE) || exit 1
+    BOARD_REVISION=$(identity_value BOARD_REVISION) || exit 1
+    RADIO_SKU=$(identity_value RADIO_SKU) || exit 1
+    SYSTEM_BLOCK=$(identity_value SYSTEM_BLOCK) || exit 1
+    printf '%s\n' "$SOURCE_COMMIT" | grep -Ex '[0-9a-f]{40}' >/dev/null || die "SOURCE_COMMIT must be 40 lowercase hexadecimal characters"
+    printf '%s\n' "$SOURCE_TREE" | grep -Ex '[0-9a-f]{40}' >/dev/null || die "SOURCE_TREE must be 40 lowercase hexadecimal characters"
+    printf '%s\n' "$IMAGE_SHA256" | grep -Ex '[0-9a-f]{64}' >/dev/null || die "IMAGE_SHA256 must be 64 lowercase hexadecimal characters"
+    printf '%s\n' "$SYSTEM_BLOCK" | grep -Ex '/dev/[A-Za-z0-9._-]+' >/dev/null || die "SYSTEM_BLOCK must name one explicit /dev node"
+    case "$PROFILE" in dev|prod) ;; *) die "PROFILE must be dev or prod" ;; esac
+    [ "$BOARD_REVISION" = CX3576-Z ] || die "BOARD_REVISION must be CX3576-Z"
+    [ "$RADIO_SKU" = AIC8800D80 ] || die "RADIO_SKU must be AIC8800D80"
+    if [ -n "$API_BASE" ]; then
+        case "$API_BASE" in http://*|https://*) ;; *) die "--api requires an explicit HTTP(S) base URL" ;; esac
+        case "$API_BASE" in *'@'*|*'?'*|*'#'*|*[[:space:]]*) die "--api must not contain credentials, query, fragment or whitespace" ;; esac
+        API_BASE=${API_BASE%/}
+    fi
+    SYSTEM_SYS="/sys/class/block/${SYSTEM_BLOCK##*/}"
+}
+
+canonical_identity() {
+    printf '%s\n' \
+        "SOURCE_COMMIT=$SOURCE_COMMIT" \
+        "SOURCE_TREE=$SOURCE_TREE" \
+        "IMAGE_NAME=$IMAGE_NAME" \
+        "IMAGE_SHA256=$IMAGE_SHA256" \
+        "VERIFICATION_RECORD=$VERIFICATION_RECORD" \
+        "PROFILE=$PROFILE" \
+        "BOARD_REVISION=$BOARD_REVISION" \
+        "RADIO_SKU=$RADIO_SKU" \
+        "SYSTEM_BLOCK=$SYSTEM_BLOCK" \
+        "API_BASE=$API_BASE" \
+        "DRY_RUN=$DRY_RUN"
+}
+
+bind_run() {
+    local bound="$OUT/exact-image.env" requested existing
+    requested=$(canonical_identity)
+    if [ -s "$bound" ]; then
+        existing=$(cat "$bound")
+        [ "$existing" = "$requested" ] || die "this run is already bound to a different exact image or target: $bound"
+        return 0
+    fi
+    canonical_identity >"$bound"
+    flush
+}
+
 RESULTS="$OUT/results.tsv"
+DETAILS="$OUT/details.tsv"
 MEASUREMENTS="$OUT/measurements.tsv"
 STATE="$OUT/stage.state"
 LOG="$OUT/log.txt"
 EV="$OUT/evidence/$STAGE"
 mkdir -p "$EV"
-: >>"$RESULTS"; : >>"$MEASUREMENTS"; : >>"$STATE"; : >>"$LOG"
+: >>"$RESULTS"; : >>"$DETAILS"; : >>"$MEASUREMENTS"; : >>"$STATE"; : >>"$LOG"
 
 # --- primitives -------------------------------------------------------------
 
@@ -335,7 +465,7 @@ capf() {
 # docs/bsp/verify-board.sh's own `awk -F'|'` parser, which would then read the
 # result out of the wrong column and report a grammar violation nobody wrote.
 # Both are flattened here, once, rather than at each of the forty call sites.
-one_cell() { printf '%s' "$*" | tr '\n|' '  ' | sed 's/  */ /g; s/^ //; s/ $//'; }
+one_cell() { printf '%s' "$*" | tr '\n|\t' '   ' | sed 's/  */ /g; s/^ //; s/ $//'; }
 
 record() {
     local key=$1 result=$2 evidence date
@@ -363,6 +493,27 @@ record() {
         "$(date -u +%s 2>/dev/null || echo 0)" "$STAGE" "$key" "$result" "$date" "$evidence" >>"$RESULTS"
     flush
     say "  ROW $key = $result  [$evidence]"
+}
+
+detail_record() {
+    local key=$1 result=$2 evidence date
+    evidence=$(one_cell "$3")
+    case "$result" in
+        pass|fail)
+            if [ "$DRY_RUN" -eq 1 ]; then
+                evidence="--dry-run, so this is not a bench observation; the probe would have said '$result': $evidence"
+                result="not tested"
+            fi ;;
+    esac
+    case "$result" in
+        pass|fail) date=$(iso_date); evidence="$evidence$(clock_caveat)" ;;
+        N/A|"not tested") date="—" ;;
+        *) die "internal defect: result '$result' for detail '$key' is outside the grammar" ;;
+    esac
+    printf '%s\t%s\t%s\t%s\t%s\t%s\n' \
+        "$(date -u +%s 2>/dev/null || echo 0)" "$STAGE" "$key" "$result" "$date" "$evidence" >>"$DETAILS"
+    flush
+    say "  DETAIL $key = $result  [$evidence]"
 }
 
 # A Gate D measurement. NOT a dossier row: PLAN-037 names four measurements by
@@ -448,6 +599,38 @@ operator_step() {
     esac
 }
 
+operator_detail() {
+    local key=$1 todo=$2 criterion=$3 verdict note
+    if [ "$DRY_RUN" -eq 1 ]; then
+        detail_record "$key" "not tested" "--dry-run: the operator step was not offered ($todo)"
+        return 0
+    fi
+    if ! interactive; then
+        detail_record "$key" "not tested" "no operator present (stdin is not a terminal); the step was not run: $todo"
+        return 0
+    fi
+    say ""
+    say "  OPERATOR STEP for detail '$key'"
+    say "    do   : $todo"
+    say "    pass : $criterion"
+    ask "press Enter when done" >/dev/null
+    while :; do
+        verdict=$(ask "verdict? pass / fail / skip") || verdict=""
+        case "$verdict" in
+            pass|fail) break ;;
+            skip|"") verdict=skip; break ;;
+            *) say "    answer 'pass', 'fail' or 'skip'." ;;
+        esac
+    done
+    note=$(ask "what did you see? (one line, recorded verbatim)") || note=""
+    [ -n "$note" ] || note="(operator left the observation blank)"
+    case "$verdict" in
+        pass) detail_record "$key" pass "operator: $note" ;;
+        fail) detail_record "$key" fail "operator: $note" ;;
+        skip) detail_record "$key" "not tested" "operator skipped: $note" ;;
+    esac
+}
+
 # operator_note ID "question" -- a measurement a person answers, not a row.
 operator_note() {
     local id=$1 question=$2 answer
@@ -497,27 +680,65 @@ booted_deployment() {
 
 # health_verdict : echo a one-line summary, return 0 when green.
 #
-# "Green" is what the dossier's rows mean by a healthy system: systemd has no
-# failed units, mos-deploy names an authenticated deployment, and mos-health.service completed. It
+# "Green" is what the dossier's rows mean by a healthy system: every named
+# required-health member is green, mos-deploy names an authenticated
+# deployment, and mos-health.service completed. Optional failed units are
+# retained as evidence but do not redefine the required set. It
 # deliberately does NOT wait on `is-system-running` reporting `running` --
 # mos-health.service is a job in the initial transaction, so that state depends
-# on its own completion, and the gate itself resolves it by enumerating failed
-# units instead.
+# on its own completion. Here the confirmation is already expected to have
+# completed, and both services must still answer their read-only probes.
 health_verdict() {
-    local failed=0 sysstate="unknown" slot="" mh="unknown" rc=0
+    local failed="none" health="" member sysstate="unknown" slot="" mh="unknown" rc=0
     if have systemctl; then
         sysstate=$(systemctl is-system-running 2>/dev/null || true)
-        failed=$(systemctl list-units --failed --no-legend --plain 2>/dev/null | grep -c . || true)
+        failed=$(systemctl list-units --failed --no-legend --plain 2>/dev/null | tr '\n' ';' | sed 's/;*$//')
+        [ -n "$failed" ] || failed="none"
         mh=$(systemctl show -p Result --value mos-health.service 2>/dev/null || echo unknown)
     else
         sysstate="systemctl absent"; rc=1
     fi
+    if have journalctl; then
+        health=$(journalctl -b -u mos-health.service --no-pager 2>/dev/null || true)
+        printf '%s\n' "$health" | grep -F "required set: boot-settled mosd apid" >/dev/null || rc=1
+        for member in boot-settled mosd apid; do
+            printf '%s\n' "$health" | grep -F "required member $member: OK" >/dev/null || rc=1
+        done
+    else
+        rc=1
+    fi
     slot=$(booted_deployment) || true
-    [ "${failed:-0}" -eq 0 ] || rc=1
     [ -n "$slot" ] || rc=1
     [ "$mh" = success ] || rc=1
-    printf 'systemd=%s failed-units=%s deployment=%s mos-health=%s' \
-        "${sysstate:-unknown}" "${failed:-?}" "${slot:-none}" "$mh"
+    case "$sysstate" in running|degraded) ;; *) rc=1 ;; esac
+    if ! have timeout || ! have busctl || ! have curl || [ -z "$API_BASE" ]; then
+        printf 'live required-health probes unavailable: need timeout, busctl, curl and confirmed --api'
+        return 2
+    fi
+    timeout 10 busctl --system call com.mos.mosd /com/mos/mosd \
+        com.mos.mosd1 GetState s '' >/dev/null 2>&1 || rc=1
+    curl --fail --silent --show-error --insecure --max-time 10 \
+        "$API_BASE/healthz" >/dev/null 2>&1 || rc=1
+    printf 'systemd=%s optional-failed-units=%s required={boot-settled,mosd,apid} deployment=%s mos-health=%s' \
+        "${sysstate:-unknown}" "$failed" "${slot:-none}" "$mh"
+    return "$rc"
+}
+
+health_window() {
+    local tag=$1 before after first second rc=0
+    before=$(cat /proc/sys/kernel/random/boot_id 2>/dev/null || echo unknown)
+    first=$(health_verdict) || rc=$?
+    if [ "$rc" -ne 0 ]; then
+        printf 'window not started: %s' "$first"
+        return "$rc"
+    fi
+    sleep "$STABILITY_SECONDS" || rc=1
+    capture_boot_state "${tag}-end"
+    after=$(cat /proc/sys/kernel/random/boot_id 2>/dev/null || echo unknown)
+    second=$(health_verdict) || rc=$?
+    [ "$before" != unknown ] && [ "$before" = "$after" ] || rc=1
+    printf 'window=%ss boot-id=%s..%s initial={%s} final={%s}' \
+        "$STABILITY_SECONDS" "$before" "$after" "$first" "$second"
     return "$rc"
 }
 
@@ -559,6 +780,10 @@ api_get() {
         printf '# not collected: no API token (--token / MOS_BENCH_TOKEN)\n' >"$EV/$name.txt"
         return 3
     fi
+    if [ -z "$API_BASE" ]; then
+        printf '# not collected: no confirmed API URL (--api)\n' >"$EV/$name.txt"
+        return 4
+    fi
     curl -sS -k --max-time 20 -H "Authorization: Bearer $TOKEN" \
         "$API_BASE$path" >"$EV/$name.txt" 2>&1
     local rc=$?
@@ -588,10 +813,44 @@ json_scalar() {
 # what qualification.md section 4 means by "cold/warm boot rows state the cycle
 # count".
 cycle_append() {
-    local file=$1 verdict=$2 detail=$3
+    local file=$1 verdict=$2 detail
+    detail=$(one_cell "$3")
     printf '%s\t%s\t%s\n' "$(date -u +%FT%TZ 2>/dev/null || echo unknown)" "$verdict" "$detail" \
         >>"$OUT/$file"
     flush
+}
+cycle_observe() {
+    local file=$1 kind=$2 health_rc=$3 summary=$4 boot_id answer note
+    boot_id=$(cat /proc/sys/kernel/random/boot_id 2>/dev/null || echo unknown)
+    if [ "$health_rc" -eq 2 ]; then
+        say "  cycle not counted: $summary"
+        return 0
+    fi
+    if grep -F "boot-id=$boot_id" "$OUT/$file" >/dev/null 2>&1; then
+        say "  cycle not counted: boot-id=$boot_id is already present in $OUT/$file"
+        return 0
+    fi
+    if [ "$DRY_RUN" -eq 0 ]; then
+        if ! interactive; then
+            say "  cycle not counted: no operator confirmed $kind and its external trace"
+            return 0
+        fi
+        answer=$(ask "does this boot have the required $kind admission and external serial/power trace? yes / no") || answer=""
+        [ "$answer" = yes ] || {
+            say "  cycle not counted: operator did not confirm $kind admission"
+            return 0
+        }
+        note=$(ask "name the admission/trace evidence for this boot (one line)") || note=""
+        [ -n "$note" ] || note="operator supplied no evidence note"
+        summary="$summary; operator=$note"
+    else
+        summary="$summary; dry-run admission fixture"
+    fi
+    if [ "$health_rc" -eq 0 ]; then
+        cycle_append "$file" green "boot-id=$boot_id evidence=$EV $summary"
+    else
+        cycle_append "$file" red "boot-id=$boot_id evidence=$EV $summary"
+    fi
 }
 cycle_verdict() {
     local file=$1 key=$2 want=$3 label=$4 total green
@@ -607,6 +866,20 @@ cycle_verdict() {
     fi
 }
 
+detail_cycle_verdict() {
+    local file=$1 key=$2 want=$3 label=$4 total green
+    total=$(count_lines "$OUT/$file")
+    green=$(awk -F'\t' '$2=="green"' "$OUT/$file" 2>/dev/null | grep -c . || true)
+    green=${green:-0}
+    if [ "$total" -gt "$green" ]; then
+        detail_record "$key" fail "$label: $((total - green)) of $total cycles were not green; see $OUT/$file and evidence/"
+    elif [ "$green" -ge "$want" ]; then
+        detail_record "$key" pass "$label: $green/$green cycles green; see $OUT/$file and evidence/"
+    else
+        detail_record "$key" "not tested" "$label: $green of $want cycles recorded so far; re-run this stage after the next cycle"
+    fi
+}
+
 # ===========================================================================
 # stages
 # ===========================================================================
@@ -614,26 +887,34 @@ cycle_verdict() {
 stage_install() {
     say "== install : the flash, and the profile it wrote =="
     capf release /usr/share/mos/release-identity.env
-    capf emmc-cid /sys/block/mmcblk0/device/cid /sys/block/mmcblk0/device/name \
-        /sys/block/mmcblk0/device/manfid /sys/block/mmcblk0/device/oemid \
-        /sys/block/mmcblk0/device/serial /sys/block/mmcblk0/device/date
-    capf emmc-health /sys/block/mmcblk0/device/life_time /sys/block/mmcblk0/device/pre_eol_info
+    capf emmc-cid "$SYSTEM_SYS/device/cid" "$SYSTEM_SYS/device/name" \
+        "$SYSTEM_SYS/device/manfid" "$SYSTEM_SYS/device/oemid" \
+        "$SYSTEM_SYS/device/serial" "$SYSTEM_SYS/device/date"
+    capf emmc-health "$SYSTEM_SYS/device/life_time" "$SYSTEM_SYS/device/pre_eol_info"
     cap partitions -- lsblk -o NAME,SIZE,TYPE,PARTLABEL,MOUNTPOINT
 
     # The binding qualification.md section 1 requires, and the two elements this
     # tree does not have. A run whose binding is incomplete is not a
     # qualification run, so both are measurements in their own right.
     local part=""
-    [ -r /sys/block/mmcblk0/device/name ] && part=$(cat /sys/block/mmcblk0/device/name 2>/dev/null)
+    [ -r "$SYSTEM_SYS/device/name" ] && part=$(cat "$SYSTEM_SYS/device/name" 2>/dev/null)
     if [ -n "$part" ]; then
         measure BIND-STORAGE "eMMC part name '$part'; CID and manfid in evidence/$STAGE/emmc-cid.txt"
     else
-        measure BIND-STORAGE "not collected: /sys/block/mmcblk0/device/name unreadable -- the dossier's binding stays incomplete"
+        measure BIND-STORAGE "not collected: $SYSTEM_SYS/device/name unreadable -- the dossier's binding stays incomplete"
     fi
     local profile=""
     [ -r /usr/share/mos/release-identity.env ] &&
         profile=$(sed -n 's/^PROFILE=//p' /usr/share/mos/release-identity.env | head -n1)
     measure BIND-PROFILE "${profile:-not collected: no PROFILE in release-identity.env}"
+    measure BIND-IMAGE "source=$SOURCE_COMMIT tree=$SOURCE_TREE image=$IMAGE_NAME sha256=$IMAGE_SHA256 verification=$VERIFICATION_RECORD profile=$PROFILE board=$BOARD_REVISION radio=$RADIO_SKU system=$SYSTEM_BLOCK"
+
+    operator_detail I1 \
+        "identify the authorized RockUSB unit and host; verify IMAGE_SHA256 and VERIFICATION_RECORD, flash IMAGE_NAME with an explicit MOS_IMAGE, then compare the full $SYSTEM_BLOCK readback" \
+        "the source/tree, signed release and component records, image SHA-256, profile, board/radio revision, exact target and full readback all agree with exact-image.env"
+    operator_detail B1 \
+        "erase the identified development unit, install the bound complete image and retain uninterrupted serial through first required-health confirmation" \
+        "the blank unit reaches authenticated root/support, DATA growth, provisioning and the complete required-health set for this profile"
 
     operator_step install \
         "confirm the flash: which host, which rkdeveloptool version, which image file, and was the eMMC blank or erased first" \
@@ -653,19 +934,16 @@ stage_firstboot() {
     cap networkctl  -- networkctl list
 
     local summary rc=0
-    summary=$(health_verdict) || rc=$?
-    if [ "$rc" -eq 0 ]; then
-        cycle_append cycles-cold.tsv green "$summary"
-    else
-        cycle_append cycles-cold.tsv red "$summary"
-    fi
+    summary=$(health_window cold) || rc=$?
+    cycle_observe cycles-cold.tsv "fully unpowered cold start" "$rc" "$summary"
     say "  this boot: $summary"
     cycle_verdict cycles-cold.tsv cold-boot "$COLD_CYCLES" "cold boot from fully unpowered"
+    detail_cycle_verdict cycles-cold.tsv B2 "$COLD_CYCLES" "cold boot with ${STABILITY_SECONDS}-second required-health window"
 
     # --- row 5, growth half -------------------------------------------------
-    local datasize disksize
+    local datasize disksize s1_growth_failed=0
     datasize=$(df -B1 --output=size /mnt/data 2>/dev/null | tail -n1 | tr -d ' ')
-    disksize=$(cat /sys/block/mmcblk0/size 2>/dev/null || echo "")
+    disksize=$(cat "$SYSTEM_SYS/size" 2>/dev/null || echo "")
     if [ -n "$datasize" ] && [ -n "$disksize" ] && [ "$disksize" -gt 0 ] 2>/dev/null; then
         # DATA is the only tier that grows; it should be most of what is left
         # after the fixed partitions. The loader's survival is the other half:
@@ -675,11 +953,20 @@ stage_firstboot() {
         measure GROWTH "DATA is ${datasize} bytes of a ${diskbytes}-byte medium (${pct}%)"
         if [ "$pct" -ge 40 ]; then
             record storage "not tested" "growth half observed on this boot: DATA grew to ${pct}% of the medium and the unit booted, so the loader partition survived repart; the fill half is stage 'storagefill'"
+            detail_record S1 "not tested" "DATA-only growth is ${pct}% of $SYSTEM_BLOCK; exact FIRMWARE/SYSTEM geometry and next-boot GPT agreement still require operator readback"
         else
             record storage fail "DATA is only ${pct}% of the medium after first boot; systemd-repart growth did not run or did not complete (see evidence/$STAGE/repart.txt)"
+            detail_record S1 fail "DATA is only ${pct}% of $SYSTEM_BLOCK after first boot"
+            s1_growth_failed=1
         fi
     else
-        record storage "not tested" "growth half not collected: could not read /mnt/data size or /sys/block/mmcblk0/size"
+        record storage "not tested" "growth half not collected: could not read /mnt/data size or $SYSTEM_SYS/size"
+        detail_record S1 "not tested" "could not read /mnt/data size or $SYSTEM_SYS/size"
+    fi
+    if [ "$s1_growth_failed" -eq 0 ]; then
+        operator_detail S1 \
+            "compare before/after block geometry and bytes for FIRMWARE, SYSTEM and DATA on $SYSTEM_BLOCK, then capture the next-boot primary/backup GPT scan" \
+            "FIRMWARE is unchanged, SYSTEM is exactly 1 GiB, only DATA grows, both GPT copies agree, and the bound eMMC identity/health surface is retained"
     fi
 
     # --- row 11, offline service -------------------------------------------
@@ -699,6 +986,9 @@ stage_firstboot() {
             "with NO cable attached: read the provisioning document off the medium, log into apid over the console-published address, change one setting and read it back" \
             "the device has an identity-derived hostname, a minted credential, a provisioning document and a listening apid, and a configuration change round-trips -- all with no network. See ../design/provisioning.md section 2."
     fi
+    operator_detail F4 \
+        "with every external network path physically absent, use the confirmed local management path to inspect provisioning, change and read back one setting, then request authenticated shutdown" \
+        "local management, provisioning and shutdown work without network time and without an inferred API endpoint"
 }
 
 stage_inventory() {
@@ -818,11 +1108,15 @@ stage_warmboot() {
     capf saved-floor /mnt/data/state/mos/clock /var/lib/systemd/timesync/clock
 
     local summary rc=0
-    summary=$(health_verdict) || rc=$?
-    if [ "$rc" -eq 0 ]; then cycle_append cycles-warm.tsv green "$summary"
-    else cycle_append cycles-warm.tsv red "$summary"; fi
+    summary=$(health_window warm) || rc=$?
+    cycle_observe cycles-warm.tsv "authenticated reboot with complete exitrd teardown" "$rc" "$summary"
     say "  this boot: $summary"
     cycle_verdict cycles-warm.tsv warm-boot "$WARM_CYCLES" "warm reboot from a running system"
+    detail_cycle_verdict cycles-warm.tsv B3 "$WARM_CYCLES" "authenticated reboot with exitrd teardown and ${STABILITY_SECONDS}-second required-health window"
+
+    operator_detail B4 \
+        "request authenticated power-off, retain serial through complete teardown and loss of power, then reapply bench power and re-run this stage" \
+        "power-off completes without a watchdog reset; the later physical power-on has a new boot ID and remains required-health green for ${STABILITY_SECONDS} seconds"
 
     # --- row 8 --------------------------------------------------------------
     #
@@ -837,6 +1131,9 @@ stage_warmboot() {
     operator_step rtc \
         "remove power entirely for TEN MINUTES, then power on and re-run this stage" \
         "either the clock comes back within a minute of true time before any network sync (a working battery-backed RTC), or it comes back at the saved floor -- max(RTC, saved clock) per ../design/time.md section 3 -- monotonically. Both are a pass; the clock going BACKWARDS, or the device believing a time it should not, is a fail. Say which of the two happened."
+    operator_detail F2 \
+        "identify rtc0, remove all power for ten minutes with network absent, then record hardware time, saved floor and wall clock before network sync" \
+        "rtc0 identity is recorded and time is either battery-retained or resumes monotonically from the documented saved floor"
 }
 
 stage_network() {
@@ -869,6 +1166,15 @@ stage_network() {
     operator_step network \
         "attach Ethernet to eth0 and confirm a lease; move to eth1 and confirm; then both. Configure the Wi-Fi client against the bench AP and transfer data over it. Say which physical port is which interface name." \
         "Ethernet and each named radio module associate and transfer under the shipped stack. eth1 failing to take a DHCPv4 lease is a FAIL for this row, not a footnote. A Wi-Fi failure traced to the deferred SDIO power sequence is likewise a fail with a named cause, which is worth more than a 'not tested'."
+    operator_detail N1 \
+        "map both physical Ethernet ports, then record topology-derived MAC, DHCP, DNS and link-bound application transfer for each across three boots" \
+        "both ports retain their expected distinct MAC identities and independently carry DHCP, DNS and application traffic"
+    operator_detail N2 \
+        "on the bound AIC8800D80 SKU and controlled AP, record global/phy regulatory state, firmware load, association, DHCP, DNS and link-bound transfer" \
+        "post-service regulatory state is correct and Wi-Fi carries authenticated application traffic"
+    operator_detail N3 \
+        "name a controlled Bluetooth peer and profile, then record controller identity, pairing, connection and bidirectional operation" \
+        "the named profile exchanges data in both directions; controller enumeration alone is insufficient"
 }
 
 stage_fieldbus() {
@@ -898,6 +1204,9 @@ stage_fieldbus() {
     operator_step fieldbus \
         "connect the second CAN node at 250 kbit/s classic (FD off) and pass frames both ways; plug a host PC into the OTG port and log in over the CDC ACM console; plug a USB device into a host port" \
         "CAN traffic passes both ways at the shipped configuration; the gadget enumerates on the host PC and its getty logs in; a USB device on a host port enumerates. Say which of the three worked -- a partial result is a fail with the working parts named, not a pass."
+    operator_detail F1 \
+        "enumerate a USB host device and the OTG CDC-ACM login, then exchange CAN frames both ways at the declared bitrate on the isolated local bench bus" \
+        "USB host, authenticated gadget login and bidirectional can0 traffic all work with retained counters and errors"
 }
 
 stage_thermal() {
@@ -971,6 +1280,9 @@ stage_thermal() {
     operator_step thermal \
         "confirm the unit stayed up and responsive through the load, and say whether it reached a trip point" \
         "the unit stays inside its thermal envelope; where it reaches a trip point, frequency drops and the system stays up. A reset, a hang or an emergency poweroff during the load is a fail -- CONFIG_THERMAL_EMERGENCY_POWEROFF_DELAY_MS=0 means a critical trip powers the board off immediately, so that outcome looks like a dead unit rather than a log line. Survived with peak ${peak} mC: $summary"
+    operator_detail F3 \
+        "bind the enclosure and airflow to this thirty-minute load and five-minute cooldown, then confirm responsiveness and any throttling" \
+        "the board stays up, throttles at declared trip points and returns toward idle temperature without crash or emergency power-off"
 }
 
 stage_watchdog() {
@@ -978,6 +1290,7 @@ stage_watchdog() {
     cap wd-before-class -- ls -l /sys/class/watchdog/
     cap wd-before-boots -- journalctl --list-boots --no-pager
     cap wd-before-dmesg -- dmesg
+    detail_record W1 "not tested" "this collector has no supported pre-PID-1 hang point; retain one continuous serial trace of U-Boot arming, Linux takeover and PID 1 ownership before qualifying W1"
 
     if [ ! -e /dev/watchdog0 ] && [ ! -e /dev/watchdog ]; then
         record watchdog fail "no /dev/watchdog on the running system, while the board DTS sets /watchdog@2ace0000 okay and CONFIG_DW_WATCHDOG=y is built. There is nothing to arm; see evidence/$STAGE/wd-before-dmesg.txt"
@@ -1016,6 +1329,9 @@ stage_watchdog_after() {
     operator_step watchdog \
         "say how long after the last pet the board reset, and what the console printed on the way down" \
         "a hung system is reset by the watchdog within the configured timeout, AND the reset cause is readable afterwards. Both halves. If no bootstatus attribute exists and nothing else names the cause, this row is a FAIL on its second half with the first half stated -- it is not a pass, because the row claims both."
+    operator_detail W2 \
+        "bind the reset interval, external serial/power trace, persisted trial count and readable reset cause to this post-PID-1 hang" \
+        "the watchdog expires within its configured window, a trial remains spent, and the reset cause is readable after the healthy restart"
 }
 
 stage_update() {
@@ -1033,6 +1349,24 @@ stage_update() {
     operator_step ab-update \
         "start from a complete current factory image. Import a signed GOOD MOSUPD01 archive with mos-deploy import <archive>, install its verified descriptor with mos-deploy install /mos/updates/verified/<id>.json --objects /mos/updates/verified/objects, then reboot and observe health confirmation. Repeat for root-only, kernel-only and combined releases. Then import and install a signed BAD-health deployment and observe three failed trials and fallback without intervening. Capture native status and the serial trace on every boot." \
         "only the named changed components are written; firmware and reused object digests stay unchanged; three bad trials exhaust without refill; the retained confirmed deployment boots healthy. Confirmation happens only through the health gate."
+    operator_detail U1 \
+        "install a signed root-only update and retain archive/catalog hashes plus before/after deployment and component identities" \
+        "root changes, kernel/support bytes are reused exactly, and required health confirms the deployment"
+    operator_detail U2 \
+        "install a signed kernel/support-only update and retain archive/catalog hashes plus before/after deployment and component identities" \
+        "kernel/support changes, root bytes are reused exactly, and required health confirms the deployment"
+    operator_detail U3 \
+        "install a signed combined root and kernel/support update and retain every component identity" \
+        "both new authenticated files publish atomically and required health confirms the deployment"
+    operator_detail U4 \
+        "install a higher-generation signed candidate that fails one required-health member and retain all three serial traces and record copies without refill" \
+        "exactly three persisted trials are spent, the retained confirmed deployment is selected, and the failed ID remains suppressed"
+    operator_detail U5 \
+        "exercise the selected online or offline acquisition path while recording DATA staging/download/verified objects and native state before activation" \
+        "authenticated lengths and hashes agree, and no partial candidate becomes boot-visible"
+    operator_detail U6 \
+        "apply the separately signed current firmware package on this identified unit, verify complete readback and compare both native record copies" \
+        "firmware readback matches the signed receipt, native records remain valid, and normal OS update writes no firmware bytes"
     cap upd-after-deployment -- mos-deploy status
     booted_deployment >"$OUT/update-after.id" || true
     flush
@@ -1057,6 +1391,13 @@ stage_powercut() {
     operator_step power-cut \
         "perform the cut matrix using the local bench power controller. Re-run this stage after each power-up and attach the external trace; mark an unobservable cut as inconclusive." \
         "each interruption exposes either the previous committed deployment or a fully staged candidate. Referenced objects remain complete; torn records are refused; persisted attempts never refill; exhaustion falls back or reaches the defined recovery stop. VM process kills do not establish this physical result."
+    operator_detail P1 "perform at least ten externally timed cuts during download or offline import" "no incomplete candidate is boot-visible and the prior deployment boots after every cut"
+    operator_detail P2 "perform at least ten externally timed cuts during destination object writes and file sync" "current/fallback descriptors and every referenced component file remain complete"
+    operator_detail P3 "perform at least ten externally timed cuts on each object and descriptor directory-publication boundary" "every visible object matches its authenticated length and digest"
+    operator_detail P4 "perform at least ten externally timed cuts during candidate activation" "selection is either the previous committed state or the fully durable candidate, never a partial record"
+    operator_detail P5 "perform at least fifty randomized cuts during redundant trial-attempt record writes" "an unpersisted decrement refuses launch and a spent attempt never refills"
+    operator_detail P6 "perform at least ten externally timed cuts during required-health confirmation" "reconciliation preserves the authenticated running deployment and retained fallback without refilling trials"
+    operator_detail P7 "perform at least ten cuts during garbage collection plus the P5 record series" "every retained descriptor/object and at least one valid native record copy survive"
 }
 
 stage_storagefill() {
@@ -1064,20 +1405,64 @@ stage_storagefill() {
     say "  COPY THE RUN DIRECTORY OFF THE DEVICE BEFORE THIS STAGE."
     cap fill-before-df -- df -h
     api_get /api/v1/storage/status fill-before-api || true
-    capf emmc-health-now /sys/block/mmcblk0/device/life_time /sys/block/mmcblk0/device/pre_eol_info
+    capf emmc-health-now "$SYSTEM_SYS/device/life_time" "$SYSTEM_SYS/device/pre_eol_info"
+    cap quota-projects -- repquota -P -n -O csv /mnt/data
+    cap namespace-mounts -- sh -c 'for p in /var /mos /srv /mos/containers; do findmnt --raw --evaluate "$p"; done'
+    cap namespace-stat -- stat -c '%n device=%d inode=%i mode=%a owner=%u:%g' /var /mos /srv /mos/containers
+    cap container-storage -- podman info
 
     local lt peol
-    lt=$(cat /sys/block/mmcblk0/device/life_time 2>/dev/null || echo "")
-    peol=$(cat /sys/block/mmcblk0/device/pre_eol_info 2>/dev/null || echo "")
+    lt=$(cat "$SYSTEM_SYS/device/life_time" 2>/dev/null || echo "")
+    peol=$(cat "$SYSTEM_SYS/device/pre_eol_info" 2>/dev/null || echo "")
     if [ -n "$lt" ]; then
         measure EMMC-HEALTH "life_time='$lt' pre_eol_info='$peol' -- each life_time byte is a 10% bucket; 0x00 means the device does not define that estimate, which is not the same as healthy"
     else
-        measure EMMC-HEALTH "not collected: /sys/block/mmcblk0/device/life_time unreadable. ../design/storage.md section 4 says the surface must answer 'unsupported' with a reason rather than an empty object, and this is that case."
+        measure EMMC-HEALTH "not collected: $SYSTEM_SYS/device/life_time unreadable. ../design/storage.md section 4 says the surface must answer 'unsupported' with a reason rather than an empty object, and this is that case."
     fi
 
     operator_step storage \
-        "fill /mos and /srv through the production service account until the bulk byte quota refuses writes; repeat with inode exhaustion. Fill the allowed /var/tmp backing project separately. Confirm state/meta writes and apid remain available, unlisted /var paths reject writes, and status reports DATA capacity once. Remove only the test filler and repeat the health check." \
-        "growth (stage firstboot) plus actual byte/inode quota containment under production writer privileges; measured state/meta reserve remains writable. Report eMMC health or an explicit unsupported reason."
+        "verify /mos, /srv and /mos/containers have zero byte and inode limits. Exercise representative writes across writable /var, exhaust only the bounded /var project by bytes and inodes, and confirm state/meta plus apid remain available. For a container, verify bind, storage and tmp paths are independent/private, then reset and confirm isolation. Remove only the test filler and repeat health." \
+        "the three unbounded namespaces retain zero byte and inode limits; whole /var is writable but bounded; container bind/storage/tmp are private and reset-isolated; state/meta reserve stays writable. Report eMMC health or an explicit unsupported reason."
+    operator_detail S2 \
+        "perform the current quota, representative /var write, bounded exhaustion and container reset-isolation matrix captured above" \
+        "/mos, /srv and /mos/containers have zero byte and inode limits; /var is writable and bounded; private container data does not cross reset boundaries"
+}
+
+stage_display() {
+    say "== display : HDMI presentation, tty2 and late attach =="
+    cap drm-state -- sh -c 'for c in /sys/class/drm/card*-HDMI-A-*; do [ -e "$c/status" ] || continue; printf "%s status=%s\n" "$c" "$(cat "$c/status")"; cat "$c/modes" 2>/dev/null; done'
+    cap fb-state -- sh -c 'for f in /sys/class/graphics/fb*; do [ -e "$f" ] || continue; printf "%s name=%s mode=%s\n" "$f" "$(cat "$f/name" 2>/dev/null)" "$(cat "$f/modes" 2>/dev/null)"; done'
+    cap vt-units -- systemctl status getty@tty1.service getty@tty2.service
+    capf cmdline /proc/cmdline
+    operator_detail D1 \
+        "connect the named HDMI sink before power-on, photograph the connector/mode and observe the screen through the 180-second health window" \
+        "one centered YBO - Hub OS gradient logo remains visible with no normal login prompt"
+    operator_detail D2 \
+        "with a named USB keyboard, use Alt+F2 and Ctrl+Alt+F2, authenticate on tty2, log out, and record tty1/tty2 unit state" \
+        "both shortcuts reach ordinary authenticated tty2, no autologin occurs, and tty1 has no getty"
+    operator_detail D3 \
+        "after the tty2 login/logout test, return to tty1 and retain a photograph plus connector/fb state" \
+        "the centered product presentation is restored without exposing stale diagnostic text"
+    operator_detail D4 \
+        "boot without an HDMI sink, record connector/fb state, then attach the named sink after the system is healthy" \
+        "the product presentation appears on the new viewport without reboot or backing-allocation growth"
+    detail_record D5 "not tested" "optional observation only: current row D5 is inherited from the historical PLAN-088 section 2.2 panic obligation (old bench D4) and is superseded by the current serial-only console policy; do not trigger an extra crash"
+}
+
+stage_accelerators() {
+    say "== accelerators : NPU, encoder and decoder workloads =="
+    cap accelerator-devices -- sh -c 'ls -l /dev/dri /dev/rga /dev/mpp_service /dev/rknpu* 2>/dev/null'
+    cap accelerator-iomem -- sh -c "grep -iE 'rknpu|rkvenc|rkvdec|mpp|fdab|fdbd|fdc3' /proc/iomem"
+    cap accelerator-dmesg -- sh -c "dmesg | grep -iE 'rknpu|rkvenc|rkvdec|mpp|iommu|reset|clock|thermal'"
+    operator_detail A1 \
+        "name the versioned NPU model, runner, input and expected digest; run it repeatedly while recording binding, IOMMU/MMIO ownership, clocks, power and errors" \
+        "every inference output matches the expected digest and resources remain stable; unresolved MMIO ownership or EBUSY is a fail"
+    operator_detail A2 \
+        "name the versioned input, codec/settings and expected output checks; encode repeatedly on both VENC cores while recording device use, clocks and resets" \
+        "both hardware encoder cores produce valid expected output and recover cleanly across repeated operation"
+    operator_detail A3 \
+        "name the versioned bitstream and expected frame/output checks; decode repeatedly while recording hardware use, clocks and resets" \
+        "hardware decode produces valid expected frames and recovers cleanly across repeated operation"
 }
 
 stage_recovery() {
@@ -1088,8 +1473,14 @@ stage_recovery() {
     api_get /api/v1/diagnostics/snapshots rec-diagnostics || true
 
     operator_step recovery \
-        "walk ../user/recovery.md's ordering, one rung at a time, re-reading the system after each: (1) read-only diagnosis via a diagnostics snapshot; (2) guarded rollback to the authenticated retained deployment; (3) configuration reset; (4) application-data reset; (5) credential recovery and full factory reset, both of which MUST be refused because BOARD_RECOVERY_ACTIONS is empty; (6) a complete latest rescue image, recording the actual firmware boot-selection behavior; (7) reflash from maskrom." \
+        "walk ../user/recovery.md's current ordering, re-reading the system after each: read-only diagnosis; guarded rollback; configuration reset; application-data reset; confirm credential recovery and full factory reset are refused because BOARD_RECOVERY_ACTIONS is empty; then induce the documented invalid/exhausted native-record states, observe real RockUSB recovery, and restore the exact bound complete image from maskrom." \
         "every path in the dossier's Recovery method section restores a unit from the state it claims to handle, and the two refused rungs REFUSE -- a credential recovery or a factory reset that succeeded on this board would be a fail, not a pass. A path that could not be exercised at all records what was missing."
+    operator_detail R1 \
+        "exercise diagnostics, guarded rollback, configuration reset and application-data reset separately, comparing deployment, identity and namespace digests; also verify both unsupported destructive actions refuse" \
+        "each operation preserves its declared survivors and credential/full-factory recovery refuse"
+    operator_detail R2 \
+        "induce invalid and exhausted native records, observe real RockUSB selection, then restore with the exact bound complete image from maskrom" \
+        "unsigned boot and attempt refill are refused, and complete reflash restores the identified unit"
 }
 
 # ===========================================================================
@@ -1097,7 +1488,29 @@ stage_recovery() {
 # ===========================================================================
 
 last_for() {
-    awk -F'\t' -v k="$1" '$3==k {r=$4; d=$5; e=$6} END {if (r!="") printf "%s\t%s\t%s", r, d, e}' "$RESULTS"
+    awk -F'\t' -v k="$1" '
+        $3==k {
+            r=$4; d=$5; e=$6
+            if ($4=="pass" || $4=="fail") {decisive=$4; decisive_date=$5; decisive_evidence=$6}
+        }
+        END {
+            if (decisive!="") printf "%s\t%s\t%s", decisive, decisive_date, decisive_evidence
+            else if (r!="") printf "%s\t%s\t%s", r, d, e
+        }
+    ' "$RESULTS"
+}
+
+last_detail_for() {
+    awk -F'\t' -v k="$1" '
+        $3==k {
+            r=$4; d=$5; e=$6
+            if ($4=="pass" || $4=="fail") {decisive=$4; decisive_date=$5; decisive_evidence=$6}
+        }
+        END {
+            if (decisive!="") printf "%s\t%s\t%s", decisive, decisive_date, decisive_evidence
+            else if (r!="") printf "%s\t%s\t%s", r, d, e
+        }
+    ' "$DETAILS"
 }
 
 stage_for_row() {
@@ -1110,7 +1523,7 @@ stage_for_row() {
 }
 
 do_report() {
-    local entry key label found result date evidence
+    local entry key label class stage requirement found result date evidence
 
     printf '# cx3576 bench run %s\n\n' "$OUT"
     printf 'Collector v%s. Stages recorded as done: %s\n\n' \
@@ -1129,6 +1542,22 @@ do_report() {
             evidence="not reached by this run; stage '$(stage_for_row "$key")' was not run"
         fi
         printf '| %s | %s | %s | %s |\n' "$label" "$result" "$date" "$evidence"
+    done
+
+    printf '\n## Current acceptance details\n\n'
+    printf '| Id | Class | Result | Date | Requirement / evidence |\n'
+    printf '|---|---|---|---|---|\n'
+    for entry in "${DETAIL_ROWS[@]}"; do
+        IFS='|' read -r key class stage requirement <<<"$entry"
+        found=$(last_detail_for "$key")
+        if [ -n "$found" ]; then
+            IFS=$'\t' read -r result date evidence <<<"$found"
+        else
+            result="not tested"; date="—"
+            evidence="not reached by this run; stage '$stage' was not run"
+        fi
+        printf '| %s | %s | %s | %s | %s — %s |\n' \
+            "$key" "$class" "$result" "$date" "$requirement" "$evidence"
     done
 
     printf '\n## Gate D measurements\n\n'
@@ -1159,10 +1588,18 @@ if [ "$STAGE" = report ]; then
 fi
 
 stage_assumes "$STAGE" >/dev/null || die "'$STAGE' is not a stage. Run '$0 stages'."
+load_identity
+if [ "$DRY_RUN" -eq 0 ] && [ ! -b "$SYSTEM_BLOCK" ]; then
+    die "SYSTEM_BLOCK is not a block device on this unit: $SYSTEM_BLOCK"
+fi
+bind_run
+EV=$(mktemp -d "$OUT/evidence/$STAGE/$(date -u +%Y%m%dT%H%M%SZ).XXXXXX") || die "cannot allocate a new evidence capture directory"
 
 say "=============================================================="
 say "cx3576 bench collector v$COLLECTOR_VERSION -- stage '$STAGE'"
 say "run directory: $OUT"
+say "capture directory: $EV"
+say "binding: source=$SOURCE_COMMIT image=$IMAGE_NAME sha256=$IMAGE_SHA256 target=$SYSTEM_BLOCK board=$BOARD_REVISION radio=$RADIO_SKU profile=$PROFILE"
 [ "$DRY_RUN" -eq 1 ] && say "MODE: --dry-run (read-only probes; every mutation refused)"
 interactive || say "MODE: no terminal on stdin -- operator steps will record 'not tested'"
 say "=============================================================="
@@ -1184,6 +1621,8 @@ case "$STAGE" in
     update)      stage_update ;;
     powercut)    stage_powercut ;;
     storagefill) stage_storagefill ;;
+    display)     stage_display ;;
+    accelerators) stage_accelerators ;;
     recovery)    stage_recovery ;;
     *)           die "'$STAGE' is not a stage. Run '$0 stages'." ;;
 esac
