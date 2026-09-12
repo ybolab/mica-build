@@ -82,8 +82,12 @@ Implementing Phase 1 (the mechanism inside this tree); approved 2026-09-12.
   stay on the Gitea registry. Retired worktrees `mos-arm64-package-source`,
   `mos-arm64-production` and `mos-discarded-20260912-1123` removed at the
   user's request; the Phase 1 worktree moved to `/srv/ybolab/mica/mica-build`.
-  Open: this machine's SSH key is not on GitHub (first push), and the
-  superseded Gitea repositories await a delete decision.
+- 2026-09-12 23:40 (user): keep Gitea and update both forges in step; the
+  SSH key is on GitHub; the main checkout is not renamed yet, the work
+  continues in a fresh clone under `/srv/ybolab/mica/mica`. `git.ds.cc` was
+  unreachable at that moment (443 and 33 refused), so the Gitea side --
+  renaming `mica-build` to `mica`, creating `mica-debian` and `mica-system`,
+  pushing -- is pending until it answers; GitHub received `main`.
 
 ## Findings
 
