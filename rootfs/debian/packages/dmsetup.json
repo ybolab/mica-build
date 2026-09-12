@@ -17,7 +17,8 @@
       "url": "https://snapshot.debian.org/archive/debian/20260905T000000Z/pool/main/l/lvm2/dmsetup_1.02.205-2_arm64.deb",
       "consumers": [
         "mos-board-virt-arm64",
-        "mos-board-cx3576"
+        "mos-board-cx3576",
+        "mos-board-s905x5m"
       ]
     }
   }
