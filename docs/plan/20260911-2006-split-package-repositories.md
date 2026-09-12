@@ -107,13 +107,14 @@ pins within one repository stay exact.
 
 ### Forge and tooling facts (probed 2026-09-12)
 
-- `origin` is `ssh://git@git.ds.cc:33/ybolab/mica-build.git` (internal
-  Gitea `1.26.1`; the organisation was renamed from `miehq`, the repository
-  from `mos` on 2026-09-12). The organisation is private. The four target
-  repositories `mica-build-env`, `micad`, `mica-deploy` and `mica-podman`
-  were created empty and private on 2026-09-12 (default branch `main`, no
-  initial commit); the other members are `km2210`, `cx3576-alpine`,
-  `s905x5m-alpine`, `sdcr200`.
+- `origin` is `git@github.com:ybolab/mica.git` since 2026-09-12 23:25; the
+  internal Gitea remote (`ssh://git@git.ds.cc:33/ybolab/mica-build.git`,
+  Gitea `1.26.1`, organisation renamed from `miehq` and repository from
+  `mos` earlier that day) is kept as the `gitea` remote for the registry.
+  On GitHub the `ybolab` organisation holds `mica` (existing, empty) and the
+  six package repositories created empty and private on 2026-09-12; on
+  Gitea the four repositories created earlier that day (`mica-build-env`,
+  `micad`, `mica-deploy`, `mica-podman`) are superseded.
 - The Debian registry is enabled and round-tripped on 2026-09-12 with a
   throwaway archive: `PUT .../pool/mica/<component>/upload` answers 201 (409
   for a duplicate name), the download is byte-identical and answers 401
@@ -139,16 +140,33 @@ pins within one repository stay exact.
 
 ### Target repository set
 
-All under `ybolab` on `git.ds.cc`, one repository per package, named for
-Mica OS (the project's current name): the assembly is `mica-build`, the
-daemon repository `micad`, the others `mica-` prefixed. Package, binary,
-unit, bus and path names inside the archives are renamed to Mica OS by the
-phase that moves them (section 12); the split and the rename are one
-operation per repository, decided 2026-09-12.
+One repository per package, named for Mica OS (the project's current
+name), under the `ybolab` organisation on **GitHub** (decided 2026-09-12
+23:20, superseding `git.ds.cc` as the source host): the assembly and
+documentation repository is `git@github.com:ybolab/mica.git`, the daemon
+repository `micad`, the others `mica-` prefixed. Locally every repository is
+its own checkout under `/srv/ybolab/mica/<repository>/`, so the hierarchy
+on disk is the organisation's. Package, binary, unit, bus and path names
+inside the archives are renamed to Mica OS by the phase that moves them
+(section 12); the split and the rename are one operation per repository,
+decided and confirmed 2026-09-12.
+
+GitHub has no Debian package registry, so the archives keep their home on
+the internal Gitea: `build-env/deb/registry.env` still names
+`https://git.ds.cc/api/packages/ybolab/debian`, distribution `mica`, and the
+component stays the source repository's name (`mica` for archives the
+assembly builds, once `origin` points at GitHub; the `mica-build` rows the
+Phase 1 proof locked are replaced at the next `os-lock-bump`). The Gitea
+repositories created on 2026-09-12 (`mica-build`, `mica-build-env`, `micad`,
+`mica-deploy`, `mica-podman` on `git.ds.cc/ybolab`) are superseded and can be
+deleted; the `ybolab` Gitea organisation stays for the registry and its
+token. Moving the archives to GitHub would mean OCI artifacts on `ghcr.io`
+through `oras`, which section *Alternatives* declined as a package format
+and which this decision does not reopen.
 
 | Repository | Content | Publishes |
 |---|---|---|
-| `mica-build` (this one) | `boards/`, `rootfs/` (with `rootfs/packages-src/` producers), `build/`, `verify/`, `tests/`, `pkgs/mos-boot/`, `update-server/`, `docs/`, `boards/*/deb/`, the lock | factory images, update archives, release directories |
+| `mica` (this one; `mica-build` until 2026-09-12 23:20) | `boards/`, `rootfs/` less `debian/` and `packages-src/`, `build/`, `verify/`, `tests/`, `pkgs/mos-boot/`, `update-server/`, `docs/`, `boards/*/deb/`, the lock | factory images, update archives, release directories |
 | `mica-build-env` | today's `build-env/` unchanged in layout, plus `tests/deb-package-gate.sh` and the new `fetch.sh`, `lock.sh`, `publish.sh`, `source.sh` | consumed as a git submodule at `build-env/` by every other repository |
 | `micad` | `pkgs/mosd/*` incl. `deb/`, `hack/`, `tests/` (dbus policy, apid-api harness), `apid/ui` | `mosd`, `mos-apid`, `mos-mqttd`, `mos-mqtt-broker` |
 | `mica-deploy` | `pkgs/mos-deploy/*`, `tests/file-ab-faults/`, `tests/component-contracts/`, `tests/boot-shutdown-test.sh` | `mos-deploy`, and a new `mos-lifecycle` archive carrying the static `mos-init` and `mos-shutdown` per architecture |
@@ -362,8 +380,7 @@ lock and the gate relocation; `pkgs/README.md` says what is left
 Decided 2026-09-12: the split and the rename proceed together. The phase
 that moves a component renames what it moves, so no repository is created
 under a name it will not keep and no archive is published twice for a
-rename. Proposed table (confirmation of the exact names is the one open
-input; nothing below is renamed until it is confirmed):
+rename. The table was confirmed by the user on 2026-09-12 23:20:
 
 | Today | Proposed | Renamed in |
 |---|---|---|
@@ -571,8 +588,18 @@ Run 2026-09-12; results in the task record's *Verification*.
   `make build-env` in every repository; publishing them to the container
   registry is not part of this plan.
 - Decided 2026-09-12 (user): the split and the Mica OS rename proceed
-  together, per section 12; the exact names in that table await
-  confirmation. Asked the same day whether `rootfs/`, and the Debian base in
+  together, per section 12; the table was confirmed at 23:20 together with
+  the move to GitHub (`git@github.com:ybolab/mica.git` as the documentation
+  and main repository, one GitHub repository per package) and the local
+  layout `/srv/ybolab/mica/<repository>/`. `ybolab/mica` already existed on
+  GitHub (empty); `mica-build-env`, `micad`, `mica-deploy`, `mica-podman`,
+  `mica-debian` and `mica-system` were created private on 2026-09-12 23:25
+  after the `aamf` account's pending organisation membership was accepted.
+  `origin` of this checkout is `git@github.com:ybolab/mica.git` (the Gitea
+  remote is kept as `gitea`); nothing has been pushed, and this machine's
+  SSH key is not registered with GitHub yet (`git@github.com` answers
+  "Permission denied (publickey)"), so the first push needs either
+  `gh ssh-key add ~/.ssh/id_ed25519.pub` or an https remote. Asked the same day whether `rootfs/`, and the Debian base in
   particular, should be a repository of its own: `rootfs/debian` yes, as
   the `mica-debian` submodule; `rootfs/packages-src` + `overlay` yes, as
   `mica-system` through the lock; the composer no (rationale under *Target

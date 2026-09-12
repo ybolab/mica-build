@@ -1,5 +1,17 @@
 # Changelog
 
+## 2026-09-12 23:30 [decision]
+
+The Mica OS repositories live on GitHub under `ybolab`: `mica` is the
+documentation and assembly repository (this tree; `origin` repointed, the
+Gitea remote kept as `gitea`), and `mica-build-env`, `micad`, `mica-deploy`,
+`mica-podman`, `mica-debian` and `mica-system` were created private and
+empty. Local checkouts go under `/srv/ybolab/mica/<repository>/`. The
+Debian archives stay on the internal Gitea registry (GitHub has none);
+`MOS_SOURCE_URL` now names GitHub. The rename table in the split plan's
+section 12 was confirmed; the three retired ARM64 and discarded worktrees
+were removed. Nothing was pushed.
+
 ## 2026-09-12 23:05 [progress]
 
 Phase 1 of `20260911-2006-split-package-repositories` proven and landed on

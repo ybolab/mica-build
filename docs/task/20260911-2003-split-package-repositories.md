@@ -75,6 +75,15 @@ Implementing Phase 1 (the mechanism inside this tree); approved 2026-09-12.
   The build was repeated at each fix commit because the stamp rule refuses
   a pool from another commit; the pre-existing defects met on the way are
   recorded in `20260912-2236-phase1-findings`.
+- 2026-09-12 23:20 (user): rename table confirmed; source moves to GitHub
+  (`git@github.com:ybolab/mica.git` main, one repository per package, local
+  checkouts under `/srv/ybolab/mica/`). Six package repositories created on
+  GitHub, `origin` repointed, `MOS_SOURCE_URL` updated; the Debian archives
+  stay on the Gitea registry. Retired worktrees `mos-arm64-package-source`,
+  `mos-arm64-production` and `mos-discarded-20260912-1123` removed at the
+  user's request; the Phase 1 worktree moved to `/srv/ybolab/mica/mica-build`.
+  Open: this machine's SSH key is not on GitHub (first push), and the
+  superseded Gitea repositories await a delete decision.
 
 ## Findings
 
