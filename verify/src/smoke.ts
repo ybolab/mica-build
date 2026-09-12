@@ -1421,7 +1421,7 @@ export async function smokeRun(opts: SmokeRunOptions): Promise<{ results: SmokeR
   const log = opts.log ?? ((l: string) => console.log(l))
   const packageRecord = join(outDir(opts.board), 'rootfs-packages.txt')
   const packages = opts.exec === undefined
-    ? parsePackageInventory(readFileSync(packageRecord, 'utf8'), 5) : undefined
+    ? parsePackageInventory(readFileSync(packageRecord, 'utf8'), 7) : undefined
   const artifacts = opts.artifacts ?? (packages === undefined ? ARTIFACTS : artifactsForPackages(packages))
 
   // Who may go unasked, before what may go unexecuted. Both are questions about
