@@ -2,7 +2,7 @@
 # Fetch every archive the lock names for one architecture into the pool.
 #
 #   bash build-env/deb/fetch.sh --arch <amd64|arm64>          download + verify
-#   bash build-env/deb/fetch.sh --arch <amd64|arm64> --check  one HEAD per row, no download
+#   bash build-env/deb/fetch.sh --arch <amd64|arm64> --check  one ranged GET per row, no download
 #
 #   reads   rootfs/packages/lock.tsv, build-env/deb/registry.env
 #   writes  _out/debs/<arch>/pool/<package>_<version>_<arch|all>.deb
@@ -72,9 +72,11 @@ for row in "${ROWS[@]}"; do
     url="${MOS_REGISTRY_URL}/pool/${MOS_REGISTRY_DIST}/${repo}/${name}"
 
     if [ "${CHECK}" = 1 ]; then
-        status="$(registry_curl HEAD "${url}" /dev/null -I)"
+        # One byte by range, not HEAD: the Gitea package endpoint answers HEAD
+        # with 405, and a full GET would download every locked archive.
+        status="$(registry_curl GET "${url}" /dev/null -r 0-0)"
         case "${status}" in
-        200) echo "fetch.sh: ${pkg} ${version} ${row_arch} is reachable at ${url}" ;;
+        200 | 206) echo "fetch.sh: ${pkg} ${version} ${row_arch} is reachable at ${url}" ;;
         401 | 403) echo "error: ${url} answered ${status}; ${MOS_REGISTRY_TOKEN_VAR} does not grant read access to the registry" >&2; exit 1 ;;
         404) echo "error: the registry does not hold ${name} under component ${repo} (${url} answered 404). The lock names an archive that was never published, or was removed; \`make os-lock-bump COMPONENT=${repo}\` re-reads what the registry holds" >&2; exit 1 ;;
         *) echo "error: ${url} answered HTTP ${status}" >&2; exit 1 ;;

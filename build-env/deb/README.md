@@ -507,7 +507,7 @@ mos-podman	5.8.6+git1a2b3c4d5e6f-1	arm64	<sha256>	mica-podman	1a2b3c4d5e6f…
 
 | Script | Does | Refuses, by name |
 | --- | --- | --- |
-| `fetch.sh --arch <a> [--check]` | downloads every row for `<a>` and `all` into the pool, verifies sha256 and the five control fields, skips an archive already present at the right digest; `--check` sends one HEAD per row | a digest or field that differs from the row (the download is discarded), a row the registry does not hold, 401/403 naming the token variable |
+| `fetch.sh --arch <a> [--check]` | downloads every row for `<a>` and `all` into the pool, verifies sha256 and the five control fields, skips an archive already present at the right digest; `--check` sends one one-byte ranged GET per row (the registry answers HEAD with 405) | a digest or field that differs from the row (the download is discarded), a row the registry does not hold, 401/403 naming the token variable |
 | `lock.sh --bump <component> [--version <v>] [--package <p> …]` | reads the registry's index for the component, rewrites that component's rows, prints the diff -- the lock's only writer | a dirty newest version, a stanza under the wrong component, an empty component |
 | `lock.sh --rows [--arch <a>]` | prints the validated rows (the one parser every reader uses) | a malformed row, a duplicate |
 | `publish.sh [--pool <dir>] [--arch <a>]` | uploads this repository's archives under its component, reads each back and compares | a `.dirty` version, an archive from another repository or another commit, a dirty checkout, a registry copy with other bytes |
