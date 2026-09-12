@@ -702,3 +702,49 @@ its canonical lineage, exact file hashes and terminal evidence are frozen in
 `_out/boot-size/consumer/startup-final-handoff/delivery.json`. Independent B
 source/overlap integration review and later combined signed-system acceptance
 remain required. Task and plan stay in progress, handoff in review.
+
+### 2026-09-12: reviewed mask and named-tool overlap
+
+The additive B handoff authorizes the exact committed four-mask delta from
+`b5d9917c` to `f4c1c4c4`, preserving named 4716 and startup 438 roles. The
+existing private compatible named-tool proposal is now being combined in this
+worker with that delta; no broad Git synchronization or producer input change
+is performed. The replacement 2 CPU/4 GiB source slot is used for affected
+combined-source tests only. Earlier producer/source receipts and failures remain
+immutable. Exact TypeScript patch contexts required mechanical import/test
+placement resolution because startup tests occupy the old adjacent anchors.
+
+The combined overlap is now implemented in eight existing source/test/tracking
+paths. `consumers.json` is byte-identical to reviewed `f4c1c4c4`; its four new
+mask rows are the only declaration change. Named 4716 constants and witness
+functions retain their reviewed committed semantics. The complete startup
+input proof and creator are unchanged; no producer or default composition
+allowlist has been relaxed. Frozen 438 native/deploy/tool outputs are retained.
+
+The mask RED failed with `broken link
+/usr/lib/systemd/system/cryptdisks-early.service: missing path: /dev` before the
+reviewed declarations were applied. The bounded Python GREEN passed eight
+composition, mask, named-role and actual-startup admission tests. The explicit
+single-file Bun gate initially exposed an incomplete startup-schema test
+fixture; it correctly reached the legacy downgrade refusal. Adding the actual
+startup schema to that fixture preserves its intended missing-receipt refusal.
+The final six targeted release cases (39 assertions) and typecheck pass. The
+first failure and all original gate inventories are retained separately.
+
+All source containers ran serially with actual cgroups `200000 100000`, CPUs
+`4-5`, memory `4294967296` and swap `0`; each is terminal and removed. The Python
+container used captured read-only image inspection fixtures with exact-command
+refusals, not a host Docker socket. Final actual two-copy admission uses the
+real immutable producer files and read-only local image inspection. No producer,
+PREPARE, native, full-image, guest or ARM invocation was repeated.
+
+PMA-CR local review passes with zero unresolved introduced findings. The final
+commit is the input to the new two-clean-copy gate, whose source, canonical
+lineage, actual tool/receipt bindings and terminal evidence are retained at
+`_out/boot-size/consumer/mask-final-handoff/delivery.json`. Earlier
+`startup-final-handoff` evidence remains immutable. Independent B integration
+review and later affected signed-system acceptance remain pending; the task and
+plan stay in progress and the handoff ends in review. Physical CX still requires
+the exact local device, serial endpoint, current/final image, flash and power
+inputs. Consolidated ARM acceptance remains deferred until an approved main
+merge.

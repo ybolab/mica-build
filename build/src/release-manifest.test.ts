@@ -7,7 +7,7 @@ import { dirname, join } from 'node:path'
 import { Signer } from '../../shared/update-envelope.ts'
 import { canonicalJson, componentId } from './components.ts'
 import { packArchive } from './component-archive.ts'
-import { assembleRelease, gateRelease, validateStartupInputContract, verifyArchive, verifyJoinedNativePayload, type ReleaseInputs } from './release-manifest.ts'
+import { assembleRelease, gateRelease, sourceLineage, validateStartupInputContract, verifyArchive, verifyJoinedNativePayload, type ReleaseInputs } from './release-manifest.ts'
 import { sourceIdentity } from './release-cli.ts'
 import { acceptProvenance } from '../../tests/file-ab-x64/provenance-acceptance.ts'
 import { Toolbox } from './toolbox.ts'
@@ -623,7 +623,7 @@ test.each(['missing', 'unknown', 'source', 'receipt', 'pool', 'stamp', 'epoch', 
   expect(() => assembleRelease(inputs)).toThrow()
 })
 
-function joinedUki(change = '') {
+function joinedUki(change = '', withBusybox = false) {
   const init = Buffer.from('fixture init'), shutdown = Buffer.from('fixture static shutdown')
   const expected = { 'mos-init': { bytes: init.length, sha256: hash(init) }, 'mos-shutdown': { bytes: shutdown.length, sha256: hash(shutdown) } }
   const parts: Buffer[] = []
@@ -637,6 +637,7 @@ function joinedUki(change = '') {
   entry('./sbin/mos-shutdown', change === 'bytes' ? Buffer.from('different') : shutdown, change === 'mode' ? 0o100777 : 0o100755)
   if (change !== 'missing') entry('./exitrd/shutdown', shutdown)
   if (change === 'duplicate') entry('./init', init)
+  if (withBusybox && change !== 'missing-busybox') entry('./bin/busybox', Buffer.from(change === 'wrong-busybox' ? 'changed busybox' : 'fixture busybox'))
   if (change !== 'trailer') entry('TRAILER!!!', Buffer.alloc(0), 0)
   const cpio = Buffer.concat(parts), boot = Buffer.alloc(512 + cpio.length)
   boot.write('MZ'); boot.writeUInt32LE(64, 60); boot.write('PE\0\0', 64)
@@ -738,6 +739,7 @@ function startupJoinedUki(change = '', actual = false) {
 test('startup joined payload accepts only the canonical compressed representation for the reviewed role', () => {
   const f = startupJoinedUki()
   expect(() => verifyJoinedNativePayload(f.boot, f.expected, STARTUP_SOURCE)).not.toThrow()
+  expect(() => verifyJoinedNativePayload(f.boot, f.expected, STARTUP_SOURCE, { bytes: 1, sha256: '0'.repeat(64) })).toThrow('legacy BusyBox witness')
   expect(() => verifyJoinedNativePayload(f.boot, f.expected)).toThrow('cpio header')
   expect(() => verifyJoinedNativePayload(f.boot, f.expected, 'f'.repeat(40))).toThrow('source')
   expect(() => verifyJoinedNativePayload(startupJoinedUki('raw').boot, f.expected, STARTUP_SOURCE)).toThrow()
@@ -835,7 +837,7 @@ test('startup joined release refuses unreviewed lineage before inspecting native
   assembleRelease(inputs)
   const path = join(inputs.out, 'rootfs-report.runtime.json'), r = JSON.parse(readFileSync(path, 'utf8'))
   r.provenance.source_lineage.schema = 'mos/source-lineage/join-v1'
-  r.provenance.source_lineage.producer_join = { rebuilt_source: { commit: STARTUP_SOURCE } }
+  r.provenance.source_lineage.producer_join = { schema: 'mos/producer-join/startup-v1', rebuilt_source: { commit: STARTUP_SOURCE } }
   r.provenance.capture_sha256['source-lineage.json'] = hash(Buffer.from(canonicalJson(r.provenance.source_lineage) + '\n'))
   writeFileSync(path, JSON.stringify(r)); repin('rootfs-report.runtime.json')
   // The fixture boot bytes are not a UKI. Source/witness refusal must precede
@@ -924,4 +926,38 @@ test.skipIf(!process.env.MOS_TEST_STARTUP_RECORD)('startup actual join refuses a
   inputs.source = { commit: value.composition_source.commit, dirty: false }
   writeRuntime(report)
   expect(() => assembleRelease(inputs)).toThrow('startup unqualified ARM package installed')
+})
+
+test('joined mask consumer admission still requires the complete producer witness', () => {
+  const lineage = runtime().provenance.source_lineage
+  lineage.schema = 'mos/source-lineage/join-v1'
+  lineage.composition_source = { commit: 'b'.repeat(40), tree: 'c'.repeat(40), epoch: 1789167737 }
+  lineage.root_epoch = 1577836800
+  lineage.receipt_sha256 = [
+    'fc79903fcd6dc8bf40191c5f4cdf4979d664dfd0315a53521d57af821f80d166',
+    '175f2dbe31b08bde91f8cf5a15680c9ec7fb38d6c2e0bda46edff5f24e558d09',
+    '267dff5433d4bc2b2a409a06e3019fd0f680f449c4866d60f8b3353b237a4683',
+    'af5bc012346a99d360612a1340df58de35265b9a7cc638d2286401b2a3ab7112',
+  ].sort()
+  lineage.producer_join = { schema: 'mos/producer-join/boot-tools-v1' }
+  lineage.delta = [{ path: 'rootfs/runtime/consumers.json',
+    before: { mode: '100644', blob: 'a'.repeat(40) }, after: { mode: '100644', blob: 'b'.repeat(40) } }]
+  const validate = () => sourceLineage(lineage, { commit: 'b'.repeat(40), dirty: false }, 'amd64', {})
+  // Passing this exact path check must still reach the strict witness parser.
+  expect(validate).toThrow('unknown or missing fields')
+  lineage.delta[0].path = 'rootfs/runtime/compose.py'
+  expect(validate).toThrow('producer join consumer delta/epoch')
+  lineage.delta[0].path = 'pkgs/mos-boot/Dockerfile'
+  expect(validate).toThrow('runtime lineage package-relevant delta')
+})
+
+
+test('joined boot tool payload binds the authenticated startup BusyBox bytes', () => {
+  const f = joinedUki('', true), bytes = Buffer.from('fixture busybox')
+  const busybox = { bytes: bytes.length, sha256: hash(bytes) }
+  expect(() => verifyJoinedNativePayload(f.boot, f.expected, undefined, busybox)).not.toThrow()
+  for (const change of ['missing-busybox', 'wrong-busybox']) {
+    const bad = joinedUki(change, true)
+    expect(() => verifyJoinedNativePayload(bad.boot, bad.expected, undefined, busybox)).toThrow()
+  }
 })

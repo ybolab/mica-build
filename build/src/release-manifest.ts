@@ -229,6 +229,7 @@ function readRuntime(path: string): Record<string, unknown> {
 }
 const JOIN_ORIGINAL = { commit: 'e176876b733d675d1e20b40b42628cd4e18b197d', tree: '7e8e8bc62b52f3d78263d717e186a07f0d3430a1', epoch: 1789097968, version: '0.1.0+gite176876b733d-1' }
 const JOIN_REBUILT = { commit: 'fb6c4597bb902f69d528bcdc3c8372f310c322b1', tree: 'cbf2fa8ff2c8fc03534b218c952a511b6a6ba392', epoch: 1789157855, version: '0.1.0+gitfb6c4597bb90-1' }
+const JOIN_LEGACY_COMPOSITION = { commit: 'fdf8a480057b64073c9b9e15e399fca1b38d607d', tree: '7eed91c48aa9a00fc75d8661260aac78a004c00e', epoch: 1789162665 }
 const JOIN_RECEIPTS = { original: 'fc79903fcd6dc8bf40191c5f4cdf4979d664dfd0315a53521d57af821f80d166', native: '175f2dbe31b08bde91f8cf5a15680c9ec7fb38d6c2e0bda46edff5f24e558d09', deploy: '267dff5433d4bc2b2a409a06e3019fd0f680f449c4866d60f8b3353b237a4683' }
 const JOIN_NATIVE = { 'mos-init': { bytes: 1673848, sha256: '738391aa650a58fb3819f52831f6affd57ddd17e357c2a161faaf39d800ec642' }, 'mos-shutdown': { bytes: 2047144, sha256: 'd2c5c9a6e2473c0125670031c79014c6ee946b834e2e26f32a65f38939e68b35' } }
 const STARTUP_SOURCE = '438c9551ec751fcb346881541752a7596f10cb15'
@@ -236,7 +237,7 @@ const STARTUP_NATIVE = {
   'mos-init': { bytes: 2403504, sha256: '57c865ed0b58740faaba642cc417a0b0a3a487f3b6718a1e2fcc7e1355bdea97' },
   'mos-shutdown': { bytes: 2047144, sha256: '77bf04b463ece3b0aaba03fa0f91fe0939faa87c5b9b81937b24636b3e2ef1ea' },
 }
-const JOIN_CONSUMERS = new Set(['rootfs/runtime/source-lineage.py', 'rootfs/build.sh', 'build/src/release-manifest.ts', 'tests/deb-package-gate.sh', 'tests/rootfs-runtime/source_lineage_test.py', 'tests/rootfs-runtime/composition_test.py', 'build/src/release-manifest.test.ts', 'docs/task/20260911-0145-b7-fresh-lifecycle-acceptance.md', 'docs/plan/20260911-0145-b7-fresh-lifecycle-acceptance.md'])
+const JOIN_CONSUMERS = new Set(['rootfs/runtime/consumers.json', 'rootfs/runtime/source-lineage.py', 'rootfs/build.sh', 'build/src/release-manifest.ts', 'tests/deb-package-gate.sh', 'tests/rootfs-runtime/source_lineage_test.py', 'tests/rootfs-runtime/composition_test.py', 'build/src/release-manifest.test.ts', 'docs/task/20260911-0145-b7-fresh-lifecycle-acceptance.md', 'docs/plan/20260911-0145-b7-fresh-lifecycle-acceptance.md'])
 const canonicalSha = (value: unknown) => createHash('sha256').update(canonicalJson(value) + '\n').digest('hex')
 // The fixed proof retains all 15 complete maps, including unqualified ARM maps.
 // Its hash is independent of the later deploy and boot-tools output witnesses.
@@ -266,9 +267,26 @@ function startupProducerJoin(value: unknown, pool: Record<string, unknown>, sour
   return record(record(j.production).boot_tools).image as string
 }
 
+const BOOT_RECEIPT_SHA = 'af5bc012346a99d360612a1340df58de35265b9a7cc638d2286401b2a3ab7112'
+const BOOT_ROLE_SHA = 'a893b517c2a249afed8d34d323e6f5148aa55ec353c9956f5e422766d516b664'
+function bootToolsRole(value: unknown) {
+  const role = object(value, ['schema', 'source', 'approved_delta', 'inputs', 'unchanged_producers_sha256', 'source_readiness_sha256', 'receipt_sha256', 'production'])
+  same(canonicalSha(role), BOOT_ROLE_SHA, 'boot-tools reviewed producer/source/input/output witness')
+  const production = record(role.production), payload = record(production.payload)
+  const busybox = record(payload['usr/lib/mos/boot-busybox/x64/busybox'])
+  return { manifest: production.manifest as string, busybox: { bytes: busybox.bytes as number, sha256: busybox.sha256 as string } }
+}
+function joinedBootTool(value: unknown) {
+  const lineage = record(value)
+  if (lineage.schema !== 'mos/source-lineage/join-v1') return null
+  const join = record(lineage.producer_join)
+  return join.schema === 'mos/producer-join/boot-tools-v1' ? bootToolsRole(join.boot_tools) : null
+}
 function producerJoin(value: unknown, packages: Record<string, unknown>[], source: unknown, arch: string) {
-  const j = object(value, ['schema', 'rebuilt_source', 'approved_delta', 'producer_inputs', 'original_pool', 'witnesses', 'mapping', 'native', 'production'])
-  requireValue(j.schema === 'mos/producer-join/v1' && arch === 'amd64', 'producer join schema/architecture')
+  const boot = record(value).schema === 'mos/producer-join/boot-tools-v1'
+  const j = object(value, ['schema', 'rebuilt_source', 'approved_delta', 'producer_inputs', 'original_pool', 'witnesses', 'mapping', 'native', 'production', ...(boot ? ['boot_tools'] : [])])
+  if (boot) bootToolsRole(j.boot_tools)
+  requireValue(['mos/producer-join/v1', 'mos/producer-join/boot-tools-v1'].includes(j.schema as string) && arch === 'amd64', 'producer join schema/architecture')
   same(source, JOIN_ORIGINAL, 'producer join original source'); same(j.rebuilt_source, JOIN_REBUILT, 'producer join rebuilt source')
   same(canonicalSha(j.production), '3f1fe46df0aa7d686616288b655119baeccba12589951e121321388aa45f3f58', 'producer join tool/recipe/target/flags')
   same(j.witnesses, JOIN_RECEIPTS, 'producer join witnesses'); same(j.native, JOIN_NATIVE, 'producer join native')
@@ -358,7 +376,9 @@ export function sourceLineage(value: unknown, source: Source, arch: string, capt
   })
   same(Object.keys(files).sort(), [...expected].sort(), 'runtime lineage pool membership')
   if (joined) {
-    same(l.receipt_sha256, Object.values(startup ? STARTUP_RECEIPTS : JOIN_RECEIPTS).sort(), 'producer join receipt set')
+    const boot = record(l.producer_join).schema === 'mos/producer-join/boot-tools-v1'
+    if (!boot && !startup) same(c, JOIN_LEGACY_COMPOSITION, 'boot-tools witness omitted or downgraded')
+    same(l.receipt_sha256, [...Object.values(startup ? STARTUP_RECEIPTS : JOIN_RECEIPTS), ...(boot ? [BOOT_RECEIPT_SHA] : [])].sort(), 'producer join receipt set')
     requireValue(l.root_epoch === 1577836800 && paths.every(p => consumers.has(p)), 'producer join consumer delta/epoch')
     if (startup) bootToolsImage = startupProducerJoin(l.producer_join, pool, p, arch)
     else producerJoin(l.producer_join, packages, p, arch)
@@ -521,6 +541,8 @@ function derived(dir: string, m: Omit<ReleaseManifest, 'artifacts'>, image: stri
   requireValue(images !== null && typeof images === 'object' && !Array.isArray(images)
     && Object.keys(images).length > 0 && Object.entries(images).every(([k, v]) => /^(IMAGE|LOCAL)_[A-Z0-9_]+$/.test(k) && typeof v === 'string' && v), 'builder image records')
   if (runtime.bootToolsImage) same(record(images).LOCAL_BOOT_TOOLS_X64, runtime.bootToolsImage, 'startup release boot-tools image')
+  const bootTool = joinedBootTool(runtime.sourceLineage)
+  if (bootTool) same(record(images).LOCAL_BOOT_TOOLS_X64, bootTool.manifest, 'joined release boot-tools image')
   return {
     'sbom.cdx.json': { bomFormat: 'CycloneDX', specVersion: '1.5', version: 1,
       metadata: { component: { type: 'operating-system', name: `mos-${m.board}`, version: m.version },
@@ -622,9 +644,10 @@ function verifyStartupCpio(cpio: Buffer, expected: Record<string, { bytes: numbe
 }
 
 /** Bind the authenticated x64 UKI's actual native bytes to the joined witness. */
-export function verifyJoinedNativePayload(boot: Buffer, expected: Record<string, { bytes: number, sha256: string }>, source = JOIN_REBUILT.commit) {
+export function verifyJoinedNativePayload(boot: Buffer, expected: Record<string, { bytes: number, sha256: string }>, source = JOIN_REBUILT.commit, busybox?: { bytes: number, sha256: string }) {
   requireValue(source === JOIN_REBUILT.commit || source === STARTUP_SOURCE, 'joined native source role')
   const startup = source === STARTUP_SOURCE
+  requireValue(!startup || !busybox, 'startup does not accept a legacy BusyBox witness')
   requireValue(boot.length >= 64 && boot.length <= 256 * 1048576 && boot.toString('ascii', 0, 2) === 'MZ', 'joined UKI header')
   const pe = boot.readUInt32LE(60)
   requireValue(pe >= 64 && pe + 24 <= boot.length && boot.toString('ascii', pe, pe + 4) === 'PE\0\0'
@@ -661,6 +684,7 @@ export function verifyJoinedNativePayload(boot: Buffer, expected: Record<string,
   const cpio = initrds[0]!, names = new Set<string>(), matched = new Set<string>()
   requireValue(cpio.length <= INITRD_LIMIT, 'joined raw initrd bound')
   const wanted: Record<string, string> = { init: 'mos-init', 'sbin/mos-shutdown': 'mos-shutdown', 'exitrd/shutdown': 'mos-shutdown' }
+  if (busybox) wanted['bin/busybox'] = 'boot-busybox'
   let at = 0, trailer = false
   const align = (value: number) => Math.ceil(value / 4) * 4
   for (let count = 0; count < 10000 && at < cpio.length; count++) {
@@ -681,18 +705,19 @@ export function verifyJoinedNativePayload(boot: Buffer, expected: Record<string,
     requireValue(!/[\x00-\x1f\x7f]/.test(name) && (name === '.' || (!name.startsWith('/') && name.split('/').every(p => p && p !== '.' && p !== '..'))), 'joined cpio path')
     requireValue(!names.has(name), 'joined duplicate cpio path'); names.add(name)
     if (Object.hasOwn(wanted, name)) {
-      const witness = expected[wanted[name]!]
+      const witness = wanted[name] === 'boot-busybox' ? busybox : expected[wanted[name]!]
       requireValue(witness && mode === 0o100755 && uid === 0 && gid === 0 && size === witness.bytes
         && createHash('sha256').update(cpio.subarray(data, end)).digest('hex') === witness.sha256, 'joined authenticated native bytes/mode')
       matched.add(name)
     }
   }
-  requireValue(trailer && matched.size === 3, 'joined missing native payload')
+  requireValue(trailer && matched.size === Object.keys(wanted).length, 'joined missing native/tool payload')
 }
 
 /** Authenticate every MOSUPD01 object using bounded reads, without unpacking it. */
-export function verifyArchive(path: string, keys: readonly string[], joinedNative: boolean | typeof STARTUP_SOURCE = false) {
+export function verifyArchive(path: string, keys: readonly string[], joinedNative: boolean | typeof STARTUP_SOURCE = false, busybox?: { bytes: number, sha256: string }) {
   requireValue(joinedNative === false || joinedNative === true || joinedNative === STARTUP_SOURCE, 'joined native source role')
+  requireValue(!busybox || joinedNative === true, 'boot-tools require legacy joined native provenance')
   regular(path)
   const fd = openSync(path, 'r')
   const exact = (length: number) => {
@@ -719,7 +744,7 @@ export function verifyArchive(path: string, keys: readonly string[], joinedNativ
       for (let remaining = bytes; remaining > 0;) { const count = Math.min(65536, remaining), chunk = exact(count); hash.update(chunk); if (nativeBoot) chunks.push(chunk); remaining -= count }
       requireValue(hash.digest('hex') === sha, 'update object digest')
       if (nativeBoot) verifyJoinedNativePayload(Buffer.concat(chunks), joinedNative === STARTUP_SOURCE ? STARTUP_NATIVE : JOIN_NATIVE,
-        joinedNative === STARTUP_SOURCE ? STARTUP_SOURCE : JOIN_REBUILT.commit)
+        joinedNative === STARTUP_SOURCE ? STARTUP_SOURCE : JOIN_REBUILT.commit, busybox)
     }
     requireValue(readSync(fd, Buffer.alloc(1)) === 0, 'trailing update archive bytes')
     return deployment
@@ -748,7 +773,8 @@ export function gateRelease(dir: string, keys: readonly string[]) {
     sourceLineage(lineage, m.source, m.board === 'x64' ? 'amd64' : 'arm64', record(runtime.capture_sha256))
     joined = record(record(lineage.producer_join).rebuilt_source).commit === STARTUP_SOURCE ? STARTUP_SOURCE : true
   }
-  const deployment = verifyArchive(join(dir, 'update.mosupd'), keys, joined)
+  const bootTool = joinedBootTool(lineage)
+  const deployment = verifyArchive(join(dir, 'update.mosupd'), keys, joined, bootTool?.busybox)
   requireValue(deployment.board === m.board && deployment.version === m.version, 'update board or version differs')
   const firmware = authenticateFirmware(read(join(dir, 'firmware.json'), 16384), keys)
   requireValue(firmware.board === m.board, 'firmware board differs')
@@ -784,10 +810,11 @@ export function assembleRelease(inputs: ReleaseInputs) {
   for (const [name, path] of Object.entries(files)) copyFileSync(path, join(inputs.out, name))
   // Retain the installed marker bytes; domains() still enforces channel policy.
   writeFileSync(join(inputs.out, 'development-marker.txt'), marker)
+  const bootImage = runtime.bootToolsImage ?? joinedBootTool(runtime.sourceLineage)?.manifest
   const builderImages = { ...inputs.builderImages }
-  if (runtime.bootToolsImage) {
-    if (Object.hasOwn(builderImages, 'LOCAL_BOOT_TOOLS_X64')) same(builderImages.LOCAL_BOOT_TOOLS_X64, runtime.bootToolsImage, 'startup caller boot-tools image')
-    builderImages.LOCAL_BOOT_TOOLS_X64 = runtime.bootToolsImage
+  if (bootImage) {
+    if (Object.hasOwn(builderImages, 'LOCAL_BOOT_TOOLS_X64')) same(builderImages.LOCAL_BOOT_TOOLS_X64, bootImage, 'joined caller boot-tools image')
+    builderImages.LOCAL_BOOT_TOOLS_X64 = bootImage
   }
   json(inputs.out, 'builder-images.json', builderImages)
   for (const [name, value] of Object.entries(derived(inputs.out, m, image, deployment.rootfs.content))) json(inputs.out, name, value)

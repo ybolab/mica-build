@@ -140,6 +140,91 @@ class CompositionTest(unittest.TestCase):
         path.chmod(mode)
         return path
 
+    def systemd_masks(self, with_device=True):
+        masks = ['/usr/lib/systemd/system/' + name + '.service'
+                 for name in ('cryptdisks-early', 'cryptdisks', 'hwclock', 'x11-common')]
+        unit = '/usr/lib/systemd/system/basic.target'
+        self.f.write(unit, b'[Unit]\nDescription=Required ordinary unit\n')
+        license_path = '/usr/share/doc/systemd/copyright'
+        self.f.write(license_path, b'systemd fixture license\n')
+        for path in masks:
+            self.f.link(path, '/dev/null')
+        (self.inputs / 'info/systemd.list').write_text('\n'.join([
+            '/usr/lib/systemd', '/usr/lib/systemd/system', '/usr/share/doc/systemd',
+            *masks, unit, license_path,
+        ]) + '\n')
+        for path in (self.inputs / 'manifest.tsv', self.f.root / 'usr/share/mos/manifest.tsv'):
+            with path.open('a') as stream:
+                stream.write('systemd\t257\tamd64\n')
+        with (self.inputs / 'upstream.tsv').open('a') as stream:
+            stream.write('systemd\t257\tamd64\t' + 'e' * 64 + '\thttps://example.invalid/systemd.deb\tmos-system\n')
+        with (self.inputs / 'sources.tsv').open('a') as stream:
+            stream.write('systemd\tsystemd\t257\n')
+        system = self.f.rules['consumers']['mos-system']
+        system['roots'].append(dict(paths=[*masks, unit], packages=['systemd'], kind='resource',
+                                    reason='units, live udev rules, PAM and D-Bus resources'))
+        declared = json.loads((REPO / 'rootfs/runtime/consumers.json').read_text())['consumers']['mos-system']
+        system['runtime_links'].extend(row for row in declared['runtime_links'] if row['path'] in masks)
+        if with_device:
+            self.bootstrap_device('null', 1, 3)
+        self.f.rules_path.write_text(json.dumps(self.f.rules))
+        return masks, unit
+
+    def assert_systemd_masks_compose(self, with_device):
+        masks, unit = self.systemd_masks(with_device)
+        self.capture()
+        result = self.compose()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        report = json.loads(self.f.report.read_text())
+        rows = {row['path']: row for row in report['files']}
+        self.assertIn(unit, rows)
+        self.assertEqual((self.f.out / unit[1:]).read_bytes(), (self.f.root / unit[1:]).read_bytes())
+        for path in masks:
+            row = rows[path]
+            self.assertEqual((row['type'], row['target'], row['mode'], row['uid'], row['gid']),
+                             ('symlink', '/dev/null', 0o777, 0, 0))
+            self.assertEqual(row['runtime_link']['generator'], 'kernel devtmpfs')
+            self.assertEqual(report['provenance']['files'][path]['archives'][0]['package'], 'systemd')
+            self.assertEqual(os.readlink(self.f.out / path[1:]), '/dev/null')
+        self.assertNotIn('/dev/null', rows)
+        self.assertFalse(os.path.lexists(self.f.out / 'dev/null'))
+        self.assertEqual(self.f.command('verify').returncode, 0)
+
+    def test_systemd_masks_compose_without_copying_device(self):
+        self.assert_systemd_masks_compose(True)
+
+    def test_systemd_masks_compose_without_disposable_device(self):
+        self.assert_systemd_masks_compose(False)
+
+    def test_systemd_masks_preserve_strict_refusals(self):
+        for mutation, expected in [('target', 'runtime link target changed'), ('owner', 'no origin:'),
+                                   ('unit', 'missing path:'), ('undeclared', 'unsupported node:')]:
+            with self.subTest(mutation=mutation):
+                fixture = CompositionTest()
+                fixture.setUp()
+                self.addCleanup(fixture.doCleanups)
+                masks, unit = fixture.systemd_masks()
+                if mutation == 'target':
+                    (fixture.f.root / masks[0][1:]).unlink()
+                    fixture.f.link(masks[0], '/dev/zero')
+                elif mutation == 'owner':
+                    owner = fixture.inputs / 'info/systemd.list'
+                    owner.write_text(owner.read_text().replace(masks[0] + '\n', ''))
+                elif mutation == 'unit':
+                    (fixture.f.root / unit[1:]).unlink()
+                else:
+                    extra = '/usr/lib/systemd/system/undeclared.service'
+                    fixture.f.link(extra, '/dev/null')
+                    with (fixture.inputs / 'info/systemd.list').open('a') as stream:
+                        stream.write(extra + '\n')
+                    fixture.f.rules['consumers']['mos-system']['roots'][-1]['paths'].append(extra)
+                    fixture.f.rules_path.write_text(json.dumps(fixture.f.rules))
+                fixture.capture()
+                result = fixture.compose()
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn(expected, result.stderr)
+                self.assertFalse(fixture.f.report.exists())
+
     def test_missing_swapped_or_malformed_lineage_refuses(self):
         self.capture()
         path = self.inputs / 'source-lineage.json'

@@ -631,3 +631,19 @@ original missing-binding failure. The real creator has consumed all actual
 producer inputs successfully. Final committed-source two-copy lineage and B
 integration evidence are attached through the existing task handoff path.
 This is consumer/source readiness, not complete plan or physical acceptance.
+
+The additive reviewed four-mask and named-4716 overlap is being incorporated
+at the next consumer boundary. A replacement bounded source gate verifies the
+combined admission while frozen 438 producer outputs remain unchanged. New
+combined-source two-copy lineage and independent B review are required; prior
+33c619c9 evidence remains an immutable earlier-source result.
+
+The exact named-tool/four-mask overlap now passes local review, eight bounded
+Python cases and six explicit one-file release cases with 39 assertions plus
+typecheck. Original mask RED and the incomplete-schema fixture failure remain
+bound to their actual source and container runs. Both existing source roles
+remain independently constrained; producer inputs and `COMPOSITION_PATHS` are
+unchanged. All source containers are terminal and removed. The final committed
+source is used for two-clean-copy canonical admission in
+`consumer/mask-final-handoff`; independent B review, final signed-system and
+physical CX evidence remain open. No successful producer was replayed.
