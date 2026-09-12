@@ -834,6 +834,26 @@ class SelectionTest(unittest.TestCase):
         self.assertTrue((self.out / path[1:]).is_dir())
         self.assertEqual(list((self.out / path[1:]).iterdir()), [])
 
+    def test_bluez_uses_the_current_libexec_entrypoint(self):
+        path = '/usr/libexec/bluetooth/bluetoothd'
+        self.write(path, elf(), 0o755)
+        self.write('/usr/bin/bluetoothctl', elf(), 0o755)
+        self.write('/usr/share/doc/bluez/copyright', b'bluez license\n')
+        with self.manifest.open('a') as stream:
+            stream.write('bluez\t5.82-1.1\tamd64\nmos-bluetooth\t1\tall\n')
+        (self.db / 'bluez.list').write_text(path + '\n/usr/libexec\n/usr/libexec/bluetooth\n/usr/bin/bluetoothctl\n/usr/share/doc/bluez\n/usr/share/doc/bluez/copyright\n')
+        (self.db / 'mos-bluetooth.list').write_text('/.\n')
+        with self.packages.open('a') as stream:
+            stream.write('mos-bluetooth\n')
+        policy = json.loads(SELECTOR.with_name('consumers.json').read_text())
+        self.rules['consumers']['mos-bluetooth'] = {
+            'roots': [r for r in policy['consumers']['mos-bluetooth']['roots'] if r['kind'] == 'executable'],
+            'runtime_links': []}
+        rows = {r['path']: r for r in self.selected()['files']}
+        self.assertIn(path, rows)
+        self.assertEqual((self.out / path[1:]).read_bytes(), (self.root / path[1:]).read_bytes())
+        self.assertFalse((self.out / 'usr/lib/bluetooth').exists())
+
     def iproute_without_python(self):
         entries = ['/usr/bin/ip', '/usr/bin/lnstat', '/usr/bin/nstat', '/usr/bin/rdma', '/usr/bin/ss',
                    '/usr/sbin/arpd', '/usr/sbin/bridge', '/usr/sbin/dcb', '/usr/sbin/devlink', '/usr/sbin/genl',
