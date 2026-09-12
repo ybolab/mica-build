@@ -240,3 +240,87 @@ Final D3 reconciliation remains blocked on a reviewed real `J`, B7 final
 evidence, and formal B-final evidence. L2 D will wake this same issue for the
 original global reconciliation and result append after that exact handoff; the
 campaign task and plan cannot complete during Stage A.
+
+### D3 Batch 1 tracking update — 2026-09-12 UTC
+
+Batch 1 A+C is actually complete on local `main` at
+`677d326f40834d192b38d3b8d1097334d02ea86a`, tree
+`ea3b1218769dc1870680b3dc881a7e939006fcc5`. Merge
+`133737e1754c2db6f7f9f043066e86a5ad9916f7` joins reviewed A-final
+`e4154126b7e38eb90db210adfb412b19535637a8` to
+`a3595587194a17c290272975e5a2e40be6ea15c2`; merge `677d326f` joins
+reviewed C-final `48acef7f1a3683b1f3bb6261911b1a5123197da2`. L1 independently
+verified ref/tree/parents, the three required ancestors, and all 67 non-index
+mode/blob bindings. The unrelated package-split task/plan remain untracked and
+their two index appends remain byte-identical and unstaged; the Git index still
+matches HEAD.
+
+The exact integrated candidate recorded six passes, retained at these log
+SHA-256 identities: `make docs-verify`
+`b4084c242865ff925b09d41cbb37babe80edd8a652fa64ba9bbb7afdb19099e8`;
+`make docs-verify-test`
+`7f063b379cb5bda3a142ef036721e841c30111237a79e54ffba33106b7400168`;
+public-meta 61 tests
+`7e82d5a3183136d5a70420a358f55f1d209094139f507f023ab0cd58240f5aed`;
+packed-root 271 tests
+`53f1af369030513bbe803260a3e1ea54c6a41bc503f11973ea6390e5bdf8dc4b`;
+fleet-protocol DESIGN cases
+`d570729555ce2bd1e1ede71fd52192551b4a095c4b0338bddf082d0f1c448ffa`;
+and the CX collector
+`ee19f8e5dc9a9415c4b777e1503f1004bd0626489606a5fe040ff8a7fae858b1`.
+L1 independently verified the records and bindings without rerunning them.
+Host Bun 1.4.0 and Node 24.19.0 were test runtimes, not rebuilt product
+toolchains. Batch 1 did not rerun Rust, kernel, full-image, or physical
+qualification and did not merge B startup/rootfs, D, or `#347`-only source.
+
+Evidence is retained in `integration-review.json` (SHA-256
+`f983beb18564ca24362252bda27e1e0348effa63995cf9c4181b2f21c95c6b48`),
+`checks.json` (`d258b48cf517e10152ca324d787cf4c4e8fe65e6d353ae3d3eecb0874aced57d`),
+`publication-result.json`
+(`106b35f495900f8e703654d48065862ab47914703faee63f0025dfd264d10d4d`),
+and `batch1-independent-observation.json`
+(`d6fdfa790f9384d0c8b81511dc911a283944a9ec3aac355649f89872060141e3`).
+This is local main evidence, not a push or remote publication.
+
+The already-approved ordered policy is now:
+
+1. Batch 1 A+C is complete.
+2. Batch 2 B plus independently reviewed `#347` and current root-composition
+   fixes is conditional on one exact complete combined x64 candidate passing
+   all required signed-boot, startup, reboot, shutdown, update/fallback,
+   storage, authenticated API, and existing acceptance scenarios, followed by
+   independent source/input and integration review.
+3. Batch 3 D final reconciliation is conditional on the code actually merged,
+   its evidence, the actual Batch 2 transaction, and all remaining obligations.
+
+L1 alone owns the future ordered main transactions; no repeat generic approval
+is needed, and no push or remote publication is authorized. Main movement is
+not campaign `done` or hardware PASS.
+
+Broad ARM work begins only after the Batch 2 **COMPLETE STARTUP CHAIN** actually
+enters main and its merged commit/tree is frozen. Batch 1 alone authorizes no
+ARM packages, roots, or images. Preserve the consolidated virt-arm64/CX wave,
+two independent equal-input virt-arm64 cold samples, and affected-component
+rebuilds with exact relevant-input reuse. Separately authorized focused
+ARM-specific work remains allowed within its exact scope but does not start the
+broad wave. Physical CX/watchdog/power-cut/bench limits remain separate.
+
+A/C software delivery and historical evidence grades remain unchanged.
+Reviewed A3 software implements visible-logo restoration on real HPD/VT return
+while preserving authenticated tty2 and DRM/blank/suspend boundaries;
+exact-image physical HDMI/USB-keyboard/VT/visual rows remain pending.
+
+B7 source `f4c1c4c44a64f7cda00afe5b6c74e611c440c5dd` failed `90-pack` at
+01:09:22 because `/usr/bin/docker` was omitted. B7 identified its owned
+`docker -> podman` link, and L1 approved that exact docker declaration plus
+bounded reconciliation of 14 companion current-survivor declarations. Those
+fixes, final B review, and actual combined x64 acceptance remain pending; there
+is no root or image PASS. The reviewed `#347` standalone 33 startup-admission
+checkpoint is not full-system acceptance, and its final combined `70a7a408`
+source/two-copy handoff remains in B review. Original `J` / `fb6` / `4716` /
+`438` producer and failed-root identities retain their original bindings and
+are not relabeled to main `677d326f`.
+
+D does not interrupt, wake, merge, or message B7, `#347`, or B. Batch 3 and
+campaign completion remain pending. No compatibility work is required, and no
+serializer transition applies to this tracking update.

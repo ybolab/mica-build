@@ -462,3 +462,99 @@ replace any named board or physical power-cut result. Final D3 reconciliation
 remains blocked on the real reviewed `J`, the B7 final handoff, and formal
 B-final evidence; L2 D must wake this same issue for that later stage. No PMA
 serializer lifecycle transition is made during this tracking stage.
+
+### D3 Batch 1 tracking update — 2026-09-12 UTC
+
+Batch 1 A+C is actually complete on local `main` at commit
+`677d326f40834d192b38d3b8d1097334d02ea86a`, tree
+`ea3b1218769dc1870680b3dc881a7e939006fcc5`. Merge
+`133737e1754c2db6f7f9f043066e86a5ad9916f7` joins reviewed A-final
+`e4154126b7e38eb90db210adfb412b19535637a8` to predecessor
+`a3595587194a17c290272975e5a2e40be6ea15c2`; merge `677d326f` then joins
+reviewed C-final `48acef7f1a3683b1f3bb6261911b1a5123197da2`. L1 independently
+verified the main ref, tree, both parent pairs, all three required ancestors,
+and 67 non-index mode/blob bindings against the reviewed sources.
+
+The transaction preserved the unrelated main working state byte-for-byte and
+left the Git index equal to HEAD: package-split task and plan documents remain
+untracked, while their task/plan index appends remain unstaged. Nothing from
+those paths was staged, stashed, copied, removed, or committed by Batch 1.
+
+The exact integrated candidate recorded six passing checks. L1 verified the
+records and log bindings without rerunning them:
+
+| Check | Recorded result | Retained log SHA-256 |
+|-------|-----------------|----------------------|
+| `make docs-verify` | Exit 0. | `b4084c242865ff925b09d41cbb37babe80edd8a652fa64ba9bbb7afdb19099e8` |
+| `make docs-verify-test` | Exit 0. | `7f063b379cb5bda3a142ef036721e841c30111237a79e54ffba33106b7400168` |
+| Public-meta validation | Exit 0; 61 tests. | `7e82d5a3183136d5a70420a358f55f1d209094139f507f023ab0cd58240f5aed` |
+| Packed-root validation | Exit 0; 271 tests. | `53f1af369030513bbe803260a3e1ea54c6a41bc503f11973ea6390e5bdf8dc4b` |
+| Fleet-protocol DESIGN cases | Exit 0. | `d570729555ce2bd1e1ede71fd52192551b4a095c4b0338bddf082d0f1c448ffa` |
+| CX collector | Exit 0. | `ee19f8e5dc9a9415c4b777e1503f1004bd0626489606a5fe040ff8a7fae858b1` |
+
+Host Bun 1.4.0 and Node 24.19.0 were test runtimes, not newly built product
+toolchains. Batch 1 reused reviewed A/C source and artifact evidence; it did
+not rerun Rust, kernel, full-image, or physical qualification and did not merge
+B startup/rootfs, D, or `#347`-only source.
+
+The evidence packet is bound by
+`/tmp/mos-phased-merge-GNeIZ1/integration-review.json` (SHA-256
+`f983beb18564ca24362252bda27e1e0348effa63995cf9c4181b2f21c95c6b48`),
+`checks.json` (`d258b48cf517e10152ca324d787cf4c4e8fe65e6d353ae3d3eecb0874aced57d`),
+`publication-result.json`
+(`106b35f495900f8e703654d48065862ab47914703faee63f0025dfd264d10d4d`),
+and L1's independent observation
+`/tmp/mos-open-plans-20260910-100408/L1-batch1-main-ijqwqwbk/batch1-independent-observation.json`
+(`d6fdfa790f9384d0c8b81511dc911a283944a9ec3aac355649f89872060141e3`).
+These establish local main integration, not remote publication.
+
+The user's ordered main policy is already approved and requires no repeated
+generic approval:
+
+1. Batch 1 A+C is complete as recorded above.
+2. Batch 2 may integrate B plus independently reviewed `#347` and current
+   root-composition fixes only after one exact complete combined x64 candidate
+   passes all required signed-boot, startup, reboot, shutdown, update/fallback,
+   storage, authenticated API, and existing acceptance scenarios. The candidate
+   source/input and integration evidence must receive independent review.
+3. Batch 3 is this D campaign's final reconciliation of the code actually
+   merged, its evidence, and every remaining obligation. It remains conditional
+   on the actual Batch 2 merge and concrete reviewed handoff.
+
+L1 alone owns future ordered main transactions. No push or remote publication
+is authorized. Main movement is neither campaign `done` nor hardware
+qualification.
+
+Broad ARM work begins only after the Batch 2 **COMPLETE STARTUP CHAIN** actually
+enters main and its merged commit/tree is frozen. Batch 1 alone authorizes no
+ARM package, root, or image work. The later consolidated wave still requires
+virt-arm64 and CX acceptance, two independent equal-input virt-arm64 cold-root
+samples, and affected-component rebuilds with exact relevant-input reuse.
+Separately authorized focused ARM-specific work remains allowed within its
+exact scope but does not start the broad wave. Physical CX, watchdog,
+power-cut, and bench limitations remain separate and pending.
+
+A/C delivered software and all historical evidence grades remain unchanged.
+In particular, reviewed A3 software implements visible-logo restoration on
+real HPD/VT return while preserving authenticated tty2 and DRM/blank/suspend
+boundaries; exact-image physical HDMI/USB-keyboard/VT/visual rows remain
+pending and have no hardware PASS.
+
+The current B boundary is not acceptance:
+
+- B7 source `f4c1c4c44a64f7cda00afe5b6c74e611c440c5dd` failed `90-pack` at
+  01:09:22 because `/usr/bin/docker` was omitted. B7 identified the existing
+  owned `docker -> podman` link. L1 approved that exact docker declaration plus
+  bounded reconciliation of 14 companion current-survivor declarations.
+- Those declaration fixes, final B review, and the actual combined x64
+  acceptance remain pending. There is no B7 root or image PASS.
+- The `#347` standalone 33 startup-admission checkpoint is reviewed but is not
+  full-system acceptance. Its final combined `70a7a408` source/two-copy handoff
+  remains in B review.
+- Original `J` / `fb6` / `4716` / `438` producer and failed-root identities
+  remain bound to their original evidence. None is relabeled to main
+  `677d326f`.
+
+D does not interrupt, wake, merge, or message B7, `#347`, or B. Batch 3 and
+campaign completion remain pending on their reviewed evidence. No compatibility
+work is required, and this tracking update performs no serializer transition.
