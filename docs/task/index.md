@@ -53,6 +53,7 @@ Each task is a single line linking to its detail file. All detailed information 
 - [x] [**20260912-1341-prune-settled-records Prune the settled plan and task records**](20260912-1341-prune-settled-records.md) `P2`
 - [-] [**20260912-1347-root-closure-reduction Reduce the read-only root closure**](20260912-1347-root-closure-reduction.md) `P2`
 - [-] [**20260912-2043-unify-board-behavior Unify board build, compression and acceptance behavior**](20260912-2043-unify-board-behavior.md) `P1`
+- [ ] [**20260912-2236-phase1-findings Fix the defects the lock proof build surfaced**](20260912-2236-phase1-findings.md) `P2`
 - [x] [**20260912-2049-docs-restructure Restructure the documentation system**](20260912-2049-docs-restructure.md) `P1`
 - [ ] [**20260912-2058-fleet-runtime Implement the fleet registration and reporting runtime**](20260912-2058-fleet-runtime.md) `P2`
 - [ ] [**20260912-2058-production-key-custody Establish production signing key custody**](20260912-2058-production-key-custody.md) `P2`

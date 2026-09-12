@@ -141,9 +141,10 @@ pins within one repository stay exact.
 
 All under `ybolab` on `git.ds.cc`, one repository per package, named for
 Mica OS (the project's current name): the assembly is `mica-build`, the
-daemon repository `micad`, the others `mica-` prefixed. Package, binary and
-workspace names inside the archives (`mosd`, `mos-*`, `pkgs/mos-deploy`)
-are not renamed by this plan; that is separate work if wanted.
+daemon repository `micad`, the others `mica-` prefixed. Package, binary,
+unit, bus and path names inside the archives are renamed to Mica OS by the
+phase that moves them (section 12); the split and the rename are one
+operation per repository, decided 2026-09-12.
 
 | Repository | Content | Publishes |
 |---|---|---|
@@ -152,8 +153,26 @@ are not renamed by this plan; that is separate work if wanted.
 | `micad` | `pkgs/mosd/*` incl. `deb/`, `hack/`, `tests/` (dbus policy, apid-api harness), `apid/ui` | `mosd`, `mos-apid`, `mos-mqttd`, `mos-mqtt-broker` |
 | `mica-deploy` | `pkgs/mos-deploy/*`, `tests/file-ab-faults/`, `tests/component-contracts/`, `tests/boot-shutdown-test.sh` | `mos-deploy`, and a new `mos-lifecycle` archive carrying the static `mos-init` and `mos-shutdown` per architecture |
 | `mica-podman` | `pkgs/podman/*`, `rootfs/overlay/etc/containers/containers.conf`, `rootfs/overlay/etc/systemd/system/etc-containers-systemd.mount`, `tests/podman-pins-test.sh` | `mos-podman` |
+| `mica-debian` | today's `rootfs/debian/` unchanged in layout (the 179 pinned upstream records, `sources.env`, `run.sh`, `docker.sh`, `fetch.ts`, `manifest.ts`, `consumers.pkgs`), plus `tests/debian-base-test.sh` and `tests/debian-lock-test.sh` | nothing: consumed as a git submodule at `rootfs/debian/`; its commit is the pin of the Debian base, bumped like a lock row |
+| `mica-system` | `rootfs/packages-src/*` (the six system producers), `rootfs/overlay/` (less the two podman files) | `mos-system`, `mos-busybox`, `mos-ca-trust`, `mos-profile-dev`, `mos-profile-prod`, `mos-wifi`, `mos-wifi-ap`, `mos-bluetooth` |
 
 The registry component of each archive is its source repository name.
+
+**Why `rootfs/debian` and `rootfs/packages-src` leave and the composer
+stays.** `rootfs/debian` is already a module with one interface -- `run.sh
+cache|verify|install|select` and `manifest.ts helper`, driven from the
+composer's bootstrap stage, `make os-debian-*` and two tests -- and its own
+cadence (Debian point releases and security updates). Its product is a pin
+set, not an archive, so a submodule commit is the right pin and the registry
+is not involved; the cache stays in the assembly's `_out/debian-base`. Its
+outward coupling is `build-env/from.sh` for the Bun image and the cache
+path, both already arguments. `rootfs/packages-src` is six ordinary
+producers and moves the way the others do, through the lock. The composer
+(`rootfs/build.sh`, `rootfs/compose`, `rootfs/runtime`, `rootfs/packages`,
+`rootfs/scripts`) is the assembly: it reads `boards/*`, the lock, the pool
+and `meta/`, and the release gate re-verifies its record; moved out, it
+would need the boards and the lock from here and the assembly would have
+nothing left to assemble.
 
 ### 1. Transport: the Gitea Debian registry
 
@@ -264,7 +283,7 @@ channels as it refuses the development marker today.
 - `make os-pool` = `fetch.sh` for both architectures + `os-debs` + `repo.sh`;
   it is what `rootfs/build.sh` names in its refusal message.
 - `make os-deb-preflight` additionally checks that every lock row is
-  reachable (one HEAD request per row).
+  reachable (one one-byte ranged GET per row; the registry answers HEAD with 405).
 - `make os-lock-bump COMPONENT=<name>` wraps `lock.sh`.
 
 ### 6. Versioning
@@ -338,6 +357,32 @@ into `micad`. `docs/architecture.md` gains a *Repositories* section;
 lock and the gate relocation; `pkgs/README.md` says what is left
 (`mos-boot`) and where the rest went.
 
+### 12. Renaming to Mica OS
+
+Decided 2026-09-12: the split and the rename proceed together. The phase
+that moves a component renames what it moves, so no repository is created
+under a name it will not keep and no archive is published twice for a
+rename. Proposed table (confirmation of the exact names is the one open
+input; nothing below is renamed until it is confirmed):
+
+| Today | Proposed | Renamed in |
+|---|---|---|
+| `mosd`, `mos-apid`, `mos-mqttd`, `mos-mqtt-broker` (packages and binaries), `pkgs/mosd/` workspace, `mosd.service`, `apid.service` | `micad`, `mica-apid`, `mica-mqttd`, `mica-mqtt-broker`; `micad.service`, `mica-apid.service` | Phase 5 (`micad`) |
+| `mos-deploy`, `mos-init`, `mos-shutdown` (packages, binaries, `pkgs/mos-deploy/`) | `mica-deploy`, `mica-init`, `mica-shutdown` | Phase 4 (`mica-deploy`) |
+| `mos-podman` | `mica-podman` | Phase 3 (`mica-podman`) |
+| `mos-system`, `mos-busybox`, `mos-ca-trust`, `mos-profile-*`, `mos-wifi*`, `mos-bluetooth`, `mos-health.service` | `mica-system`, `mica-busybox`, `mica-ca-trust`, `mica-profile-*`, `mica-wifi*`, `mica-bluetooth`, `mica-health.service` | Phase 3a (`mica-system`) |
+| `mos-board-*`, `mos-s905x5m-*`, `mos-bm201-front-panel` (stay in the assembly) | `mica-board-*`, `mica-s905x5m-*`, `mica-bm201-front-panel` | Phase 6 |
+| D-Bus `com.mos.*` (`com.mos.mosd`, `com.mos.control`, `com.mos.ext.*`; 57 files) | `com.mica.*` | Phase 5, with `micad` |
+| `/usr/lib/mos`, `/etc/mos`, `/var/lib/mos`, `/usr/share/mos` (root layout; 82/56/43 files) and the `mos-*` state directories | `/usr/lib/mica`, `/etc/mica`, `/var/lib/mica`, `/usr/share/mica` | Phase 3a (`mica-system` owns the layout), consumers follow in 4 and 5 |
+| `MOS_*` build and runtime variables, `make os-*` targets, `mos-build-*` images, `Mos-Source-*` control fields | `MICA_*`, `make os-*` unchanged, `mica-build-*`, `Mica-Source-*` | Phase 6, last, as one mechanical sweep |
+
+The on-device names (bus, paths, state directories) are a runtime
+compatibility break for existing installs; migration was waived on
+2026-09-11 and the rename lands while the tree is in its development
+phase. `rootfs/runtime/consumers.json` (115 rows keyed by package) and
+`rootfs/packages/*.pkgs` are rewritten with each package rename, and
+`verify/src/smoke-register.ts` with each binary rename.
+
 ### Phase order
 
 Each phase ends with an x64 image composed, verified (`os-verify`) and
@@ -348,18 +393,28 @@ smoke-tested from the pool as it stands.
   `origin` repointed, the throwaway upload/download/delete round trip done,
   the runner question answered (none registered; see *Forge facts*),
   decisions 3 and 4 recorded under *Annotations*.
-- **Phase 1 — the mechanism, inside this tree.** Provenance fields, manifest
-  columns, `VERSION` + `version.sh`, `fetch.sh`/`lock.sh`/`publish.sh`/`source.sh`,
+- **Phase 1 — the mechanism, inside this tree.** Done 2026-09-12
+  (commits `882ed749` to `42b76d50`): provenance fields, manifest columns,
+  `VERSION` + `version.sh`, `fetch.sh`/`lock.sh`/`publish.sh`/`source.sh`,
   `MOS_POOL_DIR`, the composer's two-class rule, retirement of the fixed
   producer join (3a), `os-pool`, the unlocked marker and its release refusal,
   the negative tests. Proven by publishing the locally built `mos-podman`,
-  locking it, deleting the local archive and composing x64 from the fetched
-  copy. No repository is split yet; a failure is an in-tree revert.
-- **Phase 2 — `mica-build-env`.** Subtree-split `build-env/`, push, add back
-  as a submodule, move `deb-package-gate.sh` in, CI green.
+  locking it (`3a731a71`), deleting the local archive and composing x64 and
+  virt-arm64 from the fetched copy; the x64 image passed `os-verify` and the
+  release gate with the lock rows in `provenance.json`. Pre-existing defects
+  met on the way are `20260912-2236-phase1-findings`.
+- **Phase 2 — `mica-build-env` and `mica-debian`.** Subtree-split
+  `build-env/` and `rootfs/debian/`, push each, add each back as a
+  submodule at its old path, move `deb-package-gate.sh` and the two Debian
+  tests in, gates green (locally until a runner exists).
 - **Phase 3 — `mica-podman`.** The 45-minute arm64 build leaves this tree.
-  Move the two overlay files and the pins test, drop `@SYSTEM_VERSION@`,
-  publish, lock, delete `pkgs/podman`, rewire the four podman tests.
+  Move the two overlay files and the pins test, rename the package, publish,
+  lock, delete `pkgs/podman`, rewire the four podman tests.
+- **Phase 3a — `mica-system`.** Subtree-split `rootfs/packages-src/` and
+  `rootfs/overlay/`, rename the eight packages and the root layout
+  (section 12), publish, lock, delete both directories; the composer's
+  `packages/*.pkgs`, `consumers.json` and the assembly tests follow the new
+  names.
 - **Phase 4 — `mica-deploy`.** Publish `mos-deploy` and `mos-lifecycle`;
   `kernel-package.ts` takes both executables from the fetched archive;
   contract fixtures, the faults suite and the shutdown test move; the
@@ -376,16 +431,21 @@ smoke-tested from the pool as it stands.
 
 ### Phase 1
 
+Run 2026-09-12; results in the task record's *Verification*.
+
 - `fetch.sh` negatives, each red by name: altered sha256; `source-commit`
   differing from the control field; a version the registry does not hold;
-  401/403 with no token.
+  401/403 with no token. (`tests/pool-lock-test.sh`, 16 checks, against a
+  stub registry that requires the token.)
 - Composer negatives, each red by name: an archive no lock row and no local
   producer names; a lock-named archive with one byte changed; `MOS_POOL_UNLOCKED`
   naming a package not in the pool.
 - Positive: `os-pool`, then `rootfs/build.sh` for x64 and virt-arm64, then
   `os-verify`, `os-smoke-test`, `os-install-closure-gate`,
   `os-factory-root-gate` green with `mos-podman` fetched and the rest built
-  here.
+  here. (All green except the factory-root gate's device negative case and
+  the package gate's board-package overlap, both pre-existing; see the
+  findings task.)
 - `release-manifest.ts` refuses an unlocked image in `candidate` and
   `stable`, accepts it in `development`; fixture test beside the
   development-marker cases.
@@ -510,6 +570,13 @@ smoke-tested from the pool as it stands.
 - Decision 3 (2026-09-12): builder images stay locally built with
   `make build-env` in every repository; publishing them to the container
   registry is not part of this plan.
+- Decided 2026-09-12 (user): the split and the Mica OS rename proceed
+  together, per section 12; the exact names in that table await
+  confirmation. Asked the same day whether `rootfs/`, and the Debian base in
+  particular, should be a repository of its own: `rootfs/debian` yes, as
+  the `mica-debian` submodule; `rootfs/packages-src` + `overlay` yes, as
+  `mica-system` through the lock; the composer no (rationale under *Target
+  repository set*).
 - Decision 4 (2026-09-12): the token lives on the developer machine as
   `GITEA_DS_TOKEN` (named, never printed, by `build-env/deb/registry.env`);
   when a runner exists, the same variable is a repository Actions secret and

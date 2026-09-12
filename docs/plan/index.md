@@ -49,4 +49,5 @@ Each plan is a single line linking to its detail file. All detailed information 
 - [x] [**20260912-1329-arm64-board-builds ARM64, CX3576 and S905X5M builds**](20260912-1329-arm64-board-builds.md) `2026-09-12`
 - [ ] [**20260912-1347-root-closure-reduction Reduce the read-only root closure**](20260912-1347-root-closure-reduction.md) `2026-09-12`
 - [ ] [**20260912-2043-unify-board-behavior Unify board build, compression and acceptance behavior**](20260912-2043-unify-board-behavior.md) `2026-09-12`
+- [ ] [**20260912-2236-phase1-findings Fix the defects the lock proof build surfaced**](20260912-2236-phase1-findings.md) `2026-09-12`
 - [x] [**20260912-2049-docs-restructure Restructure the documentation system**](20260912-2049-docs-restructure.md) `2026-09-12`

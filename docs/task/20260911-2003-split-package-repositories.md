@@ -61,8 +61,20 @@ Implementing Phase 1 (the mechanism inside this tree); approved 2026-09-12.
   `source-lineage.py` with `MOS_POOL_UNLOCKED`, the fixed producer join
   retired from the lineage script and the release gate, the package gate
   lock-aware, `os-pool` / `os-lock-bump`, `mosd-build.txt` from the archive's
-  field. The x64 proof (publish `mos-podman`, lock it, compose from the
-  fetched copy) is the remaining Phase 1 step.
+  field.
+- Phase 1 proof (2026-09-12, worktree `/srv/ybolab/mica-build`, branch
+  `split/phase1`): the pool was built at `c87bfd1d`, `mos-podman` published
+  to the registry (component `mica-build`), locked by `make os-lock-bump`
+  (commit `3a731a71`), the local archives deleted, and `make os-pool`
+  fetched both back and verified them against the rows while `os-debs`
+  skipped the podman producer. The x64 root composed from that pool with
+  `pool: 15 archive(s); built here at stamp git42b76d505323-1, 1 imported by
+  the lock`, `rootfs-packages.txt` and the lineage record carry the lock row
+  and the per-package source, `mosd-build.txt` came from the archive's
+  field, and the smoke run reported the same commit from the binaries.
+  The build was repeated at each fix commit because the stamp rule refuses
+  a pool from another commit; the pre-existing defects met on the way are
+  recorded in `20260912-2236-phase1-findings`.
 
 ## Findings
 
@@ -86,3 +98,13 @@ Implementing Phase 1 (the mechanism inside this tree); approved 2026-09-12.
   `make docs-verify`. `tests/shell-pipefail-lint.sh` reports two
   pre-existing findings outside this change (`pkgs/mos-boot/init-keys.sh`,
   `pkgs/mosd/apid/ui/verify-ui-policy.sh`).
+- Phase 1, x64 proof on `split/phase1` (final commit `42b76d50`):
+  `make os-pool` fetched `mos-podman` amd64 and arm64 through the lock and
+  built the rest; `MOS_BOARD=x64 bash rootfs/build.sh` composed (198 MB)
+  with smoke `12 pass, 0 fail`; `make os-install-closure-gate` `99/99`;
+  `make os-deb-package-gate` `293/295`, every lock check green, the two
+  failures the board packages' shared layout files (findings task, item 2);
+  components, image and `make os-verify` `104 checks, 2 skipped`, green
+  after four diagnostic URL followers were attested;
+  `make os-factory-root-gate` identical on all five comparisons, red only on
+  its device negative case (findings task, item 7).

@@ -1,5 +1,38 @@
 # Changelog
 
+## 2026-09-12 23:05 [progress]
+
+Phase 1 of `20260911-2006-split-package-repositories` proven and landed on
+main (`5ca946f4` to `de8378cb`, rebased onto the documentation restructure).
+`mos-podman` built at `c87bfd1d` was published to the Debian registry under
+component `mica-build`, locked by `make os-lock-bump` and, after the local
+archives were deleted, fetched back by `make os-pool` and verified against
+its rows while `os-debs` skipped the podman producer. From that pool the x64
+root composed (198 MB, smoke 12/12), the components, image, `os-verify`
+(104 checks) and the release assemble and gate passed with the lock rows in
+`provenance.json`; virt-arm64 composed the same way (221 MB, smoke 11 pass,
+crun executor-limited). `os-install-closure-gate` 99/99. `tests/pool-lock-test.sh`
+drives `fetch.sh` and `lock.sh` against a stub registry. `fetch.sh --check`
+uses a ranged GET because the registry answers HEAD with 405; `publish.sh`
+gained `--package`; the smoke runner reads the seven-column record; four
+diagnostic URL followers were attested in the native endpoint check. The
+build ran in the worktree `/srv/ybolab/mica-build` because the main checkout
+carried another session's uncommitted work and the stamp rule refuses a
+dirty tree. Phases 2 to 6 remain, now with the rename and the `mica-debian`
+and `mica-system` repositories folded in.
+
+## 2026-09-12 22:40 [decision]
+
+Recorded task and plan `20260912-2236-phase1-findings` for the seven
+pre-existing defects the Phase 1 lock proof surfaced and worked around: the
+s905x5m BSP `userland` target builds arm64 on the ambient builder, the three
+arm64 board packages share layout files without mutual `Conflicts`, the
+native endpoint check attests merged-string neighbours and was red for the
+tree's own binaries, the composer's default `MOS_META_DIR` fails the public
+metadata validation, two pipefail lint findings, the factory-root gate's
+device negative case failing on a root that ships no device nodes, and the
+resulting red gate records. Pending approval; fixes come later and do not touch the lock.
+
 ## 2026-09-12 21:30 [progress]
 
 Implemented Phase 1 of `20260911-2006-split-package-repositories` inside this
