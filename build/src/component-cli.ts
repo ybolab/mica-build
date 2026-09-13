@@ -125,7 +125,7 @@ async function main() {
       } finally { await tb.close() }
       writeFileSync(join(work, 'rootfs.roothash'), hash)
       const material = signing()
-      const signed = spawnSync('bash', [join(REPO_ROOT, 'pkgs/mica-boot/verity-tool.sh'), 'sign', join(work, 'rootfs.roothash'), material.key, material.certificate, join(work, 'rootfs.roothash.p7s')], { encoding: 'utf8', timeout: 120000 })
+      const signed = spawnSync('bash', [join(REPO_ROOT, 'boot/verity-tool.sh'), 'sign', join(work, 'rootfs.roothash'), material.key, material.certificate, join(work, 'rootfs.roothash.p7s')], { encoding: 'utf8', timeout: 120000 })
       if (signed.status !== 0) throw new Error(`Content signing failed: ${signed.error?.message ?? signed.signal ?? signed.status}: ${signed.stderr}`)
       const content: VerityImage = { image: metadata, rootHash: hash, signature: artifactFile(join(work, 'rootfs.roothash.p7s')),
         verity: { version: 1, algorithm: 'sha256', dataBlockSize: 4096, hashBlockSize: 4096, dataBlocks: integer('VERITY_DATA_BLOCKS'), hashOffset: integer('SQUASHFS_BYTES'), salt: data.VERITY_SALT! } }

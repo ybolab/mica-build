@@ -79,7 +79,7 @@ Create an isolated set of development signing inputs with the existing
 fresh-directory generator:
 
 ```sh
-bash pkgs/mica-boot/dev-keys.sh --out /absolute/path/to/new-development-inputs
+bash boot/dev-keys.sh --out /absolute/path/to/new-development-inputs
 ```
 
 The `--out` directory must not already exist. The generator creates private
@@ -93,4 +93,4 @@ The authoritative custody and release rules remain in:
 - [Key delivery](../docs/design/key-delivery.md)
 - [Release artifacts](../docs/design/release-artifacts.md)
 - [Release signing](../docs/design/release-signing.md)
-- [Development input generator](../pkgs/mica-boot/dev-keys.sh)
+- [Development input generator](../boot/dev-keys.sh)

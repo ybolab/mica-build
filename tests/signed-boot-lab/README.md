@@ -53,7 +53,7 @@ without it. It also needs a kernel built with `CONFIG_SERIAL_AMBA_PL011=y` --
 the board has an 8250 and QEMU's `virt` machine has a PL011, so a stock board
 build boots with no console at all and looks like a hang. Build that variant by
 pointing `--build-context mos-common=` at a copy of
-`boards/common/mos-required.fragment` with the two PL011 lines appended;
+`boot/common/mos-required.fragment` with the two PL011 lines appended;
 nothing else in the configuration changes, and neither symbol touches
 dm-verity, the keyring or PKCS#7.
 

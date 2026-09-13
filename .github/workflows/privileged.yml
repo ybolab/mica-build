@@ -190,11 +190,14 @@ jobs:
       # The BSP artifacts the image needs: the kernel (Image + dtb) and the
       # mos A/B U-Boot variant. Both are docker builds; the host needs no
       # cross toolchain. This is the slow half of the lane.
-      - name: make cx3576-kernel
-        run: make cx3576-kernel
+      - name: The cx3576 kernel and U-Boot out of the pinned mica-kernel-cx3576 archive
+        run: |
+          set -euo pipefail
+          bash build-env/deb/fetch.sh --arch arm64
+          make os-board-kernel MICA_BOARD=cx3576
+        env:
+          GH_TOKEN: ${{ secrets.MICA_DEPS_TOKEN }}
 
-      - name: make cx3576-uboot-mos
-        run: make cx3576-uboot-mos
 
       # rootfs (squashfs + dm-verity, built for linux/arm64 -- this needs host
       # binfmt since; see the preflight note at the top of this

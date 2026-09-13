@@ -1,0 +1,13 @@
+{
+  "name": "mica-kernel-virt-arm64",
+  "repository": "mica-virt-arm64",
+  "commit": "045713acea294c9fdd1a0d913e3a27d379ad2521",
+  "targets": {
+    "arm64": {
+      "version": "0.1.0+git045713acea29-1",
+      "architecture": "arm64",
+      "sha256": "236d7f3e1f5ab146d6edd6ceff24d63ad435fbf3982175c7ded2f809974a022b",
+      "asset": "mica-kernel-virt-arm64_0.1.0.git045713acea29-1_arm64.deb"
+    }
+  }
+}

@@ -85,7 +85,7 @@ jobs:
         run: MICA_BUILD_CONTAINER=1 make os-build-test
 
       - name: Firmware record parsing and persistent attempt IO
-        run: make os-fit-records-test os-trust-domain-test os-s905x5m-hwinit-test
+        run: make os-fit-records-test
 
 
   # Offline suites without Docker; DATA initialization also runs as root.
@@ -119,19 +119,13 @@ jobs:
       - name: Package build preflight
         run: make os-deb-preflight-test
 
-      # Here for this job's own reason: it is sh and a temp directory, and it
-      # needs neither bun nor docker nor a board. It is the only gate that
-      # executes a boards/*/hwinit script.
-      - name: The cx3576 USB gadget is built with a function in its configuration
-        run: make os-gadget-test
-
-      # Belongs in THIS job and not in os-verify: it reads three committed files
-      # with bash and git, and needs neither bun nor docker. It is also the only
-      # gate here that says anything about a board kernel -- `make cx3576-kernel`
-      # is not run on any runner, so without this step the symbols netavark
-      # programs rules against are checked by a hardware build or not at all.
-      - name: The cx3576 kernel config carries what netavark needs
+      # The boards are repositories of their own now (ybolab/mica-<board>);
+      # their hwinit and kernel-config checks run there. What this tree
+      # still asserts about the kernels it imports runs after the pool:
+      - name: The imported kernels carry what netavark needs
         run: make os-netavark-kernel-test
+        env:
+          GH_TOKEN: ${{ secrets.MICA_DEPS_TOKEN }}
 
       # The build policy of docs/design/build.md section 0 -- no toolchain on
       # the host, no compilation on the host, no assembly on the host -- and
@@ -157,7 +151,6 @@ jobs:
           echo "  make os-repart-test        privileged docker, loop devices" >&2
           echo "  make os-image / os-verify (explicit board, records and keys)   image assembly and verification" >&2
           echo "Not run here (board artifact builds; cross toolchains and BSP trees):" >&2
-          echo "  make cx3576-uboot-mos / cx3576-kernel" >&2
           echo "Not run here (bash only, needs neither bun nor docker; simply not wired yet):" >&2
           echo "  make os-shell-pipefail-lint" >&2
 

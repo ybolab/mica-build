@@ -132,7 +132,7 @@ describe('mounts are identity mounts, and there is one per directory', () => {
   // same answer two real ones do -- this case would keep passing while silently
   // becoming a duplicate of 'a path that is not there yields its PARENT'.
   test('two files in one directory are one mount', () => {
-    const dir = join(REPO_ROOT, 'pkgs', 'mica-boot')
+    const dir = join(REPO_ROOT, 'boot')
     const pair = [join(dir, 'verity-tool.sh'), join(dir, 'dev-keys.sh')]
     for (const f of pair) expect(existsSync(f)).toBe(true)
     expect(mountDirs(pair)).toEqual([dir])

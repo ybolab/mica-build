@@ -147,11 +147,11 @@ if check_no_cache_contract "$WORK/build-no-bridge.sh" 2>/dev/null; then
     fail 'no-cache contract accepted a removed invocation bridge'
 fi
 
-if ! check_initramfs_contract "$ROOT/pkgs/mica-boot/initramfs.sh"; then
+if ! check_initramfs_contract "$ROOT/boot/initramfs.sh"; then
     fail 'initramfs deterministic archive contract is incomplete'
 fi
 for mutation in reproducible ordering epoch; do
-    cp "$ROOT/pkgs/mica-boot/initramfs.sh" "$WORK/initramfs-$mutation.sh"
+    cp "$ROOT/boot/initramfs.sh" "$WORK/initramfs-$mutation.sh"
     case "$mutation" in
     reproducible) sed -i 's/ --reproducible//' "$WORK/initramfs-$mutation.sh" ;;
     ordering) sed -i 's/LC_ALL=C sort -z/cat/' "$WORK/initramfs-$mutation.sh" ;;

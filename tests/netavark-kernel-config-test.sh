@@ -24,7 +24,7 @@
 #
 # WHERE THAT STEP LIVES IS PER BOARD, which is why the rows below name a file
 # each rather than deriving one. x64 and virt-arm64 still run it inside their
-# kernel Dockerfile; cx3576's moved to boards/cx3576/bsp/kernel/configure.sh
+# kernel Dockerfile; cx3576's moved to mica-cx3576:bsp/kernel/configure.sh
 # under RFCT-345, when that board's build logic came out of its Dockerfile. It is
 # the same loop and this file reads it the same way -- a row still pointing at
 # the Dockerfile after the move would have found no `for option in` and no
@@ -46,7 +46,7 @@
 # Debian's kernel, where these are modules the distribution ships and nothing in
 # this tree chose the .config. It builds its own now, so its committed config is
 # read here too -- and the symbols themselves moved into
-# boards/common/mos-required.fragment, which both boards merge before
+# boot/common/mos-required.fragment, which both boards merge before
 # olddefconfig and both assert afterwards. That is what assertion 2 accepts as
 # the gate: the board's own loop, or the shared fragment both loops enforce.
 #
@@ -61,9 +61,17 @@ REPO_ROOT="$(cd "${HERE}/.." && pwd)"
 # One row per board: the committed config a build starts from, and the file that
 # asserts the result after olddefconfig. Discovered from neither -- written here,
 # because a board with no kernel build has no row and a glob would give it one.
-BOARD_CONFIGS="s905x5m:boards/s905x5m/bsp/kernel/config/kernel-s905x5m.config cx3576:boards/cx3576/bsp/kernel/config/kernel-cx3576z.config virt-arm64:boards/virt-arm64/bsp/kernel/config/virt-arm64.config x64:boards/x64/bsp/kernel/config/x64.config"
-BOARD_CONFIG_GATES="s905x5m:boards/s905x5m/bsp/kernel/Dockerfile cx3576:boards/cx3576/bsp/kernel/configure.sh virt-arm64:boards/virt-arm64/bsp/kernel/Dockerfile x64:boards/x64/bsp/kernel/Dockerfile"
-FRAGMENT="${REPO_ROOT}/boards/common/mos-required.fragment"
+# Every board the lock pins, and the BUILT config its kernel archive carries
+# (tools/board-pool.sh --kernels extracted it into _out/boards/<board>/kernel).
+# Not the committed config: the assembly no longer holds a board's kernel
+# tree, and what it ships is the built one.
+BOARD_CONFIGS=""
+for pin in "${REPO_ROOT}"/deps/packages/mica-kernel-*.json; do
+    [ -e "${pin}" ] || continue
+    b="${pin##*/mica-kernel-}"; b="${b%.json}"
+    BOARD_CONFIGS="${BOARD_CONFIGS}${b}:_out/boards/${b}/kernel/config "
+done
+FRAGMENT="${REPO_ROOT}/boot/common/mos-required.fragment"
 VERSIONS_ENV="${REPO_ROOT}/deps/packages/mica-podman.versions.env"
 
 # The netavark the citations below were read against.
@@ -119,7 +127,7 @@ mapfile -t SYMBOLS < <(awk 'NF {print $1}' <<<"${REQUIRED}")
 }
 
 echo "--- 1. every symbol is =y in every board's committed config"
-# =y and not =m: boards/common/mos-required.fragment states the rule -- a
+# =y and not =m: boot/common/mos-required.fragment states the rule -- a
 # dm-verity root with no initramfs cannot load a module before the rootfs is up,
 # and each board Dockerfile's own loop greps for =y for the same reason.
 #
@@ -149,56 +157,14 @@ for row in ${BOARD_CONFIGS}; do
         fi
     done <<<"${REQUIRED}"
 done
-[ "${BOARDS_CHECKED}" -ge 2 ] || {
-    echo "error: only ${BOARDS_CHECKED} board config(s) were read; both shipped boards build a kernel." >&2
+[ "${BOARDS_CHECKED}" -ge 1 ] || {
+    echo "error: no board config was read: deps/packages pins no mica-kernel-<board> archive, or none was extracted (make os-netavark-kernel-test runs tools/board-pool.sh --kernels first)." >&2
     exit 1
 }
 
 echo
-echo "--- 2. each symbol is re-asserted after olddefconfig, on every board"
-# The committed configs are inputs. This is the only check that survives
-# olddefconfig deciding a symbol's dependencies are unmet and dropping it.
-#
-# TWO WAYS TO BE GATED, and they are equally binding. A board's own
-# `for option in` loop names board facts; boards/common/mos-required.fragment
-# names engine facts, and EVERY board's configure step greps every `=y` line of
-# it against the final .config. So a symbol in the fragment is gated on every
-# board at once, which is where these symbols live since PLAN-074 -- and the
-# check below requires the fragment's own enforcement to exist in each board's
-# gate file before it accepts that route.
-FRAGMENT_SYMS="$(sed -n 's/^CONFIG_\([A-Z0-9_]*\)=y$/\1/p' "${FRAGMENT}")"
-[ -n "${FRAGMENT_SYMS}" ] || {
-    echo "error: ${FRAGMENT#"${REPO_ROOT}/"} yields no =y symbols, so the fragment route would gate nothing." >&2
-    exit 1
-}
-for row in ${BOARD_CONFIG_GATES}; do
-    board="${row%%:*}"
-    gate="${REPO_ROOT}/${row#*:}"
-    [ -f "${gate}" ] || {
-        echo "error: ${row#*:} does not exist, so ${board}'s post-olddefconfig gate would be read from nothing." >&2
-        exit 1
-    }
-    # The fragment loop itself: `for line in $(sed ... mos-required.fragment)`
-    # followed by a grep of the final .config. Without it, membership in the
-    # fragment gates nothing on this board and the route below would be a
-    # claim about a loop that is not there.
-    grep -q 'mos-required.fragment' "${gate}" || {
-        echo "error: ${row#*:} does not read mos-required.fragment, so the shared floor is not enforced on ${board}." >&2
-        exit 1
-    }
-    LOOP="$(awk '/for option in/ {f = 1} f {print} f && /; do/ {exit}' "${gate}")"
-    for sym in "${SYMBOLS[@]}"; do
-        if grep -qw "${sym}" <<<"${LOOP}"; then
-            pass "${board}: the built config is gated on CONFIG_${sym}=y by the board loop"
-        elif grep -qx "${sym}" <<<"${FRAGMENT_SYMS}"; then
-            pass "${board}: the built config is gated on CONFIG_${sym}=y by the shared fragment"
-        else
-            fail "neither ${row#*:}'s post-olddefconfig loop nor boards/common/mos-required.fragment names ${sym}, so olddefconfig could drop it on ${board} and the image would still build"
-        fi
-    done
-done
-
-echo
+# --- 2. (the post-olddefconfig gate files are checked where the kernel trees
+#        live: boot/common/kernel-config-test.sh in each board repository)
 echo "--- 3. the citations point at the netavark this tree ships"
 pinned="$(sed -n 's/^NETAVARK_VERSION=\(.*\)$/\1/p' "${VERSIONS_ENV}")"
 if [ "${pinned}" = "${CITED_NETAVARK}" ]; then
@@ -209,7 +175,7 @@ fi
 
 echo
 echo "--- 4. the shared floor and this list do not disagree about a symbol"
-# Since the eBPF/firewall floor landed, boards/common/mos-required.fragment
+# Since the eBPF/firewall floor landed, boot/common/mos-required.fragment
 # pins most of the list above =y for EVERY board. Two floors naming the same
 # symbol are only safe while they agree: if the fragment ever stated one of
 # these as =m or "is not set", cx3576 would still be green here -- the board
@@ -217,7 +183,6 @@ echo "--- 4. the shared floor and this list do not disagree about a symbol"
 # weaker answer. So each symbol the fragment mentions at all must be pinned
 # there as =y. Symbols the fragment does not mention are this file's alone and
 # are skipped, which is why the overlap is counted rather than assumed.
-FRAGMENT="${REPO_ROOT}/boards/common/mos-required.fragment"
 [ -f "${FRAGMENT}" ] || {
     echo "error: ${FRAGMENT} not found; assertion 4 has nothing to compare against" >&2
     exit 1

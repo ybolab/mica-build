@@ -85,7 +85,10 @@ if [ ! -f "$LAYOUT_ENV" ]; then
     echo "       A board IS its board.env; boards with one here: ${known:-(none)}" >&2
     exit 1
 fi
-BOARD_DIR=${BOARD_DIR:-"$REPO_ROOT/boards/${MICA_BOARD}/bsp"}
+# The board's BSP outputs, out of the pinned mica-kernel-<board> archive
+# (tools/board-pool.sh --kernel): containers.env lives there when the board
+# declares one.
+BOARD_DIR=${BOARD_DIR:-"$REPO_ROOT/_out/boards/${MICA_BOARD}"}
 OUT_DIR="$REPO_ROOT/_out/${MICA_BOARD}"
 # Installed-size budget. A per-board fact for the same reason
 # BOARD_CMDLINE_ARGS is: it protects a rootfs slot, and the slots differ.

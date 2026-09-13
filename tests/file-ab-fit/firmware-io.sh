@@ -17,7 +17,7 @@ docker run --rm --label ai-agent=true --network traefik -v "$PWD:/src:ro" -v "$w
     flags=
     [ "$board" != s905x5m ] || flags=-DS905X5M
     gcc $flags -std=c11 -Wall -Wextra -Werror -fsanitize=address,undefined \
-        -I/out/include -I/src/boards/common /src/tests/file-ab-fit/firmware-io.c -o /out/firmware-io
+        -I/out/include -I/src/boot/common /src/tests/file-ab-fit/firmware-io.c -o /out/firmware-io
     timeout 20 /out/firmware-io
     done
 '

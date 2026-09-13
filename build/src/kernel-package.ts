@@ -121,7 +121,7 @@ export async function packKernel(inputs: KernelInputs, tb: Toolbox): Promise<Ker
       for (const file of files) {
         if (!/^\/usr\/lib\/firmware\/[a-zA-Z0-9_.-]+$/.test(file)) throw new Error('Invalid board firmware path')
         const name = file.slice('/usr/lib/firmware/'.length)
-        const source = join(REPO_ROOT, 'boards', board, 'bsp/rootfs/firmware', name)
+        const source = join(REPO_ROOT, '_out', 'boards', board, 'firmware', name)
         artifactFile(source)
         copyFileSync(source, join(firmware, name))
       }
@@ -130,7 +130,7 @@ export async function packKernel(inputs: KernelInputs, tb: Toolbox): Promise<Ker
       docker(['run', '--rm', '--label', 'ai-agent=true', '--network', 'traefik',
         '-v', `${resolve(firmware)}:/output`, '-v', `${resolve(regulatoryTrust)}:/regdb-certs.pem:ro`,
         FIT_TOOLS, 'sh', '/tools/regdb.sh', '/regdb-certs.pem', '/output'])
-      copyFileSync(join(REPO_ROOT, 'boards', board, 'bsp/component-copyright'), join(firmware, 'mos-component-copyright'))
+      copyFileSync(join(REPO_ROOT, '_out', 'boards', board, 'component-copyright'), join(firmware, 'mos-component-copyright'))
     }
     const support = await packSupport(join(kernelDirectory, 'modules.tar'), release, firmware, join(work, 'support'), contentSigning, tb)
     if (firmware) rmSync(firmware, { recursive: true })

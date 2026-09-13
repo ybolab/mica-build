@@ -14,7 +14,7 @@ function crypto(command: string) {
   return run('docker', ['run', '--rm', '--label', 'ai-agent=true', '--network', 'traefik', '-v', `${scratch}:/w`, '--entrypoint', '/bin/sh', image, '-ec', command])
 }
 function tool(...args: string[]) {
-  return run('bash', [join(REPO_ROOT, 'pkgs/mica-boot/verity-tool.sh'), ...args])
+  return run('bash', [join(REPO_ROOT, 'boot/verity-tool.sh'), ...args])
 }
 
 beforeAll(() => {

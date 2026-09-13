@@ -1,8 +1,9 @@
-.PHONY: os-trust-domain-test build-env help os-apid-api-spec-pins os-apid-api-test os-bare-host-gate os-boot-tools os-build-test os-components os-cx3576-flash-test os-deb-package-gate os-deb-preflight os-deb-preflight-test os-debian-cache os-debian-install os-debian-test os-debian-verify os-debs os-devkeys os-lock-bump os-pool os-pool-lock-test os-factory-root-gate os-fit-records-test os-gadget-test os-host-toolchain-lint os-host-toolchain-lint-test os-image os-install-closure-gate os-layout-lint os-mac-test os-netavark-kernel-test os-quadlet-doc-test os-repart-test os-rootfs-cx3576 os-rootfs-manifest-test os-rootfs-virt-arm64 os-rootfs-x64 os-shell-pipefail-lint os-smoke-negative-test os-smoke-test os-verify os-verify-test
+.PHONY: build-env help os-apid-api-spec-pins os-apid-api-test os-bare-host-gate os-boot-tools os-build-test os-components os-deb-package-gate os-deb-preflight os-deb-preflight-test os-debian-cache os-debian-install os-debian-test os-debian-verify os-debs os-devkeys os-lock-bump os-pool os-pool-lock-test os-factory-root-gate os-fit-records-test os-host-toolchain-lint os-host-toolchain-lint-test os-image os-install-closure-gate os-layout-lint os-netavark-kernel-test os-quadlet-doc-test os-repart-test os-rootfs-cx3576 os-rootfs-manifest-test os-rootfs-virt-arm64 os-rootfs-x64 os-shell-pipefail-lint os-smoke-negative-test os-smoke-test os-verify os-verify-test os-board-kernel
 
 # THE SOURCE DEPENDENCIES, before anything else: build-env/ (mica-build-env)
 # is the substrate every target reaches through, rootfs/debian/ (mica-debian)
-# is the pinned base the composer installs. Both are fetched at their pins
+# is the pinned base the composer installs, boot/ (mica-boot) the boot tooling
+# the kernel component and the signing helpers run. Both are fetched at their pins
 # (deps/sources/*.json) by tools/deps.sh and are gitignored, so a fresh clone
 # has neither, and every target would then fail somewhere deep with a message
 # naming a file instead of the cause. `make deps` is the one target that may
@@ -13,6 +14,9 @@ $(error build-env/ is empty: the build substrate is fetched at its pin from ybol
 endif
 ifeq ($(wildcard rootfs/debian/run.sh),)
 $(error rootfs/debian/ is empty: the pinned Debian base is fetched at its pin from ybolab/mica-debian. Run: make deps)
+endif
+ifeq ($(wildcard boot/verity-tool.sh),)
+$(error boot/ is empty: the boot tooling is fetched at its pin from ybolab/mica-boot. Run: make deps)
 endif
 endif
 
@@ -32,7 +36,6 @@ deps-bump:
 # mos top-level build entry. Heavy lifting stays in each component; this file
 # only routes. Board targets: make <board>-<component>, e.g. cx3576-kernel.
 
-BOARDS := cx3576 s905x5m virt-arm64 x64
 
 # The <board>-% delegation rules are NOT listed here: .PHONY does not accept
 # patterns, so an entry like `cx3576-%` matches nothing and silently declares
@@ -62,9 +65,7 @@ help:
 	@echo "  os-smoke-test       execute every self-built binary inside the factory root, assert its pin (docker)"
 	@echo "  os-smoke-negative-test  break that root three ways and require each to turn the run red (docker)"
 	@echo "  os-factory-root-gate    prove the root the smoke run executes in is the root the device ships (docker)"
-	@echo "  os-mac-test         prove the stable-MAC derivation follows the port, not the interface name; drives the by-name defect red"
 	@echo "  os-repart-test      prove first-boot repart growth grows DATA and cannot wipe the loader (privileged docker)"
-	@echo "  os-cx3576-flash-test    drive the cx3576 flash read-back against a stub rkdeveloptool: argv, sector arithmetic, and a hole that must go red before rd"
 	@echo "  os-host-toolchain-lint  no compiler, filesystem maker or assembler runs on the host (docs/design/build.md section 0)"
 	@echo "  os-host-toolchain-lint-test  plant a host invocation, a stale exemption and a broken declaration; require each red"
 	@echo "  os-bare-host-gate   climb PLAN-080 section 4's ladder for real: clone HEAD into the pinned docker-cli image and build from it (docker)"
@@ -97,8 +98,6 @@ os-rootfs-cx3576:
 	bash rootfs/build.sh
 
 
-s905x5m-%:
-	$(MAKE) -C boards/s905x5m/bsp $*
 # THE IMAGE CONTRACT: read the assembled image back and check it against the
 # contract, check by check.
 #
@@ -156,30 +155,6 @@ os-smoke-negative-test:
 # os-verify. MICA_BOARD selects the board; x64 is the default.
 os-factory-root-gate:
 	bash tests/factory-root-gate/gate.sh _out/$(or $(MICA_BOARD),x64)
-# Drives the real boards/cx3576/hwinit/hwinit-gadget against a fake configfs in
-# a temp dir, from cwd `/` -- the cwd its Type=oneshot service actually has.
-# What it asserts is the property configfs applies and an ordinary filesystem
-# does not: configfs_symlink() resolves the target STRING with kern_path() at
-# creation time, so a RELATIVE target names a different directory depending on
-# where the caller stands. That is why the broken form linked correctly in every
-# temp-directory reproduction and produced `Config c/1 ... needs at least one
-# function` on hardware. Drives the red direction too, by making configs/c.1 a
-# regular file. Needs no root, no docker and no board.
-os-gadget-test:
-	bash tests/gadget-configfs-test.sh
-
-# Drives the real boards/cx3576/hwinit/hwinit-mac against a fake sysfs and a
-# stub ip(8). The property is stability under RENAMING: this board boots
-# net.ifnames=0, so eth0/eth1 is the order the two NICs registered in -- 4.5 ms
-# apart on the first hardware boot -- and the same port at the same place on the
-# board must get the same address under either name. The red direction is
-# produced from the shipped script rather than written beside it: the md5 input
-# is rewritten back to the interface name, which is what this file used to hash,
-# and the swapped fixture must then exchange the two addresses. Needs no root,
-# no docker and no board.
-os-mac-test:
-	bash tests/mac-stable-test.sh
-
 # Behavioural check on first-boot growth: a real systemd-repart, with discard
 # enabled, over a copy of each assembled image on a loop device. It proves two
 # things the image contract cannot — that growth does not wipe the Rockchip
@@ -197,11 +172,6 @@ os-repart-test:
 # read-back is run over the same medium and required to pass, so the new
 # result is attributable to the widened window rather than to the fixture.
 #
-# No board, so the real rkdeveloptool is never executed and nothing here says
-# it accepts these arguments; docs/task/RFCT-353.md names those lines. Needs no
-# docker, no network and no root.
-os-cx3576-flash-test:
-	bash tests/cx3576-flash-verify-test.sh
 # The verify bun+TypeScript suite, entered through one script.
 #
 # verify/run.sh finds bun, installs the dev dependencies if they are absent,
@@ -345,6 +315,7 @@ os-pool: os-deb-preflight
 	$(MAKE) os-debs
 	bash tools/podman-pool.sh --check
 	bash tools/deploy-pool.sh --check
+	bash tools/board-pool.sh --check
 
 # fetch.sh and lock.sh against a stub of the release API that requires the
 # token: a replaced asset, a lying lock row, a missing asset, an unreleased
@@ -496,6 +467,9 @@ os-quadlet-doc-test:
 # netavark source at the tag versions.env pins, and each entry cites the line
 # that needs it. Offline, bash only.
 os-netavark-kernel-test:
+	bash build-env/deb/fetch.sh --arch amd64
+	bash build-env/deb/fetch.sh --arch arm64
+	bash tools/board-pool.sh --kernels
 	bash tests/netavark-kernel-config-test.sh
 
 # The builder image every component build stands on, built from a base pinned by
@@ -534,8 +508,6 @@ os-netavark-kernel-test:
 build-env:
 	bash build-env/build.sh
 
-cx3576-%:
-	$(MAKE) -C boards/cx3576/bsp $*
 
 # x64 HAS a BSP build now, and it has exactly one target: the kernel. This
 # rule used to be a refusal saying the board had none, which was true until
@@ -543,8 +515,6 @@ cx3576-%:
 # still no U-Boot and no vendor rootfs here, but the kernel is this
 # repository's since it stopped being Debian's. The image is still assembled
 # with `bash build/run.sh --mkimage-uefi --board x64`.
-x64-%:
-	$(MAKE) -C boards/x64/bsp $*
 
 # virt-arm64, the QEMU aarch64 board, has the same one BSP target for the same
 # reason x64 does: its firmware is AAVMF and provides the boot chain, so nothing
@@ -554,8 +524,6 @@ x64-%:
 #
 # The stem cannot collide with x64-%: a target has to begin `x64-` to match
 # that rule, and `virt-arm64-kernel` does not.
-virt-arm64-%:
-	$(MAKE) -C boards/virt-arm64/bsp $*
 
 # The apid API suite: boot the x64 image in QEMU with apid's port forwarded,
 # wait for the daemon to answer, and drive it over a real socket. It is the
@@ -604,7 +572,17 @@ os-apid-api-spec-pins:
 	bash tests/apid-api/spec-pins.sh
 
 os-boot-tools:
-	bash pkgs/mica-boot/build-tools.sh
+	bash boot/build-tools.sh
+
+# The BSP outputs of a board -- its kernel directory, firmware, copyright and
+# U-Boot -- out of the pinned mica-kernel-<board> archive into
+# _out/boards/<board>/, for the kernel component, the image and the labs.
+# Every board is a repository of its own (ybolab/mica-<board>); this tree
+# builds no kernel. Refuses an archive built against another verity trust
+# certificate than meta/verity/signer.cert.pem.
+os-board-kernel:
+	@test -n "$(MICA_BOARD)" || { echo "error: MICA_BOARD=<board> is required, e.g. make os-board-kernel MICA_BOARD=x64" >&2; exit 1; }
+	bash tools/board-pool.sh --kernel "$(MICA_BOARD)"
 
 # Explicit component inputs and signing material are supplied as CLI arguments.
 os-components:
@@ -627,10 +605,10 @@ os-debian-test:
 MICA_SIGNING_OUTPUT ?= meta
 .PHONY: os-keys-init
 os-keys-init:
-	bash pkgs/mica-boot/init-keys.sh --out "$(MICA_SIGNING_OUTPUT)"
+	bash boot/init-keys.sh --out "$(MICA_SIGNING_OUTPUT)"
 
 os-devkeys:
-	bash pkgs/mica-boot/dev-keys.sh --out "$(MICA_SIGNING_OUTPUT)"
+	bash boot/dev-keys.sh --out "$(MICA_SIGNING_OUTPUT)"
 
 os-rootfs-x64:
 	MICA_BOARD=x64 bash rootfs/build.sh
@@ -646,12 +624,12 @@ os-image:
 os-layout-lint:
 	bash build/run.sh src/file-layout.test.ts
 
+# firmware-io.c compiles the boards' own U-Boot file-boot sources, checked
+# out at their pinned commits by tools/board-pool.sh --source.
 os-fit-records-test:
+	bash tools/board-pool.sh --source cx3576 s905x5m
 	bash tests/file-ab-fit/records.sh
 	bash tests/file-ab-fit/firmware-io.sh
-
-os-trust-domain-test:
-	bash tests/trust-domain-hygiene-test.sh
 
 # Current independent-artifact release directory, SBOM and publication gate.
 .PHONY: os-release os-release-gate os-release-verify-test
@@ -664,7 +642,7 @@ os-release-gate:
 os-release-verify-test:
 	bash tests/release-verify-test.sh
 
-.PHONY: os-rootfs-s905x5m os-image-s905x5m-sd os-verify-s905x5m-sd os-s905x5m-hwinit-test
+.PHONY: os-rootfs-s905x5m os-image-s905x5m-sd os-verify-s905x5m-sd
 os-rootfs-s905x5m:
 	MICA_BOARD=s905x5m bash rootfs/build.sh
 
@@ -675,5 +653,3 @@ os-image-s905x5m-sd:
 os-verify-s905x5m-sd:
 	$(MAKE) os-verify MICA_BOARD=s905x5m
 
-os-s905x5m-hwinit-test:
-	bash tests/s905x5m-wireless.sh

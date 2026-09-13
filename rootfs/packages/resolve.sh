@@ -147,10 +147,6 @@ while read -r _producer _dir _arches packages _enablement; do
         DECLARED["${pkg}"]=1
     done
 done <<<"${PRODUCER_ROWS}"
-[ "${DECLARED_N}" -gt 0 ] || {
-    echo "error: bash build-env/deb/producers.sh named no package. The cross-check below would then accept every manifest line, having compared each against an empty set" >&2
-    exit 1
-}
 
 # ...and the packages the lock imports (deps/packages/*.json): built by another
 # repository from its own commit, fetched at their pins by build-env/deb/fetch.sh,
@@ -162,6 +158,10 @@ while IFS=$'\t' read -r pkg _version _arch _sha256 _repository _commit; do
     [ -n "${DECLARED[${pkg}]:-}" ] || DECLARED_N=$((DECLARED_N + 1))
     DECLARED["${pkg}"]=1
 done <<<"${LOCK_ROWS}"
+[ "${DECLARED_N}" -gt 0 ] || {
+    echo "error: neither bash build-env/deb/producers.sh nor the lock (deps/packages) named a package. The cross-check below would then accept every manifest line, having compared each against an empty set" >&2
+    exit 1
+}
 
 # Every manifest in the directory is parsed and cross-checked on EVERY run, not
 # just the handful this resolution reads. A typo in the manifest of the other

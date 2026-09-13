@@ -10,7 +10,7 @@
 # and the boot stops rather than continuing with the payload.
 #
 # ON WHICH TARGET. The U-Boot SANDBOX, built from the same upstream commit
-# boards/cx3576/bsp/uboot/Dockerfile builds for the board, so the verification
+# mica-cx3576:bsp/uboot/Dockerfile builds for the board, so the verification
 # code under test is the code that ships. It is not the board: cx3576 silicon
 # is not here and QEMU has no rk3576 machine, so what this proves is the
 # behaviour of that U-Boot's FIT verifier, not a boot on the device.

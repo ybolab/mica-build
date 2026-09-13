@@ -296,7 +296,7 @@ one named failure, no image and no container. The baseline is asserted GREEN
 first in every case.
 
 Fixtures are built from the SHIPPED inputs, not from an idea of them.
-`/etc/fstab` is rendered from `boards/common/fstab.in` with the
+`/etc/fstab` is rendered from `boot/common/fstab.in` with the
 board's own GUIDs, because a fixture built from this package's idea of the table
 would test that idea rather than the shipped one, and an `fstab.in` that grew a
 new placeholder would go on passing. The renderer refuses a leftover
@@ -509,7 +509,7 @@ from the board's own name and the artefact names from that board's
 polarities (`status-red:on:1:active-low`, `status-blue:off:0:active-high`),
 which have nowhere board-side to be derived from —
 `boards/cx3576/board.env` declares `BOARD_HAS_STATUS_LED=1` and nothing about
-polarity, and the two other statements of those facts live in `boards/cx3576/bsp/` — the
+polarity, and the two other statements of those facts live in `mica-cx3576:bsp/` — the
 dts the kernel build compiles, and that build's Dockerfile — which this package
 does not read, because depending on a BSP tree a checkout does not carry would
 make every run of it conditional on one. The SCOPE is still derived

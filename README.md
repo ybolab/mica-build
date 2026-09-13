@@ -20,8 +20,8 @@ Start with the [documentation portal](docs/README.md) or the
 
 | Path | Purpose |
 |---|---|
-| `boards/` | Board policy, kernel and boot-firmware BSPs |
-| `pkgs/mica-boot/` | UKI/FIT, initramfs and explicit development signing inputs |
+| `boards/` | Each board's `board.env` and `evidence.json`, derived copies of what its repository (`ybolab/mica-<board>`) ships |
+| `boot/` | UKI/FIT, initramfs and explicit development signing inputs |
 | `rootfs/` | Userspace package composition and immutable root packing |
 | `build/` | Signed components, offline archives and complete image assembly |
 | `verify/`, `tests/` | Image verification, service tests and boot/fault acceptance |

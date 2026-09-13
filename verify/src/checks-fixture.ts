@@ -15,7 +15,7 @@ export interface RootFixture { ctx: ImageContext, root: string, dispose: () => v
 type WriteFile = (path: string, content?: string) => void
 const PURGE_THRESHOLD = 100
 const TAB = '\t'
-const FSTAB_IN = join(REPO_ROOT, 'boards/common/fstab.in')
+const FSTAB_IN = join(REPO_ROOT, 'boot/common/fstab.in')
 const DEFAULT_LINK = '[Match]\nOriginalName=*\n\n[Link]\n'
 const ORACLE_BUILTIN_MARKUP = '<script type="module" crossorigin src="/_ui/assets/index-'
 export const FIXTURE_POOL_VERSION = '0.1.0+git0123456789ab-1'
