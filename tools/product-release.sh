@@ -5,7 +5,7 @@
 #
 #   reads   _out/products/<product>/build/factory-root.oci   (the OCI archive rootfs/build.sh exported)
 #           _out/products/<product>/build/factory-root.txt   (its record: ref, digest, platform)
-#   writes  <registry>/mica-root/<product>:build-<commit12>  -- the image, blob for blob and
+#   writes  <registry>/mica-root:<product>.build-<commit12>  -- the image, blob for blob and
 #           manifest for manifest as the archive holds them, so the digest the
 #           record names is the digest the registry serves.
 #
@@ -42,7 +42,7 @@ manifest="$(blob "${manifest_digest}")"
 [ -f "${manifest}" ] || { echo "error: the layout holds no blob for its manifest ${manifest_digest}" >&2; exit 1; }
 recorded="$(sed -n 's/^digest\t//p' "${BUILD}/factory-root.txt" | head -n1)"
 [ -z "${recorded}" ] || [ "${recorded}" = "${manifest_digest}" ] || echo "note: factory-root.txt records ${recorded}; the layout's manifest is ${manifest_digest}"
-artifact="$(oci_repo root "${NAME}")"
+artifact="$(oci_repo root)"; ref="$(oci_tag "${NAME}" "${TAG}")"
 n=0
 while IFS= read -r d; do
     [ -n "${d}" ] || continue
@@ -50,8 +50,9 @@ while IFS= read -r d; do
     oci_blob_put "${artifact}" "$(blob "${d}")" "${d}" || exit 1
     n=$((n + 1))
 done < <(jq -r '[.config.digest] + [.layers[].digest] | .[]' "${manifest}")
-status="$(oci_request PUT "${artifact}" pull,push "manifests/${TAG}" "${WORK}/put.out" -H "Content-Type: ${manifest_type}" --data-binary "@${manifest}")"
-[ "${status}" = 201 ] || { echo "error: putting the manifest ${TAG} to ${OCI_HOST}/${artifact} answered HTTP ${status}: $(head -c 200 "${WORK}/put.out")" >&2; exit 1; }
-status="$(oci_manifest_get "${artifact}" "${TAG}" "${WORK}/back.json")"
-[ "${status}" = 200 ] && [ "$(oci_manifest_digest "${WORK}/back.json")" = "${manifest_digest}" ] || { echo "error: ${OCI_HOST}/${artifact}:${TAG} reads back as $(oci_manifest_digest "${WORK}/back.json" 2>/dev/null || echo '?'), not ${manifest_digest}" >&2; exit 1; }
-echo "product-release.sh: ${NAME}: ${n} blob(s), ${OCI_HOST}/${artifact}:${TAG} = ${manifest_digest}"
+status="$(oci_request PUT "${artifact}" pull,push "manifests/${ref}" "${WORK}/put.out" -H "Content-Type: ${manifest_type}" --data-binary "@${manifest}")"
+[ "${status}" = 201 ] || { echo "error: putting the manifest ${ref} to ${OCI_HOST}/${artifact} answered HTTP ${status}: $(head -c 200 "${WORK}/put.out")" >&2; exit 1; }
+status="$(oci_manifest_get "${artifact}" "${ref}" "${WORK}/back.json")"
+[ "${status}" = 200 ] && [ "$(oci_manifest_digest "${WORK}/back.json")" = "${manifest_digest}" ] || { echo "error: ${OCI_HOST}/${artifact}:${ref} reads back as $(oci_manifest_digest "${WORK}/back.json" 2>/dev/null || echo '?'), not ${manifest_digest}" >&2; exit 1; }
+oci_require_public "${artifact}" "${ref}" || exit 1
+echo "product-release.sh: ${NAME}: ${n} blob(s), ${OCI_HOST}/${artifact}:${ref} = ${manifest_digest}"

@@ -60,8 +60,8 @@ registry_load; registry_token
 while IFS= read -r f; do printf '%s\t%s\t%s\n' "${BUNDLE}/${f}" "application/vnd.mica.board.file" "${f}" >>"${WORK}/layers.tsv"; done < <(cd "${BUNDLE}" && find . -type f -printf '%P\n' | LC_ALL=C sort)
 jq -n --arg commit "${COMMIT}" --arg cert "$(sha256sum "${MICA_VERITY_TRUST_CERT}" | cut -d' ' -f1)" \
     '{"org.opencontainers.image.revision": $commit, "org.opencontainers.image.created": "2026-09-13T10:00:00Z", "mica.source-repo": "mica-boards", "mica.source-commit": $commit, "mica.board": "fixture-board", "mica.arch": "arm64", "mica.verity-cert-sha256": $cert}' >"${WORK}/annotations.json"
-ARTIFACT="$(oci_repo board fixture-board)"
-DIGEST="$(oci_push "${ARTIFACT}" "${TAG}" application/vnd.mica.board "${WORK}/annotations.json" "${WORK}/layers.tsv")"
+ARTIFACT="$(oci_repo board)"
+DIGEST="$(oci_push "${ARTIFACT}" "$(oci_tag fixture-board "${TAG}")" application/vnd.mica.board "${WORK}/annotations.json" "${WORK}/layers.tsv")"
 [ -n "${DIGEST}" ] && pass "the fixture bundle is pushed as ${ARTIFACT}:${TAG} (${DIGEST:0:19})" || fail "the fixture bundle could not be pushed"
 
 LOG="${WORK}/log"

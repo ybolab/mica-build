@@ -17,7 +17,7 @@
 # (ybolab/mica-boards) that builds each kernel and U-Boot and publishes them,
 # with the board's board.env, evidence.json, package manifests, the support
 # image's firmware and the verity trust certificate the kernel embeds, as
-# the OCI artifact <registry>/mica-board/<board>:build-<commit12>, one layer
+# the OCI artifact <registry>/mica-board:<board>.build-<commit12>, one layer
 # per bundle file (mica:docs/boards/contract.md section 3). This assembly
 # imports that bundle through deps/boards/<board>.json -- the board, the
 # repository, its commit, its architecture and the manifest's digest -- and
@@ -74,7 +74,7 @@ fetch_artifact() { # <board> <staging>
     local board="$1" staging="$2" repository commit arch digest artifact status title media ldigest
     IFS=$'\t' read -r _ repository commit arch digest < <(board_pin "${board}") || return 1
     registry_load && registry_token || return 1
-    artifact="$(oci_repo board "${board}")"
+    artifact="$(oci_repo board)"
     status="$(oci_manifest_get "${artifact}" "${digest}" "${work}/manifest.json")"
     case "${status}" in
     200) ;;
@@ -192,28 +192,29 @@ PY
     [ -n "${board}" ] && { [ -z "${3:-}" ] || [ "${3}" = --tag ]; } || { echo "usage: bash tools/board-pool.sh --pin <board> [--tag build-<commit12>]" >&2; exit 1; }
     [[ "${board}" =~ ^[a-z0-9][a-z0-9-]{0,31}$ ]] || { echo "error: '${board}' is not a board name" >&2; exit 1; }
     registry_load && registry_token || exit 1
-    artifact="$(oci_repo board "${board}")"
+    artifact="$(oci_repo board)"
     if [ -z "${tag}" ]; then
-        tag="$(newest_tag "${artifact}")" || exit 1
-        [ -n "${tag}" ] || { echo "error: ${OCI_HOST}/${artifact} has no build-<commit12> artifact; ${board} was never published (mica-boards: make publish)" >&2; exit 1; }
+        tag="$(newest_tag "${artifact}" "${board}")" || exit 1
+        [ -n "${tag}" ] || { echo "error: ${OCI_HOST}/${artifact} has no ${board}.build-<commit12> artifact; ${board} was never published (mica-boards: make publish)" >&2; exit 1; }
     fi
     [[ "${tag}" =~ ^build-[0-9a-f]{12}$ ]] || { echo "error: the tag '${tag}' is not build-<commit12>" >&2; exit 1; }
-    status="$(oci_manifest_get "${artifact}" "${tag}" "${work}/manifest.json")"
-    [ "${status}" = 200 ] || { echo "error: ${OCI_HOST}/${artifact} has no artifact tagged ${tag} (HTTP ${status})" >&2; exit 1; }
+    ref="$(oci_tag "${board}" "${tag}")"
+    status="$(oci_manifest_get "${artifact}" "${ref}" "${work}/manifest.json")"
+    [ "${status}" = 200 ] || { echo "error: ${OCI_HOST}/${artifact} has no artifact ${ref} (HTTP ${status})" >&2; exit 1; }
     commit="$(jq -r '.annotations["mica.source-commit"] // empty' "${work}/manifest.json")"
     repository="$(jq -r '.annotations["mica.source-repo"] // empty' "${work}/manifest.json")"
     arch="$(jq -r '.annotations["mica.arch"] // empty' "${work}/manifest.json")"
-    [[ "${commit}" =~ ^[0-9a-f]{40}$ ]] && [ "${tag}" = "$(release_tag "${commit}")" ] || { echo "error: ${OCI_HOST}/${artifact}:${tag} says mica.source-commit='${commit}', which is not the commit its tag names" >&2; exit 1; }
-    [ "$(jq -r '.annotations["mica.board"] // empty' "${work}/manifest.json")" = "${board}" ] || { echo "error: ${OCI_HOST}/${artifact}:${tag} says mica.board=$(jq -r '.annotations["mica.board"] // "(none)"' "${work}/manifest.json")" >&2; exit 1; }
-    case "${arch}" in amd64 | arm64) ;; *) echo "error: ${OCI_HOST}/${artifact}:${tag} says mica.arch='${arch}'" >&2; exit 1 ;; esac
+    [[ "${commit}" =~ ^[0-9a-f]{40}$ ]] && [ "${tag}" = "$(release_tag "${commit}")" ] || { echo "error: ${OCI_HOST}/${artifact}:${ref} says mica.source-commit='${commit}', which is not the commit its tag names" >&2; exit 1; }
+    [ "$(jq -r '.annotations["mica.board"] // empty' "${work}/manifest.json")" = "${board}" ] || { echo "error: ${OCI_HOST}/${artifact}:${ref} says mica.board=$(jq -r '.annotations["mica.board"] // "(none)"' "${work}/manifest.json")" >&2; exit 1; }
+    case "${arch}" in amd64 | arm64) ;; *) echo "error: ${OCI_HOST}/${artifact}:${ref} says mica.arch='${arch}'" >&2; exit 1 ;; esac
     mkdir -p "${BOARD_PINS}"
     jq -n --arg board "${board}" --arg repository "${repository}" --arg commit "${commit}" --arg arch "${arch}" --arg digest "$(oci_manifest_digest "${work}/manifest.json")" \
         '{board: $board, repository: $repository, commit: $commit, arch: $arch, digest: $digest}' >"${work}/pin.json"
     if [ -f "${BOARD_PINS}/${board}.json" ] && cmp -s "${work}/pin.json" "${BOARD_PINS}/${board}.json"; then
-        echo "board-pool.sh: deps/boards/${board}.json already pins ${OCI_HOST}/${artifact}:${tag}" >&2
+        echo "board-pool.sh: deps/boards/${board}.json already pins ${OCI_HOST}/${artifact}:${ref}" >&2
     else
         cp "${work}/pin.json" "${BOARD_PINS}/${board}.json"
-        echo "board-pool.sh: deps/boards/${board}.json pins ${OCI_HOST}/${artifact}:${tag} ($(jq -r .digest "${work}/pin.json"))" >&2
+        echo "board-pool.sh: deps/boards/${board}.json pins ${OCI_HOST}/${artifact}:${ref} ($(jq -r .digest "${work}/pin.json"))" >&2
     fi
     printf '%s\n' "${tag}"
     ;;
