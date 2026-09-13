@@ -248,7 +248,7 @@ PY
         [ -n "${board}" ] || continue
         [ -f "${REPO_ROOT}/_out/boards/${board}/board.env" ] || { echo "error: ${board} is pinned and not fetched (make board-fetch BOARD=${board})" >&2; exit 1; }
         grep -qx 'BOOT_BACKEND=uboot-fit' "${REPO_ROOT}/_out/boards/${board}/board.env" || continue
-        [ -d "${REPO_ROOT}/_out/src/mica-boards/${board}/bsp" ] || { echo "error: _out/src/mica-boards/${board}/bsp does not exist at the pinned commit; the labs and the FIT tests read the board's sources out of it" >&2; exit 1; }
+        [ -d "${REPO_ROOT}/_out/src/mica-boards/boards/${board}/loader" ] || { echo "error: _out/src/mica-boards/boards/${board}/loader does not exist at the pinned commit; the labs and the FIT tests read the board's loader sources out of it" >&2; exit 1; }
         n=$((n + 1))
     done < <(pinned_boards)
     [ "${n}" -gt 0 ] || { echo "error: no pinned board boots a FIT, so no U-Boot source was checked out; the FIT labs would run over nothing" >&2; exit 1; }
