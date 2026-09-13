@@ -31,27 +31,27 @@ set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${HERE}/.." && pwd)"
 
-BOARD=""
+PRODUCT=""
 KEEP=0
 while [ $# -gt 0 ]; do
     case "$1" in
-    --board) BOARD="${2:-}"; shift 2 ;;
+    --product) PRODUCT="${2:-}"; shift 2 ;;
     --keep) KEEP=1; shift ;;
     --help|-h)
         sed -n '2,26p' "${BASH_SOURCE[0]}"
         echo
-        echo "usage: bash tools/measure-rootfs.sh --board NAME [--keep]"
+        echo "usage: bash tools/measure-rootfs.sh --product NAME [--keep]"
         exit 0
         ;;
     *) echo "error: unknown argument '$1'" >&2; exit 2 ;;
     esac
 done
-[ -n "${BOARD}" ] || { echo "error: --board is required. Boards: $(ls "${REPO_ROOT}/boards" | tr '\n' ' ')" >&2; exit 2; }
+[ -n "${PRODUCT}" ] || { echo "error: --product is required. Products: $(bash "${REPO_ROOT}/tools/product.sh" --list | tr '\n' ' ')" >&2; exit 2; }
 
-OUT_DIR="${REPO_ROOT}/_out/${BOARD}"
+OUT_DIR="${REPO_ROOT}/_out/products/${PRODUCT}/build"
 OCI="${OUT_DIR}/factory-root.oci"
 [ -f "${OCI}" ] ||
-    { echo "error: ${OCI} does not exist, so there is no packed root to measure. Build it with 'MICA_BOARD=${BOARD} bash rootfs/build.sh'." >&2; exit 1; }
+    { echo "error: ${OCI} does not exist, so there is no packed root to measure. Build it with 'make os-rootfs PRODUCT=${PRODUCT}'." >&2; exit 1; }
 
 WORK="${OUT_DIR}/measure-root"
 rm -rf "${WORK}"

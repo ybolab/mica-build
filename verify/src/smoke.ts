@@ -17,6 +17,7 @@ import { join } from 'node:path'
 import { parsePackageInventory } from './installed-packages.ts'
 import { ARTIFACTS, artifactsForPackages, pinCoverageFaults, unclaimedFaults, type Artifact, type ExecutorLimit } from './smoke-register.ts'
 import type { Pin } from './smoke-pins.ts'
+import { readProductEnv, productBuildDir } from './product-env.ts'
 import { REPO_ROOT } from './paths.ts'
 
 /** One executed command, and everything the runner is allowed to know about it. */
@@ -582,9 +583,14 @@ export interface FactoryRootRecord {
   readonly bytes: number
 }
 
-/** `_out/<board>` -- the same seam `checks.ts` draws, and for the same reason. */
-export function outDir(board: string): string {
-  return join(REPO_ROOT, '_out', board)
+/**
+ * `_out/products/<product>/build` -- where rootfs/build.sh composed the
+ * product: the factory root, its record, the package inventory, the build
+ * fact. One composition per product, so two products of one board never
+ * overwrite each other's root.
+ */
+export function outDir(product: string): string {
+  return productBuildDir(product)
 }
 
 /**
@@ -640,7 +646,7 @@ export function parseFactoryRootRecord(text: string, path: string): FactoryRootR
  */
 export function factoryRootPaths(
   board: string,
-  dir: string = outDir(board),
+  dir: string,
 ): { readonly record: string; readonly archive: string } {
   return { record: join(dir, 'factory-root.txt'), archive: join(dir, 'factory-root.oci') }
 }
@@ -656,7 +662,7 @@ export function factoryRootPaths(
  */
 export function readFactoryRoot(
   board: string,
-  dir: string = outDir(board),
+  dir: string,
 ): FactoryRootRecord & { readonly archivePath: string } {
   const { record, archive } = factoryRootPaths(board, dir)
   if (!existsSync(record) || !existsSync(archive)) {
@@ -664,7 +670,7 @@ export function readFactoryRoot(
       `${board}: ${existsSync(record) ? archive : record} does not exist.\n`
       + `       The smoke run executes the self-built binaries INSIDE the packed root, and that root\n`
       + `       is exported by rootfs/compose/90-pack.Dockerfile's \`factory-root\` target. Build it\n`
-      + `       with: MICA_BOARD=${board} bash rootfs/build.sh\n`
+      + `       with: make os-rootfs PRODUCT=<product> (a product on ${board})\n`
       + `       This refuses rather than skipping: a skip reports the same green as a pass, and an\n`
       + `       image that ships its binaries unexecuted is exactly what this check exists to end.`,
     )
@@ -695,7 +701,7 @@ export const MOSD_BUILD_RECORD_NAME = 'micad-build.txt'
  * other than build-deb.sh, and reading that as "nothing recorded" would switch
  * the assertion off silently.
  */
-export function readMosdBuildFact(board: string, dir: string = outDir(board)): BuildCommitFact {
+export function readMosdBuildFact(board: string, dir: string): BuildCommitFact {
   const path = join(dir, MOSD_BUILD_RECORD_NAME)
   const shown = pinSource(path)
   if (!existsSync(path)) {
@@ -1353,7 +1359,10 @@ export async function extractLayout(archive: string, dir: string): Promise<strin
 }
 
 export interface SmokeRunOptions {
-  readonly board: string
+  /** The product whose composition (`_out/products/<product>/build`) is smoked. */
+  readonly product: string
+  /** The product's board; read from its recipe when not given. */
+  readonly board?: string
   readonly artifacts?: readonly Artifact[]
   /**
    * Which `versions.env` files coverage is checked against.
@@ -1419,7 +1428,8 @@ export interface SmokeRunOptions {
  */
 export async function smokeRun(opts: SmokeRunOptions): Promise<{ results: SmokeResult[]; conclusion: Conclusion }> {
   const log = opts.log ?? ((l: string) => console.log(l))
-  const packageRecord = join(outDir(opts.board), 'rootfs-packages.txt')
+  const board = opts.board ?? readProductEnv(opts.product).board
+  const packageRecord = join(outDir(opts.product), 'rootfs-packages.txt')
   const packages = opts.exec === undefined
     ? parsePackageInventory(readFileSync(packageRecord, 'utf8'), 7) : undefined
   // Two lists: the REGISTER, judged for coverage against the pins (every
@@ -1456,8 +1466,8 @@ export async function smokeRun(opts: SmokeRunOptions): Promise<{ results: SmokeR
   let exec = opts.exec
   let build = opts.buildCommit
   if (exec === undefined) {
-    const record = readFactoryRoot(opts.board)
-    log(`verify smoke: ${opts.board} ${record.ref} (${record.platform}, ${record.bytes} bytes, sha256 ${record.sha256})`)
+    const record = readFactoryRoot(board, outDir(opts.product))
+    log(`verify smoke: ${board} ${record.ref} (${record.platform}, ${record.bytes} bytes, sha256 ${record.sha256})`)
 
     // The register is scoped to the packages the product installed
     // (artifactsForPackages): a minimal product carries the floor and its
@@ -1473,7 +1483,7 @@ export async function smokeRun(opts: SmokeRunOptions): Promise<{ results: SmokeR
     // The build fact, read and printed whether or not it is there. A run that
     // asserted nothing about the commit must say so on its own first lines
     // rather than look like one that did.
-    if (build === undefined) build = readMosdBuildFact(opts.board)
+    if (build === undefined) build = readMosdBuildFact(board, outDir(opts.product))
     log(
       build.commit === undefined
         ? `verify smoke: build commit NOT ASSERTED -- ${build.source}`
@@ -1513,7 +1523,7 @@ export async function smokeRun(opts: SmokeRunOptions): Promise<{ results: SmokeR
         ? containerBuilderFor(record.platform)
         : undefined)
       if ((!unsupportedOci && !/exec format error/i.test(said)) || builder === undefined) throw e
-      const layout = await extractLayout(record.archivePath, join(outDir(opts.board), 'factory-root.layout'))
+      const layout = await extractLayout(record.archivePath, join(outDir(opts.product), 'factory-root.layout'))
       const limitation = unsupportedOci ? 'load OCI archives' : `execute ${record.platform}`
       log(`verify smoke: this host cannot ${limitation}; executing inside buildkit on builder '${builder}' (${layout})`)
       exec = buildkitExec({ ref: record.ref, layout, builder, platform: record.platform })

@@ -82,7 +82,8 @@ PRODUCT_ENV="$(bash "$REPO_ROOT/tools/product.sh" "$MICA_PRODUCT")" || exit 1
 eval "$PRODUCT_ENV"
 MICA_BOARD="$BOARD"
 LAYOUT_ENV="$BOARD_DIR/board.env"
-OUT_DIR="$REPO_ROOT/_out/${MICA_BOARD}"
+# One composition per product: its root, record, inventory and build fact.
+OUT_DIR="$REPO_ROOT/_out/products/${MICA_PRODUCT}/build"
 MICA_PROFILE="$PROFILE"
 FACTORY_SEEDED=0
 [ -z "$PROVISIONING" ] || FACTORY_SEEDED=1
@@ -519,7 +520,7 @@ DRIVER_ARGS=(
     --arg SOURCE_DATE_EPOCH="$SQUASHFS_TIME"
     --source-date-epoch "$SQUASHFS_TIME"
     --stages-dir "$REPO_ROOT/rootfs/compose"
-    --arg COMPOSE_DIR="_out/$MICA_BOARD/compose"
+    --arg COMPOSE_DIR="_out/products/$MICA_PRODUCT/build/compose"
 )
 
 # TWO DOCKERFILES, not one build. build/run.sh --build-rootfs sequences the
@@ -762,4 +763,4 @@ fi
 # says which executor it used.
 echo
 echo "=== smoke: executing the self-built binaries inside the root just packed ==="
-MICA_BOARD="$MICA_BOARD" bash "$REPO_ROOT/verify/run.sh" --smoke --board "$MICA_BOARD" --builder "${BUILDER}"
+MICA_PRODUCT="$MICA_PRODUCT" bash "$REPO_ROOT/verify/run.sh" --smoke --product "$MICA_PRODUCT" --builder "${BUILDER}"

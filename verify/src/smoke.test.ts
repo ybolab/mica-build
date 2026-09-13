@@ -775,12 +775,12 @@ describe('the version loop closes: bump the pin, do not rebuild, run goes red', 
     // entries and the shipped authorisation list names two. That the guard
     // fires here at all is the point of it: a register other than the shipped
     // one has to say what it authorises, rather than inheriting an answer.
-    const green = await smokeRun({ board: 'x64', artifacts, exec, files: [file], allowUnclaimed: [] })
+    const green = await smokeRun({ product: 'x64-dev', board: 'x64', artifacts, exec, files: [file], allowUnclaimed: [] })
     expect(green.conclusion.conclusion).toBe('PASS')
     expect(green.conclusion.exitCode).toBe(0)
 
     writeFileSync(file, mutate(readFileSync(file, 'utf8'), 'v1.2.3', 'v9.9.9'))
-    const red = await smokeRun({ board: 'x64', artifacts, exec, files: [file], allowUnclaimed: [] })
+    const red = await smokeRun({ product: 'x64-dev', board: 'x64', artifacts, exec, files: [file], allowUnclaimed: [] })
     expect(red.conclusion.conclusion).toBe('FAIL')
     expect(red.conclusion.exitCode).toBe(1)
     expect(red.conclusion.counts.fail).toBe(2)
@@ -962,7 +962,7 @@ describe('readFactoryRoot -- a missing image REFUSES rather than skipping', () =
     const empty = join(scratch(), 'no-such-out')
     mkdirSync(empty, { recursive: true })
     expect(() => readFactoryRoot('x64', empty)).toThrow(/factory-root\.txt does not exist/)
-    expect(() => readFactoryRoot('x64', empty)).toThrow(/MICA_BOARD=x64 bash rootfs\/build\.sh/)
+    expect(() => readFactoryRoot('x64', empty)).toThrow(/make os-rootfs PRODUCT=<product>/)
     expect(() => readFactoryRoot('x64', empty)).toThrow(/a skip reports the same green as a pass/)
   })
 
@@ -1111,7 +1111,7 @@ describe('smokeRun over the real register', () => {
   // register's full size and the conclusion is driven from what every entry
   // did, not from a subset.
   test('the twelve shipped artifacts all answer, and that is PASS', async () => {
-    const run = await smokeRun({ board: 'x64', exec: honest })
+    const run = await smokeRun({ product: 'x64-dev', board: 'x64', exec: honest })
     expect(run.results.length).toBe(ARTIFACTS.length)
     expect(run.conclusion.counts.pass).toBe(12)
     expect(run.conclusion.counts.fail).toBe(0)
@@ -1124,7 +1124,7 @@ describe('smokeRun over the real register', () => {
   // half of micad's and apid's contract asserted NOTHING -- and the row says so
   // rather than reading as a commit that was checked and agreed.
   test('with no build record supplied, the commit is not asserted and the row says so', async () => {
-    const run = await smokeRun({ board: 'x64', exec: honest })
+    const run = await smokeRun({ product: 'x64-dev', board: 'x64', exec: honest })
     for (const name of ['micad', 'apid']) {
       const r = run.results.find(x => x.name === name)!
       expect(r.verdict).toBe('pass')
@@ -1146,7 +1146,7 @@ describe('smokeRun over the real register', () => {
     }
 
     const agreeing = await smokeRun({
-      board: 'x64',
+      product: 'x64-dev', board: 'x64',
       exec: stamped,
       buildCommit: { commit: 'aaaaaaaaaaaa', source: '_out/x64/micad-build.txt' },
     })
@@ -1154,7 +1154,7 @@ describe('smokeRun over the real register', () => {
     expect(agreeing.results.find(r => r.name === 'micad')!.message).toContain('reports the commit aaaaaaaaaaaa')
 
     const disagreeing = await smokeRun({
-      board: 'x64',
+      product: 'x64-dev', board: 'x64',
       exec: stamped,
       buildCommit: { commit: 'bbbbbbbbbbbb', source: '_out/x64/micad-build.txt' },
     })
@@ -1170,7 +1170,7 @@ describe('smokeRun over the real register', () => {
     // The mutation is a mutation: exactly one path changed.
     expect(moved.filter((a, i) => a.path !== ARTIFACTS[i]!.path).length).toBe(1)
 
-    const run = await smokeRun({ board: 'x64', artifacts: moved, exec: honest })
+    const run = await smokeRun({ product: 'x64-dev', board: 'x64', artifacts: moved, exec: honest })
     expect(run.conclusion.conclusion).toBe('FAIL')
     const crun = run.results.find(r => r.name === 'crun')!
     expect(crun.verdict).toBe('fail')
@@ -1196,13 +1196,13 @@ describe('smokeRun over the real register', () => {
     // The mutation is a mutation.
     expect(ARTIFACTS.find(a => a.name === 'conmon')!.contract.kind).toBe('version')
 
-    await expect(smokeRun({ board: 'x64', artifacts: withRogue, exec: counting })).rejects.toThrow(
+    await expect(smokeRun({ product: 'x64-dev', board: 'x64', artifacts: withRogue, exec: counting })).rejects.toThrow(
       /marks artifacts unclaimed that nothing authorised, so nothing was executed/,
     )
     expect(calls).toBe(0)
 
     // Positive control on the same counter: the shipped register runs.
-    await smokeRun({ board: 'x64', artifacts: ARTIFACTS, exec: counting })
+    await smokeRun({ product: 'x64-dev', board: 'x64', artifacts: ARTIFACTS, exec: counting })
     expect(calls).toBeGreaterThan(0)
   })
 
@@ -1222,7 +1222,7 @@ describe('smokeRun over the real register', () => {
     expect(ARTIFACTS.find(a => a.name === 'conmon')!.contract.kind).toBe('version')
 
     const run = await smokeRun({
-      board: 'x64', artifacts: withUnclaimed, exec: honest, allowUnclaimed: ['conmon'],
+      product: 'x64-dev', board: 'x64', artifacts: withUnclaimed, exec: honest, allowUnclaimed: ['conmon'],
     })
     // Register order, not sorted: the table above prints the same order, and a
     // summary that reordered its own rows would be one more thing to reconcile.
@@ -1233,7 +1233,7 @@ describe('smokeRun over the real register', () => {
 
     // And the shipped register has none to name, which is the state M7d put it
     // in and is asserted here rather than left implicit.
-    const shipped = await smokeRun({ board: 'x64', exec: honest })
+    const shipped = await smokeRun({ product: 'x64-dev', board: 'x64', exec: honest })
     expect(shipped.conclusion.line).toContain('0 unclaimed')
     expect(shipped.conclusion.line).not.toContain('UNCLAIMED:')
   })
@@ -1261,7 +1261,7 @@ describe('smokeRun over the real register', () => {
         ? { status: 1, stdout: '', stderr: `${MEMFD}\n` }
         : honest(argv)
 
-    const run = await smokeRun({ board: 'x64', exec: emulated, route: 'buildkit' })
+    const run = await smokeRun({ product: 'x64-dev', board: 'x64', exec: emulated, route: 'buildkit' })
     expect(run.conclusion.conclusion).toBe('PASS')
     expect(run.conclusion.exitCode).toBe(0)
     expect(run.conclusion.counts.executorLimited).toBe(1)
@@ -1278,7 +1278,7 @@ describe('smokeRun over the real register', () => {
 
     // The same failure on the native route, where nothing is emulated, is the
     // red it has always been -- and it takes the whole run with it.
-    const native = await smokeRun({ board: 'x64', exec: emulated })
+    const native = await smokeRun({ product: 'x64-dev', board: 'x64', exec: emulated })
     expect(native.conclusion.conclusion).toBe('FAIL')
     expect(native.conclusion.exitCode).toBe(1)
     expect(native.conclusion.counts.executorLimited).toBe(0)
@@ -1316,7 +1316,7 @@ describe('smokeRun over the real register', () => {
       )
       expect(execRoute(exec)).toBe('buildkit')
 
-      const run = await smokeRun({ board: 'x64', exec })
+      const run = await smokeRun({ product: 'x64-dev', board: 'x64', exec })
       expect(run.results.find(x => x.name === 'crun')!.verdict).toBe('executor-limited')
       expect(run.conclusion.line).toContain(
         'RESULT: PASS (11 pass, 1 executor-limited, 0 fail, 0 unclaimed, of 12)',
@@ -1335,7 +1335,7 @@ describe('smokeRun over the real register', () => {
         ? { status: 1, stdout: '', stderr: `${MEMFD}\n` }
         : honest(argv)
 
-    const run = await smokeRun({ board: 'x64', exec: emulated, route: 'buildkit' })
+    const run = await smokeRun({ product: 'x64-dev', board: 'x64', exec: emulated, route: 'buildkit' })
     expect(run.conclusion.conclusion).toBe('FAIL')
     expect(run.conclusion.counts.executorLimited).toBe(0)
     expect(run.results.find(x => x.name === 'podman')!.verdict).toBe('fail')
@@ -1350,13 +1350,13 @@ describe('smokeRun over the real register', () => {
     const withoutCrun = ARTIFACTS.filter(a => a.name !== 'crun')
     expect(withoutCrun.length).toBe(ARTIFACTS.length - 1)
 
-    await expect(smokeRun({ board: 'x64', artifacts: withoutCrun, exec: counting })).rejects.toThrow(
+    await expect(smokeRun({ product: 'x64-dev', board: 'x64', artifacts: withoutCrun, exec: counting })).rejects.toThrow(
       /register and the version pins disagree, so nothing was executed/,
     )
     expect(calls).toBe(0)
 
     // Positive control on the same counter: with the register intact it moves.
-    await smokeRun({ board: 'x64', artifacts: ARTIFACTS, exec: counting })
+    await smokeRun({ product: 'x64-dev', board: 'x64', artifacts: ARTIFACTS, exec: counting })
     expect(calls).toBeGreaterThan(0)
   })
 })

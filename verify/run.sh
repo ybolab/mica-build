@@ -6,7 +6,7 @@
 #   bash verify/run.sh src/board.test.ts   extra arguments go to `bun test`
 #   bash verify/run.sh --lint         the board-definition schema lint instead
 #   bash verify/run.sh --verify       verify an assembled image against the contract
-#   bash verify/run.sh --smoke        execute the self-built artifacts in the factory root
+#   bash verify/run.sh --smoke        execute the self-built artifacts in a product's factory root
 #   bash verify/run.sh --smoke-negative   break the root three ways, and require each red
 #
 # The seam for the tool-less host: exactly one function below, run_bun, decides
@@ -39,8 +39,8 @@ usage() {
 usage: bash verify/run.sh [--help] [bun-test-args...]
        bash verify/run.sh --lint [board.env ...]
        bash verify/run.sh --verify --board NAME --image PATH --public-key FILE [--public-key FILE]
-       bash verify/run.sh --smoke [--board NAME]
-       bash verify/run.sh --smoke-negative [--board NAME]
+       bash verify/run.sh --smoke [--product NAME]
+       bash verify/run.sh --smoke-negative [--product NAME]
 
 Installs the dev dependencies if they are missing, typechecks src/, then runs
 the suite. Any extra arguments are passed to `bun test` (a filename filter, for

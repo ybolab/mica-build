@@ -67,13 +67,13 @@ they are not retried.
 
 ```sh
 # static half, per board
-bash tests/p1-writable-path-audit/extract-root.sh x64
-bash tests/p1-writable-path-audit/audit-root.sh  x64
+bash tests/p1-writable-path-audit/extract-root.sh x64-dev
+bash tests/p1-writable-path-audit/audit-root.sh  x64-dev
 
 # runtime half: prepare the disk once, then boot it three times
-MICA_BOARD=x64 bun run tests/apid-api/src/qemu.ts --prepare-only
-bash tests/p1-writable-path-audit/boot.sh observe   observe
-bash tests/p1-writable-path-audit/boot.sh candidate candidate
+MICA_PRODUCT=x64-dev bash tests/apid-api/run.sh --dry-run   # the product names the board, image and signer
+MICA_PRODUCT=x64-dev bash tests/p1-writable-path-audit/boot.sh observe   observe
+MICA_PRODUCT=x64-dev bash tests/p1-writable-path-audit/boot.sh candidate candidate
 bash tests/p1-writable-path-audit/boot.sh verify    verify
 ```
 

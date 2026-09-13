@@ -71,7 +71,9 @@ async function main(): Promise<void> {
   const env = process.env;
   requireSignedInputs(env.MICA_QEMU_IMAGE, env.MICA_QEMU_BOOT_CERT, env.MICA_QEMU_APPEND);
   const board = env.MICA_BOARD;
-  if (!board) throw new Error("MICA_BOARD is required; run.sh derives it from MICA_PRODUCT");
+  const product = env.MICA_PRODUCT;
+  if (!board || !product) throw new Error("MICA_PRODUCT and MICA_BOARD are required; run.sh sets both from the product");
+  if (!/^[a-z0-9][a-z0-9-]{0,31}$/.test(product)) throw new Error(`'${product}' is not a product name`);
   // The board is its fetched bundle (_out/boards/<board>/board.env); the
   // emulator, machine and firmware follow its facts, never its name.
   const facts = loadBoardFacts(board);
@@ -80,7 +82,9 @@ async function main(): Promise<void> {
   const image = path.resolve(env.MICA_QEMU_IMAGE!);
   const certificate = path.resolve(env.MICA_QEMU_BOOT_CERT!);
   if (!fs.lstatSync(image).isFile() || !fs.lstatSync(certificate).isFile()) throw new Error("Boot inputs must be regular files");
-  const runDir = path.join(REPO_ROOT, "_out", board, ".qemu");
+  // Under the product, beside its composition: two products of one board
+  // never share a disk.
+  const runDir = path.join(REPO_ROOT, "_out", "products", product, "qemu");
   const disk = path.join(runDir, "disk.img");
   const [mode, ...args] = process.argv.slice(2);
   if (mode === "--seed") {

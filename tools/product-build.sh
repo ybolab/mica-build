@@ -101,12 +101,13 @@ bash tools/board-pool.sh --fetch "${BOARD}"
 echo "=== product ${NAME}: compose ==="
 MICA_PRODUCT="${NAME}" bash rootfs/build.sh
 
-rm -rf "${OUT}"
+# The composition (build/) stays; the components are made afresh.
+for d in lifecycle fit-tools root kernel firmware deployments image records.json update.mosupd receipt.txt; do rm -rf "${OUT:?}/${d}"; done
 mkdir -p "${OUT}/deployments"
 VERSION="$(bash build-env/deb/version.sh)"
 echo "=== product ${NAME}: components at version ${VERSION} ==="
 bash tools/deploy-pool.sh --lifecycle "${MICA_ARCH}" "${OUT}/lifecycle"
-bash build/run.sh --components root --input "_out/${BOARD}" --arch "${MICA_ARCH}" --version "${VERSION}" --out "${OUT}/root" \
+bash build/run.sh --components root --input "${OUT}/build" --arch "${MICA_ARCH}" --version "${VERSION}" --out "${OUT}/root" \
     --content-key "${SIGNING}/verity/signer.key.pem" --content-cert "${SIGNING}/verity/signer.cert.pem"
 # THE PACKAGER, built from the pinned boot/ tree before the kernel component
 # runs in it: a UEFI board's boot-tools image for its EFI architecture, a FIT

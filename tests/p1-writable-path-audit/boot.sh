@@ -24,7 +24,9 @@ REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 S="${P1_WORK:-$REPO/.tmp/p1-writable-path-audit}"
 mkdir -p "$S"
 H="$REPO/tests/p1-writable-path-audit"
-export MICA_BOARD=x64
+MICA_PRODUCT="${MICA_PRODUCT:?product name required (make products lists them)}"
+eval "$(bash "$REPO/tools/product.sh" "$MICA_PRODUCT")"
+export MICA_PRODUCT MICA_BOARD="$BOARD"
 LABEL="${1:?label}"
 MODE="${2:?mode}"
 SSH_PORT="${SSH_PORT:-18022}"
@@ -72,7 +74,7 @@ APPEND="systemd.ssh_listen=${SSH_PORT_GUEST:-22}"
 APPEND="$APPEND systemd.set_credential_binary=ssh.ephemeral-authorized_keys-all:${PUBB64}"
 APPEND="$APPEND systemd.set_credential_binary=tmpfiles.extra:${TMPB64}"
 
-RUN_DIR_REAL="$(readlink -f "$REPO/_out/$MICA_BOARD/.qemu")"
+RUN_DIR_REAL="$(readlink -f "$REPO/_out/products/$MICA_PRODUCT/qemu")"
 
 # THE KEY GOES SOMEWHERE micad DOES NOT MANAGE.
 #
@@ -102,7 +104,7 @@ fi
 docker run --rm --label ai-agent=true \
     -v "$REPO:$REPO" -v /var/run/docker.sock:/var/run/docker.sock \
     -w "$REPO/tests/apid-api" \
-    -e "MICA_BOARD=$MICA_BOARD" \
+    -e "MICA_BOARD=$MICA_BOARD" -e "MICA_PRODUCT=$MICA_PRODUCT" \
     -e MICA_QEMU_REUSE_DISK=1 \
     -e "MICA_QEMU_RUN_SECONDS=$RUN_SECONDS" \
     -e "MICA_QEMU_TIMEOUT=$QEMU_TIMEOUT" \

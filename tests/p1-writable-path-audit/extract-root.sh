@@ -5,8 +5,8 @@ set -euo pipefail
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 S="${P1_WORK:-$REPO/.tmp/p1-writable-path-audit}"
 mkdir -p "$S"
-b="${1:?board}"
-src="${2:-$REPO/_out/$b}/factory-root.oci"
+b="${1:?product}"
+src="${2:-$REPO/_out/products/$b/build}/factory-root.oci"
 [ -f "$src" ] || { echo "error: $src not found" >&2; exit 1; }
 d="$S/oci-$b"; rm -rf "$d"; mkdir -p "$d"
 tar -C "$d" -xf "$src"

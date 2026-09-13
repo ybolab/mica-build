@@ -38,7 +38,7 @@ fi
 # shellcheck source=/dev/null  # a data file of assignments, resolved at runtime
 . "${BOARD_ENV}"
 
-OUT_DIR="${REPO_ROOT}/_out/${MICA_BOARD}"
+OUT_DIR="${REPO_ROOT}/_out/products/${MICA_PRODUCT}"
 PRODUCT_OUT="${REPO_ROOT}/_out/products/${MICA_PRODUCT}"
 # The image is the one the product's SHA256SUMS names; the boot signer is the
 # signing workspace's public certificate, the one make product enrolled.
@@ -47,7 +47,7 @@ BOOT_CERT="${MICA_QEMU_BOOT_CERT:-${REPO_ROOT}/${MICA_SIGNING_OUTPUT:-meta}/boot
 [ -f "${IMG}" ] || { echo "FAIL: ${IMG} does not exist; build the product first (make product PRODUCT=${MICA_PRODUCT})" >&2; exit 1; }
 IMG="$(readlink -f "$IMG")"
 BOOT_CERT="$(readlink -f "$BOOT_CERT")"
-RUN_DIR="${OUT_DIR}/.qemu"
+RUN_DIR="${OUT_DIR}/qemu"
 ART_DIR="${OUT_DIR}/apid-api"
 
 # `RUN_DIR` is the boot engine's single fixed path -- src/qemu.ts prepares the
@@ -283,7 +283,7 @@ qemu_port() {
     # engine took its own `?? "x64"` default and refused with
     # "_out/x64/x64-mos-latest.img not found" on a run that had already passed
     # its "image present" precondition against the board actually asked for.
-    envargs+=(-e "MICA_BOARD=${MICA_BOARD}")
+    envargs+=(-e "MICA_BOARD=${MICA_BOARD}" -e "MICA_PRODUCT=${MICA_PRODUCT}")
     if [ "${1:-}" = "--reuse" ]; then
         envargs+=(-e MICA_QEMU_REUSE_DISK=1)
         shift
@@ -435,7 +435,7 @@ CONSOLE1="${ART_DIR}/console-boot1.log"
 # dangling link, because the symlink's target does not exist in that container.
 # Where _out is a real directory the second bind is the same directory twice
 # and costs nothing.
-ART_IN_CONTAINER="/w/_out/${MICA_BOARD}/apid-api"
+ART_IN_CONTAINER="/w/_out/products/${MICA_PRODUCT}/apid-api"
 
 SMOKE_IN_GUEST=/state/m7-net-smoke.sh
 

@@ -66,7 +66,7 @@ describe('the declared case list', () => {
     // refuses an empty list BEFORE it reads or loads an image, so this case runs
     // in the docker-free floor rather than only on a host that has just built
     // one. `exec` is never reached, and nothing here can start a container.
-    const run = await negativeRun({ board: 'x64', cases: [], log: () => {} })
+    const run = await negativeRun({ product: 'x64-dev', board: 'x64', cases: [], log: () => {} })
     expect(run.conclusion).toBe('FAIL')
     expect(run.exitCode).toBe(1)
     expect(run.outcomes).toEqual([])
@@ -78,7 +78,7 @@ describe('the declared case list', () => {
     // that refused EVERY list. It gets past the empty check and stops at the
     // next thing, which needs an image -- so what is asserted is that the
     // refusal it hits is a DIFFERENT one.
-    const err = await negativeRun({ board: 'nosuchboard', log: () => {} }).catch(e => e as Error)
+    const err = await negativeRun({ product: 'nosuchproduct', log: () => {} }).catch(e => e as Error)
     expect(err).toBeInstanceOf(Error)
     expect((err as Error).message).not.toMatch(/EMPTY case list/)
   })

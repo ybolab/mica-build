@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Is the OCI export of the factory root the same tree as the image that ships?
 #
-#   bash tests/factory-root-gate/gate.sh _out/x64
+#   bash tests/factory-root-gate/gate.sh _out/products/<product>/build
 #
 # `make os-factory-root-gate` runs this, and so does the deep lane in
 # .github/workflows/privileged.yml -- the only place it can run on cx3576. The

@@ -1,4 +1,4 @@
-// `bash verify/run.sh --smoke [--board NAME]` -- the entry point.
+// `bash verify/run.sh --smoke [--product NAME]` -- the entry point.
 //
 // Prints one line per artifact and one RESULT line, which is the
 // shape `src/verify-cli.ts` already established for the image contract, so a
@@ -16,17 +16,17 @@
 // to line 127. A reference that the referring change itself invalidates is the
 // reference rot this tree keeps having to repair.
 
-import { shippedBoards } from './paths.ts'
+import { readProductEnv } from './product-env.ts'
 import { smokeRun, type SmokeResult } from './smoke.ts'
 import { ARTIFACTS } from './smoke-register.ts'
 
-const USAGE = `usage: bun run src/smoke-cli.ts [--board NAME]
+const USAGE = `usage: bun run src/smoke-cli.ts [--product NAME]
 
 Executes every self-built artifact inside that board's factory root and requires
 the version it reports to equal the version pinned in this repository.
 
-  --board NAME   which board's _out/<board>/factory-root.oci to smoke.
-                 Defaults to MICA_BOARD; there is no default board.
+  --product NAME   which product's _out/products/<product>/build/factory-root.oci to smoke.
+                 Defaults to MICA_PRODUCT; there is no default product.
   --builder NAME the buildx builder to execute inside when this host's daemon
                  cannot execute the image's platform. Defaults to mos-<arch>
                  when such a builder exists; with neither, the run refuses.
@@ -36,18 +36,18 @@ It refuses rather than skipping when the image is absent, when the register and
 the version pins disagree, and when this host cannot execute the image at all.
 `
 
-function parse(argv: readonly string[]): { board?: string; builder?: string; help: boolean } {
-  let board: string | undefined
+function parse(argv: readonly string[]): { product?: string; builder?: string; help: boolean } {
+  let product: string | undefined
   let builder: string | undefined
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i]!
     if (arg === '--help' || arg === '-h') return { help: true }
-    if (arg === '--board' || arg === '--builder') {
+    if (arg === '--product' || arg === '--builder') {
       const value = argv[i + 1]
       if (value === undefined || value.startsWith('-')) {
         throw new Error(`${arg} needs a name after it; got ${value === undefined ? 'nothing' : `'${value}'`}.`)
       }
-      if (arg === '--board') board = value
+      if (arg === '--product') product = value
       else builder = value
       i += 1
       continue
@@ -57,7 +57,7 @@ function parse(argv: readonly string[]): { board?: string; builder?: string; hel
       + `something other than what was asked for.`,
     )
   }
-  return { board, builder, help: false }
+  return { product, builder, help: false }
 }
 
 /** The tag column's width: the longest verdict spelling, so no row reflows the table. */
@@ -99,7 +99,7 @@ export function wrap(text: string, width: number): string[] {
 }
 
 async function main(): Promise<number> {
-  let opts: { board?: string; builder?: string; help: boolean }
+  let opts: { product?: string; builder?: string; help: boolean }
   try {
     opts = parse(process.argv.slice(2))
   } catch (e) {
@@ -112,20 +112,22 @@ async function main(): Promise<number> {
     return 0
   }
 
-  // x64 last, not first: MICA_BOARD is how every other build entry point is told
-  // which board it is working on, and a default that ignored it would smoke one
-  // board while the caller's whole session was about the other.
-  const board = opts.board ?? process.env['MICA_BOARD']
-  if (board === undefined) throw new Error('--board (or MICA_BOARD) names the board whose factory root is smoked; there is no default')
-  const known = shippedBoards()
-  if (!known.includes(board)) {
-    console.error(`error: '${board}' is not a board in boards/. This tree ships: ${known.join(', ')}.`)
+  // MICA_PRODUCT is how every other build entry point is told which product it
+  // is working on, and a default that ignored it would smoke one product while
+  // the caller's whole session was about another.
+  const product = opts.product ?? process.env['MICA_PRODUCT']
+  if (product === undefined) throw new Error('--product (or MICA_PRODUCT) names the product whose factory root is smoked; there is no default')
+  let board: string
+  try {
+    board = readProductEnv(product).board
+  } catch (e) {
+    console.error(`error: ${(e as Error).message}`)
     return 2
   }
 
   let run
   try {
-    run = await smokeRun({ board, builder: opts.builder })
+    run = await smokeRun({ product, board, builder: opts.builder })
   } catch (e) {
     console.error(`error: ${(e as Error).message}`)
     return 1

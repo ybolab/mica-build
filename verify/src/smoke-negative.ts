@@ -25,6 +25,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { REPO_ROOT } from './paths.ts'
+import { readProductEnv } from './product-env.ts'
 import { ARTIFACTS, type Artifact } from './smoke-register.ts'
 import type { Pin } from './smoke-pins.ts'
 import {
@@ -39,6 +40,7 @@ import {
   smokeRun,
   type BuildCommitFact,
   type ExecResult,
+  outDir,
 } from './smoke.ts'
 
 /** How long an image build may take. One layer over a loaded root; seconds. */
@@ -271,6 +273,7 @@ export async function runCase(
   c: NegativeCase,
   base: string,
   platform: string,
+  product: string,
   board: string,
   build: BuildCommitFact,
   stamp: string,
@@ -339,7 +342,7 @@ export async function runCase(
     say(`diagnosis: says ${c.mustSay}, and does not say ${c.mustNotSay}`)
 
     // 5. the whole run, which is what a build path reads
-    const run = await smokeRun({ board, exec: mutatedExec, buildCommit: build })
+    const run = await smokeRun({ product, board, exec: mutatedExec, buildCommit: build })
     const failed = run.results.filter(r => r.verdict === 'fail').map(r => r.name)
     if (run.conclusion.conclusion !== 'FAIL' || run.conclusion.exitCode === 0) {
       say(`the WHOLE RUN did not go red: ${run.conclusion.line}, exit ${run.conclusion.exitCode}.`)
@@ -374,7 +377,9 @@ export interface NegativeRun {
  * rather than a perfect score.
  */
 export async function negativeRun(opts: {
-  readonly board: string
+  /** The product whose composition is broken three ways. */
+  readonly product: string
+  readonly board?: string
   readonly cases?: readonly NegativeCase[]
   readonly log?: (line: string) => void
 }): Promise<NegativeRun> {
@@ -398,8 +403,9 @@ export async function negativeRun(opts: {
     }
   }
 
-  const record = readFactoryRoot(opts.board)
-  log(`verify negative: ${opts.board} ${record.ref} (${record.platform}, ${record.bytes} bytes)`)
+  const board = opts.board ?? readProductEnv(opts.product).board
+  const record = readFactoryRoot(board, outDir(opts.product))
+  log(`verify negative: ${opts.product} on ${board} ${record.ref} (${record.platform}, ${record.bytes} bytes)`)
   // What the load RESOLVED, never `record.ref`. That tag is daemon-global and
   // this campaign runs two and three worktrees at once: a sibling loading its
   // own `:x64` between this load and the last case would make every mutation,
@@ -414,7 +420,7 @@ export async function negativeRun(opts: {
   await preflight(dockerExec(loaded.id), record.platform)
   log(`verify negative: the unmutated root executes on this host -- the controls below can be green`)
 
-  const build = readMosdBuildFact(opts.board)
+  const build = readMosdBuildFact(board, outDir(opts.product))
   log(
     build.commit === undefined
       ? `verify negative: build commit NOT ASSERTED -- ${build.source}`
@@ -454,7 +460,7 @@ export async function negativeRun(opts: {
     log('')
     log(`── ${c.name} ── ${c.clause}`)
     log(`   breaks ${c.artifact}; everything else in the root is untouched`)
-    const o = await runCase(c, base, record.platform, opts.board, build, stamp)
+    const o = await runCase(c, base, record.platform, opts.product, board, build, stamp)
     for (const l of o.lines) log(`   ${l}`)
     log(`   ${o.held ? 'HELD' : 'DID NOT HOLD'}`)
     outcomes.push(o)

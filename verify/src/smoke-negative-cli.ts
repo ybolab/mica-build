@@ -1,4 +1,4 @@
-// `bash verify/run.sh --smoke-negative [--board NAME]` -- the entry point for
+// `bash verify/run.sh --smoke-negative [--product NAME]` -- the entry point for
 // the three negative tests.
 //
 // Same argv discipline as `src/smoke-cli.ts`, and for the same
@@ -13,35 +13,35 @@
 // and would make "the smoke run passed" mean two different things depending on
 // a flag.
 
-import { shippedBoards } from './paths.ts'
+import { readProductEnv } from './product-env.ts'
 import { CASES, negativeRun } from './smoke-negative.ts'
 
-const USAGE = `usage: bun run src/smoke-negative-cli.ts [--board NAME]
+const USAGE = `usage: bun run src/smoke-negative-cli.ts [--product NAME]
 
 the three negative tests. Each one really makes its defect -- a
 wrong-arch binary, a missing soname, a version-skewed binary -- in a real image
 built from that board's real factory root, and requires the smoke run to go red
 naming the right cause.
 
-  --board NAME   which board's _out/<board>/factory-root.oci to break.
-                 Defaults to MICA_BOARD; there is no default board.
+  --product NAME   which product's _out/products/<product>/build/factory-root.oci to break.
+                 Defaults to MICA_PRODUCT; there is no default product.
   --help         this.
 
 Needs docker. It refuses rather than skipping when the image is absent and when
 this host cannot execute it, exactly as the smoke runner does.
 `
 
-function parse(argv: readonly string[]): { board?: string; help: boolean } {
-  let board: string | undefined
+function parse(argv: readonly string[]): { product?: string; help: boolean } {
+  let product: string | undefined
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i]!
     if (arg === '--help' || arg === '-h') return { help: true }
-    if (arg === '--board') {
+    if (arg === '--product') {
       const value = argv[i + 1]
       if (value === undefined || value.startsWith('-')) {
-        throw new Error(`--board needs a board name after it; got ${value === undefined ? 'nothing' : `'${value}'`}.`)
+        throw new Error(`--product needs a product name after it; got ${value === undefined ? 'nothing' : `'${value}'`}.`)
       }
-      board = value
+      product = value
       i += 1
       continue
     }
@@ -50,11 +50,11 @@ function parse(argv: readonly string[]): { board?: string; help: boolean } {
       + `something other than what was asked for.`,
     )
   }
-  return { board, help: false }
+  return { product, help: false }
 }
 
 async function main(): Promise<number> {
-  let opts: { board?: string; help: boolean }
+  let opts: { product?: string; help: boolean }
   try {
     opts = parse(process.argv.slice(2))
   } catch (e) {
@@ -67,17 +67,19 @@ async function main(): Promise<number> {
     return 0
   }
 
-  const board = opts.board ?? process.env['MICA_BOARD']
-  if (board === undefined) throw new Error('--board (or MICA_BOARD) names the board whose factory root is broken; there is no default')
-  const known = shippedBoards()
-  if (!known.includes(board)) {
-    console.error(`error: '${board}' is not a board in boards/. This tree ships: ${known.join(', ')}.`)
+  const product = opts.product ?? process.env['MICA_PRODUCT']
+  if (product === undefined) throw new Error('--product (or MICA_PRODUCT) names the product whose factory root is broken; there is no default')
+  let board: string
+  try {
+    board = readProductEnv(product).board
+  } catch (e) {
+    console.error(`error: ${(e as Error).message}`)
     return 2
   }
 
   let run
   try {
-    run = await negativeRun({ board })
+    run = await negativeRun({ product, board })
   } catch (e) {
     console.error(`error: ${(e as Error).message}`)
     return 1
@@ -85,7 +87,7 @@ async function main(): Promise<number> {
 
   console.log('')
   console.log(
-    `verify negative: ${run.outcomes.length} cases (${CASES.length} declared), board ${board}`,
+    `verify negative: ${run.outcomes.length} cases (${CASES.length} declared), product ${product} on ${board}`,
   )
   console.log(run.line)
   return run.exitCode

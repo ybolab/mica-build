@@ -12,10 +12,12 @@ set -euo pipefail
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 S="${P1_WORK:-$REPO/.tmp/p1-writable-path-audit}"
 mkdir -p "$S"
-BOARD_ENV="$REPO/_out/boards/${MICA_BOARD:-x64}/board.env"
+MICA_PRODUCT="${MICA_PRODUCT:?product name required}"
+eval "$(bash "$REPO/tools/product.sh" "$MICA_PRODUCT")"
+BOARD_ENV="$BOARD_DIR/board.env"
 # shellcheck source=/dev/null
 . "$BOARD_ENV"
-QDIR="$REPO/_out/${MICA_BOARD:-x64}/.qemu"
+QDIR="$REPO/_out/products/$MICA_PRODUCT/qemu"
 [ -f "$QDIR/disk.img" ] || { echo "error: $QDIR/disk.img not found" >&2; exit 1; }
 [ "$#" -gt 0 ] || { echo "usage: $0 <path-inside-DATA> [...]" >&2; exit 2; }
 

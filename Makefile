@@ -164,8 +164,8 @@ os-verify:
 # image is absent, and refuses before concluding anything when the host cannot
 # execute it. MICA_BOARD selects the board; there is no default.
 os-smoke-test:
-	@test -n "$(MICA_BOARD)" || { echo "error: MICA_BOARD=<board> is required; the smoke run executes _out/<board>/factory-root.oci" >&2; exit 1; }
-	MICA_BOARD=$(MICA_BOARD) bash verify/run.sh --smoke --board $(MICA_BOARD)
+	@test -n "$(PRODUCT)" || { echo "error: PRODUCT=<name> is required; the smoke run executes _out/products/<name>/build/factory-root.oci" >&2; exit 1; }
+	MICA_PRODUCT=$(PRODUCT) bash verify/run.sh --smoke --product $(PRODUCT)
 
 # The three negative tests, which are a check on the check above.
 #
@@ -182,8 +182,8 @@ os-smoke-test:
 # front of every rootfs build would make "the smoke run passed" mean two
 # different things depending on which invocation produced it.
 os-smoke-negative-test:
-	@test -n "$(MICA_BOARD)" || { echo "error: MICA_BOARD=<board> is required; the negative runs break _out/<board>/factory-root.oci" >&2; exit 1; }
-	MICA_BOARD=$(MICA_BOARD) bash verify/run.sh --smoke-negative --board $(MICA_BOARD)
+	@test -n "$(PRODUCT)" || { echo "error: PRODUCT=<name> is required; the negative runs break _out/products/<name>/build/factory-root.oci" >&2; exit 1; }
+	MICA_PRODUCT=$(PRODUCT) bash verify/run.sh --smoke-negative --product $(PRODUCT)
 
 # The assumption every smoke result rests on and nothing else checks: that the
 # OCI image the smoke run executes in is byte-for-byte the tree the device
@@ -196,8 +196,8 @@ os-smoke-negative-test:
 # build host -- no unsquashfs, no getcap) and a built rootfs, like
 # os-verify. MICA_BOARD selects the board; there is no default.
 os-factory-root-gate:
-	@test -n "$(MICA_BOARD)" || { echo "error: MICA_BOARD=<board> is required; the gate reads _out/<board>" >&2; exit 1; }
-	bash tests/factory-root-gate/gate.sh _out/$(MICA_BOARD)
+	@test -n "$(PRODUCT)" || { echo "error: PRODUCT=<name> is required; the gate reads _out/products/<name>/build" >&2; exit 1; }
+	bash tests/factory-root-gate/gate.sh _out/products/$(PRODUCT)/build
 # Behavioural check on first-boot growth: a real systemd-repart, with discard
 # enabled, over a copy of each assembled image on a loop device. It proves two
 # things the image contract cannot — that growth does not wipe the Rockchip

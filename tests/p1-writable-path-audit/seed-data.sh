@@ -10,11 +10,13 @@ mkdir -p "$S"
 # ~/.ssh/authorized_keys, and /root is a bind of /mos/root, which lives on DATA.
 set -euo pipefail
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-BOARD_ENV="$REPO/_out/boards/x64/board.env"
+MICA_PRODUCT="${MICA_PRODUCT:?product name required}"
+eval "$(bash "$REPO/tools/product.sh" "$MICA_PRODUCT")"
+BOARD_ENV="$BOARD_DIR/board.env"
 # shellcheck source=/dev/null
 . "$BOARD_ENV"
-OUT_DIR="$REPO/_out/x64"
-DISK="$OUT_DIR/.qemu/disk.img"
+OUT_DIR="$REPO/_out/products/$MICA_PRODUCT"
+DISK="$OUT_DIR/qemu/disk.img"
 [ -f "$DISK" ] || { echo "error: $DISK not found; prepare the disk first" >&2; exit 1; }
 [ "$#" -gt 0 ] && [ $(( $# % 2 )) -eq 0 ] || { echo "usage: $0 <local-file> <path-inside-DATA> [...]" >&2; exit 2; }
 
@@ -37,7 +39,7 @@ IMAGE="$(bash "$REPO/build-env/from.sh" --ref IMAGE_DEBIAN_TRIXIE)"
 # disk copy inside the pinned image; a loop mount on the host would need privileges a test
 # should not want
 docker run --rm --label ai-agent=true --name "ai-agent-iku9ubdw-seeddata-$$" \
-    -v "$WORK:/w" -v "$OUT_DIR/.qemu:/d" \
+    -v "$WORK:/w" -v "$OUT_DIR/qemu:/d" \
     -e "DATA_PARTNUM=${DATA_PARTNUM}" \
     "$IMAGE" bash -c '
     set -eu
