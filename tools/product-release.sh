@@ -25,7 +25,7 @@ BUILD="${REPO_ROOT}/_out/products/${NAME}/build"
 [ -z "$(git -C "${REPO_ROOT}" status --porcelain)" ] || { echo "error: ${REPO_ROOT} has uncommitted changes; a root is published as the output of one commit" >&2; exit 1; }
 HEAD_COMMIT="$(git -C "${REPO_ROOT}" rev-parse HEAD)"
 TAG="$(release_tag "${HEAD_COMMIT}")"
-registry_load; registry_repo_name; registry_token
+registry_load; registry_repo_name; registry_token --write
 WORK="$(mktemp -d "${REPO_ROOT}/_out/.product-release.XXXXXX")"
 trap 'rm -rf "${WORK}"' EXIT
 tar -C "${WORK}" -xf "${BUILD}/factory-root.oci"
