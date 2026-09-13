@@ -1,2 +1,2 @@
-# Selected by a board that names `bluetooth` in BOARD_RADIOS.
+# Selected by a product whose FEATURES name `bluetooth`.
 mica-bluetooth

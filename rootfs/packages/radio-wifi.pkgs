@@ -1,4 +1,4 @@
-# Selected by a board that names `wifi` in BOARD_RADIOS.
+# Selected by a product whose FEATURES name `wifi`.
 #
 # BOTH packages, because the one radio name `wifi` has always meant
 # wpasupplicant AND hostapd: the board declares the radio, not which of

@@ -507,7 +507,7 @@ DRIVER_ARGS=(
     ${BUILDER_ARGS[@]+"${BUILDER_ARGS[@]}"}
     "${DRIVER_FROM_ARGS[@]}"
     --arg MICA_ARCH="$MICA_ARCH"
-    --arg BOARD_RADIOS="$BOARD_RADIOS"
+    --arg MICA_RADIOS="$RADIOS"
     --arg MICA_BOARD="$MICA_BOARD"
     --arg MICA_PROFILE="$MICA_PROFILE"
     --arg MICA_RELEASE_VERSION="$tree_version"

@@ -256,13 +256,14 @@ RUN mv /rootfs-report.pkgs /rootfs-report.txt
 
 # Pack: squashfs-zstd + appended dm-verity hash tree.
 FROM pack-tools AS pack
-# ARG is per-stage. BOARD_RADIOS is declared again here because the pack stage
-# asserts properties of the assembled root that depend on it -- which board
-# state directories are precious, and therefore which mount units must exist.
-# Declared only in an earlier stage file it would expand empty here, which
-# under `set -u` is a build failure rather than a check that silently reads "no
-# radios" on a board that has them.
-ARG BOARD_RADIOS=""
+# ARG is per-stage. MICA_RADIOS -- the radios the product selected, not the
+# board's hardware -- is declared again here because the pack stage asserts
+# properties of the assembled root that depend on it: which state directories
+# are precious, and therefore which mount units must exist. Declared only in
+# an earlier stage file it would expand empty here, which under `set -u` is a
+# build failure rather than a check that silently reads "no radios" on a root
+# that carries them.
+ARG MICA_RADIOS=""
 # MICA_ARCH and MICA_BOARD are declared here for the same reason, and PLAN-086 S2
 # is what needs them. MICA_ARCH picks which of the two cross binutils below
 # rewrites the board's ELF -- this stage runs on the BUILD platform, so the

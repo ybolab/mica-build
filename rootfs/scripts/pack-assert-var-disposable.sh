@@ -2,14 +2,15 @@
 # Assert bounded writable var and protected credential storage.
 #
 # Called from rootfs/compose/90-pack.Dockerfile (pack stage), where the reasoning lives.
-# Build arguments read from the environment: BOARD_RADIOS.
+# Build arguments read from the environment: MICA_RADIOS.
 
 set -eu
-# /var/lib/bluetooth only on a board that HAS Bluetooth: the pairing
-# database is precious state there and does not exist at all on a board
-# with no radio, where demanding its mount unit would fail a correct image.
+# /var/lib/bluetooth only in a root that CARRIES Bluetooth (the product
+# selected it): the pairing database is precious state there and does not
+# exist at all in a root without the radio -- a minimal product on a board
+# that has one -- where demanding its mount unit would fail a correct image.
 precious="/var/lib/mica"
-case " ${BOARD_RADIOS} " in *" bluetooth "*) precious="${precious} /var/lib/bluetooth" ;; esac
+case " ${MICA_RADIOS} " in *" bluetooth "*) precious="${precious} /var/lib/bluetooth" ;; esac
 for w in ${precious}; do
     unit="$(echo "${w#/}" | tr / -).mount"
     f="/rootfs/etc/systemd/system/${unit}"
