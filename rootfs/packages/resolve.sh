@@ -152,6 +152,17 @@ done <<<"${PRODUCER_ROWS}"
     exit 1
 }
 
+# ...and the packages the lock imports (deps/packages/*.json): built by another
+# repository from its own commit, fetched at their pins by build-env/deb/fetch.sh,
+# and as installable as anything produced here. Captured the same way, for the
+# same reason; a lock that refuses its own rows must stop this resolution.
+LOCK_ROWS="$(bash "${REPO_ROOT}/build-env/deb/lock.sh" --rows)"
+while IFS=$'\t' read -r pkg _version _arch _sha256 _repository _commit; do
+    [ -n "${pkg}" ] || continue
+    [ -n "${DECLARED[${pkg}]:-}" ] || DECLARED_N=$((DECLARED_N + 1))
+    DECLARED["${pkg}"]=1
+done <<<"${LOCK_ROWS}"
+
 # Every manifest in the directory is parsed and cross-checked on EVERY run, not
 # just the handful this resolution reads. A typo in the manifest of the other
 # board is a typo that fails one board's build and not the other's, and the run
@@ -178,7 +189,7 @@ for file in "${MANIFEST_FILES[@]}"; do
             exit 1
         }
         [ -n "${DECLARED[$1]:-}" ] || {
-            echo "error: ${file}:${lineno} names the package '$1', which NO producer in this repository declares. A manifest may only name a package some producer's PACKAGES field emits; \`bash build-env/deb/producers.sh\` lists every one of them, and the packages that exist are: $(printf '%s\n' "${!DECLARED[@]}" | sort | tr '\n' ' ')" >&2
+            echo "error: ${file}:${lineno} names the package '$1', which NO producer in this repository declares and NO pin under deps/packages imports. A manifest may only name a package some producer's PACKAGES field emits or the lock pins; \`bash build-env/deb/producers.sh\` and \`bash build-env/deb/lock.sh --rows\` list every one of them, and the packages that exist are: $(printf '%s\n' "${!DECLARED[@]}" | sort | tr '\n' ' ')" >&2
             exit 1
         }
         names="${names}$1 "
