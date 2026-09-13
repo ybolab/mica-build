@@ -758,7 +758,8 @@ function namesPerlInterpreter(root: string, path: string): boolean {
 }
 
 export const ENGINE_CHECKS_ALL: readonly CheckCase[] = [
-  ...ENGINE_CHECKS,
+  // The engine's checks need the containers feature; the purge and CA checks are the floor's.
+  ...ENGINE_CHECKS.map(c => ({ ...c, features: ['containers'] })),
   ...PURGE_CHECKS,
   ...CA_CHECKS,
 ]

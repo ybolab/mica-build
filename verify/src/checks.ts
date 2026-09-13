@@ -1,4 +1,5 @@
 import type { Board } from './board.ts'
+import type { ProductFacts } from './product-conf.ts'
 import type { ToolRuntime } from './tools.ts'
 import { ToolOutputError } from './tools.ts'
 import { matcherAlternatives, type RegisteredCheck, type CheckResult, type Verdict } from './parity.ts'
@@ -15,6 +16,8 @@ import { ROOT_CHECKS } from './checks-file-root.ts'
 export type { CheckResult, Verdict }
 export interface ImageContext {
  readonly board: Board
+ /** The product the root was composed for (product-conf.ts); its features scope the register. */
+ readonly product: ProductFacts
  readonly image: string
  readonly tools: ToolRuntime
  readonly workDir: string
@@ -60,6 +63,12 @@ export function assertRegisterWellFormed(checks: readonly CheckCase[] = CHECKS):
         + `could only be compared by count.`,
       )
     }
+    if (c.features !== undefined && c.features.length === 0) {
+      throw new ToolOutputError(
+        `check '${c.id}' declares \`features: []\`, so it needs no feature and the field says nothing; `
+        + `omit it to mean every product.`,
+      )
+    }
     if (c.boards !== undefined && c.boards.length === 0) {
       throw new ToolOutputError(
         `check '${c.id}' declares \`boards: []\`, so it applies to no board and can never run. `
@@ -75,6 +84,11 @@ export function checksFor(board: string, checks: readonly CheckCase[] = CHECKS):
   return checks.filter(c => c.boards === undefined || c.boards.includes(board))
 }
 
+/** A check's features the product did not select; empty when the check applies. */
+export function featuresMissing(check: RegisteredCheck, product: ProductFacts): string[] {
+  return (check.features ?? []).filter(f => !product.features.has(f))
+}
+
 export interface CheckFailure {
   readonly id: string
   readonly error: Error
@@ -84,6 +98,8 @@ export interface CheckRun {
   readonly results: readonly CheckResult[]
   /** Checks that threw. Never folded into a `fail`; see CheckCase.run. */
   readonly failures: readonly CheckFailure[]
+  /** Checks not run because the product did not select a feature they need. */
+  readonly notRun: readonly { id: string, features: readonly string[] }[]
 }
 
 /**
@@ -96,7 +112,10 @@ export interface CheckRun {
 export async function runChecks(ctx: ImageContext, checks: readonly CheckCase[] = CHECKS): Promise<CheckRun> {
   const results: CheckResult[] = []
   const failures: CheckFailure[] = []
+  const notRun: { id: string, features: readonly string[] }[] = []
   for (const check of checksFor(ctx.board.name, checks)) {
+    const missing = featuresMissing(check, ctx.product)
+    if (missing.length > 0) { notRun.push({ id: check.id, features: missing }); continue }
     try {
       const got = await check.run(ctx)
       for (const r of got) {
@@ -121,5 +140,5 @@ export async function runChecks(ctx: ImageContext, checks: readonly CheckCase[] 
       failures.push({ id: check.id, error: error instanceof Error ? error : new Error(String(error)) })
     }
   }
-  return { results, failures }
+  return { results, failures, notRun }
 }

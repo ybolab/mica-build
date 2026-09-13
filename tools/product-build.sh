@@ -54,8 +54,10 @@ done
 PUBLIC_KEY="$(tr -d '\n' <"${SIGNING}/updates/public.key")"
 
 if [ "${MODE}" = --verify ]; then
-    image="$(ls "${OUT}"/image/*.img 2>/dev/null | head -1 || true)"
-    [ -n "${image}" ] || { echo "error: ${OUT}/image holds no image; build the product first (make product PRODUCT=${NAME})" >&2; exit 1; }
+    # The image is the one SHA256SUMS names; the directory also holds the
+    # partition images the assembler built it from.
+    image="${OUT}/image/$(awk 'NR == 1 { print $2 }' "${OUT}/image/SHA256SUMS" 2>/dev/null || true)"
+    [ -n "${image##*/}" ] && [ -f "${image}" ] || { echo "error: ${OUT}/image holds no image; build the product first (make product PRODUCT=${NAME})" >&2; exit 1; }
     exec bash verify/run.sh --verify --board "${BOARD}" --image "${image}" --public-key "${SIGNING}/updates/public.key"
 fi
 [ "${MODE}" = build ] || { echo "usage: bash tools/product-build.sh <name> [--verify]" >&2; exit 1; }
@@ -79,9 +81,9 @@ receipt() {
     } | sed "s|${REPO_ROOT}/||"
 }
 WANT="$(receipt)"
-if [ -f "${OUT}/receipt.txt" ] && [ "$(cat "${OUT}/receipt.txt")" = "${WANT}" ] && ls "${OUT}"/image/*.img >/dev/null 2>&1; then
+if [ -f "${OUT}/receipt.txt" ] && [ "$(cat "${OUT}/receipt.txt")" = "${WANT}" ] && [ -f "${OUT}/image/SHA256SUMS" ]; then
     echo "product: ${NAME} is up to date -- every input in ${OUT}/receipt.txt is unchanged and the image exists; nothing to do"
-    ls -1 "${OUT}"/image/*.img
+    awk -v d="${OUT}/image/" '{ print d $2 }' "${OUT}/image/SHA256SUMS"
     exit 0
 fi
 case "${WANT}" in *' dirty'*) echo "note: the tree is dirty; this build is recorded as such and is not a release candidate" ;; esac
@@ -135,4 +137,4 @@ bash build/run.sh --components archive --input "${OUT}/deployments/2.json" --ker
     --public-key "${PUBLIC_KEY}" --out "${OUT}/update.mosupd"
 printf '%s\n' "${WANT}" >"${OUT}/receipt.txt"
 echo "=== product ${NAME}: done ==="
-ls -1 "${OUT}"/image/*.img "${OUT}/update.mosupd"
+awk -v d="${OUT}/image/" '{ print d $2 }' "${OUT}/image/SHA256SUMS"; ls -1 "${OUT}/update.mosupd"

@@ -753,4 +753,5 @@ const BROKER_CHECKS: readonly CheckCase[] = [
   },
 ]
 
-export const MQTT_CHECKS: readonly CheckCase[] = [...MQTTD_CHECKS, ...BROKER_CHECKS]
+// Every MQTT check needs the mqtt feature: a product without it ships neither the bridge nor the broker.
+export const MQTT_CHECKS: readonly CheckCase[] = [...MQTTD_CHECKS, ...BROKER_CHECKS].map(c => ({ ...c, features: ['mqtt'] }))

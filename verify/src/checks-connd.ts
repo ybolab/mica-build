@@ -217,6 +217,7 @@ function wifiRegularFile(id: string, path: string): CheckCase {
   return {
     id,
     boards: WIFI_BOARDS,
+    features: ['wifi'],
     shell: { pass: `${path} is a regular file`, fail: `${path} missing or not a regular file` },
     run: async (ctx): Promise<readonly CheckResult[]> => {
       const st = entry(await packedRoot(ctx), path)
@@ -243,6 +244,7 @@ function execStartCheck(input: { id: string, what: string, unit: string, dir: st
   return {
     id,
     boards: WIFI_BOARDS,
+    features: ['wifi'],
     shell: {
       pass: `${what}: ${base} reads `,
       fail: [
@@ -277,6 +279,7 @@ function notStaticallyEnabled(id: string, unit: string): CheckCase {
   return {
     id,
     boards: WIFI_BOARDS,
+    features: ['wifi'],
     shell: {
       pass: `${unit} is installed but NOT statically enabled (micad owns the lifecycle)`,
       fail: `${unit} is statically enabled in the image;`,
@@ -309,6 +312,7 @@ function maskedCheck(unit: string): CheckCase {
   return {
     id,
     boards: WIFI_BOARDS,
+    features: ['wifi'],
     shell: {
       pass: `${unit} is masked (-> /dev/null);`,
       fail: `${unit} is not masked (it is '`,
@@ -339,6 +343,7 @@ function noPostinstWants(unit: string): CheckCase {
   return {
     id,
     boards: WIFI_BOARDS,
+    features: ['wifi'],
     shell: {
       pass: `${unit} carries no enablement symlink from the package postinst`,
       fail: `${unit} still carries the package's *.wants enablement symlink`,
@@ -376,6 +381,7 @@ function renderTargetBind(id: string, where: string): CheckCase {
   return {
     id,
     boards: WIFI_BOARDS,
+    features: ['wifi'],
     shell: {
       pass: `${where} is a STATE-backed bind via ${unit} (`,
       fail: [
@@ -434,6 +440,7 @@ function seedStateCreates(id: string, where: string): CheckCase {
   return {
     id,
     boards: WIFI_BOARDS,
+    features: ['wifi'],
     shell: {
       pass: ` at 0700 before ${unit} is attempted`,
       fail: `; the bind would have no source on first boot and ${where} would stay read-only`,

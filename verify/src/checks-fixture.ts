@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import type { Board } from './board.ts'
 import type { ImageContext } from './checks.ts'
+import { EVERY_FEATURE } from './product-conf.ts'
 import { CONTRACT, mountUnitFor } from './checks-connd.ts'
 import { REPO_ROOT } from './paths.ts'
 import { ToolOutputError, type ToolResult, type ToolRuntime } from './tools.ts'
@@ -535,7 +536,7 @@ export function packedRootFixture(board: Board): RootFixture {
   const root = join(dir, 'root')
   mkdirSync(root)
   seedHealthyRoot(root, board)
-  const ctx: ImageContext = { board, image: '(fixture)', tools: NO_TOOLS, workDir: dir, outDir: dir, unpackRoot: async () => root }
+  const ctx: ImageContext = { board, product: EVERY_FEATURE, image: '(fixture)', tools: NO_TOOLS, workDir: dir, outDir: dir, unpackRoot: async () => root }
   return { root, ctx, dispose: () => rmSync(dir, { recursive: true, force: true }) }
 }
 export const ELF_TYPE_EXEC = 2

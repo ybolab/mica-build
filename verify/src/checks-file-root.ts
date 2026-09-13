@@ -3,6 +3,8 @@ import type { CheckCase } from './checks.ts'
 import { ANY_UNITS, entry, linkTargetInRoot, packedRoot, pathInRoot, regularFileInRoot, wantsLink } from './checks-root.ts'
 import { verdict } from './verdict.ts'
 
+// Each required path with the product feature that ships it; none means the floor.
+const REQUIRED_FEATURES: Record<string, readonly string[]> = { '/usr/bin/micad': ['micad'], '/usr/bin/apid': ['micad'] }
 const required = ['/usr/lib/systemd/systemd', '/usr/bin/micad', '/usr/bin/apid', '/usr/bin/mica-deploy',
   '/usr/lib/mica/mica-health', '/usr/lib/mica/mica-boot-failure', '/usr/lib/mica/mica-data-layout',
   '/usr/lib/mica/mica-seed-state', '/usr/lib/mica/mica-seed-var', '/usr/share/mica/manifest.tsv', '/usr/share/mica/release-identity.env']
@@ -265,7 +267,7 @@ const NATIVE_NON_ENDPOINTS: Readonly<Record<string, ReadonlySet<string>>> = {
 }
 
 export const ROOT_CHECKS: readonly CheckCase[] = [
-  ...required.map(path => ({ id: `file-root-required:${path}`, shell: { pass: `required ${path}` },
+  ...required.map(path => ({ id: `file-root-required:${path}`, ...(REQUIRED_FEATURES[path] ? { features: REQUIRED_FEATURES[path] } : {}), shell: { pass: `required ${path}` },
     run: async ctx => [verdict(`file-root-required:${path}`, regularFileInRoot(await packedRoot(ctx), path), `required ${path}`)] } satisfies CheckCase)),
   {
     id: 'file-root-is-component', shell: { pass: 'root owns only user space' },
@@ -287,7 +289,8 @@ export const ROOT_CHECKS: readonly CheckCase[] = [
       const obsolete = ['var-lib', 'var-cache', 'var-log', 'var-tmp', 'var-lib-systemd-timesync',
         'var-lib-systemd-network', 'var-lib-systemd-timers', 'var-lib-systemd-linger']
         .some(name => entry(root, `/etc/systemd/system/${name}.mount`) !== undefined)
-      const binds = ['var-lib-mica', 'etc-ssh', 'usr-local-lib-systemd-system', 'etc-containers-systemd']
+      // The Quadlet bind exists only with the engine; a product without containers has no such unit.
+      const binds = ['var-lib-mica', 'etc-ssh', 'usr-local-lib-systemd-system', ...(ctx.product.features.has('containers') ? ['etc-containers-systemd'] : [])]
       const varUnit = entry(root, '/etc/systemd/system/var.mount')?.isFile()
         ? read('/etc/systemd/system/var.mount') : ''
       const ok = lines.length === 2 && lines.some(l => l.join(' ') === `PARTUUID=${ctx.board.get('DATA_GUID')?.toLowerCase()} /mnt/data ext4 noatime,prjquota,x-systemd.growfs 0 2`)
@@ -300,7 +303,7 @@ export const ROOT_CHECKS: readonly CheckCase[] = [
     },
   },
   {
-    id: 'file-root-container-policy', shell: { pass: 'container storage uses an independent DATA bind' },
+    id: 'file-root-container-policy', features: ['containers'], shell: { pass: 'container storage uses an independent DATA bind' },
     run: async ctx => {
       const root = await packedRoot(ctx)
       const read = (p: string) => regularFileInRoot(root, p) ? readFileSync(pathInRoot(root, p), 'utf8') : ''

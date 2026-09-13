@@ -95,8 +95,8 @@ function lines(root: string, path: string): string[] {
 }
 
 /** The units the reconciler must be ordered before, each with the file that must exist. */
-const BEFORE_PAIRS: readonly { dep: string, file: string }[] = [
-  { dep: 'micad.service', file: '/usr/lib/systemd/system/micad.service' },
+const BEFORE_PAIRS: readonly { dep: string, file: string, feature?: string }[] = [
+  { dep: 'micad.service', file: '/usr/lib/systemd/system/micad.service', feature: 'micad' },
   { dep: 'ssh.service', file: '/usr/lib/systemd/system/ssh.service' },
   { dep: 'systemd-logind.service', file: '/usr/lib/systemd/system/systemd-logind.service' },
   { dep: 'systemd-user-sessions.service', file: '/usr/lib/systemd/system/systemd-user-sessions.service' },
@@ -346,7 +346,8 @@ export const SHADOW_CHECKS: readonly CheckCase[] = [
         .filter(l => l.startsWith('Before='))
         .flatMap(l => l.slice('Before='.length).split(/\s+/))
         .filter(t => t !== ''))
-      return BEFORE_PAIRS.map(({ dep, file }) => {
+      // A pair whose unit a product feature ships is judged only when the product selected it.
+      return BEFORE_PAIRS.filter(({ feature }) => feature === undefined || ctx.product.features.has(feature)).map(({ dep, file }) => {
         const firing = { instance: dep }
         if (!unitPresent) {
           return verdict('shadow-reconcile-ordered-before', false,

@@ -4,6 +4,7 @@ import { loadBoard } from './board.ts'
 import { runChecks } from './checks.ts'
 import { verifyFactoryImage } from './file-image.ts'
 import { REPO_ROOT, boardEnvPath } from './paths.ts'
+import { readProductConf } from './product-conf.ts'
 import { chooseRoute, createToolRuntime, missingHostTools } from './tools.ts'
 
 async function main() {
@@ -36,7 +37,11 @@ async function main() {
   try {
     const roots = await verifyFactoryImage(board.layout, image, keys, workDir, tools, fact => { console.log(`PASS: ${fact}`); passed++ })
     for (const root of roots) {
-      const run = await runChecks({ board, image, tools, workDir, outDir: join(REPO_ROOT, '_out', name), unpackRoot: async () => root })
+      const product = readProductConf(root)
+      if (product.board !== name) throw new Error(`the root was composed for product ${product.name} on board ${product.board}, not ${name}`)
+      console.log(`verify: product ${product.name} (${product.profile}; features: ${[...product.features].join(' ') || 'none, the minimal image'})`)
+      const run = await runChecks({ board, product, image, tools, workDir, outDir: join(REPO_ROOT, '_out', name), unpackRoot: async () => root })
+      for (const n of run.notRun) console.log(`NOT RUN: ${n.id}: needs ${n.features.join(', ')}, which product ${product.name} did not select`)
       for (const result of run.results) {
         if (result.verdict === 'pass') passed++
         else if (result.verdict === 'fail') failed++

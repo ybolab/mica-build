@@ -210,6 +210,13 @@ export interface RegisteredCheck {
   readonly id: string
   /** Board names this check applies to. Undefined means every board. */
   readonly boards?: readonly string[]
+  /**
+   * The product features this check needs, every one of them: a product
+   * that did not select one of them ships nothing for this check to look at,
+   * and the check is not run over it (checks.ts checksFor). Undefined means
+   * every product.
+   */
+  readonly features?: readonly string[]
   /** `one` -- the default -- means matching two shell lines is a register fault. */
   readonly cardinality?: 'one' | 'many'
   /**

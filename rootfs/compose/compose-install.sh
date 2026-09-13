@@ -89,6 +89,12 @@ meta_install() {
     fail "/mos-compose/meta-public/usr/share/mica/meta/updates/manifest.json is missing or empty. It is staged from meta/updates/manifest.json and it is where this image says which server its updates come from, on which channel and against which package signing key; an image without it has no configuration to read and no anchor to check a package against"
 meta_install usr/share/mica/meta/updates/manifest.json
 
+# The product the root is composed for (rootfs/build.sh writes it): the
+# verifier reads it to scope its register, so a root without it is refused.
+[ -s /mos-compose/meta-public/usr/lib/mica/product.conf ] ||
+    fail "/mos-compose/meta-public/usr/lib/mica/product.conf is missing or empty; rootfs/build.sh writes it for every product"
+meta_install usr/lib/mica/product.conf
+
 # THE DEVELOPMENT-GRADE MARKER, whose ABSENCE IS THE SUPPORTED STEADY STATE and
 # not an error. The two refusals above are the right shape for a required file
 # and the wrong shape for this one: "missing -> fail" here would refuse every

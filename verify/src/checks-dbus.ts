@@ -284,6 +284,7 @@ const MOSD_CHECKS: readonly CheckCase[] = [
     // `[ -n "$(cat ...)" ]` asks: a zero-byte file at the right path passes
     // every "is it there" check and governs nothing.
     id: 'micad-policy-ships',
+    features: ['micad'],
     shell: {
       pass: `${MOSD_POLICY_PATH} ships and is readable`,
       fail: `${MOSD_POLICY_PATH} is missing or empty`,
@@ -310,6 +311,7 @@ const MOSD_CHECKS: readonly CheckCase[] = [
     // the settings VALUE -- a uid that may not call anything can still
     // subscribe and read access.webAdmin.password_hash.
     id: 'micad-policy-no-default-allow',
+    features: ['micad'],
     shell: {
       pass: 'no <policy context="default"> allows send_destination= or receive_sender= for ',
       fail: 'default-context allow rule(s) for ',
@@ -339,6 +341,7 @@ const MOSD_CHECKS: readonly CheckCase[] = [
     // nowhere else: zero under root would mean micad cannot own its own name,
     // and one anywhere else would let an unprivileged process take it FIRST.
     id: 'micad-policy-own-root-only',
+    features: ['micad'],
     shell: {
       pass: 'appears only under <policy user="root">',
       fail: 'time(s) under <policy user="root"> and ',
@@ -365,6 +368,7 @@ const MOSD_CHECKS: readonly CheckCase[] = [
     // denies nothing, and the default-context check above would still report
     // zero allows while the real name sat wide open.
     id: 'micad-policy-names-the-owned-bus',
+    features: ['micad'],
     shell: {
       pass: 'the policy names exactly the bus micad.service declares (BusName=',
       fail: 'policy/unit bus-name mismatch: ',
@@ -392,6 +396,7 @@ const MOSD_CHECKS: readonly CheckCase[] = [
     // One policy file. A narrow-looking second exception is still a management
     // export and therefore a boundary violation.
     id: 'micad-policy-no-second-file-widens',
+    features: ['micad'],
     shell: {
       pass: ' is the ONLY file under ',
       fail: 'a second D-Bus policy file mentions ',
@@ -499,6 +504,7 @@ const BLUEZ_CHECKS: readonly CheckCase[] = [
     // exactly one line per board, so a separate `-skipped` entry would have
     // nothing left to claim on the board that skips.
     id: 'bluez-dbus-policy',
+    features: ['bluetooth'],
     shell: {
       pass: 'bluez ships a D-Bus policy (in /usr/share/dbus-1/system.d or /etc/dbus-1/system.d)',
       fail: 'no bluetooth.conf in either dbus policy directory',

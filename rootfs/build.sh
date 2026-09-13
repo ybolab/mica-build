@@ -388,6 +388,13 @@ META_STAGE="$(mktemp -d "$OUT_DIR/meta-public.XXXXXX")"
 mkdir -p "$META_STAGE/usr/share/mica/meta/updates"
 manifest="$META_DIR/updates/manifest.json"
 install -m 0644 "$manifest" "$META_STAGE/usr/share/mica/meta/updates/manifest.json"
+# THE PRODUCT, in the root: what this image is, for the verifier to scope its
+# register by (features the product did not select ship nothing to check)
+# and for anything on the device that asks. Beside profile.conf, in the
+# read-only root, for the same reason: it describes the image.
+mkdir -p "$META_STAGE/usr/lib/mica"
+printf 'PRODUCT=%s\nBOARD=%s\nPROFILE=%s\nFEATURES="%s"\nCOMPONENTS="%s"\n' "$MICA_PRODUCT" "$MICA_BOARD" "$MICA_PROFILE" "$FEATURES" "$COMPONENTS" > "$META_STAGE/usr/lib/mica/product.conf"
+chmod 0644 "$META_STAGE/usr/lib/mica/product.conf"
 if [ -s "${MICA_SIGNING_OUTPUT:-$REPO_ROOT/meta}/GENERATED" ]; then
     install -m 0644 "${MICA_SIGNING_OUTPUT:-$REPO_ROOT/meta}/GENERATED" "$META_STAGE/usr/share/mica/meta/GENERATED"
 else
