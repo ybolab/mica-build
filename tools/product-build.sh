@@ -119,8 +119,12 @@ bash build/run.sh --components root --input "_out/${BOARD}" --arch "${MICA_ARCH}
 efi_target() { case "$1" in amd64) echo X64 ;; arm64) echo AA64 ;; *) echo "error: no EFI architecture for $1" >&2; exit 1 ;; esac | tr '[:upper:]' '[:lower:]'; }
 if [ "${BOOT_BACKEND}" = uboot-fit ]; then
     bash boot/build-tools.sh --target "$(efi_target amd64)"
+    # The bundle's files are all 0644 (a board archive ships data, not
+    # executables); the packager runs these four, so they are staged executable.
+    rm -rf "${OUT}/fit-tools"; mkdir -p "${OUT}/fit-tools"
+    for t in mkimage fit_check_sign fdt_add_pubkey dumpimage; do install -m 0755 "${BOARD_DIR}/uboot/tools/${t}" "${OUT}/fit-tools/${t}"; done
     docker build --label ai-agent=true -t ai-agent/mos-fit-tools-amd64 --build-arg MICA_BOOT_TOOLS=ai-agent/mos-boot-tools-amd64 \
-        --build-context "fit-tools=${BOARD_DIR}/uboot/tools" -f boot/Dockerfile.fit boot
+        --build-context "fit-tools=${OUT}/fit-tools" -f boot/Dockerfile.fit boot
 else
     bash boot/build-tools.sh --target "$(efi_target "${MICA_ARCH}")"
 fi
