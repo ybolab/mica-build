@@ -141,7 +141,7 @@ jobs:
   # for every input the real pipeline would build. Every push and PR.
   #
   # Not a duplicate of check.yml's dbus-daemon step: the standard lane
-  # provisions dbus-daemon so the mosd Rust suites can run PRIVATE SESSION
+  # provisions dbus-daemon so the micad Rust suites can run PRIVATE SESSION
   # buses as an ordinary user. This suite proves the SHIPPED system-bus
   # policy files, and hard-refuses to run without real root because its whole
   # point is what uid 65534 can and cannot do -- which is why it still cannot
@@ -174,7 +174,7 @@ jobs:
           $SUDO apt-get install -y --no-install-recommends \
             bash make git ca-certificates dbus util-linux python3
 
-      # Proves the SHIPPED com.mos.mosd policy against a real dbus-daemon,
+      # Proves the SHIPPED com.mica.micad policy against a real dbus-daemon,
       # both directions of every guard. Needs root: it drops to uid 65534.
       - name: make os-dbus-policy-test
         run: |

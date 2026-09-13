@@ -13,7 +13,7 @@
 # there. Everything it needs is in this file or on the image.
 #
 # WHAT IS ON THE IMAGE, measured on a shipped root: bash, sh, curl, networkctl,
-# journalctl, systemctl, mos-deploy, podman, udevadm, dmesg, lsblk, date, stat, awk,
+# journalctl, systemctl, mica-deploy, podman, udevadm, dmesg, lsblk, date, stat, awk,
 # sed, grep. ABSENT: jq, python3, wget, perl -- and there is no package
 # manager, which is a property under test rather than an obstacle. BusyBox
 # ships with no applet links by design. So: no `jq`, nothing is installed, and
@@ -135,7 +135,7 @@ DETAIL_ROWS=(
 # --- the stages, in order, with what each assumes ---------------------------
 # name|assumes|one-line description. `assumes` is the stage that must be `done`
 # before this one runs; empty for the first. A stage whose assumption is unmet
-# is REFUSED, not run: pkgs/mosd/tests/apid-api does the same thing for the
+# is REFUSED, not run: pkgs/micad/tests/apid-api does the same thing for the
 # same reason -- a stage-8 failure must never be read as a stage-9 bug.
 STAGES=(
     "install||the flash and the profile it wrote"
@@ -240,7 +240,7 @@ if [ "$STAGE" = stages ]; then usage; exit 0; fi
 # WHERE IT LANDS IS LOAD-BEARING. This run spans reboots and deliberate power
 # cuts, so a result recorded on a tmpfs or on EPHEMERAL is a result that does
 # not survive the thing it is measuring. /srv is the user-owned namespace bound
-# out of DATA -- persistent, and not the namespace mosd writes. Each fallback
+# out of DATA -- persistent, and not the namespace micad writes. Each fallback
 # is announced, because a silent demotion to /tmp turns the power-cut row into
 # a row with no evidence.
 pick_out() {
@@ -249,8 +249,8 @@ pick_out() {
     # whatever machine somebody tried `--dry-run` on, and on a development host
     # /srv is not a device's DATA namespace but a shared root. Off-device runs
     # must name their own directory.
-    if [ ! -r /usr/share/mos/release-identity.env ]; then
-        echo "This is not a mos device: /usr/share/mos/release-identity.env is absent." >&2
+    if [ ! -r /usr/share/mica/release-identity.env ]; then
+        echo "This is not a mos device: /usr/share/mica/release-identity.env is absent." >&2
         echo "Pass --out DIR explicitly; the collector will not guess a directory here." >&2
         return 1
     fi
@@ -669,11 +669,11 @@ require_assumption() {
 
 # --- shared probes ----------------------------------------------------------
 
-# Read the authenticated identity through the same command as mos-health.
+# Read the authenticated identity through the same command as mica-health.
 booted_deployment() {
     local out
-    have mos-deploy || return 127
-    out=$(mos-deploy booted 2>/dev/null) || return 1
+    have mica-deploy || return 127
+    out=$(mica-deploy booted 2>/dev/null) || return 1
     printf '%s\n' "$out" | grep -cx '[0-9a-f]\{64\}' >/dev/null || return 2
     printf '%s' "$out"
 }
@@ -681,11 +681,11 @@ booted_deployment() {
 # health_verdict : echo a one-line summary, return 0 when green.
 #
 # "Green" is what the dossier's rows mean by a healthy system: every named
-# required-health member is green, mos-deploy names an authenticated
-# deployment, and mos-health.service completed. Optional failed units are
+# required-health member is green, mica-deploy names an authenticated
+# deployment, and mica-health.service completed. Optional failed units are
 # retained as evidence but do not redefine the required set. It
 # deliberately does NOT wait on `is-system-running` reporting `running` --
-# mos-health.service is a job in the initial transaction, so that state depends
+# mica-health.service is a job in the initial transaction, so that state depends
 # on its own completion. Here the confirmation is already expected to have
 # completed, and both services must still answer their read-only probes.
 health_verdict() {
@@ -694,14 +694,14 @@ health_verdict() {
         sysstate=$(systemctl is-system-running 2>/dev/null || true)
         failed=$(systemctl list-units --failed --no-legend --plain 2>/dev/null | tr '\n' ';' | sed 's/;*$//')
         [ -n "$failed" ] || failed="none"
-        mh=$(systemctl show -p Result --value mos-health.service 2>/dev/null || echo unknown)
+        mh=$(systemctl show -p Result --value mica-health.service 2>/dev/null || echo unknown)
     else
         sysstate="systemctl absent"; rc=1
     fi
     if have journalctl; then
-        health=$(journalctl -b -u mos-health.service --no-pager 2>/dev/null || true)
-        printf '%s\n' "$health" | grep -F "required set: boot-settled mosd apid" >/dev/null || rc=1
-        for member in boot-settled mosd apid; do
+        health=$(journalctl -b -u mica-health.service --no-pager 2>/dev/null || true)
+        printf '%s\n' "$health" | grep -F "required set: boot-settled micad apid" >/dev/null || rc=1
+        for member in boot-settled micad apid; do
             printf '%s\n' "$health" | grep -F "required member $member: OK" >/dev/null || rc=1
         done
     else
@@ -715,11 +715,11 @@ health_verdict() {
         printf 'live required-health probes unavailable: need timeout, busctl, curl and confirmed --api'
         return 2
     fi
-    timeout 10 busctl --system call com.mos.mosd /com/mos/mosd \
-        com.mos.mosd1 GetState s '' >/dev/null 2>&1 || rc=1
+    timeout 10 busctl --system call com.mica.micad /com/mos/micad \
+        com.mica.micad1 GetState s '' >/dev/null 2>&1 || rc=1
     curl --fail --silent --show-error --insecure --max-time 10 \
         "$API_BASE/healthz" >/dev/null 2>&1 || rc=1
-    printf 'systemd=%s optional-failed-units=%s required={boot-settled,mosd,apid} deployment=%s mos-health=%s' \
+    printf 'systemd=%s optional-failed-units=%s required={boot-settled,micad,apid} deployment=%s mica-health=%s' \
         "${sysstate:-unknown}" "$failed" "${slot:-none}" "$mh"
     return "$rc"
 }
@@ -754,13 +754,13 @@ capture_boot_state() {
     cap "${tag}-journal-warn"   -- journalctl -b -p warning --no-pager
     cap "${tag}-boots"          -- journalctl --list-boots --no-pager
     cap "${tag}-dmesg"          -- dmesg
-    cap "${tag}-deployment"     -- mos-deploy status
-    capf "${tag}-boot-receipt"   /run/mos/boot.json
+    cap "${tag}-deployment"     -- mica-deploy status
+    capf "${tag}-boot-receipt"   /run/mica/boot.json
     cap "${tag}-mounts"         -- findmnt --raw --evaluate
     cap "${tag}-df"             -- df -h
     cap "${tag}-uptime"         -- uptime
     capf "${tag}-cmdline"       /proc/cmdline
-    capf "${tag}-release"       /usr/share/mos/release-identity.env
+    capf "${tag}-release"       /usr/share/mica/release-identity.env
 }
 
 # --- apid, without jq -------------------------------------------------------
@@ -769,7 +769,7 @@ capture_boot_state() {
 # IN: minting a session on the device writes apid's audit ring and its
 # login-backoff counters, and a test harness must not be the thing that locks
 # the operator out. It records `not collected: no API token` and leans on the
-# unauthenticated sources -- mos-deploy, systemctl, the bus -- for
+# unauthenticated sources -- mica-deploy, systemctl, the bus -- for
 # everything they cover.
 api_get() {
     local path=$1 name=$2
@@ -886,7 +886,7 @@ detail_cycle_verdict() {
 
 stage_install() {
     say "== install : the flash, and the profile it wrote =="
-    capf release /usr/share/mos/release-identity.env
+    capf release /usr/share/mica/release-identity.env
     capf emmc-cid "$SYSTEM_SYS/device/cid" "$SYSTEM_SYS/device/name" \
         "$SYSTEM_SYS/device/manfid" "$SYSTEM_SYS/device/oemid" \
         "$SYSTEM_SYS/device/serial" "$SYSTEM_SYS/device/date"
@@ -904,8 +904,8 @@ stage_install() {
         measure BIND-STORAGE "not collected: $SYSTEM_SYS/device/name unreadable -- the dossier's binding stays incomplete"
     fi
     local profile=""
-    [ -r /usr/share/mos/release-identity.env ] &&
-        profile=$(sed -n 's/^PROFILE=//p' /usr/share/mos/release-identity.env | head -n1)
+    [ -r /usr/share/mica/release-identity.env ] &&
+        profile=$(sed -n 's/^PROFILE=//p' /usr/share/mica/release-identity.env | head -n1)
     measure BIND-PROFILE "${profile:-not collected: no PROFILE in release-identity.env}"
     measure BIND-IMAGE "source=$SOURCE_COMMIT tree=$SOURCE_TREE image=$IMAGE_NAME sha256=$IMAGE_SHA256 verification=$VERIFICATION_RECORD profile=$PROFILE board=$BOARD_REVISION radio=$RADIO_SKU system=$SYSTEM_BLOCK"
 
@@ -926,7 +926,7 @@ stage_firstboot() {
     capture_boot_state cold
     cap repart      -- journalctl -b -u systemd-repart --no-pager
     cap growfs      -- journalctl -b -u "systemd-growfs@*" --no-pager
-    cap data-layout -- systemctl status mos-data-layout.service
+    cap data-layout -- systemctl status mica-data-layout.service
     capf identity-record /mnt/data/state/machine-id
     capf machine-id-file /etc/machine-id
     api_get /api/v1/storage/status storage-status-api || true
@@ -1003,7 +1003,7 @@ stage_inventory() {
     capf m1-network-units /etc/systemd/network/80-dhcp.network
     local rendered
     rendered=$(ls /run/systemd/network/ 2>/dev/null | tr '\n' ' ')
-    measure M1-RENDERED "mosd rendered into /run/systemd/network: ${rendered:-(nothing)}"
+    measure M1-RENDERED "micad rendered into /run/systemd/network: ${rendered:-(nothing)}"
     local ifaces
     ifaces=$(ls /sys/class/net 2>/dev/null | tr '\n' ' ')
     measure M1-INTERFACES "kernel interfaces: ${ifaces:-(none read)}"
@@ -1184,8 +1184,8 @@ stage_fieldbus() {
     say "        live vehicle or a production machine."
     cap can-link    -- ip -details link show can0
     cap can-stats   -- ip -details -statistics link show can0
-    capf can-conf   /etc/mos/can.conf
-    cap can-units   -- systemctl status mos-can.service mos-otg.service mos-gadget.service mos-modules.service
+    capf can-conf   /etc/mica/can.conf
+    cap can-units   -- systemctl status mica-can.service mica-otg.service mica-gadget.service mica-modules.service
     cap udc         -- ls -l /sys/class/udc/
     cap gadget-tree -- find /sys/kernel/config/usb_gadget -maxdepth 3
     cap gadget-getty -- systemctl status "serial-getty@ttyGS0.service"
@@ -1324,7 +1324,7 @@ stage_watchdog_after() {
     else
         measure WD-BOOTSTATUS "ABSENT (CONFIG_WATCHDOG_SYSFS is not set on this kernel)"
     fi
-    cap wd-after-deployment -- mos-deploy status
+    cap wd-after-deployment -- mica-deploy status
     measure WD-ATTEMPTS "Record the remaining attempts from native status and the serial trace. A spent trial stays spent; never refill counters to prepare another test. Use a fresh complete image for a new test series."
     operator_step watchdog \
         "say how long after the last pet the board reset, and what the console printed on the way down" \
@@ -1338,7 +1338,7 @@ stage_update() {
     say "== update : signed component install, confirmation, and fallback =="
     local id
     id=$(booted_deployment) || true
-    cap upd-before-deployment -- mos-deploy status
+    cap upd-before-deployment -- mica-deploy status
     api_get /api/v1/update upd-before-api || true
     if [ -z "$id" ]; then
         record ab-update "not tested" "no authenticated running deployment; see upd-before-deployment.txt"
@@ -1347,7 +1347,7 @@ stage_update() {
     printf '%s\n' "$id" >"$OUT/update-before.id"
     flush
     operator_step ab-update \
-        "start from a complete current factory image. Import a signed GOOD MOSUPD01 archive with mos-deploy import <archive>, install its verified descriptor with mos-deploy install /mos/updates/verified/<id>.json --objects /mos/updates/verified/objects, then reboot and observe health confirmation. Repeat for root-only, kernel-only and combined releases. Then import and install a signed BAD-health deployment and observe three failed trials and fallback without intervening. Capture native status and the serial trace on every boot." \
+        "start from a complete current factory image. Import a signed GOOD MOSUPD01 archive with mica-deploy import <archive>, install its verified descriptor with mica-deploy install /mos/updates/verified/<id>.json --objects /mos/updates/verified/objects, then reboot and observe health confirmation. Repeat for root-only, kernel-only and combined releases. Then import and install a signed BAD-health deployment and observe three failed trials and fallback without intervening. Capture native status and the serial trace on every boot." \
         "only the named changed components are written; firmware and reused object digests stay unchanged; three bad trials exhaust without refill; the retained confirmed deployment boots healthy. Confirmation happens only through the health gate."
     operator_detail U1 \
         "install a signed root-only update and retain archive/catalog hashes plus before/after deployment and component identities" \
@@ -1367,7 +1367,7 @@ stage_update() {
     operator_detail U6 \
         "apply the separately signed current firmware package on this identified unit, verify complete readback and compare both native record copies" \
         "firmware readback matches the signed receipt, native records remain valid, and normal OS update writes no firmware bytes"
-    cap upd-after-deployment -- mos-deploy status
+    cap upd-after-deployment -- mica-deploy status
     booted_deployment >"$OUT/update-after.id" || true
     flush
 }
@@ -1375,8 +1375,8 @@ stage_update() {
 stage_powercut() {
     say "== powercut : named transaction and boot-counter boundaries =="
     [ -s "$OUT/update-after.id" ] || die "stage update must first record an authenticated deployment"
-    cap pc-current-deployment -- mos-deploy status
-    capf pc-current-receipt /run/mos/boot.json
+    cap pc-current-deployment -- mica-deploy status
+    capf pc-current-receipt /run/mica/boot.json
     capf pc-baseline "$OUT/update-after.id"
     # Status after a reboot cannot establish the exact cut boundary: fallback
     # may already have changed selection. Require the external serial/power trace.
@@ -1468,8 +1468,8 @@ stage_accelerators() {
 stage_recovery() {
     say "== recovery : every recovery path, in the destructive order =="
     say "  THIS STAGE DESTROYS. Copy the run directory off the device first."
-    cap rec-before-deployment -- mos-deploy status
-    capf rec-board-recovery /usr/share/mos/release-identity.env
+    cap rec-before-deployment -- mica-deploy status
+    capf rec-board-recovery /usr/share/mica/release-identity.env
     api_get /api/v1/diagnostics/snapshots rec-diagnostics || true
 
     operator_step recovery \

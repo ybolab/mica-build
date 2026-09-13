@@ -1,8 +1,8 @@
 [Unit]
 Description=Writable var on bounded DATA storage
 DefaultDependencies=no
-Requires=mos-seed-var.service
-After=mos-seed-var.service
+Requires=mica-seed-var.service
+After=mica-seed-var.service
 Before=local-fs.target shutdown.target
 Conflicts=shutdown.target
 

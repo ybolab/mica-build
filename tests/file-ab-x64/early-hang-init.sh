@@ -7,14 +7,14 @@ arch=${2:?architecture required}
 case "$arch" in amd64) target=x86_64-unknown-linux-gnu;; arm64) target=aarch64-unknown-linux-gnu;; *) exit 1;; esac
 test ! -e "$out/source"
 mkdir "$out/source"
-cp pkgs/mos-deploy/Cargo.toml pkgs/mos-deploy/Cargo.lock "$out/source/"
-cp -a pkgs/mos-deploy/src "$out/source/src"
-cp -a pkgs/mos-deploy/lifecycle-sys "$out/source/lifecycle-sys"
-python3 - "$out/source/src/bin/mos-init.rs" <<'PY'
+cp pkgs/mica-deploy/Cargo.toml pkgs/mica-deploy/Cargo.lock "$out/source/"
+cp -a pkgs/mica-deploy/src "$out/source/src"
+cp -a pkgs/mica-deploy/lifecycle-sys "$out/source/lifecycle-sys"
+python3 - "$out/source/src/bin/mica-init.rs" <<'PY'
 from pathlib import Path
 import sys
 p=Path(sys.argv[1]); source=p.read_text()
-marker='    eprintln!("mos-init: boot watchdog armed");'
+marker='    eprintln!("mica-init: boot watchdog armed");'
 assert source.count(marker)==1
 p.write_text(source.replace(marker, marker+'''
     if std::process::id() == 1 {
@@ -28,6 +28,6 @@ timeout -k 20 1200 docker run --rm --label ai-agent=true --network traefik \
     -v "$out:/w" -v "$PWD/_out/cargo/registry:/usr/local/cargo/registry" \
     -v "$PWD/_out/cargo/git:/usr/local/cargo/git" -w /w/source \
     -e CARGO_TARGET_DIR=/w/target --entrypoint /bin/bash "$image" \
-    -c 'set -euo pipefail; cargo build --release --locked --target "$1" --bin mos-init --config "target.$1.rustflags=[\"-C\",\"target-feature=+crt-static\",\"-C\",\"strip=symbols\"]"; cp "/w/target/$1/release/mos-init" /w/mos-init' _ "$target"
-test -s "$out/mos-init"
+    -c 'set -euo pipefail; cargo build --release --locked --target "$1" --bin mica-init --config "target.$1.rustflags=[\"-C\",\"target-feature=+crt-static\",\"-C\",\"strip=symbols\"]"; cp "/w/target/$1/release/mica-init" /w/mica-init' _ "$target"
+test -s "$out/mica-init"
 echo "FILE_AB_EARLY_HANG_INIT_READY: $arch"

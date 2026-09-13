@@ -10,7 +10,7 @@ current=$(python3 -c 'import json; print(json.load(open("updates/5/inputs.json")
 fallback=$(python3 -c 'import json; print(json.load(open("updates/4/inputs.json"))["id"])')
 mren -i "$output/disk.img@@1M" "::/loader/entries/mos-$current+3.conf" "mos-$current.conf"
 bash /harness/boot.sh "$output/disk.img" writable 300 "$board" > "$output/refused.log" 2>&1
-grep -q "mos-init: verified deployment $current" "$output/refused.log"
+grep -q "mica-init: verified deployment $current" "$output/refused.log"
 ! grep -q FILE_AB_RUNTIME_PASS "$output/refused.log"
 mdir -i "$output/disk.img@@1M" -b ::/loader/entries > "$output/entries.txt"
 grep -q "mos-$current+0-3.conf" "$output/entries.txt"

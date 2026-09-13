@@ -48,7 +48,7 @@ function makeSeed(name: string): string {
   const root = join(dir, name)
   mkdirSync(join(root, 'lib', 'mos'), { recursive: true })
   mkdirSync(join(root, 'cache'), { recursive: true })
-  writeFileSync(join(root, 'lib', 'dpkg-status'), 'Package: mosd\n')
+  writeFileSync(join(root, 'lib', 'dpkg-status'), 'Package: micad\n')
   writeFileSync(join(root, 'lib', 'mos', 'state.json'), '{}\n')
   writeFileSync(join(root, 'cache', 'a.bin'), 'x'.repeat(4096))
   return root

@@ -529,7 +529,7 @@
       "properties": {
         "component": {
           "enum": [
-            "mosd",
+            "micad",
             "connd",
             "apid",
             "update"

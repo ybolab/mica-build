@@ -99,19 +99,19 @@ printf '%s\n' '#!/usr/bin/env bash' \
     'case "$*" in' \
     '  "is-system-running"*) echo degraded; exit 1 ;;' \
     '  "list-units --failed"*) echo "optional-example.service loaded failed failed optional"; exit 0 ;;' \
-    '  "show -p Result --value mos-health.service") echo success; exit 0 ;;' \
+    '  "show -p Result --value mica-health.service") echo success; exit 0 ;;' \
     '  *) exit 0 ;;' \
     'esac' >"$stub/systemctl"
 printf '%s\n' '#!/usr/bin/env bash' \
     'case "${1:-}" in' \
     '  booted) printf "%064d\n" 0 | tr " " a ;;' \
     '  *) echo "native status" ;;' \
-    'esac' >"$stub/mos-deploy"
+    'esac' >"$stub/mica-deploy"
 printf '%s\n' '#!/usr/bin/env bash' \
-    'if [[ "$*" == *"mos-health"* ]]; then' \
-    '  echo "required set: boot-settled mosd apid"' \
+    'if [[ "$*" == *"mica-health"* ]]; then' \
+    '  echo "required set: boot-settled micad apid"' \
     '  echo "required member boot-settled: OK"' \
-    '  echo "required member mosd: OK"' \
+    '  echo "required member micad: OK"' \
     '  [ "${STUB_HEALTH:-good}" = bad ] || echo "required member apid: OK"' \
     'fi' >"$stub/journalctl"
 printf '%s\n' '#!/usr/bin/env bash' 'printf "%s\n" "$1" >>"$STUB_SLEEP_LOG"' >"$stub/sleep"

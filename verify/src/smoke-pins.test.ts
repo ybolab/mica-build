@@ -149,11 +149,11 @@ describe('readPin', () => {
 describe('readCratePackageVersion -- and why it tracks the TOML table', () => {
   test('reads the four shipped crates', () => {
     // The search space, first: all four manifests exist and answer.
-    for (const crate of ['mosd', 'apid', 'mqttd', 'broker']) {
+    for (const crate of ['micad', 'apid', 'mqttd', 'broker']) {
       const pin = readCratePackageVersion(cratePath(crate))
       expect(pin.key).toBe('package.version')
       expect(pin.recorded).toMatch(/^[0-9]/)
-      expect(pin.file).toContain(join('pkgs', 'mosd', crate))
+      expect(pin.file).toContain(join('pkgs', 'micad', crate))
     }
   })
 

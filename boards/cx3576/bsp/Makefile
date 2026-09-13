@@ -51,7 +51,7 @@ UBUNTU_ARG := MOS_IMAGE_UBUNTU_2404=IMAGE_UBUNTU_2404
 # never mint keys; development material is generated explicitly before building.
 VERITY_TRUST_CERT ?= ../../../meta/verity/signer.cert.pem
 FIT_TRUST_CERT ?=
-VERITY_TOOL := ../../../pkgs/mos-boot/verity-tool.sh
+VERITY_TOOL := ../../../pkgs/mica-boot/verity-tool.sh
 ALPINE_ARG := MOS_IMAGE_ALPINE_3_24_1=IMAGE_ALPINE_3_24_1
 
 all: kernel uboot-mos

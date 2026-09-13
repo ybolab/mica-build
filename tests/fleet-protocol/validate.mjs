@@ -135,7 +135,7 @@ function validate(s, v) {
 }
 function reportSemantics(r) {
   assert(Buffer.byteLength(canonical(r)) <= 16384, 'oversized report');
-  assert.deepEqual(r.health.components.map(x => x.component), ['mosd', 'connd', 'apid', 'update'], 'health ordering');
+  assert.deepEqual(r.health.components.map(x => x.component), ['micad', 'connd', 'apid', 'update'], 'health ordering');
   assert.deepEqual(r.storage.tiers.map(x => x.name), ['esp', 'firmware', 'system', 'data'], 'tier ordering');
   for (const tier of r.storage.tiers) {
     if (!tier.present) assert(!tier.mounted && tier.usedPercent === null && tier.pressure === null, 'absent tier');

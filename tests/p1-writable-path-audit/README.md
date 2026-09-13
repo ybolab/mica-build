@@ -71,7 +71,7 @@ bash tests/p1-writable-path-audit/extract-root.sh x64
 bash tests/p1-writable-path-audit/audit-root.sh  x64
 
 # runtime half: prepare the disk once, then boot it three times
-MOS_BOARD=x64 bun run pkgs/mosd/tests/apid-api/src/qemu.ts --prepare-only
+MOS_BOARD=x64 bun run pkgs/micad/tests/apid-api/src/qemu.ts --prepare-only
 bash tests/p1-writable-path-audit/boot.sh observe   observe
 bash tests/p1-writable-path-audit/boot.sh candidate candidate
 bash tests/p1-writable-path-audit/boot.sh verify    verify

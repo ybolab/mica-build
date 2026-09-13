@@ -19,5 +19,5 @@ export function parsePackageInventory(text: string, columns = 3): ReadonlySet<st
 }
 
 export function installedPackages(root: string): ReadonlySet<string> {
-  return parsePackageInventory(readFileSync(pathInRoot(root, '/usr/share/mos/manifest.tsv'), 'utf8'))
+  return parsePackageInventory(readFileSync(pathInRoot(root, '/usr/share/mica/manifest.tsv'), 'utf8'))
 }

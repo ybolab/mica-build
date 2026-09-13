@@ -74,21 +74,21 @@ APPEND="$APPEND systemd.set_credential_binary=tmpfiles.extra:${TMPB64}"
 
 RUN_DIR_REAL="$(readlink -f "$REPO/_out/$MOS_BOARD/.qemu")"
 
-# THE KEY GOES SOMEWHERE mosd DOES NOT MANAGE.
+# THE KEY GOES SOMEWHERE micad DOES NOT MANAGE.
 #
 # The serving sshd reads /etc/ssh/authorized_keys.d/%u -- that is what the
 # image's own sshd_config.d/05-mos-authorized-keys.conf sets -- and
-# pkgs/mosd/mosd/src/reconciler/sshd.rs RENDERS that file from
+# pkgs/micad/micad/src/reconciler/sshd.rs RENDERS that file from
 # settings.access.ssh.keys on every reconcile. With the factory default of no
 # keys it renders an empty file, so a key written there by tmpfiles at
-# sysinit.target authenticates only until mosd starts at multi-user.target.
+# sysinit.target authenticates only until micad starts at multi-user.target.
 # Measured three times: boot 1 got in inside that window, boots 2 and 3 answered
 # the readiness probe and were then refused seconds later.
 #
 # /etc/ssh is STATE-backed, and sshd_config's `Include
 # /etc/ssh/sshd_config.d/*.conf` is line 12 and globs in sorted order, so a
 # `01-` drop-in is read before mos's `05-` one. OpenSSH keeps the FIRST value
-# obtained for a keyword, so this wins, and it points at a file mosd's
+# obtained for a keyword, so this wins, and it points at a file micad's
 # reconciler does not know about.
 if [ "${SEED_KEY:-1}" = "1" ]; then
     conf="$S/01-p1-audit.conf"
@@ -101,7 +101,7 @@ fi
 # --- launch the boot in the background -------------------------------------
 docker run --rm --label ai-agent=true \
     -v "$REPO:$REPO" -v /var/run/docker.sock:/var/run/docker.sock \
-    -w "$REPO/pkgs/mosd/tests/apid-api" \
+    -w "$REPO/pkgs/micad/tests/apid-api" \
     -e "MOS_BOARD=$MOS_BOARD" \
     -e MOS_QEMU_REUSE_DISK=1 \
     -e "MOS_QEMU_RUN_SECONDS=$RUN_SECONDS" \

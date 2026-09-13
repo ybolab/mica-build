@@ -1,2 +1,2 @@
 # User-space board policy only. Kernel/support are independent components.
-mos-board-x64
+mica-board-x64

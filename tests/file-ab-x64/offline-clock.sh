@@ -40,7 +40,7 @@ Path(sys.argv[1]).write_text(s)
 PY
     timeout -k 15 600 docker run --rm --label ai-agent=true --network traefik \
         -v "$out:/w" ai-agent/mos-p2-lab bash /w/boot.sh disk.img writable 540 "$board" > "$out/boot.log" 2>&1
-    grep -F "mos-init: verified deployment $expected;" "$out/boot.log"
+    grep -F "mica-init: verified deployment $expected;" "$out/boot.log"
     grep -F FILE_AB_RUNTIME_PASS "$out/boot.log"
     bash tests/file-ab-x64/shutdown-check.sh "$out/boot.log"
     echo "FILE_AB_OFFLINE_CLOCK_PASS: $board $rtc"

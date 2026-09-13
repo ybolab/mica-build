@@ -96,7 +96,7 @@ done
 #                       advance is the whole point. Refusing instead would mean
 #                       `make os-debs` could no longer build a pool on a fresh
 #                       host -- which its own help line promises -- and would
-#                       be arbitrary besides, since the mosd, mqtt and rauc
+#                       be arbitrary besides, since the micad, mqtt and rauc
 #                       hooks compile from their hooks too.
 #   stamp stale      -> the normal path REFUSES. So this is MISSING.
 #
@@ -138,14 +138,14 @@ Run 'MOS_ARCH=${ARCH} make podman' first to pay that cost where it can be seen."
     echo "preflight-missing: ${n_missing}"
     echo "preflight-warned: ${n_warned}"
     if [ "${n_missing}" -gt 0 ]; then
-        echo "prepare.sh: refusing to build mos-podman: ${OUT} holds all ${#BINARIES[@]} binaries and they were compiled from a versions.env this tree no longer has. Nothing was built and no container was started." >&2
+        echo "prepare.sh: refusing to build mica-podman: ${OUT} holds all ${#BINARIES[@]} binaries and they were compiled from a versions.env this tree no longer has. Nothing was built and no container was started." >&2
         exit 1
     fi
     if [ "${n_warned}" -gt 0 ]; then
-        echo "prepare.sh: mos-podman will build ${n_warned} of its ${examined} inputs during the run (${OUT})" >&2
+        echo "prepare.sh: mica-podman will build ${n_warned} of its ${examined} inputs during the run (${OUT})" >&2
         exit 0
     fi
-    echo "prepare.sh: pre-flight found all ${examined} inputs of mos-podman present and stamped for ${ARCH} (${OUT})"
+    echo "prepare.sh: pre-flight found all ${examined} inputs of mica-podman present and stamped for ${ARCH} (${OUT})"
     exit 0
 fi
 

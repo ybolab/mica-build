@@ -22,7 +22,7 @@ const cx3576 = loadBoard(boardEnvPath('cx3576'))
 
 const DROPIN = 'etc/systemd/timesyncd.conf.d/50-mos.conf'
 const WANTS = 'etc/systemd/system/sysinit.target.wants/systemd-timesyncd.service'
-const MANIFEST = 'usr/share/mos/manifest.tsv'
+const MANIFEST = 'usr/share/mica/manifest.tsv'
 
 function checkNamed(id: string): CheckCase {
   const found = TIME_CHECKS.find(c => c.id === id)

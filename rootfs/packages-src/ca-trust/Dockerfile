@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1@sha256:ecfaec9ed6d810b56388c508f4121597bfbba70d41a6dfeee4d8cad5f295fc32
 # check=skip=InvalidDefaultArgInFrom
-# The ca-trust producer: the `mos-ca-trust` package.
+# The ca-trust producer: the `mica-ca-trust` package.
 #
 #   bash build-env/deb/build.sh --producer ca-trust --arch all
 #
@@ -209,10 +209,10 @@ RUN set -eu; \
         }' /in/copyright >/tmp/apache-2.0; \
     grep -c 'Apache License' /tmp/apache-2.0 >/dev/null || \
         { echo "error: the stanza lifted from /in/copyright carries no Apache licence text" >&2; exit 1; }; \
-    install -d -m 0755 /stage/usr/share/doc/mos-ca-trust; \
+    install -d -m 0755 /stage/usr/share/doc/mica-ca-trust; \
     { \
         echo 'Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/'; \
-        echo 'Upstream-Name: mos-ca-trust'; \
+        echo 'Upstream-Name: mica-ca-trust'; \
         echo 'Comment: The payload of this package is not mos-authored. It is the output of'; \
         echo ' Debian'"'"'s ca-certificates package -- the trust anchors, the hash farm that'; \
         echo ' indexes them and the configuration listing them -- generated from the pinned'; \
@@ -234,7 +234,7 @@ RUN set -eu; \
         echo ' that a pointer resolves is the one edit that must not be made quietly, and the'; \
         echo ' full MPL-2.0 and GPL-2+ terms are carried below in any case.'; \
         echo ''; \
-        echo 'Files: usr/share/doc/mos-ca-trust/*'; \
+        echo 'Files: usr/share/doc/mica-ca-trust/*'; \
         echo 'Copyright: The mos project'; \
         echo 'License: Apache-2.0'; \
         echo ''; \
@@ -247,13 +247,13 @@ RUN set -eu; \
         echo '# --------------------------------------------------------------------------'; \
         echo ''; \
         cat /in/ca-certificates.copyright; \
-    } >/stage/usr/share/doc/mos-ca-trust/copyright; \
-    chmod 0644 /stage/usr/share/doc/mos-ca-trust/copyright; \
-    grep -c 'Apache License' /stage/usr/share/doc/mos-ca-trust/copyright >/dev/null || \
+    } >/stage/usr/share/doc/mica-ca-trust/copyright; \
+    chmod 0644 /stage/usr/share/doc/mica-ca-trust/copyright; \
+    grep -c 'Apache License' /stage/usr/share/doc/mica-ca-trust/copyright >/dev/null || \
         { echo "error: the composed copyright lost the Apache-2.0 text" >&2; exit 1; }; \
-    grep -c 'Mozilla Public License' /stage/usr/share/doc/mos-ca-trust/copyright >/dev/null || \
+    grep -c 'Mozilla Public License' /stage/usr/share/doc/mica-ca-trust/copyright >/dev/null || \
         { echo "error: the composed copyright lost the harvested ca-certificates text" >&2; exit 1; }; \
-    echo "ca-trust: copyright composed, $(wc -l </stage/usr/share/doc/mos-ca-trust/copyright) lines"
+    echo "ca-trust: copyright composed, $(wc -l </stage/usr/share/doc/mica-ca-trust/copyright) lines"
 
 # NO MTIME NORMALISATION HERE, and this is where a reader of this producer comes
 # looking for it. build-env/deb/pack.sh SETS every path in the packed tree to
@@ -295,7 +295,7 @@ RUN set -eu; \
 # so their mtime is that stage's wall clock -- and BuildKit caches the stage, so
 # it is the wall clock of whenever that layer was FIRST built, days ago on a
 # developer's builder and seconds ago on an empty-cache one. That was the whole
-# of PLAN-036's mos-ca-trust irreproducibility, and it was measured: two builds
+# of PLAN-036's mica-ca-trust irreproducibility, and it was measured: two builds
 # at one SOURCE_DATE_EPOCH differing only in whether the generation layer was
 # replayed produced data.tar.xz of 143976 and 144004 bytes over uncompressed
 # tars that were byte-equal in every entry, mode, owner and content. 28 bytes of
@@ -336,10 +336,10 @@ RUN set -eu; \
 # also hide the regression if that flag were ever dropped. This build is what
 # exercises it: no other producer ships a path outside ASCII.
 RUN set -eu; \
-    pack.sh --root /stage --control /in/control/mos-ca-trust.control \
+    pack.sh --root /stage --control /in/control/mica-ca-trust.control \
         --version "${MOS_DEB_VERSION}" --arch "${MOS_DEB_ARCH}" --out /out
 
-# The export stage, the shape pkgs/mosd/deb/mosd/Dockerfile ends in:
+# The export stage, the shape pkgs/micad/deb/micad/Dockerfile ends in:
 # `-o type=local` writes this stage's filesystem into _out/debs/<arch>/pool/
 # and nothing here installs into a root.
 FROM scratch AS out

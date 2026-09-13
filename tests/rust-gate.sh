@@ -2,8 +2,8 @@
 # Run the Rust gate inside localhost/mos-build-rust-check.
 #
 #   bash tests/rust-gate.sh              both workspaces
-#   bash tests/rust-gate.sh mosd         pkgs/mosd only
-#   bash tests/rust-gate.sh mos-deploy    pkgs/mos-deploy only
+#   bash tests/rust-gate.sh micad         pkgs/micad only
+#   bash tests/rust-gate.sh mica-deploy    pkgs/mica-deploy only
 #
 # It runs `pkgs/<ws>/hack/check.sh` UNMODIFIED. That is the whole contract of
 # this file: the gate is those two scripts, this is the container they need, and
@@ -11,8 +11,8 @@
 # name would recreate the failure it exists to fix -- a documented gate and a
 # runnable gate that are not the same gate.
 #
-# Two workspaces, because pkgs/mos-deploy is its own `[workspace]` and
-# `cargo clippy --workspace` from pkgs/mosd has not reached it since the split.
+# Two workspaces, because pkgs/mica-deploy is its own `[workspace]` and
+# `cargo clippy --workspace` from pkgs/micad has not reached it since the split.
 # One image serves both: same compiler, same four tools, different Cargo.lock.
 #
 # WHY A TARGET AT ALL. The tools used to come from /srv/mos-rust-tools, a host
@@ -33,9 +33,9 @@ for p in "${REPO_ROOT}/Makefile" "${REPO_ROOT}/build-env/from.sh"; do
     }
 done
 
-# The workspaces, and what each needs. Both run the same script name; only mosd
+# The workspaces, and what each needs. Both run the same script name; only micad
 # needs the built-in UI tree, because only its `ui-bundle` crate embeds one.
-ALL_WORKSPACES=(mosd mos-deploy)
+ALL_WORKSPACES=(micad mica-deploy)
 WORKSPACES=()
 if [ "$#" -eq 0 ]; then
     WORKSPACES=("${ALL_WORKSPACES[@]}")
@@ -85,11 +85,11 @@ IMAGE="$(bash "${REPO_ROOT}/build-env/from.sh" --arch="${IMAGE_ARCH}" --ref LOCA
 # because the gate's own route to it cannot run here: check.sh falls back to
 # `bash apid/ui/build.sh`, which drives docker, and the Rust image carries no
 # docker client. Building it here and passing MOS_APID_UI_DIST_DIR is the same
-# handoff pkgs/mosd/hack/build-target.sh makes.
+# handoff pkgs/micad/hack/build-target.sh makes.
 APID_UI_DIST="${REPO_ROOT}/_out/apid-ui/dist"
 for w in "${WORKSPACES[@]}"; do
-    [ "${w}" = mosd ] || continue
-    bash "${REPO_ROOT}/pkgs/mosd/apid/ui/build.sh"
+    [ "${w}" = micad ] || continue
+    bash "${REPO_ROOT}/pkgs/micad/apid/ui/build.sh"
 done
 
 # Repo-local caches, not docker volumes and not $HOME/.cargo, for
@@ -106,13 +106,13 @@ for w in "${WORKSPACES[@]}"; do
     mkdir -p "${TARGET_DIR}"
 
     ui_args=()
-    [ "${w}" = mosd ] && ui_args=(-v "${APID_UI_DIST}:/build/apid-ui:ro" -e "MOS_APID_UI_DIST_DIR=/build/apid-ui")
+    [ "${w}" = micad ] && ui_args=(-v "${APID_UI_DIST}:/build/apid-ui:ro" -e "MOS_APID_UI_DIST_DIR=/build/apid-ui")
 
     echo
     echo "=== rust gate: pkgs/${w} in ${IMAGE} ==="
 
     # The repository is mounted read-only at the fixed path /src, the same
-    # decision and the same path as pkgs/mosd/hack/build-target.sh: rustc records
+    # decision and the same path as pkgs/micad/hack/build-target.sh: rustc records
     # the paths it is given, so mounting the checkout where it happens to live
     # would make diagnostics depend on the directory the repository was cloned
     # into. Read-only is also an assertion -- a gate that can write to the tree

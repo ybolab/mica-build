@@ -11,7 +11,7 @@ tracked=$(git ls-files '*.pk8' '*.key.pem' '*.p12')
 for file in meta/boot/signer.key.pem meta/verity/signer.key.pem meta/updates/signer.key.pem .tmp/signing/updates/signer.key.pem; do
     git check-ignore -q "$file"
 done
-bash pkgs/mos-boot/dev-keys.sh --out "$work/keys"
+bash pkgs/mica-boot/dev-keys.sh --out "$work/keys"
 image=$(bash build-env/from.sh --arch=amd64 --ref LOCAL_MOS_BUILD_OPENSSL)
 # mos-build-side: container-block -- pinned OpenSSL reads isolated test keys.
 docker run --rm --label ai-agent=true --network traefik -v "$work/keys:/keys:ro" --entrypoint /bin/bash "$image" -ceu '
@@ -35,31 +35,31 @@ docker run --rm --label ai-agent=true --network traefik -v "$work/keys:/keys:ro"
 '
 # mos-build-side: host
 cp "$work/keys/GENERATED" "$work/marker-before"
-if bash pkgs/mos-boot/dev-keys.sh --out "$work/keys" > "$work/refusal.log" 2>&1; then
+if bash pkgs/mica-boot/dev-keys.sh --out "$work/keys" > "$work/refusal.log" 2>&1; then
     echo 'FAIL: generator overwrote an existing output' >&2; exit 1
 fi
 rg -q 'key output already exists' "$work/refusal.log"
 cmp "$work/marker-before" "$work/keys/GENERATED"
 ln -s keys "$work/alias"
-if bash pkgs/mos-boot/dev-keys.sh --out "$work/alias" > "$work/alias-refusal.log" 2>&1; then
+if bash pkgs/mica-boot/dev-keys.sh --out "$work/alias" > "$work/alias-refusal.log" 2>&1; then
     echo 'FAIL: generator accepted an existing output alias' >&2; exit 1
 fi
-bash pkgs/mos-boot/init-keys.sh --out "$work/initialized"
+bash pkgs/mica-boot/init-keys.sh --out "$work/initialized"
 snapshot() {
     (cd "$1" && find . -type f -print0 | sort -z | xargs -0 sha256sum)
 }
 snapshot "$work/initialized" > "$work/before"
-bash pkgs/mos-boot/init-keys.sh --out "$work/initialized"
+bash pkgs/mica-boot/init-keys.sh --out "$work/initialized"
 snapshot "$work/initialized" > "$work/after"
 cmp "$work/before" "$work/after"
 mkdir "$work/empty"
-bash pkgs/mos-boot/init-keys.sh --out "$work/empty" > "$work/concurrent-a.log" 2>&1 &
+bash pkgs/mica-boot/init-keys.sh --out "$work/empty" > "$work/concurrent-a.log" 2>&1 &
 first=$!
-bash pkgs/mos-boot/init-keys.sh --out "$work/empty" > "$work/concurrent-b.log" 2>&1 &
+bash pkgs/mica-boot/init-keys.sh --out "$work/empty" > "$work/concurrent-b.log" 2>&1 &
 second=$!
 wait "$first"
 wait "$second"
-bash pkgs/mos-boot/init-keys.sh --out "$work/empty"
+bash pkgs/mica-boot/init-keys.sh --out "$work/empty"
 for fault in incomplete mismatch symlink permissions; do
     cp -a "$work/initialized" "$work/$fault"
     case "$fault" in
@@ -69,13 +69,13 @@ for fault in incomplete mismatch symlink permissions; do
     permissions) chmod 0644 "$work/$fault/boot/signer.key.pem";;
     esac
     snapshot "$work/$fault" > "$work/$fault-before"
-    if bash pkgs/mos-boot/init-keys.sh --out "$work/$fault" > "$work/$fault.log" 2>&1; then
+    if bash pkgs/mica-boot/init-keys.sh --out "$work/$fault" > "$work/$fault.log" 2>&1; then
         echo "FAIL: initializer accepted $fault" >&2; exit 1
     fi
     snapshot "$work/$fault" > "$work/$fault-after"
     cmp "$work/$fault-before" "$work/$fault-after"
 done
-if bash pkgs/mos-boot/init-keys.sh --out "$work/alias" > "$work/init-alias.log" 2>&1; then
+if bash pkgs/mica-boot/init-keys.sh --out "$work/alias" > "$work/init-alias.log" 2>&1; then
     echo 'FAIL: initializer accepted an output alias' >&2; exit 1
 fi
 echo 'TRUST_DOMAIN_HYGIENE_PASS: separate boot/content/metadata keys, matching public inputs, private permissions, no overwrite'

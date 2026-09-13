@@ -6,8 +6,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     assert_eq!(args.len(), 3);
     let source = Path::new(&args[0]);
     let manifest = fs::read_to_string(&args[2])?;
-    let capacity = mos_deploy::boot::exitrd_tmpfs_bytes(source, &manifest)?;
-    mos_deploy::boot::copy_exitrd(source, Path::new(&args[1]), &manifest)?;
+    let capacity = mica_deploy::boot::exitrd_tmpfs_bytes(source, &manifest)?;
+    mica_deploy::boot::copy_exitrd(source, Path::new(&args[1]), &manifest)?;
     println!("EXITRD_COPY_PASS capacityBytes={capacity}");
     Ok(())
 }

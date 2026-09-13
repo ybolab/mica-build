@@ -1,7 +1,7 @@
 // The base image's firewall TOOLS (RFCT-296/PLAN-075) -- both of them -- and
 // the unit that must not run.
 //
-// mos-system depends on `nftables` AND `iptables`, so every image carries both
+// mica-system depends on `nftables` AND `iptables`, so every image carries both
 // whatever it declines. NO RULE, NO POLICY AND NOTHING THAT PERSISTS ONE is
 // shipped with them, so nothing here reads a ruleset: the facts an image can be
 // asked about are that each binary is reachable, that the iptables name is the
@@ -10,7 +10,7 @@
 //
 // WHY `packed-nft-present` IS NOT A DUPLICATE OF `container-engine-nft`, which
 // also asserts nft is in the image. They are two independent statements that
-// happen to share a binary, exactly as mos-podman and mos-system both declaring
+// happen to share a binary, exactly as mica-podman and mica-system both declaring
 // `nftables` are two statements rather than one. checks-engine.ts asks whether
 // the CONTAINER ENGINE can run -- netavark execs nft by name and the first
 // `podman run` fails without it -- and that check is the engine family's, board
@@ -47,7 +47,7 @@
 // package ships nftables.service, whose ExecStart is `nft -f
 // /etc/nftables.conf`, and the config it ships begins with `flush ruleset` --
 // so an enabled unit clears netavark's container-network rules at every boot.
-// Before mos-system shipped 50-mos-nftables.preset, NO preset in the image
+// Before mica-system shipped 50-mos-nftables.preset, NO preset in the image
 // matched that unit, and the unmatched fallback is ENABLE: measured in a clean
 // trixie root, `systemctl preset nftables.service` with the stock set creates
 // sysinit.target.wants/nftables.service. So the check asserts the preset
@@ -174,7 +174,7 @@ function endpointName(chain: readonly string[]): string {
 
 export const FIREWALL_CHECKS: readonly CheckCase[] = [
   {
-    // The native front-end, from the BASE image's side. mos-system names
+    // The native front-end, from the BASE image's side. mica-system names
     // nftables in Depends, and this is the assertion that the name became a
     // binary an operator can run -- on every image, including the profiles that
     // decline containers, where checks-engine.ts has nothing to say.
@@ -194,7 +194,7 @@ export const FIREWALL_CHECKS: readonly CheckCase[] = [
       if (chain.length === 0) {
         return [verdict('packed-nft-present', false,
           `nft is not executable in the packed root: no entry called ${NFT_COMMAND} is in any of `
-          + `${PATH_DIRS.join(' ')}. mos-system names nftables in Depends, so an image without it `
+          + `${PATH_DIRS.join(' ')}. mica-system names nftables in Depends, so an image without it `
           + 'is one where that dependency stopped being installed -- and nft is the complete view '
           + 'of the rule set, the one an operator is told to reach for first')]
       }
@@ -239,7 +239,7 @@ export const FIREWALL_CHECKS: readonly CheckCase[] = [
           `nftables.service is not disabled by a preset: there is no ${NFTABLES_UNIT} in `
           + `${UNIT_DIRS.join(' or ')} at all, so "nothing enables it" is a statement about `
           + 'nothing -- true of an image with no nftables in it, of a root that failed to unpack, '
-          + 'and of a directory that was never a root. mos-system depends on nftables, and the '
+          + 'and of a directory that was never a root. mica-system depends on nftables, and the '
           + 'package ships this unit')]
       }
       const links = wantsLinksNaming(root, NFTABLES_UNIT)
@@ -274,7 +274,7 @@ export const FIREWALL_CHECKS: readonly CheckCase[] = [
   },
 
   {
-    // The dependency, from the image side. mos-system names iptables in
+    // The dependency, from the image side. mica-system names iptables in
     // Depends; this is the assertion that the name became a binary an operator
     // can run, which is the only thing a Depends line can silently stop doing.
     //
@@ -292,7 +292,7 @@ export const FIREWALL_CHECKS: readonly CheckCase[] = [
       if (chain.length === 0) {
         return [verdict('packed-iptables-present', false,
           'iptables is not executable in the packed root: no entry called iptables is in any of '
-          + `${PATH_DIRS.join(' ')}. mos-system names it in Depends, so an image without it is one `
+          + `${PATH_DIRS.join(' ')}. mica-system names it in Depends, so an image without it is one `
           + 'where that dependency stopped being installed, and the profiles that decline '
           + 'containers have no other firewall tool at all')]
       }

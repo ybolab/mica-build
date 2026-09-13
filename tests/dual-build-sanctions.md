@@ -23,9 +23,9 @@
 > flag points at. "No longer executes" and "should not exist" are different
 > claims, and only the first is being made here.
 >
-> **Addendum, 2026-08-31 -- the two `/usr/lib/mos/board` stanzas now describe
-> content that no longer exists.** `mos-board-x64` has stopped shipping
-> `/usr/lib/mos/board/x64/grub.cfg`, and with it the only file under that
+> **Addendum, 2026-08-31 -- the two `/usr/lib/mica/board` stanzas now describe
+> content that no longer exists.** `mica-board-x64` has stopped shipping
+> `/usr/lib/mica/board/x64/grub.cfg`, and with it the only file under that
 > directory, so the package now adds neither the directory nor its contents.
 > The reason is the one the stanzas themselves state without drawing the
 > conclusion: "the assembler reads `boards/x64/grub.cfg` out of the tree
@@ -105,7 +105,7 @@ it, one stanza per sanctioned difference:
 ```
 
 - The heading is a path pattern, matched as a glob against the path as it
-  appears *inside* the root, with a leading slash: `/usr/bin/mosd`. `*` stops at
+  appears *inside* the root, with a leading slash: `/usr/bin/micad`. `*` stops at
   a `/`, `**` does not. Backticks around the pattern are stripped.
 - `classes` is a comma-separated subset of: `added`, `removed`, `type`, `mode`,
   `uid`, `gid`, `symlink`, `content`, `caps`. A sanction covers a difference
@@ -134,7 +134,7 @@ believed they had written down.
    prevent. The fix is to give the path an OWNER. The first instance found was
    `boards/cx3576/overlay/.../serial-getty@ttyFIQ0.service.d/local-line.conf`,
    which reaches the image because `rootfs/scripts/overlay-install.sh` copies
-   the board overlay in wholesale and `mos-board-cx3576` installs only selected
+   the board overlay in wholesale and `mica-board-cx3576` installs only selected
    subpaths of it -- and that one file is what makes serial console login work.
    `tests/dual-build-gate.sh` refuses (exit 2) if any stanza below lists
    `removed`, so this is a check rather than a convention.
@@ -205,11 +205,11 @@ anywhere in 9,234 paths.
 
 Eight of the ten are the mqtt stage, and they are not what the gate's author
 expected. `stages/34-feature-mqtt` is the ACCOUNTS stage only -- its own header
-says the binaries "come out of the same cargo build as mosd" and are installed
-by `stages/33-feature-mosd` -- so `/usr/bin/mos-mqttd`,
-`/usr/bin/mos-mqtt-broker` and both units are present and **byte-identical** in
+says the binaries "come out of the same cargo build as micad" and are installed
+by `stages/33-feature-micad` -- so `/usr/bin/mica-mqttd`,
+`/usr/bin/mica-mqtt-broker` and both units are present and **byte-identical** in
 the reduced root. What declining the stage removes is two service accounts,
-`mos-mqttd` (970) and `mos-mqtt-broker` (969), from the eight files that carry
+`mica-mqttd` (970) and `mica-mqtt-broker` (969), from the eight files that carry
 them: `/etc/passwd`, `/etc/passwd-`, `/etc/group`, `/etc/group-`,
 `/etc/gshadow`, `/etc/gshadow-`, `/etc/shadow-` and
 `/usr/share/factory/etc/shadow` (the real `/etc/shadow` is a symlink into
@@ -273,8 +273,8 @@ The four outcomes, each run against those two roots:
    stanza removed: `UNSANCTIONED /etc/gshadow content: A=4c46e199... B=6d545111...`,
    `RESULT: FAIL (1 unsanctioned difference(s), ...)`, exit **1**.
 4. **A sanction for a path that does not differ turns it red, by stanza.**
-   Adding `/usr/bin/mosd` on top of the ten:
-   `UNUSED SANCTION .../proof-unused.md:50 '/usr/bin/mosd' (content) matched
+   Adding `/usr/bin/micad` on top of the ten:
+   `UNUSED SANCTION .../proof-unused.md:50 '/usr/bin/micad' (content) matched
    nothing`, `RESULT: FAIL (0 unsanctioned difference(s), 1 unused
    sanction(s), ...)`, exit **1**.
 
@@ -319,20 +319,20 @@ real material rather than asserted.
 **Gap 2: the same-configuration claim above is an inference.** Build D repeats
 the full build with no `MOS_ROOTFS_WITHOUT` at all. It cannot be a byte-repeat
 of build A, because the tree has moved on by two commits and
-`pkgs/mosd/hack/build-target.sh` embeds `<commit>` at compile time -- which
+`pkgs/micad/hack/build-target.sh` embeds `<commit>` at compile time -- which
 is itself what makes the experiment work, since it re-runs the stages that
 generate both non-reproducible files.
 
 *Prediction, build A vs build D:* exactly four `content` records and nothing
 else --
 
-1. `/usr/bin/mosd` and 2. `/usr/bin/apid`, the only two paths in the whole
+1. `/usr/bin/micad` and 2. `/usr/bin/apid`, the only two paths in the whole
    9,234-path root that carry the commit string (found by grepping build A's
    root for `cf2a07049c96`; same length, so the sizes are unchanged),
 3. `/boot/initrd.img-6.12.107+deb13-amd64`, and
 4. `/usr/share/factory/var/cache/ldconfig/aux-cache`,
 
-with `/usr/bin/mos-mqttd` and `/usr/bin/mos-mqtt-broker` byte-IDENTICAL -- they
+with `/usr/bin/mica-mqttd` and `/usr/bin/mica-mqtt-broker` byte-IDENTICAL -- they
 do not read that variable -- and with no added or removed path and no mode, uid,
 gid, symlink or capability difference anywhere. If 3 and 4 appear while their
 unpacked contents stay byte-identical, the inference above becomes a
@@ -393,13 +393,13 @@ digest-pinned base image, and both builds upgraded to the same 3.5.7. A build
 log said what a root did not.
 
 **Build A vs build D: six content records, and the four predicted are among
-them.** `/usr/bin/mosd` and `/usr/bin/apid` carry the embedded commit, as
+them.** `/usr/bin/micad` and `/usr/bin/apid` carry the embedded commit, as
 predicted. `/boot/initrd.img-6.12.107+deb13-amd64` and
 `/usr/share/factory/var/cache/ldconfig/aux-cache` differ, as predicted. Nothing
 is added or removed and no mode, uid, gid, symlink or capability differs.
 
 That comparison is the one the inference above needed, and it now settles it
-for the initramfs. mosd and apid are not IN the initramfs, and the package
+for the initramfs. micad and apid are not IN the initramfs, and the package
 versions are identical, so its inputs were the same on both builds. Per cpio
 entry: 183 entries, identical names, **zero entries whose content differs**, 182
 differing in inode number and 71 in mtime, with the maximum mtime 2,615 seconds
@@ -421,7 +421,7 @@ different mechanism from the first two -- not an inode number but a DATE:
 `messagebus`, `systemd-resolve` and `sshd` move with it. These are accounts
 created by Debian package postinst scripts, and the shadow last-change field is
 the day the account was made. The mos-owned accounts do NOT move -- `mos`,
-`mos-mqttd` and `mos-mqtt-broker` all read 18262 (2020-01-01) in both builds,
+`mica-mqttd` and `mica-mqtt-broker` all read 18262 (2020-01-01) in both builds,
 because `rootfs/scripts/account-*.sh` pins them with `chage -d`. The
 distribution's accounts get no such treatment.
 
@@ -494,22 +494,22 @@ paths. Each of the eleven is named below with the producer that has to own it.
 ### Sanctioned, with the measurement behind each
 
 - **20 `added` under `/usr/share/doc/`**: ten package directories and ten
-  `copyright` files, one pair per local package -- `mos-apid`, `mos-board-x64`,
-  `mos-ca-trust`, `mos-mqtt-broker`, `mos-mqttd`, `mos-podman`,
-  `mos-profile-dev`, `mos-rauc`, `mos-system`, `mosd`. This is PLAN-036's first
+  `copyright` files, one pair per local package -- `mica-apid`, `mica-board-x64`,
+  `mica-ca-trust`, `mica-mqtt-broker`, `mica-mqttd`, `mica-podman`,
+  `mica-profile-dev`, `mos-rauc`, `mica-system`, `micad`. This is PLAN-036's first
   sanctioned addition arriving exactly as written, and it is what promoted the
   two `/usr/share/doc` stanzas from `pending` to `active`.
-- **3 `added` under `/usr/lib/mos/board/`**: the directory, the `x64`
-  subdirectory and `grub.cfg`. `mos-board-x64` ships the GRUB configuration as
+- **3 `added` under `/usr/lib/mica/board/`**: the directory, the `x64`
+  subdirectory and `grub.cfg`. `mica-board-x64` ships the GRUB configuration as
   image-assembly input with its placeholders intact; the chain has no
   counterpart because the assembler reads `boards/x64/grub.cfg` out of the
   tree instead.
-- **4 `content` in the self-built binaries** -- `/usr/bin/mosd`,
-  `/usr/bin/apid`, `/usr/bin/mos-mqttd`, `/usr/bin/mos-mqtt-broker`. Two
+- **4 `content` in the self-built binaries** -- `/usr/bin/micad`,
+  `/usr/bin/apid`, `/usr/bin/mica-mqttd`, `/usr/bin/mica-mqtt-broker`. Two
   independent compilations of one source tree: the chain builds all four in one
-  cargo invocation through `pkgs/mosd/hack/build-target.sh` into `target/`,
+  cargo invocation through `pkgs/micad/hack/build-target.sh` into `target/`,
   while the composed root gets them from two producers through
-  `build-deb.sh`, each with its own `CARGO_TARGET_DIR`. `mosd` and `apid` carry
+  `build-deb.sh`, each with its own `CARGO_TARGET_DIR`. `micad` and `apid` carry
   the SAME embedded commit `498eeb824cda` in both roots, checked with `strings`.
 
 ### NOT sanctioned, and each needs an owner rather than a stanza
@@ -521,7 +521,7 @@ paths. Each of the eleven is named below with the producer that has to own it.
   openssh-server's postinst leaves behind, and asserts it is gone. `policy-rc.d`
   stops a maintainer script STARTING a service during assembly and does nothing
   about its `[Install]` symlink. The owner is
-  `rootfs/packages-src/system` (`mos-system`), whose own Dockerfile already
+  `rootfs/packages-src/system` (`mica-system`), whose own Dockerfile already
   records the decision -- "There is deliberately NO
   multi-user.target.wants/ssh.service" -- as an ABSENCE, which cannot survive
   another package's postinst. It needs to be expressed actively.
@@ -532,7 +532,7 @@ paths. Each of the eleven is named below with the producer that has to own it.
   `sockets.target.wants/systemd-networkd.socket`,
   `network-online.target.wants/systemd-networkd-wait-online.service` and its
   directory, and `sysinit.target.wants/systemd-network-generator.service`.
-  `mos-system` ships the primary link only, and spells its target
+  `mica-system` ships the primary link only, and spells its target
   `/lib/systemd/system/...` where `systemctl enable` writes
   `/usr/lib/systemd/system/...` -- which is the `symlink` record. Losing
   `systemd-networkd-wait-online.service` is the one with behaviour behind it:
@@ -548,7 +548,7 @@ paths. Each of the eleven is named below with the producer that has to own it.
   measured, not inferred: `diff <(sort A) <(sort B)` is EMPTY for `/etc/passwd`
   and for `/etc/group`, so every account and group exists on both sides with the
   same uid and gid. Only the LINE ORDER differs, and only for two lines --
-  `mos-mqttd` and `mos-mqtt-broker` are created in the opposite order, because
+  `mica-mqttd` and `mica-mqtt-broker` are created in the opposite order, because
   the chain runs two account scripts in stage order and the composer gets dpkg's
   configuration order.
 
@@ -595,23 +595,23 @@ paths. Each of the eleven is named below with the producer that has to own it.
 
 ### The four own-binary stanzas, and the road not taken
 
-`/usr/bin/mosd`, `/usr/bin/apid`, `/usr/bin/mos-mqttd` and
-`/usr/bin/mos-mqtt-broker` are sanctioned as plain `content` stanzas rather than
+`/usr/bin/micad`, `/usr/bin/apid`, `/usr/bin/mica-mqttd` and
+`/usr/bin/mica-mqtt-broker` are sanctioned as plain `content` stanzas rather than
 narrowed ones, and this section is why -- written for a reader who does not know
 this campaign and is deciding whether the plain form was laziness.
 
 **The two paths compile the same source.** Both roots at commit `5c470e98acaa`
-carry that commit embedded in `mosd` and `apid`, checked with `strings` on the
-two extracted trees; `mos-mqttd` and `mos-mqtt-broker` read no build-commit
+carry that commit embedded in `micad` and `apid`, checked with `strings` on the
+two extracted trees; `mica-mqttd` and `mica-mqtt-broker` read no build-commit
 variable and carry none, which is itself a recorded fact rather than an absence
 nobody looked at. There is no version skew here and no second source tree: the
 chain compiles the four crates in ONE cargo invocation through
-`pkgs/mosd/hack/build-target.sh` into `target/`, and the composer's packages
+`pkgs/micad/hack/build-target.sh` into `target/`, and the composer's packages
 compile them two at a time through `build-deb.sh` into `target-deb/<producer>/`.
 
 **What differs is the compilation environment, not the program.** rustc records
 the paths it is handed, so a different `CARGO_TARGET_DIR` alone produces
-different bytes. `mos-mqtt-broker` differs by about a megabyte for a second
+different bytes. `mica-mqtt-broker` differs by about a megabyte for a second
 reason of the same kind: the chain compiles four crates together and the
 producers compile two, so cargo's feature resolver unifies a different set of
 features across the shared dependency graph.
@@ -624,7 +624,7 @@ nothing here for a future reader to fix.
 **The road not taken, and why.** These could be made byte-identical: rustc's
 `--remap-path-prefix` for the recorded paths, and unifying the crate set so the
 feature resolution matches -- a producer restructure, since the split into
-`mosd` and `mqtt` producers is the thing that changes it. That is real work, and
+`micad` and `mqtt` producers is the thing that changes it. That is real work, and
 it would be spent making two build harnesses agree byte-for-byte for the benefit
 of one comparison that retires with the chain it exists to retire. A narrowed
 `expect-diff` stanza is the same trade in a smaller package: it would pin the
@@ -654,8 +654,8 @@ Not covered, and each of these is a real difference between the two boards
 rather than a hypothetical one:
 
 - **Architecture-dependent package selection and dependency closure.** Every ELF
-  in a cx3576 root is a different build -- mosd, apid, mos-mqttd and
-  mos-mqtt-broker from the aarch64 rust target, the seven engine binaries from
+  in a cx3576 root is a different build -- micad, apid, mica-mqttd and
+  mica-mqtt-broker from the aarch64 rust target, the seven engine binaries from
   `pkgs/podman/out-arm64`, rauc from `pkgs/rauc/out-arm64` -- and under the
   composer APT resolves the local and Debian dependency closure per
   architecture. A composition that resolves correctly for amd64 and wrongly for
@@ -708,114 +708,114 @@ fixed in place.
 ### /usr/share/doc/**
 - classes: added
 - status: active
-- reason: PLAN-036 section 6 sanctions package documentation as an expected addition. Promoted from pending by the measurement at commit 498eeb824cda, which is what the pending state was waiting for: this pattern matched exactly TEN added files, one `copyright` per local package (mos-apid, mos-board-x64, mos-ca-trust, mos-mqtt-broker, mos-mqttd, mos-podman, mos-profile-dev, mos-rauc, mos-system, mosd). The chain installs those components by copying files into place and produces no such tree, so each has no counterpart on side A. The per-package Apache-2.0 copyright is a redistribution obligation this campaign requires, so these are payload rather than residue.
+- reason: PLAN-036 section 6 sanctions package documentation as an expected addition. Promoted from pending by the measurement at commit 498eeb824cda, which is what the pending state was waiting for: this pattern matched exactly TEN added files, one `copyright` per local package (mica-apid, mica-board-x64, mica-ca-trust, mica-mqtt-broker, mica-mqttd, mica-podman, mica-profile-dev, mos-rauc, mica-system, micad). The chain installs those components by copying files into place and produces no such tree, so each has no counterpart on side A. The per-package Apache-2.0 copyright is a redistribution obligation this campaign requires, so these are payload rather than residue.
 
 ### /usr/share/doc/*
 - classes: added
 - status: active
-- reason: The directory entry itself, which the pattern above does not cover -- `**` does not match zero path segments, so `/usr/share/doc/**` matches `/usr/share/doc/mos-system/copyright` and not `/usr/share/doc/mos-system`. Promoted with the same measurement and matching exactly TEN added directories, one per local package, against the ten files above. Same sanction, same reason; a separate stanza because one glob cannot express both.
+- reason: The directory entry itself, which the pattern above does not cover -- `**` does not match zero path segments, so `/usr/share/doc/**` matches `/usr/share/doc/mica-system/copyright` and not `/usr/share/doc/mica-system`. Promoted with the same measurement and matching exactly TEN added directories, one per local package, against the ten files above. Same sanction, same reason; a separate stanza because one glob cannot express both.
 
-### /usr/lib/mos/board
+### /usr/lib/mica/board
 - classes: added
 - status: active
-- reason: The board-configuration directory `mos-board-x64` ships. PLAN-036 section 3 assigns the GRUB configuration to the board package, and boards/x64/deb/board-x64/Dockerfile records why it lands under /usr/lib/mos/board/<board>/ with its @BOOT_A_PARTNUM@ and @ROOTFS_A_PARTUUID@ placeholders intact: it is image-ASSEMBLY input rendered by the finalizer onto the ESP, and a copy rendered inside the producer would be a second rendering of one file. The chain has no counterpart because the assembler reads boards/x64/grub.cfg out of the tree instead. This stanza is the directory alone; the pattern below is its contents.
+- reason: The board-configuration directory `mica-board-x64` ships. PLAN-036 section 3 assigns the GRUB configuration to the board package, and boards/x64/deb/board-x64/Dockerfile records why it lands under /usr/lib/mica/board/<board>/ with its @BOOT_A_PARTNUM@ and @ROOTFS_A_PARTUUID@ placeholders intact: it is image-ASSEMBLY input rendered by the finalizer onto the ESP, and a copy rendered inside the producer would be a second rendering of one file. The chain has no counterpart because the assembler reads boards/x64/grub.cfg out of the tree instead. This stanza is the directory alone; the pattern below is its contents.
 
-### /usr/lib/mos/board/**
+### /usr/lib/mica/board/**
 - classes: added
 - status: active
-- reason: The contents of the directory above -- measured as exactly two added paths, `/usr/lib/mos/board/x64` and `/usr/lib/mos/board/x64/grub.cfg`. Separate stanza for the reason the two `/usr/share/doc` patterns are separate: `**` matches one or more path segments and never zero, so it cannot also cover the directory it descends from.
+- reason: The contents of the directory above -- measured as exactly two added paths, `/usr/lib/mica/board/x64` and `/usr/lib/mica/board/x64/grub.cfg`. Separate stanza for the reason the two `/usr/share/doc` patterns are separate: `**` matches one or more path segments and never zero, so it cannot also cover the directory it descends from.
 
 ### /etc/passwd
 - classes: content
 - status: active
 - expect-diff: |
-    24 -mos-mqttd:x:970:970:mos MQTT bridge:/nonexistent:/usr/sbin/nologin
-    24 +mos-mqtt-broker:x:969:969:mos MQTT broker:/nonexistent:/usr/sbin/nologin
-    25 -mos-mqtt-broker:x:969:969:mos MQTT broker:/nonexistent:/usr/sbin/nologin
-    25 +mos-mqttd:x:970:970:mos MQTT bridge:/nonexistent:/usr/sbin/nologin
-- reason: The two service accounts mos-mqttd (970) and mos-mqtt-broker (969) are created in the opposite order on the two paths: the chain runs rootfs/scripts/account-mos-mqttd.sh and account-mos-mqtt-broker.sh in stage order, and the composer gets dpkg's configuration order, which set up mos-mqtt-broker first. Both orders are deterministic within their own path and neither is wrong, so this is an artefact of having TWO paths and it cannot exist once there is one. Measured, not argued: `diff <(sort A) <(sort B)` over this file is EMPTY, so both roots hold the same entries with the same uid and gid, and only the position of two lines differs. The expected diff is what makes this safe to sanction at all. A bare `content` stanza here would equally cover an account VANISHING from the composed root, which is the failure this comparison exists to catch; with the diff named, a vanished account shifts every following line, a third line moving adds rows, and a field changing inside a transposed line changes one -- each produces a different canonical diff and each still FAILS.
+    24 -mica-mqttd:x:970:970:mos MQTT bridge:/nonexistent:/usr/sbin/nologin
+    24 +mica-mqtt-broker:x:969:969:mos MQTT broker:/nonexistent:/usr/sbin/nologin
+    25 -mica-mqtt-broker:x:969:969:mos MQTT broker:/nonexistent:/usr/sbin/nologin
+    25 +mica-mqttd:x:970:970:mos MQTT bridge:/nonexistent:/usr/sbin/nologin
+- reason: The two service accounts mica-mqttd (970) and mica-mqtt-broker (969) are created in the opposite order on the two paths: the chain runs rootfs/scripts/account-mica-mqttd.sh and account-mica-mqtt-broker.sh in stage order, and the composer gets dpkg's configuration order, which set up mica-mqtt-broker first. Both orders are deterministic within their own path and neither is wrong, so this is an artefact of having TWO paths and it cannot exist once there is one. Measured, not argued: `diff <(sort A) <(sort B)` over this file is EMPTY, so both roots hold the same entries with the same uid and gid, and only the position of two lines differs. The expected diff is what makes this safe to sanction at all. A bare `content` stanza here would equally cover an account VANISHING from the composed root, which is the failure this comparison exists to catch; with the diff named, a vanished account shifts every following line, a third line moving adds rows, and a field changing inside a transposed line changes one -- each produces a different canonical diff and each still FAILS.
 
 ### /etc/passwd-
 - classes: content
 - status: active
 - expect-diff: |
-    24 -mos-mqttd:x:970:970:mos MQTT bridge:/nonexistent:/usr/sbin/nologin
-    24 +mos-mqtt-broker:x:969:969:mos MQTT broker:/nonexistent:/usr/sbin/nologin
-- reason: The two service accounts mos-mqttd (970) and mos-mqtt-broker (969) are created in the opposite order on the two paths: the chain runs rootfs/scripts/account-mos-mqttd.sh and account-mos-mqtt-broker.sh in stage order, and the composer gets dpkg's configuration order, which set up mos-mqtt-broker first. Both orders are deterministic within their own path and neither is wrong, so this is an artefact of having TWO paths and it cannot exist once there is one. Measured, not argued: `diff <(sort A) <(sort B)` over this file is EMPTY, so both roots hold the same entries with the same uid and gid, and only the position of two lines differs. This is the -backup, which glibc's account tools write as a snapshot of the file BEFORE their last write, so it holds one write less than its live counterpart and the transposition shows as a single replaced line rather than as a pair. Same cause, same two accounts. The expected diff is what makes this safe to sanction at all. A bare `content` stanza here would equally cover an account VANISHING from the composed root, which is the failure this comparison exists to catch; with the diff named, a vanished account shifts every following line, a third line moving adds rows, and a field changing inside a transposed line changes one -- each produces a different canonical diff and each still FAILS.
+    24 -mica-mqttd:x:970:970:mos MQTT bridge:/nonexistent:/usr/sbin/nologin
+    24 +mica-mqtt-broker:x:969:969:mos MQTT broker:/nonexistent:/usr/sbin/nologin
+- reason: The two service accounts mica-mqttd (970) and mica-mqtt-broker (969) are created in the opposite order on the two paths: the chain runs rootfs/scripts/account-mica-mqttd.sh and account-mica-mqtt-broker.sh in stage order, and the composer gets dpkg's configuration order, which set up mica-mqtt-broker first. Both orders are deterministic within their own path and neither is wrong, so this is an artefact of having TWO paths and it cannot exist once there is one. Measured, not argued: `diff <(sort A) <(sort B)` over this file is EMPTY, so both roots hold the same entries with the same uid and gid, and only the position of two lines differs. This is the -backup, which glibc's account tools write as a snapshot of the file BEFORE their last write, so it holds one write less than its live counterpart and the transposition shows as a single replaced line rather than as a pair. Same cause, same two accounts. The expected diff is what makes this safe to sanction at all. A bare `content` stanza here would equally cover an account VANISHING from the composed root, which is the failure this comparison exists to catch; with the diff named, a vanished account shifts every following line, a third line moving adds rows, and a field changing inside a transposed line changes one -- each produces a different canonical diff and each still FAILS.
 
 ### /etc/group
 - classes: content
 - status: active
 - expect-diff: |
-    50 -mos-mqttd:x:970:
-    50 +mos-mqtt-broker:x:969:
-    51 -mos-mqtt-broker:x:969:
-    51 +mos-mqttd:x:970:
-- reason: The two service accounts mos-mqttd (970) and mos-mqtt-broker (969) are created in the opposite order on the two paths: the chain runs rootfs/scripts/account-mos-mqttd.sh and account-mos-mqtt-broker.sh in stage order, and the composer gets dpkg's configuration order, which set up mos-mqtt-broker first. Both orders are deterministic within their own path and neither is wrong, so this is an artefact of having TWO paths and it cannot exist once there is one. Measured, not argued: `diff <(sort A) <(sort B)` over this file is EMPTY, so both roots hold the same entries with the same uid and gid, and only the position of two lines differs. The expected diff is what makes this safe to sanction at all. A bare `content` stanza here would equally cover an account VANISHING from the composed root, which is the failure this comparison exists to catch; with the diff named, a vanished account shifts every following line, a third line moving adds rows, and a field changing inside a transposed line changes one -- each produces a different canonical diff and each still FAILS.
+    50 -mica-mqttd:x:970:
+    50 +mica-mqtt-broker:x:969:
+    51 -mica-mqtt-broker:x:969:
+    51 +mica-mqttd:x:970:
+- reason: The two service accounts mica-mqttd (970) and mica-mqtt-broker (969) are created in the opposite order on the two paths: the chain runs rootfs/scripts/account-mica-mqttd.sh and account-mica-mqtt-broker.sh in stage order, and the composer gets dpkg's configuration order, which set up mica-mqtt-broker first. Both orders are deterministic within their own path and neither is wrong, so this is an artefact of having TWO paths and it cannot exist once there is one. Measured, not argued: `diff <(sort A) <(sort B)` over this file is EMPTY, so both roots hold the same entries with the same uid and gid, and only the position of two lines differs. The expected diff is what makes this safe to sanction at all. A bare `content` stanza here would equally cover an account VANISHING from the composed root, which is the failure this comparison exists to catch; with the diff named, a vanished account shifts every following line, a third line moving adds rows, and a field changing inside a transposed line changes one -- each produces a different canonical diff and each still FAILS.
 
 ### /etc/group-
 - classes: content
 - status: active
 - expect-diff: |
-    50 -mos-mqttd:x:970:
-    50 +mos-mqtt-broker:x:969:
-- reason: The two service accounts mos-mqttd (970) and mos-mqtt-broker (969) are created in the opposite order on the two paths: the chain runs rootfs/scripts/account-mos-mqttd.sh and account-mos-mqtt-broker.sh in stage order, and the composer gets dpkg's configuration order, which set up mos-mqtt-broker first. Both orders are deterministic within their own path and neither is wrong, so this is an artefact of having TWO paths and it cannot exist once there is one. Measured, not argued: `diff <(sort A) <(sort B)` over this file is EMPTY, so both roots hold the same entries with the same uid and gid, and only the position of two lines differs. This is the -backup, which glibc's account tools write as a snapshot of the file BEFORE their last write, so it holds one write less than its live counterpart and the transposition shows as a single replaced line rather than as a pair. Same cause, same two accounts. The expected diff is what makes this safe to sanction at all. A bare `content` stanza here would equally cover an account VANISHING from the composed root, which is the failure this comparison exists to catch; with the diff named, a vanished account shifts every following line, a third line moving adds rows, and a field changing inside a transposed line changes one -- each produces a different canonical diff and each still FAILS.
+    50 -mica-mqttd:x:970:
+    50 +mica-mqtt-broker:x:969:
+- reason: The two service accounts mica-mqttd (970) and mica-mqtt-broker (969) are created in the opposite order on the two paths: the chain runs rootfs/scripts/account-mica-mqttd.sh and account-mica-mqtt-broker.sh in stage order, and the composer gets dpkg's configuration order, which set up mica-mqtt-broker first. Both orders are deterministic within their own path and neither is wrong, so this is an artefact of having TWO paths and it cannot exist once there is one. Measured, not argued: `diff <(sort A) <(sort B)` over this file is EMPTY, so both roots hold the same entries with the same uid and gid, and only the position of two lines differs. This is the -backup, which glibc's account tools write as a snapshot of the file BEFORE their last write, so it holds one write less than its live counterpart and the transposition shows as a single replaced line rather than as a pair. Same cause, same two accounts. The expected diff is what makes this safe to sanction at all. A bare `content` stanza here would equally cover an account VANISHING from the composed root, which is the failure this comparison exists to catch; with the diff named, a vanished account shifts every following line, a third line moving adds rows, and a field changing inside a transposed line changes one -- each produces a different canonical diff and each still FAILS.
 
 ### /etc/gshadow
 - classes: content
 - status: active
 - expect-diff: |
-    50 -mos-mqttd:!::
-    50 +mos-mqtt-broker:!::
-    51 -mos-mqtt-broker:!::
-    51 +mos-mqttd:!::
-- reason: The two service accounts mos-mqttd (970) and mos-mqtt-broker (969) are created in the opposite order on the two paths: the chain runs rootfs/scripts/account-mos-mqttd.sh and account-mos-mqtt-broker.sh in stage order, and the composer gets dpkg's configuration order, which set up mos-mqtt-broker first. Both orders are deterministic within their own path and neither is wrong, so this is an artefact of having TWO paths and it cannot exist once there is one. Measured, not argued: `diff <(sort A) <(sort B)` over this file is EMPTY, so both roots hold the same entries with the same uid and gid, and only the position of two lines differs. This path is one of the three L1 ruled may never carry a bare sanction, and it carries a NARROWED one instead, which subsumes that rule rather than weakening it. The last-change field is pinned into the expected diff as 18262, so the date regression the rule was written about -- Debian's postinst accounts dating themselves with the build day -- changes these rows and fails. Measured before this stanza existed: forcing that field to 18262 on both sides left exactly the transposition below, which is how the date cause and the ordering cause were told apart. rootfs/scripts/account-pin-shadow-dates.sh in the shared finalizer is what removes the date cause on both paths. The expected diff is what makes this safe to sanction at all. A bare `content` stanza here would equally cover an account VANISHING from the composed root, which is the failure this comparison exists to catch; with the diff named, a vanished account shifts every following line, a third line moving adds rows, and a field changing inside a transposed line changes one -- each produces a different canonical diff and each still FAILS.
+    50 -mica-mqttd:!::
+    50 +mica-mqtt-broker:!::
+    51 -mica-mqtt-broker:!::
+    51 +mica-mqttd:!::
+- reason: The two service accounts mica-mqttd (970) and mica-mqtt-broker (969) are created in the opposite order on the two paths: the chain runs rootfs/scripts/account-mica-mqttd.sh and account-mica-mqtt-broker.sh in stage order, and the composer gets dpkg's configuration order, which set up mica-mqtt-broker first. Both orders are deterministic within their own path and neither is wrong, so this is an artefact of having TWO paths and it cannot exist once there is one. Measured, not argued: `diff <(sort A) <(sort B)` over this file is EMPTY, so both roots hold the same entries with the same uid and gid, and only the position of two lines differs. This path is one of the three L1 ruled may never carry a bare sanction, and it carries a NARROWED one instead, which subsumes that rule rather than weakening it. The last-change field is pinned into the expected diff as 18262, so the date regression the rule was written about -- Debian's postinst accounts dating themselves with the build day -- changes these rows and fails. Measured before this stanza existed: forcing that field to 18262 on both sides left exactly the transposition below, which is how the date cause and the ordering cause were told apart. rootfs/scripts/account-pin-shadow-dates.sh in the shared finalizer is what removes the date cause on both paths. The expected diff is what makes this safe to sanction at all. A bare `content` stanza here would equally cover an account VANISHING from the composed root, which is the failure this comparison exists to catch; with the diff named, a vanished account shifts every following line, a third line moving adds rows, and a field changing inside a transposed line changes one -- each produces a different canonical diff and each still FAILS.
 
 ### /etc/gshadow-
 - classes: content
 - status: active
 - expect-diff: |
-    50 -mos-mqttd:!::
-    50 +mos-mqtt-broker:!::
-- reason: The two service accounts mos-mqttd (970) and mos-mqtt-broker (969) are created in the opposite order on the two paths: the chain runs rootfs/scripts/account-mos-mqttd.sh and account-mos-mqtt-broker.sh in stage order, and the composer gets dpkg's configuration order, which set up mos-mqtt-broker first. Both orders are deterministic within their own path and neither is wrong, so this is an artefact of having TWO paths and it cannot exist once there is one. Measured, not argued: `diff <(sort A) <(sort B)` over this file is EMPTY, so both roots hold the same entries with the same uid and gid, and only the position of two lines differs. This path is one of the three L1 ruled may never carry a bare sanction, and it carries a NARROWED one instead, which subsumes that rule rather than weakening it. The last-change field is pinned into the expected diff as 18262, so the date regression the rule was written about -- Debian's postinst accounts dating themselves with the build day -- changes these rows and fails. Measured before this stanza existed: forcing that field to 18262 on both sides left exactly the transposition below, which is how the date cause and the ordering cause were told apart. rootfs/scripts/account-pin-shadow-dates.sh in the shared finalizer is what removes the date cause on both paths. The expected diff is what makes this safe to sanction at all. A bare `content` stanza here would equally cover an account VANISHING from the composed root, which is the failure this comparison exists to catch; with the diff named, a vanished account shifts every following line, a third line moving adds rows, and a field changing inside a transposed line changes one -- each produces a different canonical diff and each still FAILS.
+    50 -mica-mqttd:!::
+    50 +mica-mqtt-broker:!::
+- reason: The two service accounts mica-mqttd (970) and mica-mqtt-broker (969) are created in the opposite order on the two paths: the chain runs rootfs/scripts/account-mica-mqttd.sh and account-mica-mqtt-broker.sh in stage order, and the composer gets dpkg's configuration order, which set up mica-mqtt-broker first. Both orders are deterministic within their own path and neither is wrong, so this is an artefact of having TWO paths and it cannot exist once there is one. Measured, not argued: `diff <(sort A) <(sort B)` over this file is EMPTY, so both roots hold the same entries with the same uid and gid, and only the position of two lines differs. This path is one of the three L1 ruled may never carry a bare sanction, and it carries a NARROWED one instead, which subsumes that rule rather than weakening it. The last-change field is pinned into the expected diff as 18262, so the date regression the rule was written about -- Debian's postinst accounts dating themselves with the build day -- changes these rows and fails. Measured before this stanza existed: forcing that field to 18262 on both sides left exactly the transposition below, which is how the date cause and the ordering cause were told apart. rootfs/scripts/account-pin-shadow-dates.sh in the shared finalizer is what removes the date cause on both paths. The expected diff is what makes this safe to sanction at all. A bare `content` stanza here would equally cover an account VANISHING from the composed root, which is the failure this comparison exists to catch; with the diff named, a vanished account shifts every following line, a third line moving adds rows, and a field changing inside a transposed line changes one -- each produces a different canonical diff and each still FAILS.
 
 ### /etc/shadow-
 - classes: content
 - status: active
 - expect-diff: |
-    24 -mos-mqttd:!:18262::::::
-    24 +mos-mqtt-broker:!:18262::::::
-    25 -mos-mqtt-broker:!:18262::::::
-    25 +mos-mqttd:!:18262::::::
-- reason: The two service accounts mos-mqttd (970) and mos-mqtt-broker (969) are created in the opposite order on the two paths: the chain runs rootfs/scripts/account-mos-mqttd.sh and account-mos-mqtt-broker.sh in stage order, and the composer gets dpkg's configuration order, which set up mos-mqtt-broker first. Both orders are deterministic within their own path and neither is wrong, so this is an artefact of having TWO paths and it cannot exist once there is one. Measured, not argued: `diff <(sort A) <(sort B)` over this file is EMPTY, so both roots hold the same entries with the same uid and gid, and only the position of two lines differs. This path is one of the three L1 ruled may never carry a bare sanction, and it carries a NARROWED one instead, which subsumes that rule rather than weakening it. The last-change field is pinned into the expected diff as 18262, so the date regression the rule was written about -- Debian's postinst accounts dating themselves with the build day -- changes these rows and fails. Measured before this stanza existed: forcing that field to 18262 on both sides left exactly the transposition below, which is how the date cause and the ordering cause were told apart. rootfs/scripts/account-pin-shadow-dates.sh in the shared finalizer is what removes the date cause on both paths. The expected diff is what makes this safe to sanction at all. A bare `content` stanza here would equally cover an account VANISHING from the composed root, which is the failure this comparison exists to catch; with the diff named, a vanished account shifts every following line, a third line moving adds rows, and a field changing inside a transposed line changes one -- each produces a different canonical diff and each still FAILS.
+    24 -mica-mqttd:!:18262::::::
+    24 +mica-mqtt-broker:!:18262::::::
+    25 -mica-mqtt-broker:!:18262::::::
+    25 +mica-mqttd:!:18262::::::
+- reason: The two service accounts mica-mqttd (970) and mica-mqtt-broker (969) are created in the opposite order on the two paths: the chain runs rootfs/scripts/account-mica-mqttd.sh and account-mica-mqtt-broker.sh in stage order, and the composer gets dpkg's configuration order, which set up mica-mqtt-broker first. Both orders are deterministic within their own path and neither is wrong, so this is an artefact of having TWO paths and it cannot exist once there is one. Measured, not argued: `diff <(sort A) <(sort B)` over this file is EMPTY, so both roots hold the same entries with the same uid and gid, and only the position of two lines differs. This path is one of the three L1 ruled may never carry a bare sanction, and it carries a NARROWED one instead, which subsumes that rule rather than weakening it. The last-change field is pinned into the expected diff as 18262, so the date regression the rule was written about -- Debian's postinst accounts dating themselves with the build day -- changes these rows and fails. Measured before this stanza existed: forcing that field to 18262 on both sides left exactly the transposition below, which is how the date cause and the ordering cause were told apart. rootfs/scripts/account-pin-shadow-dates.sh in the shared finalizer is what removes the date cause on both paths. The expected diff is what makes this safe to sanction at all. A bare `content` stanza here would equally cover an account VANISHING from the composed root, which is the failure this comparison exists to catch; with the diff named, a vanished account shifts every following line, a third line moving adds rows, and a field changing inside a transposed line changes one -- each produces a different canonical diff and each still FAILS.
 
 ### /usr/share/factory/etc/shadow
 - classes: content
 - status: active
 - expect-diff: |
-    24 -mos-mqttd:!:18262::::::
-    24 +mos-mqtt-broker:!:18262::::::
-    25 -mos-mqtt-broker:!:18262::::::
-    25 +mos-mqttd:!:18262::::::
-- reason: The two service accounts mos-mqttd (970) and mos-mqtt-broker (969) are created in the opposite order on the two paths: the chain runs rootfs/scripts/account-mos-mqttd.sh and account-mos-mqtt-broker.sh in stage order, and the composer gets dpkg's configuration order, which set up mos-mqtt-broker first. Both orders are deterministic within their own path and neither is wrong, so this is an artefact of having TWO paths and it cannot exist once there is one. Measured, not argued: `diff <(sort A) <(sort B)` over this file is EMPTY, so both roots hold the same entries with the same uid and gid, and only the position of two lines differs. This path is one of the three L1 ruled may never carry a bare sanction, and it carries a NARROWED one instead, which subsumes that rule rather than weakening it. The last-change field is pinned into the expected diff as 18262, so the date regression the rule was written about -- Debian's postinst accounts dating themselves with the build day -- changes these rows and fails. Measured before this stanza existed: forcing that field to 18262 on both sides left exactly the transposition below, which is how the date cause and the ordering cause were told apart. rootfs/scripts/account-pin-shadow-dates.sh in the shared finalizer is what removes the date cause on both paths. The expected diff is what makes this safe to sanction at all. A bare `content` stanza here would equally cover an account VANISHING from the composed root, which is the failure this comparison exists to catch; with the diff named, a vanished account shifts every following line, a third line moving adds rows, and a field changing inside a transposed line changes one -- each produces a different canonical diff and each still FAILS.
+    24 -mica-mqttd:!:18262::::::
+    24 +mica-mqtt-broker:!:18262::::::
+    25 -mica-mqtt-broker:!:18262::::::
+    25 +mica-mqttd:!:18262::::::
+- reason: The two service accounts mica-mqttd (970) and mica-mqtt-broker (969) are created in the opposite order on the two paths: the chain runs rootfs/scripts/account-mica-mqttd.sh and account-mica-mqtt-broker.sh in stage order, and the composer gets dpkg's configuration order, which set up mica-mqtt-broker first. Both orders are deterministic within their own path and neither is wrong, so this is an artefact of having TWO paths and it cannot exist once there is one. Measured, not argued: `diff <(sort A) <(sort B)` over this file is EMPTY, so both roots hold the same entries with the same uid and gid, and only the position of two lines differs. This path is one of the three L1 ruled may never carry a bare sanction, and it carries a NARROWED one instead, which subsumes that rule rather than weakening it. The last-change field is pinned into the expected diff as 18262, so the date regression the rule was written about -- Debian's postinst accounts dating themselves with the build day -- changes these rows and fails. Measured before this stanza existed: forcing that field to 18262 on both sides left exactly the transposition below, which is how the date cause and the ordering cause were told apart. rootfs/scripts/account-pin-shadow-dates.sh in the shared finalizer is what removes the date cause on both paths. The expected diff is what makes this safe to sanction at all. A bare `content` stanza here would equally cover an account VANISHING from the composed root, which is the failure this comparison exists to catch; with the diff named, a vanished account shifts every following line, a third line moving adds rows, and a field changing inside a transposed line changes one -- each produces a different canonical diff and each still FAILS.
 
-### /usr/bin/mosd
+### /usr/bin/micad
 - classes: content
 - status: active
-- reason: The management daemon, compiled twice: by the chain through pkgs/mosd/hack/build-target.sh into target/, and for the composer by the mosd producer through build-deb.sh into target-deb/mosd/. Measured at commit 5c470e98acaa: BOTH roots carry that commit embedded, found with `strings`, and the sizes are 8,887,880 bytes on the chain against 8,892,200 composed -- a delta of 4,320 in 8.9 MB. See "The four own-binary stanzas, and the road not taken" above for why this is plain rather than narrowed: the two paths compile the same source in different build contexts, the difference is compilation-environment noise, the class evaporates when one path exists, and making the two byte-identical is a producer restructure spent on a comparison that retires with the chain.
+- reason: The management daemon, compiled twice: by the chain through pkgs/micad/hack/build-target.sh into target/, and for the composer by the micad producer through build-deb.sh into target-deb/micad/. Measured at commit 5c470e98acaa: BOTH roots carry that commit embedded, found with `strings`, and the sizes are 8,887,880 bytes on the chain against 8,892,200 composed -- a delta of 4,320 in 8.9 MB. See "The four own-binary stanzas, and the road not taken" above for why this is plain rather than narrowed: the two paths compile the same source in different build contexts, the difference is compilation-environment noise, the class evaporates when one path exists, and making the two byte-identical is a producer restructure spent on a comparison that retires with the chain.
 
 ### /usr/bin/apid
 - classes: content
 - status: active
-- reason: The HTTP API daemon, from the same producer and the same pair of cargo invocations as /usr/bin/mosd. Measured at commit 5c470e98acaa: both roots carry that commit embedded, and the sizes are 12,386,744 bytes on the chain against 12,388,272 composed -- a delta of 1,528 in 12.4 MB. See "The four own-binary stanzas, and the road not taken" above for why this is plain rather than narrowed: the two paths compile the same source in different build contexts, the difference is compilation-environment noise, the class evaporates when one path exists, and making the two byte-identical is a producer restructure spent on a comparison that retires with the chain.
+- reason: The HTTP API daemon, from the same producer and the same pair of cargo invocations as /usr/bin/micad. Measured at commit 5c470e98acaa: both roots carry that commit embedded, and the sizes are 12,386,744 bytes on the chain against 12,388,272 composed -- a delta of 1,528 in 12.4 MB. See "The four own-binary stanzas, and the road not taken" above for why this is plain rather than narrowed: the two paths compile the same source in different build contexts, the difference is compilation-environment noise, the class evaporates when one path exists, and making the two byte-identical is a producer restructure spent on a comparison that retires with the chain.
 
-### /usr/bin/mos-mqttd
+### /usr/bin/mica-mqttd
 - classes: content
 - status: active
-- reason: The MQTT bridge, from the OTHER producer: the mqtt producer compiles it and mos-mqtt-broker into target-deb/mqtt/, so the composed pair comes from a third cargo target directory. It reads no build-commit variable, so neither copy carries a commit string to compare -- recorded rather than left as an absence nobody checked. Measured at commit 5c470e98acaa: 6,944,720 bytes on the chain against 6,944,712 composed, a delta of 8 bytes in 6.9 MB. See "The four own-binary stanzas, and the road not taken" above for why this is plain rather than narrowed: the two paths compile the same source in different build contexts, the difference is compilation-environment noise, the class evaporates when one path exists, and making the two byte-identical is a producer restructure spent on a comparison that retires with the chain.
+- reason: The MQTT bridge, from the OTHER producer: the mqtt producer compiles it and mica-mqtt-broker into target-deb/mqtt/, so the composed pair comes from a third cargo target directory. It reads no build-commit variable, so neither copy carries a commit string to compare -- recorded rather than left as an absence nobody checked. Measured at commit 5c470e98acaa: 6,944,720 bytes on the chain against 6,944,712 composed, a delta of 8 bytes in 6.9 MB. See "The four own-binary stanzas, and the road not taken" above for why this is plain rather than narrowed: the two paths compile the same source in different build contexts, the difference is compilation-environment noise, the class evaporates when one path exists, and making the two byte-identical is a producer restructure spent on a comparison that retires with the chain.
 
-### /usr/bin/mos-mqtt-broker
+### /usr/bin/mica-mqtt-broker
 - classes: content
 - status: active
-- reason: The broker, from the mqtt producer, and the one of the four where the difference is LARGE rather than incidental: 7,616,416 bytes on the chain against 6,533,472 composed, 1.03 MB smaller. The extra mechanism is cargo's feature resolver -- the chain compiles four crates in one invocation and the producers compile two, so a different set of features is unified across the shared dependency graph. That is a consequence of the producer split PLAN-036 section 2 asks for, not of the composition. It reads no build-commit variable, like mos-mqttd. The size is recorded so that a future change in it is legible as a change in what the split does. See "The four own-binary stanzas, and the road not taken" above for why this is plain rather than narrowed: the two paths compile the same source in different build contexts, the difference is compilation-environment noise, the class evaporates when one path exists, and making the two byte-identical is a producer restructure spent on a comparison that retires with the chain.
+- reason: The broker, from the mqtt producer, and the one of the four where the difference is LARGE rather than incidental: 7,616,416 bytes on the chain against 6,533,472 composed, 1.03 MB smaller. The extra mechanism is cargo's feature resolver -- the chain compiles four crates in one invocation and the producers compile two, so a different set of features is unified across the shared dependency graph. That is a consequence of the producer split PLAN-036 section 2 asks for, not of the composition. It reads no build-commit variable, like mica-mqttd. The size is recorded so that a future change in it is legible as a change in what the split does. See "The four own-binary stanzas, and the road not taken" above for why this is plain rather than narrowed: the two paths compile the same source in different build contexts, the difference is compilation-environment noise, the class evaporates when one path exists, and making the two byte-identical is a producer restructure spent on a comparison that retires with the chain.
 

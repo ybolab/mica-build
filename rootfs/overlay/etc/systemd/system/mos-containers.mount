@@ -1,8 +1,8 @@
 [Unit]
 Description=Container data with independent DATA project accounting
 DefaultDependencies=no
-Requires=mos-data-layout.service mos.mount
-After=mos-data-layout.service mos.mount
+Requires=mica-data-layout.service mos.mount
+After=mica-data-layout.service mos.mount
 Before=local-fs.target shutdown.target
 Conflicts=shutdown.target
 

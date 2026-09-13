@@ -469,12 +469,12 @@ const ENGINE_CHECKS: readonly CheckCase[] = [
           + `container.enabled says, Quadlet generates units from STATE, and they start — so anything `
           + `able to write /mnt/data/state/quadlet gets a root-capable container at the next reboot with no `
           + `operator decision anywhere in the path, and the container.enabled switch gates `
-          + `nothing. mosd's `
+          + `nothing. micad's `
           + `ContainerReconciler enables it at runtime when the setting is true`)
       }
       return verdict(id, true,
         `${QUADLET_DIR} is a STATE-backed bind via ${QUADLET_MOUNT_UNIT} (What=${what}), installed `
-        + `and NOT statically enabled — mosd brings it up only when container.enabled is true, which `
+        + `and NOT statically enabled — micad brings it up only when container.enabled is true, which `
         + `is what makes the switch mean anything at boot`)
     },
   }),

@@ -24,7 +24,7 @@ if (args.includes('src/qemu.ts')) {
   writeFileSync(join(work, 'outer.json'), JSON.stringify({ args, env }))
   // Preparation does not validate forwards. Exercise the real capture path on
   // an already existing tiny disk, using only the environment Docker received.
-  const child = Bun.spawnSync([process.execPath, join(work, 'pkgs/mosd/tests/apid-api/src/qemu.ts'),
+  const child = Bun.spawnSync([process.execPath, join(work, 'pkgs/micad/tests/apid-api/src/qemu.ts'),
     '--capture', join(work, 'console.log')], {
     env: { PATH: process.env.PATH!, MOS_API_LAUNCHER_FIXTURE: work, ...env, MOS_QEMU_REUSE_DISK: '1' },
     timeout: 10000,

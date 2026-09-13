@@ -4,7 +4,7 @@ set -eu
 BB=/bin/busybox
 fail() { echo "BOOT_STARTUP_GUEST_FAIL $*"; "$BB" poweroff -f; }
 trap 'fail unexpected-command-failure' EXIT
-worker() { /mos-init --startup-worker "$1"; }
+worker() { /mica-init --startup-worker "$1"; }
 transition() {
     # Exercise the startup syscalls with no external mount/losetup/switch_root.
     "$BB" mkdir -p /newroot

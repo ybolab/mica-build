@@ -399,12 +399,12 @@ describe('no initramfs role and no init role', () => {
   test('a unit that execs it fails: an emergency tool init needs is part of the boot contract',
     async () => {
       const fx = await mutated('packed-busybox-not-early-boot', root =>
-        writeFileSync(join(root, 'usr/lib/systemd/system/mos-rescue.service'),
+        writeFileSync(join(root, 'usr/lib/systemd/system/mica-rescue.service'),
           '[Service]\nType=oneshot\nExecStart=/usr/bin/busybox sh -c "true"\n'))
       try {
         expect(await verdictOf(fx, 'packed-busybox-not-early-boot')).toBe('fail')
         expect(await messageOf(fx, 'packed-busybox-not-early-boot'))
-          .toContain('mos-rescue.service (an init file naming busybox)')
+          .toContain('mica-rescue.service (an init file naming busybox)')
       }
       finally {
         fx.dispose()
@@ -416,7 +416,7 @@ describe('no initramfs role and no init role', () => {
       // The whole of both systemd trees and mos's own: INIT_TREES names six
       // directories inside them, and leaving one -- the generator directory the
       // engine seed fills -- would leave the search space populated.
-      for (const d of ['usr/lib/systemd', 'etc/systemd', 'usr/lib/mos']) {
+      for (const d of ['usr/lib/systemd', 'etc/systemd', 'usr/lib/mica']) {
         rmSync(join(root, d), { recursive: true, force: true })
       }
     })
@@ -435,7 +435,7 @@ describe('the bill of materials the SBOM, licences and source offer are derived 
     const fx = packedRootFixture(cx3576)
     try {
       expect(await verdictOf(fx, 'packed-busybox-in-manifest')).toBe('pass')
-      expect(await messageOf(fx, 'packed-busybox-in-manifest')).toContain('mos-busybox 0.1.0')
+      expect(await messageOf(fx, 'packed-busybox-in-manifest')).toContain('mica-busybox 0.1.0')
     }
     finally {
       fx.dispose()
@@ -449,10 +449,10 @@ describe('the bill of materials the SBOM, licences and source offer are derived 
       // compliance request is answered from omits it -- with the binary, the
       // applet-link check and every other check green.
       const fx = await mutated('packed-busybox-in-manifest', (root) => {
-        const path = join(root, 'usr/share/mos/manifest.tsv')
+        const path = join(root, 'usr/share/mica/manifest.tsv')
         const kept = readFileSync(path, 'utf8')
           .split('\n')
-          .filter(l => !l.startsWith('mos-busybox\t'))
+          .filter(l => !l.startsWith('mica-busybox\t'))
           .join('\n')
         writeFileSync(path, kept)
       })
@@ -483,10 +483,10 @@ describe('the bill of materials the SBOM, licences and source offer are derived 
 
   test('no manifest at all fails: there is nothing to derive a release record from', async () => {
     const fx = await mutated('packed-busybox-in-manifest', root =>
-      rmSync(join(root, 'usr/share/mos/manifest.tsv')))
+      rmSync(join(root, 'usr/share/mica/manifest.tsv')))
     try {
       expect(await verdictOf(fx, 'packed-busybox-in-manifest')).toBe('fail')
-      expect(await messageOf(fx, 'packed-busybox-in-manifest')).toContain('no /usr/share/mos/manifest.tsv')
+      expect(await messageOf(fx, 'packed-busybox-in-manifest')).toContain('no /usr/share/mica/manifest.tsv')
     }
     finally {
       fx.dispose()

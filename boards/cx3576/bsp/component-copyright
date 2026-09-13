@@ -1,7 +1,7 @@
 Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
 Upstream-Name: mos
-Comment: The copyright file of mos-board-cx3576, installed as
- /usr/share/doc/mos-board-cx3576/copyright.
+Comment: The copyright file of mica-board-cx3576, installed as
+ /usr/share/doc/mica-board-cx3576/copyright.
  .
  It is this board package's OWN file and not the shared
  rootfs/packages-src/copyright, which says in so many words that a producer
@@ -47,8 +47,8 @@ Comment: Vendor binary firmware for the AIC8800D80 Wi-Fi/Bluetooth combo part,
  confirmed set may enter a signed root.
 
 Files: usr/lib/modules/*
- usr/lib/mos/board/cx3576/Image
- usr/lib/mos/board/cx3576/rk3576-src.dtb
+ usr/lib/mica/board/cx3576/Image
+ usr/lib/mica/board/cx3576/rk3576-src.dtb
 Copyright: Linus Torvalds and the many contributors to the Linux kernel
 License: GPL-2
 Comment: Built from armbian/linux-rockchip, branch rk-6.1-rkr5.1, kernel
@@ -63,7 +63,7 @@ Comment: Built from armbian/linux-rockchip, branch rk-6.1-rkr5.1, kernel
  is the pinned upstream commit plus the patch series in
  boards/cx3576/bsp/kernel/patches/.
 
-Files: usr/lib/mos/board/cx3576/u-boot-rockchip.bin
+Files: usr/lib/mica/board/cx3576/u-boot-rockchip.bin
 Copyright: Wolfgang Denk and the many contributors to Das U-Boot
  Rockchip Electronics Co., Ltd.
 License: GPL-2 and Rockchip-rkbin-undocumented

@@ -20,7 +20,7 @@ make podman          # → pkgs/podman/out-$MOS_ARCH/
 | `catatonit` | container init, for `--init` |
 
 The `podman` producer (`deb/podman/`) takes the set from here and packs it as
-`mos-podman`; the rootfs composition installs that package out of
+`mica-podman`; the rootfs composition installs that package out of
 `_out/debs/<arch>/` and never sees this directory. The producer's `PREPARE`
 hook will build the seven binaries itself if they are absent, which is roughly
 three quarters of an hour inside a packaging hook -- `make os-deb-preflight`

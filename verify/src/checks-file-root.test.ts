@@ -35,12 +35,12 @@ function objectAt(value: JsonObject, key: string): JsonObject {
 }
 
 function publicDefaults(f: ReturnType<typeof fixture>, marker?: string): void {
-  f.file('/usr/share/mos/meta/updates/manifest.json', CURRENT_MANIFEST)
-  if (marker !== undefined) f.file('/usr/share/mos/meta/GENERATED', marker)
+  f.file('/usr/share/mica/meta/updates/manifest.json', CURRENT_MANIFEST)
+  if (marker !== undefined) f.file('/usr/share/mica/meta/GENERATED', marker)
 }
 
 function writeManifest(f: ReturnType<typeof fixture>, value: unknown): void {
-  f.file('/usr/share/mos/meta/updates/manifest.json', `${JSON.stringify(value, null, 2)}\n`)
+  f.file('/usr/share/mica/meta/updates/manifest.json', `${JSON.stringify(value, null, 2)}\n`)
 }
 
 async function expectPublicRefusal(f: ReturnType<typeof fixture>, expected: string): Promise<string> {
@@ -61,7 +61,7 @@ test('root component rejects kernel payload and retired updater binaries', async
 })
 
 test('public defaults refuse baked anchors, private material and extra files', async () => {
-  const f = fixture(), path = '/usr/share/mos/meta/updates/manifest.json'
+  const f = fixture(), path = '/usr/share/mica/meta/updates/manifest.json'
   f.file(path, CURRENT_MANIFEST)
   expect(await f.check('file-root-public-defaults')).toBe('pass')
   const trusted = manifest(); trusted.trust = {}
@@ -70,7 +70,7 @@ test('public defaults refuse baked anchors, private material and extra files', a
   const privateValue = manifest(); privateValue.privateKey = 'forbidden'
   writeManifest(f, privateValue)
   expect(await f.check('file-root-public-defaults')).toBe('fail')
-  f.file(path, CURRENT_MANIFEST); f.file('/usr/share/mos/meta/updates/private.pem', 'fixture')
+  f.file(path, CURRENT_MANIFEST); f.file('/usr/share/mica/meta/updates/private.pem', 'fixture')
   expect(await f.check('file-root-public-defaults')).toBe('fail')
 })
 
@@ -81,8 +81,8 @@ test.each([undefined, MARKER, ''])('public defaults accept the current fixture w
   expect(result.verdict, result.message).toBe('pass')
   expect(result.message).toContain(`scannedFiles=${marker === undefined ? 1 : 2}`)
   expect(result.message).toMatch(/scannedBytes=[1-9][0-9]*/)
-  expect(result.message).toContain('/usr/share/mos/meta/updates/manifest.json')
-  if (marker !== undefined) expect(result.message).toContain('/usr/share/mos/meta/GENERATED')
+  expect(result.message).toContain('/usr/share/mica/meta/updates/manifest.json')
+  if (marker !== undefined) expect(result.message).toContain('/usr/share/mica/meta/GENERATED')
 })
 
 test.each([
@@ -94,8 +94,8 @@ test.each([
   ['GENERATED', '{"private_key":"DO_NOT_ECHO_PRIVATE_BYTES"}'],
 ])('private material detector refuses %s without leaking its bytes', async (relative, content) => {
   const f = fixture(); publicDefaults(f)
-  f.file(`/usr/share/mos/meta/${relative}`, content)
-  const message = await expectPublicRefusal(f, `/usr/share/mos/meta/${relative}`)
+  f.file(`/usr/share/mica/meta/${relative}`, content)
+  const message = await expectPublicRefusal(f, `/usr/share/mica/meta/${relative}`)
   expect(message).toContain('private key material')
   expect(message).not.toContain('DO_NOT_ECHO_PRIVATE_BYTES')
 })
@@ -150,7 +150,7 @@ test.each(['off', 'check', 'auto'])('current update policy %s is accepted', asyn
 
 test.each(['0', '18446744073709551615'])('checkIntervalMinutes=%s is inside the full u64 range', async (literal) => {
   const f = fixture()
-  f.file('/usr/share/mos/meta/updates/manifest.json', CURRENT_MANIFEST.replace('1440', literal))
+  f.file('/usr/share/mica/meta/updates/manifest.json', CURRENT_MANIFEST.replace('1440', literal))
   expect(await f.check('file-root-public-defaults')).toBe('pass')
 })
 
@@ -161,7 +161,7 @@ test.each([
   ['18446744073709551616', 'unsigned 64-bit range'],
 ])('checkIntervalMinutes=%s is outside the current u64 contract', async (literal, reason) => {
   const f = fixture()
-  f.file('/usr/share/mos/meta/updates/manifest.json', CURRENT_MANIFEST.replace('1440', literal))
+  f.file('/usr/share/mica/meta/updates/manifest.json', CURRENT_MANIFEST.replace('1440', literal))
   const message = await expectPublicRefusal(f, 'update.checkIntervalMinutes')
   expect(message).toContain(reason)
 })
@@ -173,7 +173,7 @@ test.each([
   ['update.policy', '"policy":', '"\\u0070olicy":"DO_NOT_ECHO_DUPLICATE",'],
 ])('duplicate decoded member at %s is refused', async (path, key, duplicate) => {
   const f = fixture()
-  f.file('/usr/share/mos/meta/updates/manifest.json', JSON.stringify(manifest()).replace(key, `${duplicate}${key}`))
+  f.file('/usr/share/mica/meta/updates/manifest.json', JSON.stringify(manifest()).replace(key, `${duplicate}${key}`))
   const message = await expectPublicRefusal(f, path)
   expect(message).toContain('duplicate key')
   expect(message).not.toContain('DO_NOT_ECHO_DUPLICATE')
@@ -182,45 +182,45 @@ test.each([
 test('malformed UTF-8 is refused without substitution or a byte dump', async () => {
   const f = fixture(), parts = CURRENT_MANIFEST.split('example')
   expect(parts).toHaveLength(2)
-  f.file('/usr/share/mos/meta/updates/manifest.json', Buffer.concat([
+  f.file('/usr/share/mica/meta/updates/manifest.json', Buffer.concat([
     Buffer.from(parts[0]!), Buffer.from([0xff]), Buffer.from('DO_NOT_ECHO_BINARY'), Buffer.from(parts[1]!),
   ]))
-  const message = await expectPublicRefusal(f, '/usr/share/mos/meta/updates/manifest.json')
+  const message = await expectPublicRefusal(f, '/usr/share/mica/meta/updates/manifest.json')
   expect(message).toContain('invalid UTF-8')
   expect(message).not.toContain('DO_NOT_ECHO_BINARY')
 })
 
 test('malformed JSON is refused without dumping its bytes', async () => {
   const f = fixture()
-  f.file('/usr/share/mos/meta/updates/manifest.json', '{"schema":"DO_NOT_ECHO_JSON"')
+  f.file('/usr/share/mica/meta/updates/manifest.json', '{"schema":"DO_NOT_ECHO_JSON"')
   const message = await expectPublicRefusal(f, 'invalid JSON')
   expect(message).not.toContain('DO_NOT_ECHO_JSON')
 })
 
 test.each([
   ['missing updates directory', (f: ReturnType<typeof fixture>) => {}, 'updates'],
-  ['missing manifest', (f: ReturnType<typeof fixture>) => { mkdirSync(join(f.root, 'usr/share/mos/meta/updates'), { recursive: true }) }, 'manifest.json'],
-  ['empty manifest', (f: ReturnType<typeof fixture>) => { f.file('/usr/share/mos/meta/updates/manifest.json', '') }, 'empty'],
+  ['missing manifest', (f: ReturnType<typeof fixture>) => { mkdirSync(join(f.root, 'usr/share/mica/meta/updates'), { recursive: true }) }, 'manifest.json'],
+  ['empty manifest', (f: ReturnType<typeof fixture>) => { f.file('/usr/share/mica/meta/updates/manifest.json', '') }, 'empty'],
 ])('%s is refused', async (_name, arrange, expected) => {
   const f = fixture()
-  mkdirSync(join(f.root, 'usr/share/mos/meta'), { recursive: true })
+  mkdirSync(join(f.root, 'usr/share/mica/meta'), { recursive: true })
   arrange(f)
   await expectPublicRefusal(f, expected)
 })
 
 test('an absent public metadata directory throws instead of reporting a vacuous pass', async () => {
   const f = fixture()
-  await expect(f.checkResult('file-root-public-defaults')).rejects.toThrow('/usr/share/mos/meta is missing')
+  await expect(f.checkResult('file-root-public-defaults')).rejects.toThrow('/usr/share/mica/meta is missing')
 })
 
 test('a non-directory public metadata entry is refused before scanning', async () => {
-  const f = fixture(); f.file('/usr/share/mos/meta', 'not a directory\n')
-  await expectPublicRefusal(f, '/usr/share/mos/meta')
+  const f = fixture(); f.file('/usr/share/mica/meta', 'not a directory\n')
+  await expectPublicRefusal(f, '/usr/share/mica/meta')
 })
 
 test.each([
-  ['root extra file', '/usr/share/mos/meta/extra.json'],
-  ['nested extra file', '/usr/share/mos/meta/updates/extra.json'],
+  ['root extra file', '/usr/share/mica/meta/extra.json'],
+  ['nested extra file', '/usr/share/mica/meta/updates/extra.json'],
 ])('%s is refused by path', async (_name, path) => {
   const f = fixture(); publicDefaults(f); f.file(path, 'extra\n')
   await expectPublicRefusal(f, path)
@@ -228,19 +228,19 @@ test.each([
 
 test('a permitted name with a special file type is refused before it is read', async () => {
   const f = fixture(); publicDefaults(f)
-  const special = join(f.root, 'usr/share/mos/meta/GENERATED')
+  const special = join(f.root, 'usr/share/mica/meta/GENERATED')
   const made = spawnSync('mkfifo', [special], { encoding: 'utf8' })
   expect(made.status, `${made.stdout}${made.stderr}`).toBe(0)
-  await expectPublicRefusal(f, '/usr/share/mos/meta/GENERATED')
+  await expectPublicRefusal(f, '/usr/share/mica/meta/GENERATED')
 })
 
 test.each(['updates/manifest.json', 'GENERATED'])('%s cannot be a symlink', async (relative) => {
   const f = fixture(); publicDefaults(f)
   const target = join(f.root, 'safe-target')
   writeFileSync(target, relative === 'GENERATED' ? MARKER : CURRENT_MANIFEST)
-  rmSync(join(f.root, 'usr/share/mos/meta', relative), { force: true })
-  symlinkSync(target, join(f.root, 'usr/share/mos/meta', relative))
-  await expectPublicRefusal(f, `/usr/share/mos/meta/${relative}`)
+  rmSync(join(f.root, 'usr/share/mica/meta', relative), { force: true })
+  symlinkSync(target, join(f.root, 'usr/share/mica/meta', relative))
+  await expectPublicRefusal(f, `/usr/share/mica/meta/${relative}`)
 })
 
 test.each(['meta', 'updates'])('required %s directory cannot be a symlink', async (name) => {
@@ -250,14 +250,14 @@ test.each(['meta', 'updates'])('required %s directory cannot be a symlink', asyn
   mkdirSync(join(targetMeta, 'updates'), { recursive: true })
   writeFileSync(join(targetMeta, 'updates/manifest.json'), CURRENT_MANIFEST)
   if (name === 'meta') {
-    mkdirSync(join(f.root, 'usr/share/mos'), { recursive: true })
-    symlinkSync(targetMeta, join(f.root, 'usr/share/mos/meta'))
+    mkdirSync(join(f.root, 'usr/share/mica'), { recursive: true })
+    symlinkSync(targetMeta, join(f.root, 'usr/share/mica/meta'))
   }
   else {
-    mkdirSync(join(f.root, 'usr/share/mos/meta'), { recursive: true })
-    symlinkSync(join(targetMeta, 'updates'), join(f.root, 'usr/share/mos/meta/updates'))
+    mkdirSync(join(f.root, 'usr/share/mica/meta'), { recursive: true })
+    symlinkSync(join(targetMeta, 'updates'), join(f.root, 'usr/share/mica/meta/updates'))
   }
-  await expectPublicRefusal(f, name === 'meta' ? '/usr/share/mos/meta' : '/usr/share/mos/meta/updates')
+  await expectPublicRefusal(f, name === 'meta' ? '/usr/share/mica/meta' : '/usr/share/mica/meta/updates')
 })
 
 test('a planted image path component cannot escape to a valid host tree', async () => {
@@ -267,8 +267,8 @@ test('a planted image path component cannot escape to a valid host tree', async 
   writeFileSync(join(host, 'meta/updates/manifest.json'), CURRENT_MANIFEST)
   writeFileSync(join(host, 'meta/GENERATED'), '-----BEGIN PRIVATE KEY-----\nHOST_SECRET_SENTINEL\n')
   mkdirSync(join(f.root, 'usr/share'), { recursive: true })
-  symlinkSync(host, join(f.root, 'usr/share/mos'))
-  await expect(f.checkResult('file-root-public-defaults')).rejects.toThrow('/usr/share/mos/meta')
+  symlinkSync(host, join(f.root, 'usr/share/mica'))
+  await expect(f.checkResult('file-root-public-defaults')).rejects.toThrow('/usr/share/mica/meta')
 })
 
 test('identity accepts the shipped relative D-Bus link and refuses a baked machine ID', async () => {
@@ -287,11 +287,11 @@ test('DATA policy requires a whole var bind and rejects per-systemd-leaf mounts'
   const f = fixture()
   const board = loadBoard(boardEnvPath('x64'))
   f.file('/etc/fstab', `PARTUUID=${board.get('DATA_GUID')!.toLowerCase()} /mnt/data ext4 noatime,prjquota,x-systemd.growfs 0 2\ntmpfs /tmp tmpfs size=128M,nr_inodes=32768 0 0\n`)
-  for (const name of ['var-lib-mos', 'etc-ssh', 'usr-local-lib-systemd-system', 'etc-containers-systemd']) {
+  for (const name of ['var-lib-mica', 'etc-ssh', 'usr-local-lib-systemd-system', 'etc-containers-systemd']) {
     f.file(`/etc/systemd/system/${name}.mount`, '[Mount]\nWhat=/mnt/data/state/example\n')
   }
   f.file('/etc/systemd/system/var.mount', '[Mount]\nWhat=/mnt/data/var\nWhere=/var\nOptions=bind,private,nosuid,nodev\n')
-  f.file('/etc/systemd/system/mos-seed-var.service', '[Service]\nExecStart=/usr/lib/mos/mos-seed-var\n')
+  f.file('/etc/systemd/system/mica-seed-var.service', '[Service]\nExecStart=/usr/lib/mica/mica-seed-var\n')
   expect(await f.check('file-root-data-policy')).toBe('pass')
   f.file('/etc/systemd/system/var-lib-systemd-timesync.mount', '[Mount]\nWhat=/mnt/data/state/timesync\n')
   expect(await f.check('file-root-data-policy')).toBe('fail')
@@ -316,7 +316,7 @@ test('image symlinks resolve inside the image, including absolute and parent lin
 test('container storage requires its own enabled bind outside var', async () => {
   const f = fixture()
   expect(await f.check('file-root-container-policy')).toBe('fail')
-  f.file('/etc/systemd/system/mos-containers.mount', '[Unit]\nRequires=mos-data-layout.service mos.mount\nAfter=mos-data-layout.service mos.mount\n[Mount]\nWhat=/mnt/data/containers\nWhere=/mos/containers\nOptions=bind,private,nosuid,nodev\n')
+  f.file('/etc/systemd/system/mos-containers.mount', '[Unit]\nRequires=mica-data-layout.service mos.mount\nAfter=mica-data-layout.service mos.mount\n[Mount]\nWhat=/mnt/data/containers\nWhere=/mos/containers\nOptions=bind,private,nosuid,nodev\n')
   f.file('/etc/systemd/system/mos.mount', '[Mount]\nOptions=bind,private\n')
   f.file('/etc/systemd/system/etc-containers-systemd.mount', '[Unit]\nRequiresMountsFor=/mnt/data/state /mos/containers\n')
   f.file('/etc/containers/storage.conf', '[storage]\ngraphroot = "/mos/containers/storage"\nrunroot = "/run/containers/storage"\n')
@@ -335,7 +335,7 @@ test('container storage requires its own enabled bind outside var', async () => 
 })
 
 const NATIVE_ENDPOINT_CHECK = 'file-root-native-endpoints'
-const NATIVE_PATHS = ['/usr/bin/mosd', '/usr/bin/apid', '/usr/bin/mos-deploy']
+const NATIVE_PATHS = ['/usr/bin/micad', '/usr/bin/apid', '/usr/bin/mica-deploy']
 
 function nativeElf(payload = 'clean native fixture'): Buffer {
   // ELF64 executable with one loadable segment; no toolchain or execution needed.
@@ -398,8 +398,8 @@ test.each([
   f.file('/mos/config/updates.json', JSON.stringify({ source: { url } }))
   expect(await f.check('file-root-public-defaults')).toBe('pass')
   expect(await f.check(NATIVE_ENDPOINT_CHECK)).toBe('pass')
-  f.file('/usr/bin/mosd', nativeElf(url))
-  await expectNativeRefusal(f, '/usr/bin/mosd', 'endpoint')
+  f.file('/usr/bin/micad', nativeElf(url))
+  await expectNativeRefusal(f, '/usr/bin/micad', 'endpoint')
 })
 
 test.each(NATIVE_PATHS)('compiled endpoint in %s is found in raw non-UTF-8 bytes without leaking content', async (path) => {
@@ -451,7 +451,7 @@ test.each(NATIVE_PATHS)('missing native input %s fails instead of scanning a sub
 
 test('no native inputs cannot produce a zero-work pass', async () => {
   const f = fixture()
-  await expectNativeRefusal(f, '/usr/bin/mosd', 'missing')
+  await expectNativeRefusal(f, '/usr/bin/micad', 'missing')
 })
 
 test.each(NATIVE_PATHS)('empty native input %s is refused', async (path) => {
@@ -466,8 +466,8 @@ test.each(NATIVE_PATHS)('non-ELF native input %s is refused', async (path) => {
 
 test('ELF magic alone cannot count as an examined native executable', async () => {
   const f = fixture(); nativeFiles(f)
-  f.file('/usr/bin/mosd', Buffer.from([0x7f, 0x45, 0x4c, 0x46]))
-  await expectNativeRefusal(f, '/usr/bin/mosd', 'ELF')
+  f.file('/usr/bin/micad', Buffer.from([0x7f, 0x45, 0x4c, 0x46]))
+  await expectNativeRefusal(f, '/usr/bin/micad', 'ELF')
 })
 
 test.each(NATIVE_PATHS)('native input %s cannot be a symlink to a clean ELF', async (path) => {
@@ -480,7 +480,7 @@ test.each(NATIVE_PATHS)('native input %s cannot be a symlink to a clean ELF', as
 
 test('native special file is refused before reading can block', async () => {
   const f = fixture(); nativeFiles(f)
-  const path = '/usr/bin/mosd'
+  const path = '/usr/bin/micad'
   rmSync(join(f.root, path))
   const made = spawnSync('mkfifo', [join(f.root, path)], { encoding: 'utf8', timeout: 5000 })
   expect(made.status, `${made.stdout}${made.stderr}`).toBe(0)
@@ -499,7 +499,7 @@ test.each(['usr', 'usr/bin'])('native parent %s cannot redirect the scan outside
   nativeFiles(host)
   mkdirSync(dirname(join(f.root, parent)), { recursive: true })
   symlinkSync(join(host.root, parent), join(f.root, parent))
-  await expectNativeRefusal(f, '/usr/bin/mosd', 'non-symlink')
+  await expectNativeRefusal(f, '/usr/bin/micad', 'non-symlink')
 })
 
 test('an unpacked-root symlink cannot pass native input verification', async () => {
@@ -528,15 +528,15 @@ test.each([
 ])('native ELF with invalid %s cannot be counted as scanned', async (_field, mutate) => {
   const f = fixture(); nativeFiles(f)
   const bytes = nativeElf(); mutate(bytes)
-  f.file('/usr/bin/mosd', bytes)
-  const message = await expectNativeRefusal(f, '/usr/bin/mosd', 'ELF')
+  f.file('/usr/bin/micad', bytes)
+  const message = await expectNativeRefusal(f, '/usr/bin/micad', 'ELF')
   expect(message).toContain('scannedFiles=0; scannedBytes=0; examinedPaths=')
 })
 
 test('native endpoint check accepts a position-independent ELF executable', async () => {
   const f = fixture(); nativeFiles(f)
   const bytes = nativeElf(); bytes.writeUInt16LE(3, 16)
-  f.file('/usr/bin/mosd', bytes)
+  f.file('/usr/bin/micad', bytes)
   expect(await f.check(NATIVE_ENDPOINT_CHECK)).toBe('pass')
 })
 
@@ -546,7 +546,7 @@ test('native endpoint check reads big-endian ELF headers correctly', async () =>
   for (const offset of [16, 18, 52, 54, 56, 58, 60, 62]) bytes.writeUInt16BE(bytes.readUInt16LE(offset), offset)
   for (const offset of [20, 48, 64, 68]) bytes.writeUInt32BE(bytes.readUInt32LE(offset), offset)
   for (const offset of [24, 32, 40, 72, 80, 88, 96, 104, 112]) bytes.writeBigUInt64BE(bytes.readBigUInt64LE(offset), offset)
-  f.file('/usr/bin/mosd', bytes)
+  f.file('/usr/bin/micad', bytes)
   expect(await f.check(NATIVE_ENDPOINT_CHECK)).toBe('pass')
 })
 
@@ -570,7 +570,7 @@ test('native endpoint check accepts a complete ELF32 executable', async () => {
   bytes.writeUInt32LE(5, 76)
   bytes.writeUInt32LE(4096, 80)
   bytes[84] = 0xc3
-  f.file('/usr/bin/mosd', bytes)
+  f.file('/usr/bin/micad', bytes)
   const result = await f.checkResult(NATIVE_ENDPOINT_CHECK)
   expect(result.verdict, result.message).toBe('pass')
   expect(result.message).toContain('scannedFiles=3')
@@ -602,8 +602,8 @@ test.each(EMBEDDED_UI_NON_ENDPOINTS)('an endpoint beside the exact UI literal %s
   await expectNativeRefusal(f, '/usr/bin/apid', 'endpoint')
 })
 
-test.each(EMBEDDED_UI_NON_ENDPOINTS)('the exact UI literal %s is not exempt in mosd or mos-deploy', async (literal) => {
-  for (const path of ['/usr/bin/mosd', '/usr/bin/mos-deploy']) {
+test.each(EMBEDDED_UI_NON_ENDPOINTS)('the exact UI literal %s is not exempt in micad or mica-deploy', async (literal) => {
+  for (const path of ['/usr/bin/micad', '/usr/bin/mica-deploy']) {
     const f = fixture(); nativeFiles(f)
     f.file(path, nativeElf(literal))
     await expectNativeRefusal(f, path, 'endpoint')
@@ -628,13 +628,13 @@ test('replacement characters cannot truncate an endpoint into an exact UI exempt
 })
 
 const NATIVE_DIAGNOSTIC_CASES: Array<[string, string, string]> = [
-  ['/usr/bin/mosd', 'Invalid address. See https://dbus.freedesktop.org/doc/dbus-specification.html#addresses', 'mid > len'],
-  ['/usr/bin/mosd', 'Invalid member name. See https://dbus.freedesktop.org/doc/dbus-specification.html#message-protocol-names-member', 'Invalid interface name. See https://dbus.freedesktop.org/doc/dbus-specification.html#message-protocol-names-interface'],
-  ['/usr/bin/mosd', 'Invalid interface name. See https://dbus.freedesktop.org/doc/dbus-specification.html#message-protocol-names-interface', 'Invalid well-known name. See https://dbus.freedesktop.org/doc/dbus-specification.html#message-protocol-names-bus'],
-  ['/usr/bin/mosd', 'Invalid well-known name. See https://dbus.freedesktop.org/doc/dbus-specification.html#message-protocol-names-bus', 'Invalid error name. See https://dbus.freedesktop.org/doc/dbus-specification.html#message-protocol-names-error'],
-  ['/usr/bin/mosd', 'Invalid error name. See https://dbus.freedesktop.org/doc/dbus-specification.html#message-protocol-names-error', 'org.freedesktop.DBusInvalid unique name. See https://dbus.freedesktop.org/doc/dbus-specification.html#message-protocol-names-bus'],
-  ['/usr/bin/mosd', 'Invalid unique name. See https://dbus.freedesktop.org/doc/dbus-specification.html#message-protocol-names-bus', 'BusName::UniqueBusName::WellKnownOwnedErrorNameOwnedUniqueNameInvalid bus name. See https://dbus.freedesktop.org/doc/dbus-specification.html#message-protocol-names-bus'],
-  ['/usr/bin/mosd', 'Invalid bus name. See https://dbus.freedesktop.org/doc/dbus-specification.html#message-protocol-names-bus', 'mid > len'],
+  ['/usr/bin/micad', 'Invalid address. See https://dbus.freedesktop.org/doc/dbus-specification.html#addresses', 'mid > len'],
+  ['/usr/bin/micad', 'Invalid member name. See https://dbus.freedesktop.org/doc/dbus-specification.html#message-protocol-names-member', 'Invalid interface name. See https://dbus.freedesktop.org/doc/dbus-specification.html#message-protocol-names-interface'],
+  ['/usr/bin/micad', 'Invalid interface name. See https://dbus.freedesktop.org/doc/dbus-specification.html#message-protocol-names-interface', 'Invalid well-known name. See https://dbus.freedesktop.org/doc/dbus-specification.html#message-protocol-names-bus'],
+  ['/usr/bin/micad', 'Invalid well-known name. See https://dbus.freedesktop.org/doc/dbus-specification.html#message-protocol-names-bus', 'Invalid error name. See https://dbus.freedesktop.org/doc/dbus-specification.html#message-protocol-names-error'],
+  ['/usr/bin/micad', 'Invalid error name. See https://dbus.freedesktop.org/doc/dbus-specification.html#message-protocol-names-error', 'org.freedesktop.DBusInvalid unique name. See https://dbus.freedesktop.org/doc/dbus-specification.html#message-protocol-names-bus'],
+  ['/usr/bin/micad', 'Invalid unique name. See https://dbus.freedesktop.org/doc/dbus-specification.html#message-protocol-names-bus', 'BusName::UniqueBusName::WellKnownOwnedErrorNameOwnedUniqueNameInvalid bus name. See https://dbus.freedesktop.org/doc/dbus-specification.html#message-protocol-names-bus'],
+  ['/usr/bin/micad', 'Invalid bus name. See https://dbus.freedesktop.org/doc/dbus-specification.html#message-protocol-names-bus', 'mid > len'],
   ['/usr/bin/apid', 'peer closed connection without sending TLS close_notify: https://docs.rs/rustls/latest/rustls/manual/_03_howto/index.html#unexpected-eof', 'internal error: entered unreachable code'],
   ['/usr/bin/apid', 'Invalid address. See https://dbus.freedesktop.org/doc/dbus-specification.html#addresses', 'mid > len'],
   ['/usr/bin/apid', 'Invalid member name. See https://dbus.freedesktop.org/doc/dbus-specification.html#message-protocol-names-member', 'Invalid interface name. See https://dbus.freedesktop.org/doc/dbus-specification.html#message-protocol-names-interface'],
@@ -643,10 +643,10 @@ const NATIVE_DIAGNOSTIC_CASES: Array<[string, string, string]> = [
   ['/usr/bin/apid', 'Invalid unique name. See https://dbus.freedesktop.org/doc/dbus-specification.html#message-protocol-names-bus', 'BusName::UniqueBusName::WellKnownOwnedErrorNameOwnedUniqueNameInvalid bus name. See https://dbus.freedesktop.org/doc/dbus-specification.html#message-protocol-names-bus'],
   ['/usr/bin/apid', 'Invalid bus name. See https://dbus.freedesktop.org/doc/dbus-specification.html#message-protocol-names-bus', 'mid > len'],
   ['/usr/bin/apid', 'Node.js ES modules are not directly supported, see https://docs.rs/getrandom#nodejs-es-module-support', 'Errorinternal_codedescriptionunknown_code\0'],
-  ['/usr/bin/mos-deploy', 'Fatal internal error. Please consider filing a bug report at https://github.com/clap-rs/clap/issues', ''],
-  ['/usr/bin/mos-deploy', 'Fatal internal error. Please consider filing a bug report at https://github.com/clap-rs/clap/issues', 'a Display implementation returned an error unexpectedly'],
-  ['/usr/bin/mos-deploy', 'Fatal internal error. Please consider filing a bug report at https://github.com/clap-rs/clap/issues', 'falseTryFromIntErrora Display implementation returned an error unexpectedly'],
-  ['/usr/bin/mos-deploy', 'Fatal internal error. Please consider filing a bug report at https://github.com/clap-rs/clap/issues', 'internal error: entered unreachable code'],
+  ['/usr/bin/mica-deploy', 'Fatal internal error. Please consider filing a bug report at https://github.com/clap-rs/clap/issues', ''],
+  ['/usr/bin/mica-deploy', 'Fatal internal error. Please consider filing a bug report at https://github.com/clap-rs/clap/issues', 'a Display implementation returned an error unexpectedly'],
+  ['/usr/bin/mica-deploy', 'Fatal internal error. Please consider filing a bug report at https://github.com/clap-rs/clap/issues', 'falseTryFromIntErrora Display implementation returned an error unexpectedly'],
+  ['/usr/bin/mica-deploy', 'Fatal internal error. Please consider filing a bug report at https://github.com/clap-rs/clap/issues', 'internal error: entered unreachable code'],
 ]
 
 test.each(NATIVE_DIAGNOSTIC_CASES)('exact diagnostic and attested adjacent text in %s remain non-endpoints: %s', async (path, message, adjacent) => {
@@ -687,12 +687,12 @@ test.each(NATIVE_DIAGNOSTIC_CASES)('an injected endpoint adjacent to a diagnosti
 
 test.each(NATIVE_DIAGNOSTIC_CASES)('a diagnostic in the wrong native binary is refused: %s / %s', async (path, message, adjacent) => {
   const f = fixture(); nativeFiles(f)
-  const other = path === '/usr/bin/mos-deploy' ? '/usr/bin/mosd' : '/usr/bin/mos-deploy'
+  const other = path === '/usr/bin/mica-deploy' ? '/usr/bin/micad' : '/usr/bin/mica-deploy'
   f.file(other, nativeElf(`${message}${adjacent}`))
   await expectNativeRefusal(f, other, 'endpoint')
 })
 
-test.each(['/usr/bin/mosd', '/usr/bin/apid'])('the exact D-Bus introspection DTD in %s is a namespace only', async (path) => {
+test.each(['/usr/bin/micad', '/usr/bin/apid'])('the exact D-Bus introspection DTD in %s is a namespace only', async (path) => {
   const f = fixture(); nativeFiles(f)
   const dtd = 'http://www.freedesktop.org/standards/dbus/1.0/introspect.dtd'
   f.file(path, nativeElf(dtd))
@@ -700,8 +700,8 @@ test.each(['/usr/bin/mosd', '/usr/bin/apid'])('the exact D-Bus introspection DTD
   f.file(path, nativeElf(`${dtd}/updates`))
   await expectNativeRefusal(f, path, 'endpoint')
   nativeFiles(f)
-  f.file('/usr/bin/mos-deploy', nativeElf(dtd))
-  await expectNativeRefusal(f, '/usr/bin/mos-deploy', 'endpoint')
+  f.file('/usr/bin/mica-deploy', nativeElf(dtd))
+  await expectNativeRefusal(f, '/usr/bin/mica-deploy', 'endpoint')
 })
 
 

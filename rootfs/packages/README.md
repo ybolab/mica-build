@@ -39,7 +39,7 @@ the hardware has, `--without <radio>` is the build's decision to leave one out
 anyway, and the two compose per radio. A radio and a feature sharing one name
 is refused as ambiguous.
 
-`radio-wifi.pkgs` names both `mos-wifi` and `mos-wifi-ap` because the single
+`radio-wifi.pkgs` names both `mica-wifi` and `mica-wifi-ap` because the single
 radio name `wifi` has always meant `wpasupplicant` **and** `hostapd`: a board
 declares that it has the radio, not which of station and access-point mode it
 will be asked to run.
@@ -75,7 +75,7 @@ Each has its own message, naming what was wrong and what the legal values are:
 - a manifest line naming a package no producer declares;
 - a manifest line naming more than one package;
 - a manifest whose filename belongs to no family;
-- a resolution carrying both `mos-profile-dev` and `mos-profile-prod`, or
+- a resolution carrying both `mica-profile-dev` and `mica-profile-prod`, or
   neither;
 - an empty resolution, or one with no board package.
 
@@ -84,19 +84,19 @@ them, proves each red by perturbing a **copy** of this directory under `tmp/`,
 and asserts the reverse direction: every package every producer declares is
 reachable by some legal resolution.
 
-## Ruling: nothing should depend on the virtual `mos-profile` — yes, `mosd` should
+## Ruling: nothing should depend on the virtual `mica-profile` — yes, `micad` should
 
 PLAN-036 open decision (g).
 
 ### Measured first
 
-`mos-profile` is declared in `Provides` by `mos-profile-dev` and
-`mos-profile-prod` (`rootfs/packages-src/profile/control/`) and by nothing
+`mica-profile` is declared in `Provides` by `mica-profile-dev` and
+`mica-profile-prod` (`rootfs/packages-src/profile/control/`) and by nothing
 else. Reading the `Depends` field of all ten control templates in the tree —
-the board packages, `mosd`, `mos-apid`, the two MQTT packages, `mos-podman`,
-`mos-rauc`, `mos-system`, `mos-ca-trust` and the three radio packages — **no
-dependency anywhere names `mos-profile`**. Every dependency is either
-local-real (`mos-system`, `mosd`, pinned to `(= @VERSION@)`) or external
+the board packages, `micad`, `mica-apid`, the two MQTT packages, `mica-podman`,
+`mos-rauc`, `mica-system`, `mica-ca-trust` and the three radio packages — **no
+dependency anywhere names `mica-profile`**. Every dependency is either
+local-real (`mica-system`, `micad`, pinned to `(= @VERSION@)`) or external
 (`systemd`, `passwd`, `bluez`, `${shlibs:Depends}`, …).
 
 So `build-env/deb/package-gate.sh`'s local-virtual branch — the `PROVIDED_BY`
@@ -104,43 +104,43 @@ lookup that increments `VIRTUAL_RESOLVED_N` — would count **0** today, in both
 architecture pools. Its `RESULT` line would print `0 local-virtual dependencies
 resolved` and its note line an empty list. The branch has no material.
 
-### The ruling: **yes** — `mosd` should declare `Depends: mos-profile`
+### The ruling: **yes** — `micad` should declare `Depends: mica-profile`
 
-`mosd` reads `/usr/lib/mos/profile.conf` (`DEFAULT_PROFILE_PATH`,
-`pkgs/mosd/mosd/src/provisioning.rs`) once on first boot, and that path is
-the entire payload of the two profile packages and of nothing else. `mosd`
+`micad` reads `/usr/lib/mica/profile.conf` (`DEFAULT_PROFILE_PATH`,
+`pkgs/micad/micad/src/provisioning.rs`) once on first boot, and that path is
+the entire payload of the two profile packages and of nothing else. `micad`
 **fails closed**: a missing file resolves to `Prod`, which is SSH off. So a
-composition that installed `mosd` and no profile package would produce an image
+composition that installed `micad` and no profile package would produce an image
 that behaves as production, with every existing check green — the exact failure
 `rootfs/README.md` describes for a misspelt profile value, arrived at from a
 different direction.
 
 That is a real runtime relationship, and it would be worth declaring if the
 gate's counter did not exist: it is what `rootfs/packages-src/README.md`
-already says the `Provides` pair is for — "`mos-profile` is what a package that
+already says the `Provides` pair is for — "`mica-profile` is what a package that
 needs 'some profile is installed' depends on" — and today nothing does, so the
 pair is a statement with no reader. `resolve.sh`'s "exactly one profile package"
 refusal is a **build-time** check on the manifest set; the dependency is the
 **install-time** one, and it is the half that survives a composer that bypasses
-this resolver, an operator `apt-get install mosd`, or a manifest edited on a
+this resolver, an operator `apt-get install micad`, or a manifest edited on a
 branch where this test does not run.
 
-On `mosd` specifically:
+On `micad` specifically:
 
-- not `mos-system`, which is in every image including ones that decline `mosd`.
+- not `mica-system`, which is in every image including ones that decline `micad`.
   Nothing reads `profile.conf` there, so the dependency would be false.
 - not a new metapackage. A producer created to hold one dependency line is the
   manufactured shape this decision exists to avoid.
-- `mos-apid`, `mos-mqttd` and `mos-mqtt-broker` already depend on `mosd` at the
+- `mica-apid`, `mica-mqttd` and `mica-mqtt-broker` already depend on `micad` at the
   exact version, so they inherit it; no other control template changes.
 
 Unversioned, necessarily: an unversioned `Provides` cannot satisfy an
 exact-version dependency, which is why the gate does not require a version pin
 on this class.
 
-**Not implemented in this L3**: `pkgs/mosd/deb/mosd/control/mosd.control`
+**Not implemented in this L3**: `pkgs/micad/deb/micad/control/micad.control`
 belongs to a sibling producer's workstream. Whoever lands it should also confirm
-what APT does when a `Depends: mos-profile` is unsatisfied and two mutually
+what APT does when a `Depends: mica-profile` is unsatisfied and two mutually
 conflicting packages provide it — the intent is that the transaction fails by
 name rather than an arbitrary provider being chosen, and that needs built pools
 to exercise.
@@ -152,4 +152,4 @@ bash rootfs/build.sh` selects those component packages. Leave the variable
 unset to omit both. The resolver accepts the same space-separated list as
 `--components`. An unknown component or one belonging to another board is
 refused. `mqtt-reference` requires the dev profile and all MQTT packages;
-combining it with `--without mosd` is an error.
+combining it with `--without micad` is an error.

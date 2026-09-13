@@ -5,11 +5,11 @@ cd "$(dirname "${BASH_SOURCE[0]}")/../.."
 evidence=${1:?full runtime evidence required}
 certificate=${2:?content certificate required}
 key=${3:?content key required}
-init=${4:?mos-init required}
+init=${4:?mica-init required}
 board=${5:?board required}
 origin=${6:?running update server origin required}
 token=${7:?admin token file required}
-shutdown=${8:?compiled mos-shutdown required}
+shutdown=${8:?compiled mica-shutdown required}
 test -f "$evidence/image/factory-disk.img"
 test ! -e "$evidence/updates"
 boot() {

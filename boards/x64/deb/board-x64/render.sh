@@ -28,7 +28,7 @@ cat >"$out/systemd-repart.service.d/10-data.conf" <<EOF
 Before=mnt-data.mount
 [Service]
 ExecStart=
-ExecStart=/usr/lib/mos/mos-grow-data ${SYSTEM_GUID,,} ${DISK_GUID,,}
+ExecStart=/usr/lib/mica/mica-grow-data ${SYSTEM_GUID,,} ${DISK_GUID,,}
 SuccessExitStatus=
 TimeoutStartSec=30
 EOF

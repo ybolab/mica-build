@@ -97,10 +97,10 @@ export function skewedFrom(version: string): string {
 /**
  * The three cases.
  *
- * Two of them break `crun` and one breaks `mos-deploy`, and that is chosen rather than
+ * Two of them break `crun` and one breaks `mica-deploy`, and that is chosen rather than
  * incidental: both are self-built, both are dynamically linked against this
  * root's own libraries, and `libgcc_s.so.1` -- measured in the x64
- * factory root -- is NEEDed by `/usr/bin/mos-deploy` and by nothing else the register
+ * factory root -- is NEEDed by `/usr/bin/mica-deploy` and by nothing else the register
  * covers. So the missing-soname case fails exactly one artifact, and the run
  * that reports it says so.
  */
@@ -140,7 +140,7 @@ export const CASES: readonly NegativeCase[] = [
   {
     name: 'missing-soname',
     clause: 'a deliberately missing-soname binary fails the build',
-    artifact: 'mos-deploy',
+    artifact: 'mica-deploy',
     // The library is REMOVED rather than the binary rewritten, because that is
     // the shape this actually takes in a build: an install stage stops copying a
     // dependency, or a feature stage that provided it is declined, and the

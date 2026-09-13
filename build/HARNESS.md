@@ -92,7 +92,7 @@ are:
 | `tests/file-ab-faults/run.sh` | Native transaction IO interruption and ENOSPC at observed install/confirm/GC boundaries |
 | `tests/file-ab-fit/records.sh`, `firmware-io.sh` | Actual fixed firmware record parser and persistence-before-load behavior under sanitizers |
 | `tests/file-ab-fit/signatures.sh` | Required FIT signature acceptance and missing/unknown/modified signature refusal |
-| `pkgs/mosd/tests/apid-api/run.sh` | HTTPS API, authentication, native lifecycle, reset and network acceptance against a fresh complete guest |
+| `pkgs/micad/tests/apid-api/run.sh` | HTTPS API, authentication, native lifecycle, reset and network acceptance against a fresh complete guest |
 
 The runtime harness also verifies readonly var parents, DATA leaf binds, identity,
 quota byte/inode containment, native service receipts, firmware readback and clean

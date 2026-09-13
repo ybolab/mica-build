@@ -446,7 +446,7 @@ Two widenings, each forced by a shape the register could not otherwise express:
 * **`fail` may be a LIST.** Pass branches say one thing; failure branches fork.
   `check_status_led`'s three failure sentences, and the reconciler-ordering
   check's three, share no substring that is not also in some other check's line
-  — `mos-status-led.service ` is in the overlay family's failures too. One loose
+  — `mica-status-led.service ` is in the overlay family's failures too. One loose
   matcher covering all three is how a check claims a neighbour's conclusion;
   three exact ones cannot. Each element is still a plain substring: a list
   widens what ONE check answers for, never what two may share.
@@ -603,10 +603,10 @@ It refuses rather than skipping when the image is absent.
 | netavark | `/usr/libexec/podman/netavark` | `netavark 2.1.0` | `NETAVARK_VERSION=v2.1.0` |
 | aardvark-dns | `/usr/libexec/podman/aardvark-dns` | `aardvark-dns 2.1.0` | `AARDVARK_VERSION=v2.1.0` |
 | catatonit | `/usr/libexec/podman/catatonit` | `tini version 0.2.1_catatonit` | `CATATONIT_VERSION=v0.2.1` |
-| mos-mqttd | `/usr/bin/mos-mqttd` | `mos-mqttd 0.1.0` | `pkgs/mosd/mqttd/Cargo.toml` |
-| mos-mqtt-broker | `/usr/bin/mos-mqtt-broker` | `mos-mqtt-broker 0.1.0` | `pkgs/mosd/broker/Cargo.toml` |
-| mosd | `/usr/bin/mosd` | `mosd 0.1.0 (<commit>)` | `pkgs/mosd/mosd/Cargo.toml` |
-| apid | `/usr/bin/apid` | `apid 0.1.0 (<commit>)` | `pkgs/mosd/apid/Cargo.toml` |
+| mica-mqttd | `/usr/bin/mica-mqttd` | `mica-mqttd 0.1.0` | `pkgs/micad/mqttd/Cargo.toml` |
+| mica-mqtt-broker | `/usr/bin/mica-mqtt-broker` | `mica-mqtt-broker 0.1.0` | `pkgs/micad/broker/Cargo.toml` |
+| micad | `/usr/bin/micad` | `micad 0.1.0 (<commit>)` | `pkgs/micad/micad/Cargo.toml` |
+| apid | `/usr/bin/apid` | `apid 0.1.0 (<commit>)` | `pkgs/micad/apid/Cargo.toml` |
 
 **Five of the seven container binaries are not in `/usr/bin`.**
 `podman-install.sh` writes them through a `${VAR}`-assembled destination, so the
@@ -653,12 +653,12 @@ about:
 
 | line | tokens |
 |------|--------|
-| `mosd 0.1.0 (abc1234)` | `["0.1.0"]` |
-| `mosd 0.1.0-dirty (abc1234-dirty)` | `["0.1.0"]` |
+| `micad 0.1.0 (abc1234)` | `["0.1.0"]` |
+| `micad 0.1.0-dirty (abc1234-dirty)` | `["0.1.0"]` |
 | `apid 0.1.0 (unknown)` | `["0.1.0"]` |
-| `mosd 0.1.0 (0123456)` — all-digit sha | `["0.1.0"]` |
-| `mosd 0.10.0 (abc1234)` | `["0.10.0"]` |
-| `mosd 0.1.0-rc.1 (abc1234)` | `["0.1.0"]` — a **recorded limit** |
+| `micad 0.1.0 (0123456)` — all-digit sha | `["0.1.0"]` |
+| `micad 0.10.0 (abc1234)` | `["0.10.0"]` |
+| `micad 0.1.0-rc.1 (abc1234)` | `["0.1.0"]` — a **recorded limit** |
 
 The last is a boundary rather than a bug: a pre-release pin and a pre-release
 output would both carry the suffix, the token would be the numeric head only,
@@ -755,7 +755,7 @@ of what is outstanding and a stale record understates the gap.
 
 **The names go on the RESULT line, not just the count**:
 
-    RESULT: INCOMPLETE (10 pass, 0 fail, 2 unclaimed, of 12). UNCLAIMED: mosd, apid. …
+    RESULT: INCOMPLETE (10 pass, 0 fail, 2 unclaimed, of 12). UNCLAIMED: micad, apid. …
 
 A count alone habituates: the number is precisely the part a reader stops
 seeing.

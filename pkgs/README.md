@@ -20,7 +20,7 @@ device. It lives here because it is source this repository compiles, and
 because the alternative — splitting one crate across two trees over which
 binary runs where — buys nothing.
 
-`rauc-sign/` arrived here and `mosd/` at M4. Naming the second one
+`rauc-sign/` arrived here and `micad/` at M4. Naming the second one
 before it landed was correct: this file states the parent's rule, not its
 current contents, and a rule written only after the fact is a description
 rather than a constraint.

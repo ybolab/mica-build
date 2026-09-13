@@ -13,7 +13,7 @@ function fixture(machine = 62) {
   bytes.writeUInt16LE(machine, 18); bytes.writeUInt32LE(1, 20); bytes.writeUInt16LE(64, 52)
   bytes.writeBigUInt64LE(64n, 32); bytes.writeUInt16LE(56, 54); bytes.writeUInt16LE(1, 56)
   bytes.writeUInt32LE(1, 64); bytes.writeBigUInt64LE(512n, 96)
-  const init = join(root, 'mos-init'), shutdown = join(root, 'mos-shutdown')
+  const init = join(root, 'mica-init'), shutdown = join(root, 'mica-shutdown')
   for (const path of [init, shutdown]) writeFileSync(path, bytes, { mode: 0o755 })
   return { root, bytes, init, shutdown }
 }

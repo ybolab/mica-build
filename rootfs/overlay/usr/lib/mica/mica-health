@@ -1,0 +1,313 @@
+#!/bin/sh
+# mos health gate -- the PENDING_CONFIRM -> CONFIRMED edge.
+#
+# THE QUESTION THIS GATE ASKS IS "CAN THIS SLOT BE RECOVERED", NOT "IS THIS
+# DEVICE HEALTHY". A rollback buys back exactly one thing: a slot an operator or
+# the fleet can reach and update. If the booted slot can be reached and updated,
+# rolling back gains nothing and spends the boot credits that protect the device
+# from a genuinely dead update.
+#
+# So the gate asserts a REQUIRED set -- named in /etc/mica/health.conf as
+# `require=<member>` lines, one probe each -- and everything else it observes is
+# REPORTED rather than fatal. It used to be the other way round: deny-by-default
+# over every failed unit on the system with a `tolerate-failed` allowlist that
+# shipped empty, so every unit in the image held a veto over the device's boot
+# credits and nobody had decided that for any of them. On 2026-09-08 a cx3576
+# lost a boot credit every boot to a oneshot that governs nothing on that SKU.
+# That rule was also too LAX in the other direction: a daemon that owns its bus
+# name and has stopped answering is `active (running)`, not `failed`, so the
+# sweep confirmed slots that could not take an update. PLAN-089 has the set, the
+# justification for each member and the price of its absence.
+#
+# Confirm only after the required functional probes pass. The service failure
+# handler requests a reboot unless shared DATA failed, which needs recovery.
+
+CONF=${MOS_HEALTH_CONF:-/etc/mica/health.conf}
+
+log() { echo "mica-health: $*"; }
+fail() { echo "mica-health: FAIL $*" >&2; exit 1; }
+
+# First value of `key=` in the conf, empty when the conf or the key is absent.
+conf_get() { [ -r "$CONF" ] && sed -n "s/^$1=//p" "$CONF" | head -n1; }
+# Every value of `key=` in the conf, one per line.
+conf_all() { [ -r "$CONF" ] && sed -n "s/^$1=//p" "$CONF"; }
+
+PROBE_TIMEOUT=$(conf_get probe-timeout-sec)
+: "${PROBE_TIMEOUT:=10}"
+
+# Run a probe under the configured timeout. `timeout` is coreutils and always
+# present on the target; the fallback keeps the script usable without it.
+run() {
+    if command -v timeout >/dev/null 2>&1; then
+        timeout "$PROBE_TIMEOUT" "$@"
+    else
+        "$@"
+    fi
+}
+
+have() { command -v "$1" >/dev/null 2>&1; }
+# `systemctl list-unit-files <name>` exits 0 with empty output on some
+# versions when the unit is absent, so test the output rather than $?.
+unit_present() { [ -n "$(run systemctl list-unit-files --no-legend "$1" 2>/dev/null)" ]; }
+
+# Best-effort health report into micad's live-state tree at health.<component>.
+# Never fatal: the report is observability, not a gate.
+report_health() {
+    have busctl || return 0
+    run busctl --system --quiet call com.mica.micad /com/mos/micad \
+        com.mica.micad1 ReportHealth sss "$1" "$2" "$3" >/dev/null 2>&1 ||
+        log "note: could not report $1 health to micad"
+}
+
+# The authenticated early loader and deployment backend identify the running
+# deployment. Missing shared storage or malformed output is a gate failure.
+have mica-deploy || fail "mica-deploy is not installed"
+have systemctl || fail "systemctl is not available"
+BOOTED=$(run mica-deploy booted 2>&1) || fail "deployment status failed: $BOOTED"
+printf '%s\n' "$BOOTED" | grep -qx '[0-9a-f]\{64\}' || fail "cannot parse deployment identity"
+log "booted deployment: $BOOTED"
+
+# --- the required set -------------------------------------------------------
+#
+# What this slot must be able to do for the boot to be confirmed. Read from the
+# conf and NOT defaulted: there is no compiled-in set to fall back to, because a
+# gate that silently substitutes its own criterion when the image supplied none
+# is a gate whose criterion cannot be read off the image.
+#
+# TWO VACUITY GUARDS, and both are reachable in production rather than only from
+# a test:
+#
+#   * an EMPTY set is "always mark good" -- the empty `tolerate-failed`
+#     allowlist read from the other side. /etc/mica/health.conf missing from the
+#     overlay, unreadable, or shipped with its `require=` lines deleted all
+#     produce it, and all three REFUSE.
+#   * an UNKNOWN member name is the empty set arriving by instalments: one typo
+#     and the set silently shrinks. It REFUSES and names the vocabulary.
+#
+# A third case follows from the same rule and is a deliberate change of
+# behaviour: a required member the gate cannot PROBE is a refusal, not a skip.
+# `require=apid` on an image with no apid.service, or with neither curl nor
+# wget, means the gate was told to establish something it has no way to
+# establish. The skip that used to be logged there was a hole; the image
+# contract's `health-gate-http-client` check exists because of it.
+REQUIRED=$(conf_all require)
+[ -n "$REQUIRED" ] || fail "no \`require=\` line in $CONF, so this gate has no criterion" \
+    "to confirm the booted slot against. An empty required set means \"always mark good\";" \
+    "refusing rather than confirming a slot nothing was checked on."
+for member in $REQUIRED; do
+    case "$member" in
+    boot-settled | micad | apid) ;;
+    *)
+        fail "$CONF requires \`$member\`, which this gate does not implement." \
+            "The members are: boot-settled, micad, apid. Ignoring an unrecognised name" \
+            "would shrink the required set silently."
+        ;;
+    esac
+done
+requires() {
+    for m in $REQUIRED; do
+        [ "$m" = "$1" ] && return 0
+    done
+    return 1
+}
+log "required set: $(printf '%s ' $REQUIRED)"
+
+# --- required member: boot-settled -----------------------------------------
+#
+# THIS GATE CANNOT WAIT FOR `is-system-running` TO SAY `running`, and the first
+# version of this probe did exactly that.
+#
+# mica-health.service is `WantedBy=multi-user.target`, so it is a job in the
+# INITIAL TRANSACTION. `is-system-running` reports `starting` until every job
+# in that transaction is done -- including this one. The probe was therefore
+# waiting for a state that requires its own completion: it burned the full
+# settle window on every boot and then failed. Measured on two x64 boots:
+# "Startup finished" landed 31 ms and 35 ms AFTER this unit exited, which is
+# the signature of being the last job.
+#
+# `tests/health-test.sh` never caught it because it stubs the answer
+# (`is-system-running) echo "${FAKE_SYS_STATE:-running}"`), so the probe was
+# handed the state it wanted and the suite stayed green for as long as nobody
+# booted the thing.
+#
+# WHAT THIS MEMBER ASKS is "did the boot transaction FINISH" -- was
+# multi-user.target reached. It is not "did anything fail": `degraded` differs
+# from `running` only in that some unit failed, and a failed unit is reported
+# below rather than confirmed against. What `maintenance` means is that the
+# system is in the emergency path with no multi-user.target, therefore no micad,
+# no apid, no sshd and no network -- there is no route in of any kind, and none
+# of the other members could even be evaluated.
+#
+# So `starting` is resolved rather than trusted: if the only job still RUNNING
+# is this gate, nothing else is going to change and the boot is finished as far
+# as every other unit is concerned. If some other job is still running, that is
+# a real "still starting" and it is named.
+SETTLE=$(conf_get settle-sec)
+: "${SETTLE:=60}"
+SELF_UNIT=mica-health.service
+
+# Units of jobs still in state `running`, excluding this gate's own. A job in
+# state `waiting` is blocked on ordering -- mica-status-led.service waits on
+# this unit by design -- so waiting jobs are not evidence of anything.
+other_running_jobs() {
+    run systemctl list-jobs --no-legend --plain 2>/dev/null |
+        awk -v self="$SELF_UNIT" '$4 == "running" && $2 != self {print $2}' |
+        tr '\n' ' '
+}
+
+# The poll runs whether or not boot-settled is required: it is how this gate
+# waits for the system to stop moving before it probes anything. Only the
+# VERDICT below is conditional.
+waited=0
+while :; do
+    sysstate=$(run systemctl is-system-running 2>/dev/null)
+    case "$sysstate" in
+    initializing | starting) ;;
+    *) break ;;
+    esac
+    # Nothing but this gate is running: waiting longer cannot change the
+    # answer, because the answer is waiting on us. Without this the settle
+    # window is spent in full on EVERY boot.
+    others=$(other_running_jobs)
+    [ -z "$others" ] && break
+    [ "$waited" -ge "$SETTLE" ] && break
+    sleep 1
+    waited=$((waited + 1))
+done
+log "systemd is-system-running = ${sysstate:-unknown} (settled after ${waited}s)"
+
+# Computed once, then judged: empty means the boot transaction finished,
+# otherwise the sentence saying why it did not.
+case "$sysstate" in
+running | degraded)
+    settled_why=
+    ;;
+initializing | starting)
+    others=$(other_running_jobs)
+    if [ -n "$others" ]; then
+        settled_why="systemd is still ${sysstate} after ${waited}s with jobs running that are not this gate: ${others}"
+    else
+        settled_why=
+    fi
+    ;;
+*)
+    settled_why="systemd is-system-running = ${sysstate:-unknown}"
+    ;;
+esac
+
+if requires boot-settled; then
+    [ -z "$settled_why" ] || fail "required member boot-settled: $settled_why"
+    log "required member boot-settled: OK (${sysstate:-unknown})"
+else
+    log "member boot-settled not required${settled_why:+ - would have failed: $settled_why}"
+fi
+
+# --- report: failed units (never fatal) ------------------------------------
+#
+# The blanket sweep this replaces was the defect PLAN-089 exists for. Losing it
+# must not mean nobody learns a unit failed, so the same enumeration now
+# REPORTS: one journal line per unit, and one live-state entry at health.units
+# that reaches `GET /api/v1/state/health` and the diagnostic snapshot's
+# `failures.health` with no redaction-allowlist change.
+#
+# `degraded` is the status on purpose. It inherits the existing guarantee that
+# mica-health's `degraded` is not in the reboot gate's `blockingStatuses`
+# (pkgs/micad/micad/src/bus.rs), so a reported failed unit can no more block a
+# reboot than a full /var can. This runs BEFORE the remaining members so the
+# list is in the journal even when the gate goes on to fail.
+failed=$(run systemctl list-units --state=failed --no-legend --plain --full 2>/dev/null |
+    awk '{print $1}')
+failed_count=0
+failed_names=
+for unit in $failed; do
+    failed_count=$((failed_count + 1))
+    log "note: failed unit: $unit"
+    # The detail string is capped by micad at 1024 bytes; the journal above and
+    # the snapshot's own `failures.units` reader carry the complete list.
+    [ "$failed_count" -le 10 ] && failed_names="${failed_names:+$failed_names }$unit"
+done
+if [ "$failed_count" = 0 ]; then
+    log "no failed units"
+    report_health units ok "no failed units"
+else
+    detail="$failed_count failed: $failed_names"
+    [ "$failed_count" -gt 10 ] && detail="$detail (+$((failed_count - 10)) more)"
+    log "$failed_count failed unit(s) - REPORTED, not fatal: $failed_names"
+    report_health units degraded "$detail"
+fi
+
+# --- required member: micad -------------------------------------------------
+#
+# GetState("") is the cheapest existing call on com.mica.micad1; reaching it
+# proves the daemon owns its bus name and is ANSWERING, which is the part a
+# unit-state sweep cannot see.
+#
+# The management service exposes the native deployment status and actions to
+# apid. Health requires that control path to answer before confirmation.
+if requires micad; then
+    have busctl ||
+        fail "required member micad: busctl is not in this image, so the gate cannot" \
+            "establish that micad answers. Ship busctl or drop \`require=micad\` from $CONF."
+    unit_present micad.service ||
+        fail "required member micad: micad.service is not installed in this image." \
+            "$CONF requires something this image does not ship."
+    run busctl --system --quiet call com.mica.micad /com/mos/micad \
+        com.mica.micad1 GetState s "" >/dev/null 2>&1 ||
+        fail "required member micad: micad did not answer com.mica.micad1.GetState on the" \
+            "system bus, so no update can be installed by any route."
+    log "required member micad: OK"
+fi
+
+# --- required member: apid -------------------------------------------------
+#
+# apid serves HTTPS with a self-signed certificate, so the probe skips
+# verification; /healthz is apid's existing endpoint and bypasses its auth gate.
+#
+# Required because apid is the only NETWORK route in: the `prod` image profile
+# seeds SSH off (pkgs/micad/micad/src/provisioning.rs), so with apid down micad
+# would take a bundle that nothing can deliver without physical access to the
+# serial console. An image that genuinely ships no apid drops the line.
+if requires apid; then
+    unit_present apid.service ||
+        fail "required member apid: apid.service is not installed in this image." \
+            "$CONF requires something this image does not ship."
+    if have curl; then
+        run curl -sS -k -o /dev/null -f https://127.0.0.1/healthz ||
+            fail "required member apid: apid did not answer https://127.0.0.1/healthz"
+    elif have wget; then
+        run wget -q --no-check-certificate -O /dev/null https://127.0.0.1/healthz ||
+            fail "required member apid: apid did not answer https://127.0.0.1/healthz"
+    else
+        fail "required member apid: neither curl nor wget is in this image, so the gate" \
+            "cannot establish that apid answers. A SKIP here would confirm a slot with no" \
+            "remote route into it."
+    fi
+    log "required member apid: OK"
+fi
+
+# --- report: /var pressure (never fatal) -----------------------------------
+THRESHOLD=$(conf_get var-threshold-pct)
+: "${THRESHOLD:=85}"
+used=$(df -P /var 2>/dev/null | awk 'NR==2 {gsub(/%/,"",$5); print $5}')
+case "$used" in
+'' | *[!0-9]*)
+    log "/var usage unknown - not reported"
+    ;;
+*)
+    if [ "$used" -ge "$THRESHOLD" ]; then
+        log "/var at ${used}% (threshold ${THRESHOLD}%) - reported as degraded, NOT fatal"
+        report_health var degraded "/var at ${used}% of capacity (threshold ${THRESHOLD}%)"
+    else
+        log "/var at ${used}% (threshold ${THRESHOLD}%)"
+        report_health var ok "/var at ${used}% of capacity"
+    fi
+    ;;
+esac
+
+# --- confirm ---------------------------------------------------------------
+if run mica-deploy confirm >/dev/null 2>&1; then
+    log "booted slot $BOOTED marked good (PENDING_CONFIRM -> CONFIRMED)"
+else
+    fail "deployment confirmation failed for $BOOTED"
+fi
+exit 0

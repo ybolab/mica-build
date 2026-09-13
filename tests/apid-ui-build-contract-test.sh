@@ -2,10 +2,10 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-REL_DIST="pkgs/mosd/apid/ui/dist"
+REL_DIST="pkgs/micad/apid/ui/dist"
 DIST_PROBE="${REL_DIST}/index.html"
-BUILD_SCRIPT="${ROOT}/pkgs/mosd/apid/ui/build.sh"
-CHECK_SCRIPT="${ROOT}/pkgs/mosd/apid/ui/run.sh"
+BUILD_SCRIPT="${ROOT}/pkgs/micad/apid/ui/build.sh"
+CHECK_SCRIPT="${ROOT}/pkgs/micad/apid/ui/run.sh"
 OUTPUT_REL="_out/apid-ui/dist"
 
 fail() {
@@ -44,13 +44,13 @@ if grep -Eq 'bun (install|run)|command -v bun' "${CHECK_SCRIPT}"; then
     fail "the frontend quality gate still owns a second Bun execution path"
 fi
 
-grep -q 'MOS_APID_UI_DIST_DIR' "${ROOT}/pkgs/mosd/apid/build.rs" ||
+grep -q 'MOS_APID_UI_DIST_DIR' "${ROOT}/pkgs/micad/apid/build.rs" ||
     fail "apid/build.rs does not require the generated UI directory"
 
 for entry in \
-    "pkgs/mosd/hack/check.sh" \
-    "pkgs/mosd/hack/build-target.sh" \
-    "pkgs/mosd/hack/build-deb.sh"
+    "pkgs/micad/hack/check.sh" \
+    "pkgs/micad/hack/build-target.sh" \
+    "pkgs/micad/hack/build-deb.sh"
 do
     grep -q 'apid/ui/build.sh' "${ROOT}/${entry}" ||
         fail "${entry} does not build the UI before Cargo"
@@ -62,8 +62,8 @@ do
 done
 
 for entry in \
-    "pkgs/mosd/hack/build-target.sh" \
-    "pkgs/mosd/hack/build-deb.sh"
+    "pkgs/micad/hack/build-target.sh" \
+    "pkgs/micad/hack/build-deb.sh"
 do
     grep -q -- '-v "${REPO_ROOT}:/src:ro"' "${ROOT}/${entry}" ||
         fail "${entry} does not mount repository source read-only"
@@ -75,7 +75,7 @@ do
         fail "${entry} does not move Cargo writes out of the source tree"
 done
 
-if grep -q 'pkgs/mosd/apid/ui/dist' "${ROOT}/.github/workflows/check.yml"; then
+if grep -q 'pkgs/micad/apid/ui/dist' "${ROOT}/.github/workflows/check.yml"; then
     fail "CI still consumes generated UI assets from the source tree"
 fi
 

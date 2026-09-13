@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1@sha256:ecfaec9ed6d810b56388c508f4121597bfbba70d41a6dfeee4d8cad5f295fc32
 # check=skip=InvalidDefaultArgInFrom
-# The system producer: the `mos-system` package.
+# The system producer: the `mica-system` package.
 #
 #   bash build-env/deb/build.sh --producer system --arch all
 #
@@ -48,8 +48,8 @@ ARG MOS_DEB_SOURCE_COMMIT
 # WHAT IS DELIBERATELY LEFT OUT OF A TREE THAT IS OTHERWISE COPIED WHOLESALE:
 #
 #   /etc/containers/** and /etc/systemd/system/etc-containers-systemd.mount
-#     -> `mos-podman`. Files AND directories: dpkg would let two packages share
-#        the bare /etc/containers/systemd directory, but mos-podman owns every
+#     -> `mica-podman`. Files AND directories: dpkg would let two packages share
+#        the bare /etc/containers/systemd directory, but mica-podman owns every
 #        file beneath it, so leaving the whole subtree to it leaves nothing for
 #        integration to reconcile. The package gate's unique-ownership check
 #        reads one pool at a time, and these two packages do not share a pool
@@ -57,8 +57,8 @@ ARG MOS_DEB_SOURCE_COMMIT
 #        until then, which is the most expensive place to find it.
 #   /etc/fstab.in, /etc/repart.d and board boot.mount -> board packages,
 #     rendered from the current three-partition board policy.
-#   /usr/lib/mos/profile.conf -> mos-profile-dev / mos-profile-prod
-#   the TLS trust bundle    -> `mos-ca-trust`
+#   /usr/lib/mica/profile.conf -> mica-profile-dev / mica-profile-prod
+#   the TLS trust bundle    -> `mica-ca-trust`
 #   wpa_supplicant, hostapd and bluetooth units and mounts -> the radio packages
 #   `rm -f /etc/ssh/ssh_host_*` -> a whole-image finalizer step, not a package
 #
@@ -66,8 +66,8 @@ ARG MOS_DEB_SOURCE_COMMIT
 # the scripts that own them print them today: 80-dhcp.network is the five lines
 # rootfs/scripts/network-and-ssh-units.sh writes, and 00-volatile.conf is
 # the two rootfs/stages/10-base.Dockerfile writes. 80-dhcp.network must keep
-# losing to anything mosd renders into /run/systemd/network, which is why the
-# `80-` prefix sits between mosd's `50-` and the WiFi reconcilers' `90-`.
+# losing to anything micad renders into /run/systemd/network, which is why the
+# `80-` prefix sits between micad's `50-` and the WiFi reconcilers' `90-`.
 #
 # ENABLEMENT IS PACKAGE-OWNED FILES: the wants-symlinks below are payload, in
 # the exact set and with the exact targets overlay-install.sh and
@@ -104,7 +104,7 @@ ARG MOS_DEB_SOURCE_COMMIT
 # preset file the same command writes nothing. What that would cost if it ever
 # fired: the unit's ExecStart is `nft -f /etc/nftables.conf`, and the config
 # nftables ships begins with `flush ruleset`, so an enabled unit clears
-# netavark's container-network rules at every boot. mos-system declares nftables
+# netavark's container-network rules at every boot. mica-system declares nftables
 # in Depends, so the unit is in every image now; a preset-all, a future preset
 # file or an upstream packaging change that adds an enable line all lead there,
 # and this file is what stops them.
@@ -136,45 +136,45 @@ ARG MOS_DEB_SOURCE_COMMIT
 # cannot generate root-capable units from STATE with no operator decision.
 #
 # THE OFFLINE PROVISIONING TRANSPORT (PLAN-046 / RFCT-282) is
-# mos-provisioning-import, its unit, and the multi-user wants-link below. It is
-# mos-system payload and not mosd payload even though mosd is what reads what
+# mica-provisioning-import, its unit, and the multi-user wants-link below. It is
+# mica-system payload and not micad payload even though micad is what reads what
 # it stages: the script mounts GPT-labelled boot slots and removable block
 # devices read-only, which is layout knowledge this package already owns
 # (/etc/repart.d, the mount units), and an image built with WITH_MOSD=0 still
 # wants the medium left alone rather than a dangling unit. The unit orders
-# itself Before=mosd.service from its own [Unit] section, so nothing in mosd's
+# itself Before=micad.service from its own [Unit] section, so nothing in micad's
 # package has to know it exists.
 #
 # The health service enablement is copied from the immutable overlay.
 #
-# /var/lib/mos is an empty directory and is load-bearing: it and
-# var-lib-mos.mount are two halves of one mechanism, mosd.service declares
-# `RequiresMountsFor=/var/lib/mos`, and pkgs/mosd/deb/README.md records that
-# mosd names mos-system in Depends rather than shipping the directory itself.
+# /var/lib/mica is an empty directory and is load-bearing: it and
+# var-lib-mica.mount are two halves of one mechanism, micad.service declares
+# `RequiresMountsFor=/var/lib/mica`, and pkgs/micad/deb/README.md records that
+# micad names mica-system in Depends rather than shipping the directory itself.
 # /root is 0700 root:root for the reason stages/20-install gives: a root home
 # that reached the image group- or world-readable would be a different defect
 # from the one root.mount fixes.
 RUN set -eu; \
-    R=/stage/mos-system; \
-    for f in mos-boot-failure mos-data-layout mos-grow-data mos-health mos-provisioning-import mos-seed-home \
-             mos-seed-root mos-seed-state mos-seed-var mos-shadow-reconcile; do \
-        install -D -m 0755 "/in/overlay/usr/lib/mos/${f}" "${R}/usr/lib/mos/${f}"; \
+    R=/stage/mica-system; \
+    for f in mica-boot-failure mica-data-layout mica-grow-data mica-health mica-provisioning-import mica-seed-home \
+             mica-seed-root mica-seed-state mica-seed-var mica-shadow-reconcile; do \
+        install -D -m 0755 "/in/overlay/usr/lib/mica/${f}" "${R}/usr/lib/mica/${f}"; \
     done; \
-    for f in mos-health.service; do \
+    for f in mica-health.service; do \
         install -D -m 0644 "/in/overlay/usr/lib/systemd/system/${f}" \
             "${R}/usr/lib/systemd/system/${f}"; \
     done; \
-    for f in mos-load-extensions.service mos-boot-failure.service mos-apply-hostname.service mos-data-layout.service mos-provisioning-import.service \
-             mos-seed-home.service mos-seed-root.service \
-             mos-seed-state.service mos-seed-var.service mos-shadow-reconcile.service \
-             mos.mount mos-containers.mount srv.mount var-lib-mos.mount var.mount \
+    for f in mica-load-extensions.service mica-boot-failure.service mica-apply-hostname.service mica-data-layout.service mica-provisioning-import.service \
+             mica-seed-home.service mica-seed-root.service \
+             mica-seed-state.service mica-seed-var.service mica-shadow-reconcile.service \
+             mos.mount mos-containers.mount srv.mount var-lib-mica.mount var.mount \
              etc-hostname.mount etc-ssh.mount home.mount root.mount \
              usr-local-lib-systemd-system.mount; do \
         install -D -m 0644 "/in/overlay/etc/systemd/system/${f}" \
             "${R}/etc/systemd/system/${f}"; \
     done; \
-    install -D -m 0644 /in/overlay/etc/tmpfiles.d/mos-var.conf \
-        "${R}/etc/tmpfiles.d/mos-var.conf"; \
+    install -D -m 0644 /in/overlay/etc/tmpfiles.d/mica-var.conf \
+        "${R}/etc/tmpfiles.d/mica-var.conf"; \
     for unit in systemd-random-seed.service timers.target systemd-logind.service \
                 systemd-networkd-persistent-storage.service systemd-networkd.service \
                 systemd-tmpfiles-setup.service systemd-timesyncd.service; do \
@@ -190,7 +190,7 @@ RUN set -eu; \
     for unit in systemd-bless-boot.service quota.service quotacheck.service rpc-rquotad.service; do \
         ln -s /dev/null "${R}/etc/systemd/system/$unit"; \
     done; \
-    install -D -m 0644 /in/overlay/etc/mos/health.conf "${R}/etc/mos/health.conf"; \
+    install -D -m 0644 /in/overlay/etc/mica/health.conf "${R}/etc/mica/health.conf"; \
     install -D -m 0644 /in/overlay/etc/ssh/sshd_config.d/05-mos-authorized-keys.conf \
         "${R}/etc/ssh/sshd_config.d/05-mos-authorized-keys.conf"; \
     # The pinned time-sync base policy (PLAN-044). The daemon it configures is
@@ -220,7 +220,7 @@ RUN set -eu; \
     chmod 0644 "${R}/usr/lib/systemd/system-preset/50-mos-nftables.preset"; \
     install -d -m 0755 "${R}/srv" "${R}/mos" "${R}/mnt/data" "${R}/mnt/system" "${R}/home" \
         "${R}/usr/local/lib/systemd" "${R}/usr/local/lib/systemd/system" \
-        "${R}/var/lib/mos" "${R}/usr/lib/modules" "${R}/usr/lib/firmware" \
+        "${R}/var/lib/mica" "${R}/usr/lib/modules" "${R}/usr/lib/firmware" \
         "${R}/etc/systemd/system/local-fs.target.wants" \
         "${R}/etc/systemd/system/timers.target.wants" \
         "${R}/etc/systemd/system/multi-user.target.wants" \
@@ -228,19 +228,19 @@ RUN set -eu; \
         "${R}/etc/systemd/system/network-online.target.wants" \
         "${R}/etc/systemd/system/sysinit.target.wants"; \
     install -d -m 0700 "${R}/root"; \
-    for u in mos-data-layout.service mos.mount mos-containers.mount srv.mount mos-seed-state.service \
-             mos-seed-home.service mos-seed-root.service var-lib-mos.mount \
+    for u in mica-data-layout.service mos.mount mos-containers.mount srv.mount mica-seed-state.service \
+             mica-seed-home.service mica-seed-root.service var-lib-mica.mount \
              var.mount etc-ssh.mount etc-hostname.mount \
              home.mount root.mount usr-local-lib-systemd-system.mount \
-             mos-apply-hostname.service; do \
+             mica-apply-hostname.service; do \
         ln -s "/etc/systemd/system/${u}" \
             "${R}/etc/systemd/system/local-fs.target.wants/${u}"; \
     done; \
-    for u in mos-load-extensions.service mos-shadow-reconcile.service mos-provisioning-import.service; do \
+    for u in mica-load-extensions.service mica-shadow-reconcile.service mica-provisioning-import.service; do \
         ln -s "/etc/systemd/system/${u}" \
             "${R}/etc/systemd/system/multi-user.target.wants/${u}"; \
     done; \
-    for u in mos-health.service; do \
+    for u in mica-health.service; do \
         cp -a "/in/overlay/etc/systemd/system/multi-user.target.wants/${u}" \
             "${R}/etc/systemd/system/multi-user.target.wants/${u}"; \
     done; \
@@ -256,7 +256,7 @@ RUN set -eu; \
         "${R}/etc/systemd/system/network-online.target.wants/systemd-networkd-wait-online.service"; \
     ln -s /usr/lib/systemd/system/systemd-network-generator.service \
         "${R}/etc/systemd/system/sysinit.target.wants/systemd-network-generator.service"; \
-    # timesyncd's enablement, copied like the mos-health pair so the target is
+    # timesyncd's enablement, copied like the mica-health pair so the target is
     # the tree's: the overlay link spells /lib because that is what
     # deb-systemd-helper writes for a Debian-shipped unit, and its own postinst
     # would create this exact link -- shipping it as payload makes it declared
@@ -267,12 +267,12 @@ RUN set -eu; \
         "${R}/etc/systemd/system/sshd.service"; \
     ln -s /lib/systemd/system/fstrim.timer \
         "${R}/etc/systemd/system/timers.target.wants/fstrim.timer"; \
-    install -D -m 0644 /in/copyright "${R}/usr/share/doc/mos-system/copyright"; \
-    pack.sh --root "${R}" --control /in/control/mos-system.control \
-        --maintainer-scripts /in/maintainer/mos-system \
+    install -D -m 0644 /in/copyright "${R}/usr/share/doc/mica-system/copyright"; \
+    pack.sh --root "${R}" --control /in/control/mica-system.control \
+        --maintainer-scripts /in/maintainer/mica-system \
         --version "${MOS_DEB_VERSION}" --arch "${MOS_DEB_ARCH}" --out /out
 
-# The export stage, the shape pkgs/mosd/deb/mosd/Dockerfile ends in:
+# The export stage, the shape pkgs/micad/deb/micad/Dockerfile ends in:
 # `-o type=local` writes this stage's filesystem into _out/debs/<arch>/pool/
 # and nothing here installs into a root.
 FROM scratch AS out

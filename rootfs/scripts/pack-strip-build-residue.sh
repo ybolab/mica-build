@@ -23,8 +23,8 @@ set -eu
 # 1. sshd host keys. openssh-server's postinst generates a set at install time,
 # and on a signed rootfs that is one private key the whole fleet shares. It is
 # also random, so it would make the dm-verity root hash differ on every cold
-# build. mos-seed-state generates a per-device set into STATE instead (see
-# overlay/usr/lib/mos/mos-seed-state).
+# build. mica-seed-state generates a per-device set into STATE instead (see
+# overlay/usr/lib/mica/mica-seed-state).
 keys_before="$(find /rootfs/etc/ssh -maxdepth 1 -name 'ssh_host_*' 2>/dev/null | wc -l)"
 rm -f /rootfs/etc/ssh/ssh_host_*
 keys_after="$(find /rootfs/etc/ssh -maxdepth 1 -name 'ssh_host_*' 2>/dev/null | wc -l)"

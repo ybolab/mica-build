@@ -96,14 +96,14 @@ def archives(inputs: Path, packages: dict) -> dict:
 def generated_rules(engine: selector.Selector, inputs: Path, configured: dict) -> dict:
     """Resolve exact native installer outputs, never select an unowned subtree."""
     rules = engine.declarations
-    roots = rules['consumers']['mos-system']['roots']
+    roots = rules['consumers']['mica-system']['roots']
     public_producer = 'rootfs/build.sh public-meta staging; compose-install.sh meta_install'
     public_rules = [r for r in roots if r.get('generated') == public_producer]
     if public_rules:
-        manifest = '/usr/share/mos/meta/updates/manifest.json'
-        marker = '/usr/share/mos/meta/GENERATED'
+        manifest = '/usr/share/mica/meta/updates/manifest.json'
+        marker = '/usr/share/mica/meta/GENERATED'
         require(len(public_rules) == 1 and public_rules[0]['paths'] == [manifest], 'ambiguous public metadata declaration')
-        for directory in ['/usr/share/mos/meta', '/usr/share/mos/meta/updates']:
+        for directory in ['/usr/share/mica/meta', '/usr/share/mica/meta/updates']:
             require(configured.get(directory, {}).get('type') == 'directory' and engine.at(directory).is_dir()
                     and not engine.at(directory).is_symlink(), f'public metadata directory changed: {directory}')
         for path in [manifest, marker]:
@@ -260,7 +260,7 @@ def compose(args: argparse.Namespace) -> None:
     engine = selector.Selector(args)
     report = engine.select()
     contributors = {o['package'] for r in report['files'] if r['type'] != 'directory' for o in r['origins'] if 'package' in o}
-    manifest_path, _ = engine.resolve('/usr/share/mos/manifest.tsv', follow_leaf=False)
+    manifest_path, _ = engine.resolve('/usr/share/mica/manifest.tsv', follow_leaf=False)
     manifest = engine.at(manifest_path)
     require(manifest.is_file() and not manifest.is_symlink(), 'shipping manifest must be a regular file')
     manifest.write_text('#package\tversion\tarchitecture\n' + ''.join(f"{p}\t{records[p]['version']}\t{records[p]['architecture']}\n" for p in sorted(contributors)))
@@ -274,8 +274,8 @@ def compose(args: argparse.Namespace) -> None:
     report = engine.select()
     files = {row['path']: row for row in report['files']}
     for path in selector.tree_paths(root):
-        if path.startswith('/usr/share/mos/meta/'):
-            require(path in {'/usr/share/mos/meta/updates', '/usr/share/mos/meta/updates/manifest.json', '/usr/share/mos/meta/GENERATED'}
+        if path.startswith('/usr/share/mica/meta/'):
+            require(path in {'/usr/share/mica/meta/updates', '/usr/share/mica/meta/updates/manifest.json', '/usr/share/mica/meta/GENERATED'}
                     and path in files, f'undeclared public metadata: {path}')
     for path in files:
         forbidden = ('/mos-build-inputs', '/mos-compose', '/.debian-extra', '/debootstrap',

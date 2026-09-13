@@ -17,14 +17,14 @@ WANT="$(tr '\n' ' ' <"$LIST")"
 WANT_N="$(grep -c . "$LIST")"
 profile_n=0
 for p in ${WANT}; do
-    case "$p" in mos-profile-*) profile_n=$((profile_n + 1));; esac
+    case "$p" in mica-profile-*) profile_n=$((profile_n + 1));; esac
 done
 [ "$profile_n" -eq 1 ] || fail "resolved set must name exactly one profile package"
 printf '%s\n' '#!/bin/sh' 'exit 101' >/usr/sbin/policy-rc.d
 chmod 0755 /usr/sbin/policy-rc.d
 
 # Locked upstream archives are mounted from the persistent host cache. Unpack
-# both upstream and local payloads before configuration so mos-system presets
+# both upstream and local payloads before configuration so mica-system presets
 # are present when OpenSSH and other service maintainer scripts run.
 # The Bun builder validated JSON and rendered these exact records. Recheck the
 # archive bytes and control fields here without adding a JSON runtime to the OS.
@@ -85,9 +85,9 @@ meta_install() {
     META_INSTALLED="${META_INSTALLED} $1"
 }
 
-[ -s /mos-compose/meta-public/usr/share/mos/meta/updates/manifest.json ] ||
-    fail "/mos-compose/meta-public/usr/share/mos/meta/updates/manifest.json is missing or empty. It is staged from meta/updates/manifest.json and it is where this image says which server its updates come from, on which channel and against which package signing key; an image without it has no configuration to read and no anchor to check a package against"
-meta_install usr/share/mos/meta/updates/manifest.json
+[ -s /mos-compose/meta-public/usr/share/mica/meta/updates/manifest.json ] ||
+    fail "/mos-compose/meta-public/usr/share/mica/meta/updates/manifest.json is missing or empty. It is staged from meta/updates/manifest.json and it is where this image says which server its updates come from, on which channel and against which package signing key; an image without it has no configuration to read and no anchor to check a package against"
+meta_install usr/share/mica/meta/updates/manifest.json
 
 # THE DEVELOPMENT-GRADE MARKER, whose ABSENCE IS THE SUPPORTED STEADY STATE and
 # not an error. The two refusals above are the right shape for a required file
@@ -110,14 +110,14 @@ meta_install usr/share/mos/meta/updates/manifest.json
 # BOTH DISPOSITIONS ARE ANNOUNCED. This is the only member of the set whose
 # correct behaviour includes doing nothing, and in a log a silent nothing reads
 # exactly like the line that was never written.
-META_MARKER=/mos-compose/meta-public/usr/share/mos/meta/GENERATED
+META_MARKER=/mos-compose/meta-public/usr/share/mica/meta/GENERATED
 if [ -e "${META_MARKER}" ]; then
     { [ -f "${META_MARKER}" ] && [ -s "${META_MARKER}" ]; } ||
         fail "${META_MARKER} exists and is empty or is not a regular file. rootfs/build.sh stages meta/GENERATED only when it has content and refuses a staged path that is not a regular file, so this is not the tree it audited; the marker is what says the signing material behind this image is development-grade, and an unreadable one is baked into the dm-verity root saying nothing"
-    meta_install usr/share/mos/meta/GENERATED
-    echo "compose: /usr/share/mos/meta/GENERATED installed -- this image was built on DEVELOPMENT-GRADE signing material, it reports that grade on GET /api/v1/system/info, and the release gate refuses to publish it to candidate or stable"
+    meta_install usr/share/mica/meta/GENERATED
+    echo "compose: /usr/share/mica/meta/GENERATED installed -- this image was built on DEVELOPMENT-GRADE signing material, it reports that grade on GET /api/v1/system/info, and the release gate refuses to publish it to candidate or stable"
 else
-    echo "compose: no /usr/share/mos/meta/GENERATED -- meta/ carries no development-grade marker, so this image states production-grade signing material by shipping none. Not an error: that is what a production build looks like"
+    echo "compose: no /usr/share/mica/meta/GENERATED -- meta/ carries no development-grade marker, so this image states production-grade signing material by shipping none. Not an error: that is what a production build looks like"
 fi
 
 # THE NAMED SET RECONCILED AGAINST THE STAGED SET, which is the safeguard the
@@ -141,7 +141,7 @@ done
     fail "rootfs/build.sh staged public-set file(s) this script installs nowhere:${meta_unnamed}. Each member of the set is named on its own line here, so a staged file with no line is an entry that was added to META_PUBLIC and not here -- it is audited and copied into the build and then dropped, and the image ships without it while the build log reports it staged. Add the line, or take the entry out of META_PUBLIC"
 echo "compose: $(echo ${META_INSTALLED} | wc -w) public-set file(s) installed from meta/ --${META_INSTALLED}"
 
-# THE DEVICE IDENTITY, /usr/share/mos/release-identity.env: the file
+# THE DEVICE IDENTITY, /usr/share/mica/release-identity.env: the file
 # the management service reads to decide which published release is for this device
 # (board, profile) and whether one is newer than what is running (version).
 # Three facts about THIS BUILD, which is why no package carries them: an
@@ -155,10 +155,10 @@ echo "compose: $(echo ${META_INSTALLED} | wc -w) public-set file(s) installed fr
 # MOS_RELEASE_VERSION, which is `bash build-env/deb/version.sh`'s answer for
 # this tree, the same string it has already required the POOL to have been
 # built at. So the identity moves with the pool the packages came out of, and
-# the finalizer's /usr/share/mos/manifest.tsv, taken from the same dpkg
+# the finalizer's /usr/share/mica/manifest.tsv, taken from the same dpkg
 # database a few steps later, carries that version on every first-party row.
 #
-# MOS_RELEASE_COMMIT_DATE arrives the same way, and it is what mosd reports as
+# MOS_RELEASE_COMMIT_DATE arrives the same way, and it is what micad reports as
 # `system.commitDate`. It is the date of the commit INSIDE the version above --
 # build.sh reads it out of the stamp it has already checked the pool against,
 # so the two cannot come to name different commits -- and it is the one date in
@@ -172,7 +172,7 @@ echo "compose: $(echo ${META_INSTALLED} | wc -w) public-set file(s) installed fr
 # the tree-versus-pool case; what this covers is the seam between them -- an
 # argument that arrived wrong, or a caller that composed the list another way
 # -- and it is the same boundary-assertion reasoning as the profile count
-# above. The upstream repacks (mos-podman) carry their own upstream
+# above. The upstream repacks (mica-podman) carry their own upstream
 # version in front of the shared stamp and are expected not to match; the
 # first-party packages are.
 identity_version_owner=""
@@ -185,7 +185,7 @@ done
 [ -n "${identity_version_owner}" ] ||
     fail "MOS_RELEASE_VERSION is '${MOS_RELEASE_VERSION}' and no package installed into this root carries that version. It is meant to be the version build-env/deb/version.sh printed for the tree the pool was built from, so a value no first-party package here shares means the identity file would state a release this image is not"
 
-install -d -m 0755 /usr/share/mos
+install -d -m 0755 /usr/share/mica
 {
     printf '# Immutable root build identity for diagnostics. Written by\n'
     printf '# rootfs/compose/compose-install.sh from the arguments of the build\n'
@@ -199,8 +199,8 @@ install -d -m 0755 /usr/share/mos
     # so an image with the line is unmistakably not a release, and
     # build/src/release-manifest.ts refuses it outside the development channel.
     [ -z "${MOS_RELEASE_UNLOCKED:-}" ] || printf 'UNLOCKED=%s\n' "${MOS_RELEASE_UNLOCKED}"
-} >/usr/share/mos/release-identity.env
-chmod 0644 /usr/share/mos/release-identity.env
+} >/usr/share/mica/release-identity.env
+chmod 0644 /usr/share/mica/release-identity.env
 echo "compose: release identity ${MOS_BOARD}/${MOS_PROFILE} at ${MOS_RELEASE_VERSION}, source committed ${MOS_RELEASE_COMMIT_DATE} (the version ${identity_version_owner} carries)${MOS_RELEASE_UNLOCKED:+; UNLOCKED=${MOS_RELEASE_UNLOCKED}}"
 
 # NO INITRAMFS, asserted where the kernel and the root it must mount are

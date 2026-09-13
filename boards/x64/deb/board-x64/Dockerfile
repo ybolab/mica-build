@@ -23,8 +23,8 @@ RUN set -eu; \
     cp /render/repart.d/*.conf /stage/etc/repart.d/; \
     cp -a /render/systemd-repart.service.d /stage/etc/systemd/system/; \
     ln -s /etc/systemd/system/boot.mount /stage/etc/systemd/system/local-fs.target.wants/boot.mount; \
-    install -D -m 0644 /in/copyright /stage/usr/share/doc/mos-board-x64/copyright; \
-    pack.sh --root /stage --control /in/control/mos-board-x64.control \
+    install -D -m 0644 /in/copyright /stage/usr/share/doc/mica-board-x64/copyright; \
+    pack.sh --root /stage --control /in/control/mica-board-x64.control \
         --version "${MOS_DEB_VERSION}" --arch "${MOS_DEB_ARCH}" --out /out
 FROM scratch AS out
 COPY --from=pack /out/ /

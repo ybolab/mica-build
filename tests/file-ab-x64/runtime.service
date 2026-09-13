@@ -1,10 +1,10 @@
 [Unit]
 Description=File deployment runtime acceptance
-After=multi-user.target mos-load-extensions.service
+After=multi-user.target mica-load-extensions.service
 
 [Service]
 Type=exec
-ExecStart=/usr/lib/mos/test-file-runtime
+ExecStart=/usr/lib/mica/test-file-runtime
 RuntimeMaxSec=180
 
 [Install]

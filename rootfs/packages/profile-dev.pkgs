@@ -1,5 +1,5 @@
 # The development image marker. Exactly one profile package is installed --
-# the two Conflict by name -- and mosd FAILS CLOSED to prod when the file they
+# the two Conflict by name -- and micad FAILS CLOSED to prod when the file they
 # ship is missing, so a resolution carrying neither is an image that behaves as
 # production with every check green. resolve.sh refuses that resolution.
-mos-profile-dev
+mica-profile-dev

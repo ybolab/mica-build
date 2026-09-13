@@ -614,8 +614,8 @@ describe('ociExport -- the factory root as an OCI image', () => {
   })
 
   test('a stage that is not the terminal one is refused', () => {
-    // An OCI image of 10-base would be a root with no podman, no mos-deploy and no
-    // mosd in it -- and every smoke check for a binary that is not there has to
+    // An OCI image of 10-base would be a root with no podman, no mica-deploy and no
+    // micad in it -- and every smoke check for a binary that is not there has to
     // be written to notice that, or it passes.
     expect(() => ociExport(plan()[0]!, opts)).toThrow(/not the terminal stage/)
   })
@@ -698,7 +698,7 @@ describe('selectStages -- stage selection, in place of WITH_* build args', () =>
       '10-base.Dockerfile': FIRST,
       '30-feature-radios.Dockerfile': LINK,
       '31-feature-containers.Dockerfile': LINK,
-      '33-feature-mosd.Dockerfile': LINK,
+      '33-feature-micad.Dockerfile': LINK,
       '40-board.Dockerfile': LINK,
       '90-pack.Dockerfile': TERMINAL,
     })
@@ -709,7 +709,7 @@ describe('selectStages -- stage selection, in place of WITH_* build args', () =>
       undefined,
       'radios',
       'containers',
-      'mosd',
+      'micad',
       undefined,
       undefined,
     ])
@@ -720,7 +720,7 @@ describe('selectStages -- stage selection, in place of WITH_* build args', () =>
     expect(selectStages(stages, ['containers']).map((s) => s.name)).toEqual([
       '10-base',
       '30-feature-radios',
-      '33-feature-mosd',
+      '33-feature-micad',
       '40-board',
       '90-pack',
     ])
@@ -728,7 +728,7 @@ describe('selectStages -- stage selection, in place of WITH_* build args', () =>
 
   test('drops several at once, and the result is still a chain auditChain accepts', () => {
     const stages = discoverStages(dir())
-    const kept = selectStages(stages, ['containers', 'mosd', 'radios'])
+    const kept = selectStages(stages, ['containers', 'micad', 'radios'])
     expect(kept.map((s) => s.name)).toEqual(['10-base', '40-board', '90-pack'])
     expect(auditChain(kept, DEFAULT_TERMINAL_TARGET, DEFAULT_OCI_TARGET)).toEqual([])
   })
@@ -745,7 +745,7 @@ describe('selectStages -- stage selection, in place of WITH_* build args', () =>
     const stages = discoverStages(dir())
     const kept = selectStages(stages, ['containers'])
     expect(kept.map((s) => s.name)).toContain('30-feature-radios')
-    expect(kept.map((s) => s.name)).toContain('33-feature-mosd')
+    expect(kept.map((s) => s.name)).toContain('33-feature-micad')
   })
 
   // Distinct numbers, so the duplicate-NUMBER fault cannot see it, and the
@@ -767,7 +767,7 @@ describe('selectStages -- stage selection, in place of WITH_* build args', () =>
       scratch({
         '10-base.Dockerfile': FIRST,
         '31-feature-containers.Dockerfile': LINK,
-        '32-feature-mosd.Dockerfile': LINK,
+        '32-feature-micad.Dockerfile': LINK,
         '90-pack.Dockerfile': TERMINAL,
       }),
     )
@@ -783,7 +783,7 @@ describe('selectStages -- stage selection, in place of WITH_* build args', () =>
       /no stage here is named <number>-feature-contaners/,
     )
     expect(() => selectStages(stages, ['contaners'])).toThrow(
-      /The features are: containers, mosd, radios/,
+      /The features are: containers, micad, radios/,
     )
   })
 
@@ -852,13 +852,13 @@ describe('stageManifest', () => {
     )
     const builds = planChain(stages, { board: 'x64', supplied: { T: 'x' } })
     expect(stageManifest(builds, stages)).toContain('# declined: (none')
-    expect(stageManifest(builds, stages, ['containers', 'mosd'])).toContain(
-      '# declined: containers mosd',
+    expect(stageManifest(builds, stages, ['containers', 'micad'])).toContain(
+      '# declined: containers micad',
     )
     // Sorted, so two builds that declined the same set produce the same file
     // whatever order the flags were typed in.
-    expect(stageManifest(builds, stages, ['mosd', 'containers'])).toContain(
-      '# declined: containers mosd',
+    expect(stageManifest(builds, stages, ['micad', 'containers'])).toContain(
+      '# declined: containers micad',
     )
   })
 })
@@ -996,9 +996,9 @@ describe('parseArgs', () => {
   test('--without collects feature names, and is repeatable', () => {
     expect(parseArgs(['--board', 'x64', '--plan']).without).toEqual([])
     expect(
-      parseArgs(['--board', 'x64', '--plan', '--without', 'containers', '--without', 'mosd'])
+      parseArgs(['--board', 'x64', '--plan', '--without', 'containers', '--without', 'micad'])
         .without,
-    ).toEqual(['containers', 'mosd'])
+    ).toEqual(['containers', 'micad'])
   })
 
   test('--without refuses to swallow the next flag as its value', () => {

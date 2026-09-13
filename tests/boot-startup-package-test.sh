@@ -32,7 +32,7 @@ cases = [(['--target', ''], {}, False), (['--target', 'invalid'], {}, False),
          (['--target', 'aa64'], {'MOS_BOOT_TARGET': 'aa64'}, 'aa64')]
 for args, extra, target in cases:
     record.write_text('')
-    result = subprocess.run(['bash', str(repo / 'pkgs/mos-boot/build-tools.sh'), *args],
+    result = subprocess.run(['bash', str(repo / 'pkgs/mica-boot/build-tools.sh'), *args],
                             env=dict(env, **extra), capture_output=True, text=True, timeout=15)
     calls = [json.loads(line) for line in record.read_text().splitlines()]
     if not target:
@@ -40,7 +40,7 @@ for args, extra, target in cases:
     else:
         assert result.returncode == 0 and len(calls) == 1, result.stderr
         argv = calls[0]
-        assert argv[0] == 'build' and argv[-1] == str(repo / 'pkgs/mos-boot')
+        assert argv[0] == 'build' and argv[-1] == str(repo / 'pkgs/mica-boot')
         assert argv.count('MOS_BOOT_TARGET=' + target) == 1 and argv.count('--platform') == 1
         assert argv[argv.index('--platform') + 1] == 'linux/amd64'
         assert argv[argv.index('-t') + 1] == 'ai-agent/mos-boot-tools-' + {'x64': 'amd64', 'aa64': 'arm64'}[target]
@@ -48,7 +48,7 @@ for args, extra, target in cases:
         assert any(v.startswith('MOS_DEBIAN_SNAPSHOT=http://snapshot.debian.org/archive/debian/') for v in argv)
     print('PASS: target launcher', args, extra, target or 'refused')
 
-recipe = (repo / 'pkgs/mos-boot/Dockerfile').read_text().replace('\\\n', '')
+recipe = (repo / 'pkgs/mica-boot/Dockerfile').read_text().replace('\\\n', '')
 instructions = [line.strip() for line in recipe.splitlines() if line and not line.startswith('#')]
 runs = [line[4:] for line in instructions if line.startswith('RUN ')]
 assert instructions.count('ARG MOS_BOOT_TARGET=x64') == 1
@@ -85,7 +85,7 @@ for target in ('x64', 'aa64'):
     root = route / target; root.mkdir()
     for directory in ('etc/apt/sources.list.d', 'etc/apt/preferences.d', 'source'):
         (root / directory).mkdir(parents=True, exist_ok=True)
-    (root / 'versions.env').write_bytes((repo / 'pkgs/mos-boot/versions.env').read_bytes())
+    (root / 'versions.env').write_bytes((repo / 'pkgs/mica-boot/versions.env').read_bytes())
     (root / 'policy.patch').write_text('fixture patch boundary\n')
     commands = root / 'commands.txt'
     for code in runs:
@@ -115,17 +115,17 @@ for target in ('x64', 'aa64'):
 print('BOOT_TOOLS_TARGET_ROUTE_TEST_PASS cases=15 productionBuilds=0 targetExecutions=0')
 TARGET_ROUTE
 
-bash "$REPO/pkgs/mos-boot/initramfs.sh" "$WORK/first" x64
+bash "$REPO/pkgs/mica-boot/initramfs.sh" "$WORK/first" x64
 test "$(cat "$WORK/first/startup.files")" = init
 test "$(cat "$WORK/first/exitrd.files")" = shutdown
-cmp /input/mos-init "$WORK/first/init"
-cmp /input/mos-shutdown "$WORK/first/exitrd/shutdown"
-test "$(readlink "$WORK/first/sbin/mos-shutdown")" = /exitrd/shutdown
+cmp /input/mica-init "$WORK/first/init"
+cmp /input/mica-shutdown "$WORK/first/exitrd/shutdown"
+test "$(readlink "$WORK/first/sbin/mica-shutdown")" = /exitrd/shutdown
 test "$(find "$WORK/first" -type f | wc -l)" = 5
 for path in bin/busybox sbin/blkid sbin/veritysetup sbin/dmsetup lib usr/lib; do test ! -e "$WORK/first/$path"; done
 cp /output/initramfs.cpio "$WORK/first.cpio"
 mv /output/initramfs.cpio.zst "$WORK/first.zst"
-bash "$REPO/pkgs/mos-boot/initramfs.sh" "$WORK/repeat" x64
+bash "$REPO/pkgs/mica-boot/initramfs.sh" "$WORK/repeat" x64
 cmp "$WORK/first.cpio" /output/initramfs.cpio
 cmp "$WORK/first.zst" /output/initramfs.cpio.zst
 printf 'STARTUP_SINGLE_STATIC_MANIFEST_PASS\n'

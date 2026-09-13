@@ -6,9 +6,9 @@ Description=hostapd configuration from DATA state
 # reconciler's write fails on device and nowhere else — the provisioning AP,
 # which is the path to a device's configuration, never comes up.
 # The file carries the AP pre-shared key in the clear, so the DATA state directory is
-# 0700 (mos-seed-state) and must survive an A/B update.
-Requires=mos-seed-state.service
-After=mos-seed-state.service
+# 0700 (mica-seed-state) and must survive an A/B update.
+Requires=mica-seed-state.service
+After=mica-seed-state.service
 RequiresMountsFor=/mnt/data/state
 Before=hostapd@.service
 

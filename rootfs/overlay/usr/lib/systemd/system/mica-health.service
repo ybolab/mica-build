@@ -1,0 +1,21 @@
+[Unit]
+Description=mos health gate (confirm the authenticated deployment)
+Documentation=file:/usr/share/doc/mos/health
+# multi-user.target is the settle point: every boot service has been started by
+# the time it is reached. The unit is pulled in BY the target and ordered AFTER
+# it, so the target is reached without waiting for the gate — nothing in boot
+# can ever block on this unit. Residual `starting`/`initializing` states are
+# handled by the bounded poll inside the script, not by more ordering.
+After=multi-user.target
+OnFailure=mica-boot-failure.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/lib/mica/mica-health
+# Hard ceiling: the in-script settle poll defaults to 60s plus a handful of
+# 10s probes. Nothing waits on this unit, so the timeout only bounds the gate.
+TimeoutStartSec=180
+Restart=no
+
+[Install]
+WantedBy=multi-user.target

@@ -7,7 +7,7 @@ board=${2:?board required}
 case "$board" in x64|virt-arm64) ;; *) exit 1;; esac
 work=$(mktemp -d "$PWD/_out/kernel-faults.XXXXXX")
 printf 'Evidence: %s\n' "$work"
-bad=$(sed -n 's/.*mos-init: verified deployment \([a-f0-9]\{64\}\);.*/\1/p' "$evidence/boot.log" | head -1)
+bad=$(sed -n 's/.*mica-init: verified deployment \([a-f0-9]\{64\}\);.*/\1/p' "$evidence/boot.log" | head -1)
 [[ "$bad" =~ ^[a-f0-9]{64}$ ]]
 for mode in panic watchdog; do
  out="$work/$mode"
@@ -17,7 +17,7 @@ for mode in panic watchdog; do
  cat > "$out/kernel-fault.sh" <<SCRIPT
 #!/bin/sh
 set -eu
-[ "\$(mos-deploy booted)" = "$bad" ] || exit 0
+[ "\$(mica-deploy booted)" = "$bad" ] || exit 0
 [ "\$(cat /proc/sys/kernel/panic)" = 5 ]
 if [ "$mode" = watchdog ]; then echo 0 > /proc/sys/kernel/panic; fi
 echo 'FILE_AB_KERNEL_FAULT_TRIGGER: $mode' > /dev/console
@@ -27,10 +27,10 @@ SCRIPT
  cat > "$out/kernel-fault.service" <<'UNIT'
 [Unit]
 Description=Kernel failure acceptance before health confirmation
-Before=mos-health.service
+Before=mica-health.service
 [Service]
 Type=oneshot
-ExecStart=/bin/sh /var/lib/mos/kernel-fault.sh
+ExecStart=/bin/sh /var/lib/mica/kernel-fault.sh
 [Install]
 WantedBy=multi-user.target
 UNIT
@@ -68,7 +68,7 @@ PY
  timeout -k 15 450 docker run --rm --label ai-agent=true --network traefik -v "$out:/w" -v "$PWD/tests/file-ab-x64:/harness:ro" ai-agent/mos-p2-lab \
    bash /harness/boot.sh disk.img writable 400 "$board" > "$out/fallback.log" 2>&1
  grep -F FILE_AB_RUNTIME_PASS "$out/fallback.log"
- ! grep -F "mos-init: verified deployment $bad;" "$out/fallback.log"
+ ! grep -F "mica-init: verified deployment $bad;" "$out/fallback.log"
  bash tests/file-ab-x64/shutdown-check.sh "$out/fallback.log"
  printf 'FILE_AB_KERNEL_FAULT_FALLBACK_PASS: %s %s\n' "$board" "$mode"
 done

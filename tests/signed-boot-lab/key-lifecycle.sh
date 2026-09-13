@@ -36,7 +36,7 @@ docker run --rm --label ai-agent=true --network traefik -v "${work}:/w" \
 # mos-build-side: host
 for epoch in 2020-01-01 2045-01-01; do
     docker run --rm --label ai-agent=true --network traefik \
-        --name "ai-agent-mos-lifecycle-$$" -v "${work}:/w:ro" \
+        --name "ai-agent-mica-lifecycle-$$" -v "${work}:/w:ro" \
         --entrypoint /bin/sh "${image}" -ec '
             timeout 300 qemu-system-x86_64 -machine q35 -cpu max -m 3072 -smp 2 \
                 -nographic -no-reboot -rtc "base=$1" -kernel /w/kernel -initrd /w/initramfs.cpio \

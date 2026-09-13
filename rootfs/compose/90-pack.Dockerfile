@@ -74,19 +74,19 @@ RUN --mount=type=bind,source=rootfs/scripts,target=/mos-scripts \
 # has to weigh the root that actually ships.
 RUN dpkg-query -W -f='${Package}\t${Installed-Size}\n' > /rootfs-report.pkgs
 
-# The image's own bill of materials, SHIPPED: /usr/share/mos/manifest.tsv.
+# The image's own bill of materials, SHIPPED: /usr/share/mica/manifest.tsv.
 # The purge below takes /var/lib/dpkg away, so on the device this file is the
 # only record of what was installed and at which version -- and since the
 # upstream-versioned packages the version column actually says something
-# (mos-podman 5.8.6+git…, mos-deploy 0.1.0+git…). Sorted under LC_ALL=C so two
+# (mica-podman 5.8.6+git…, mica-deploy 0.1.0+git…). Sorted under LC_ALL=C so two
 # builds of one set are byte-identical. Written before the purge for the same
 # reason the inventory above is; verify asserts the file, its shape, and
 # the one git stamp its mos rows share.
-RUN install -d -m 0755 /usr/share/mos && \
+RUN install -d -m 0755 /usr/share/mica && \
     { printf '#package\tversion\tarchitecture\n'; \
     dpkg-query -W -f='${Package}\t${Version}\t${Architecture}\n' | LC_ALL=C sort; } \
-    >/usr/share/mos/manifest.tsv && \
-    cp /usr/share/mos/manifest.tsv /mos-build-inputs/manifest.tsv
+    >/usr/share/mica/manifest.tsv && \
+    cp /usr/share/mica/manifest.tsv /mos-build-inputs/manifest.tsv
 
 # Read the configured target without running it or changing its metadata.
 FROM pack-tools AS captured
@@ -165,7 +165,7 @@ RUN --mount=type=bind,source=rootfs/scripts,target=/mos-scripts \
 # below over the root that ships, and the purge takes /var/lib/dpkg with it.
 #
 # WHAT IT IS FOR, and it is not a duplicate of the preset files. A preset
-# prevents a link from being WRITTEN, and mos-system's ssh rule works because
+# prevents a link from being WRITTEN, and mica-system's ssh rule works because
 # apt unpacks that package before it configures openssh-server. cx3576's
 # getty@tty1 rule cannot work that way: systemd is configured before the board
 # package carrying the rule is unpacked, so the assembled image shipped the
@@ -191,7 +191,7 @@ RUN --mount=type=bind,source=rootfs/scripts,target=/mos-scripts \
 # self-checks below are what make this step able to fail; a purge that silently
 # removed too much would surface as a device that does not boot, days later.
 
-# Measured before removing, not assumed. Nothing in overlay, in mosd or in
+# Measured before removing, not assumed. Nothing in overlay, in micad or in
 # apid invokes dpkg or apt at runtime -- the only two mentions in the overlay
 # are comments. Every perl script in the image is maintainer-script tooling
 # that runs during installation and never after (deb-systemd-helper,
@@ -267,7 +267,7 @@ ARG BOARD_RADIOS=""
 # is what needs them. MOS_ARCH picks which of the two cross binutils below
 # rewrites the board's ELF -- this stage runs on the BUILD platform, so the
 # native objcopy is the wrong one for the tree it is pointed at. MOS_BOARD names
-# the one directory under /usr/lib/mos/board/ that carries this board's boot
+# the one directory under /usr/lib/mica/board/ that carries this board's boot
 # blobs; a glob would find it too, and would also find a second one without
 # saying which was meant.
 ARG MOS_ARCH
@@ -306,7 +306,7 @@ RUN --mount=type=bind,source=rootfs/scripts,target=/mos-scripts \
 # Two things today. sshd host keys: openssh-server's postinst generates a set at
 # install time, and on a signed rootfs that is one private key the whole fleet
 # shares; it is also random, so it would move the verity root hash on every cold
-# build. mos-seed-state generates a per-device set into STATE instead.
+# build. mica-seed-state generates a per-device set into STATE instead.
 # /usr/sbin/policy-rc.d: the Debian docker image ships it so that a maintainer
 # script cannot start a daemon during a build, and on a device it is a file that
 # answers 101 to every invoke-rc.d for a reason that stopped applying when the
@@ -325,7 +325,7 @@ RUN --mount=type=bind,source=rootfs/scripts,target=/mos-scripts \
 # the host keys right after installing openssh-server and keeps doing so, so on
 # the chain path that count is 0 and this is a tripwire while the policy-rc.d
 # count is 1 and this is the removal; on the composition path openssh-server
-# arrives through mos-system's Depends inside one apt transaction so the key
+# arrives through mica-system's Depends inside one apt transaction so the key
 # count is real, and compose-install.sh has already removed the policy-rc.d it
 # wrote, so that count is 0. Both paths reach this through one file, which is
 # what lets the dual-build gate read a difference as a composition difference.
@@ -336,7 +336,7 @@ RUN --mount=type=bind,source=rootfs/scripts,target=/mos-scripts \
 # bind-mounts the file during RUN or because it would break dpkg.
 #  - /etc/resolv.conf -> /run, the only writable place with / read-only.
 #  - /etc/machine-id must exist and be empty: systemd cannot write it on a
-#    read-only /etc. mos-init binds the persistent DATA identity over it
+#    read-only /etc. mica-init binds the persistent DATA identity over it
 #    before executing systemd.
 #  - /var supplies the initial template for the persistent DATA bind. Protected
 #    state mountpoints exist before systemd creates service mount namespaces.
@@ -355,13 +355,13 @@ RUN --mount=type=bind,source=rootfs/scripts,target=/mos-scripts \
 # pam_unix reads it from /etc/shadow -- which on mos sits on the dm-verity
 # squashfs, where nothing can ever write it. The only writable paths under /etc
 # are the /etc/hostname and /etc/ssh binds, and a bind-mounted file cannot be
-# replaced by rename, which is how mosd writes a credential safely. So the file
-# ships as a symlink into /var/lib/mos, the bind target of var-lib-mos.mount,
-# whose source is /mnt/state/mos.
+# replaced by rename, which is how micad writes a credential safely. So the file
+# ships as a symlink into /var/lib/mica, the bind target of var-lib-mica.mount,
+# whose source is /mnt/state/mica.
 
 # The image copy is retained at /usr/share/factory/etc/shadow -- systemd's
 # standard place for a factory template, the same idea this stage already uses
-# for /var -- and mos-shadow-reconcile derives the STATE file from it on every
+# for /var -- and mica-shadow-reconcile derives the STATE file from it on every
 # boot. /etc/passwd and /etc/group deliberately stay in the image, read-only:
 # only the secret-bearing file moves, so account definitions remain part of the
 # signed, verity-covered root. Done here and not in the rootfs stage because
@@ -505,8 +505,8 @@ RUN --network=none \
 
 # The factory root as an OCI image.
 
-# Eleven artifacts in this image are built by this repository -- mosd, apid,
-# mos-mqttd, mos-mqtt-broker, mos-deploy, podman, quadlet, crun, conmon, netavark,
+# Eleven artifacts in this image are built by this repository -- micad, apid,
+# mica-mqttd, mica-mqtt-broker, mica-deploy, podman, quadlet, crun, conmon, netavark,
 # aardvark-dns -- and "it linked" and "it runs" are different claims: a
 # wrong-architecture binary, a missing soname, or a version that does not match
 # the pin in versions.env all survive to first boot. The smoke runner executes

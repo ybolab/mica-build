@@ -4,7 +4,7 @@ set -eu
 exec >/dev/console 2>&1
 fail() {
     echo "FILE_AB_RUNTIME_FAIL: $*"
-    journalctl --no-pager -b -u mos-data-layout -u systemd-repart -u systemd-growfs@mnt-data -u mos-load-extensions -u systemd-random-seed -u mos-health -n 120
+    journalctl --no-pager -b -u mica-data-layout -u systemd-repart -u systemd-growfs@mnt-data -u mica-load-extensions -u systemd-random-seed -u mica-health -n 120
     findmnt -rn -M /mnt/data
     systemctl poweroff --force
     exit 1
@@ -24,28 +24,28 @@ storage_measurement() (
 install_deployment() {
     descriptor=$1
     objects=$2
-    if [ -f /run/mos/import/recover-data-write ]; then
+    if [ -f /run/mica/import/recover-data-write ]; then
         chattr +i /mnt/data/meta/deployments.json || fail 'metadata fault injection'
-        if mos-deploy install "$descriptor" --objects "$objects"; then
+        if mica-deploy install "$descriptor" --objects "$objects"; then
             chattr -i /mnt/data/meta/deployments.json
             fail 'immutable metadata accepted a state write'
         fi
         chattr -i /mnt/data/meta/deployments.json || fail 'metadata fault removal'
-        mos-deploy status | grep -F '"candidate":null' || fail 'incomplete candidate was activated'
-        mos-deploy confirm | grep -F "\"current\":\"$booted\"" || fail 'retirement lost the confirmed running deployment'
-        mos-deploy install "$descriptor" --objects "$objects" || fail 'replacement retry after DATA repair'
+        mica-deploy status | grep -F '"candidate":null' || fail 'incomplete candidate was activated'
+        mica-deploy confirm | grep -F "\"current\":\"$booted\"" || fail 'retirement lost the confirmed running deployment'
+        mica-deploy install "$descriptor" --objects "$objects" || fail 'replacement retry after DATA repair'
         echo FILE_AB_RETIREMENT_RECOVERY_PASS
     else
-        mos-deploy install "$descriptor" --objects "$objects" || fail 'component installation'
+        mica-deploy install "$descriptor" --objects "$objects" || fail 'component installation'
     fi
     [ "$(find /mnt/system/deployments -maxdepth 1 -name '*.json' | wc -l)" -eq 2 ] || fail 'SYSTEM must contain exactly two deployment descriptors after installation'
     [ "$(find /boot/loader/entries -maxdepth 1 -name 'mos-*.conf' | wc -l)" -eq 2 ] || fail 'boot entry count exceeds the A/B budget'
     echo FILE_AB_TWO_DEPLOYMENTS_PASS
 }
-for unit in systemd-repart.service systemd-growfs@mnt-data.service mos-data-layout.service mos-seed-state.service systemd-random-seed.service systemd-tmpfiles-setup.service mosd.service apid.service; do
+for unit in systemd-repart.service systemd-growfs@mnt-data.service mica-data-layout.service mica-seed-state.service systemd-random-seed.service systemd-tmpfiles-setup.service micad.service apid.service; do
     systemctl is-active --quiet "$unit" || fail "$unit is not active"
 done
-for path in /mnt/data /mos /mos/containers /srv /var /var/lib/mos; do
+for path in /mnt/data /mos /mos/containers /srv /var /var/lib/mica; do
     findmnt -rn -M "$path" -o TARGET,SOURCE,FSTYPE,OPTIONS || fail "missing mount $path"
 done
 # Logical child mounts must never appear in the raw reset backing tree.
@@ -119,7 +119,7 @@ else
 fi
 echo FILE_AB_UNLIMITED_DATA_PASS
 
-[ -e /run/mos/persistent-unit-ran ] || fail 'persistent extension was not loaded at startup'
+[ -e /run/mica/persistent-unit-ran ] || fail 'persistent extension was not loaded at startup'
 seed_inode=$(stat -c %i /mnt/data/state/random-seed)
 systemctl stop systemd-random-seed.service || fail 'random seed shutdown save'
 [ "$(stat -c %i /mnt/data/state/random-seed)" = "$seed_inode" ] || fail 'random seed inode replaced'
@@ -131,66 +131,66 @@ machine_id=$(cat /etc/machine-id)
 [ "$(cat /var/lib/dbus/machine-id)" = "$machine_id" ] || fail 'D-Bus identity mismatch'
 findmnt -rn -M /etc/machine-id -o OPTIONS | grep -qw ro || fail 'machine identity is writable'
 echo "FILE_AB_MACHINE_ID: $machine_id"
-booted=$(mos-deploy booted)
+booted=$(mica-deploy booted)
 confirmed=0
 for n in $(seq 1 100); do
-    if mos-deploy status | grep -F "\"current\":\"$booted\"" >/dev/null; then confirmed=1; break; fi
+    if mica-deploy status | grep -F "\"current\":\"$booted\"" >/dev/null; then confirmed=1; break; fi
     sleep 1
 done
 [ "$confirmed" = 1 ] || fail 'health did not confirm the deployment'
-mos-deploy status || fail 'deployment status unavailable'
-busctl --system --json=short call com.mos.mosd /com/mos/mosd com.mos.mosd1 GetUpdateState > /run/mos/service-update.json || fail 'native update service query'
-grep -F "$booted" /run/mos/service-update.json >/dev/null || fail 'service deployment identity mismatch'
-grep -F 'kernelId' /run/mos/service-update.json >/dev/null || fail 'service component identity absent'
-grep -E 'succeeded|rolled-back' /run/mos/service-update.json >/dev/null || fail 'service did not observe confirmed success or fallback'
+mica-deploy status || fail 'deployment status unavailable'
+busctl --system --json=short call com.mica.micad /com/mos/micad com.mica.micad1 GetUpdateState > /run/mica/service-update.json || fail 'native update service query'
+grep -F "$booted" /run/mica/service-update.json >/dev/null || fail 'service deployment identity mismatch'
+grep -F 'kernelId' /run/mica/service-update.json >/dev/null || fail 'service component identity absent'
+grep -E 'succeeded|rolled-back' /run/mica/service-update.json >/dev/null || fail 'service did not observe confirmed success or fallback'
 echo FILE_AB_NATIVE_SERVICE_PASS
-mos-deploy firmware-readback | grep -F '"readbackVerified":true' || fail 'installed firmware readback'
-cp /mnt/data/meta/firmware.json /run/mos/firmware-receipt.json
-mos-deploy firmware-readback /run/mos/firmware-receipt.json --record | grep -F '"receiptRecorded":true' || fail 'firmware receipt recording'
-cmp /run/mos/firmware-receipt.json /mnt/data/meta/firmware.json || fail 'firmware receipt changed'
+mica-deploy firmware-readback | grep -F '"readbackVerified":true' || fail 'installed firmware readback'
+cp /mnt/data/meta/firmware.json /run/mica/firmware-receipt.json
+mica-deploy firmware-readback /run/mica/firmware-receipt.json --record | grep -F '"receiptRecorded":true' || fail 'firmware receipt recording'
+cmp /run/mica/firmware-receipt.json /mnt/data/meta/firmware.json || fail 'firmware receipt changed'
 echo FILE_AB_FIRMWARE_READBACK_PASS
 
 for tag in /sys/bus/virtio/devices/*/mount_tag; do
     [ -r "$tag" ] || continue
     [ "$(cat "$tag")" = mos-update ] || continue
-    mkdir -p /run/mos/import
-    mount -t 9p -o trans=virtio,version=9p2000.L,ro mos-update /run/mos/import || fail 'offline test media mount'
-    expected=$(cat /run/mos/import/expected-id)
+    mkdir -p /run/mica/import
+    mount -t 9p -o trans=virtio,version=9p2000.L,ro mos-update /run/mica/import || fail 'offline test media mount'
+    expected=$(cat /run/mica/import/expected-id)
     if [ "$booted" != "$expected" ]; then
         storage_measurement before
-        : > /run/mos/storage-sampling
+        : > /run/mica/storage-sampling
         (
             count=0
-            while [ -f /run/mos/storage-sampling ]; do
+            while [ -f /run/mica/storage-sampling ]; do
                 count=$((count + 1))
                 [ "$count" -le 6000 ] || exit 1
                 storage_measurement sample || exit 1
                 sleep 0.1
             done
-        ) > /run/mos/storage-samples.log &
+        ) > /run/mica/storage-samples.log &
         sampler=$!
-        mos-deploy probe || fail 'DATA acquisition workspace probe'
-        if [ -f /run/mos/import/update.mosupd ]; then
-            mos-deploy import /run/mos/import/update.mosupd || fail 'offline archive acquisition'
+        mica-deploy probe || fail 'DATA acquisition workspace probe'
+        if [ -f /run/mica/import/update.mosupd ]; then
+            mica-deploy import /run/mica/import/update.mosupd || fail 'offline archive acquisition'
             install_deployment "/mos/updates/verified/$expected.json" /mos/updates/verified/objects
-        elif [ -f /run/mos/import/source-url ]; then
-            source=$(cat /run/mos/import/source-url)
-            mos-deploy check --source "$source" --channel stable || fail 'signed online catalog check'
-            mos-deploy fetch --source "$source" --channel stable || fail 'online component acquisition'
+        elif [ -f /run/mica/import/source-url ]; then
+            source=$(cat /run/mica/import/source-url)
+            mica-deploy check --source "$source" --channel stable || fail 'signed online catalog check'
+            mica-deploy fetch --source "$source" --channel stable || fail 'online component acquisition'
             install_deployment "/mos/updates/verified/$expected.json" /mos/updates/verified/objects
         else
-            install_deployment /run/mos/import/deployment.json /run/mos/import/objects
+            install_deployment /run/mica/import/deployment.json /run/mica/import/objects
         fi
-        rm /run/mos/storage-sampling
+        rm /run/mica/storage-sampling
         wait "$sampler" || fail 'storage sampler failed or exceeded its bound'
-        cat /run/mos/storage-samples.log
+        cat /run/mica/storage-samples.log
         storage_measurement after
         echo "FILE_AB_INSTALL_PASS: $expected"
     else
         echo "FILE_AB_UPDATE_BOOT_PASS: $booted"
-        mos-deploy gc || fail 'confirmed object collection'
+        mica-deploy gc || fail 'confirmed object collection'
     fi
-    umount /run/mos/import
+    umount /run/mica/import
     break
 done
 repquota -P -n -O csv /mnt/data || fail 'project quota report'

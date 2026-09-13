@@ -7,13 +7,13 @@ case "$mode" in transition|unsigned-guard|untrusted|signed|corrupt-data) ;; *) e
 tree=/w/tree
 mkdir -p "$tree"/{bin,sbin,data,dev,proc,sys,run}
 cp /w/tools/busybox "$tree/bin/busybox"
-cp /w/inputs/mos-init "$tree/mos-init"
+cp /w/inputs/mica-init "$tree/mica-init"
 cp /w/inputs/fixture "$tree/fixture"
 cp /src/tests/boot-startup-guest-init.sh "$tree/init"
 chmod 0755 "$tree/init"
 for tool in veritysetup dmsetup; do
     source=$(command -v "$tool")
-    python3 /src/pkgs/mos-boot/elf-closure.py / "$tree" x64 "$source" "/sbin/$tool"
+    python3 /src/pkgs/mica-boot/elf-closure.py / "$tree" x64 "$source" "/sbin/$tool"
 done
 printf '%s\n' "$mode" > "$tree/case"
 # Fixed data, explicit signed geometry, and no on-disk verity superblock.
@@ -67,8 +67,8 @@ printf '%s\n' 12345678-1234-4321-abcd-1234567890ab > "$tree/data/partuuid"
     find . -exec touch -h -d @1577836800 {} +
     find . -print0 | LC_ALL=C sort -z | cpio --null --reproducible --owner=0:0 -o -H newc --quiet
 ) > "/w/$mode.cpio"
-source /src/pkgs/mos-boot/compression.sh
+source /src/pkgs/mica-boot/compression.sh
 compress_payload "/w/$mode.cpio" "/w/$mode.cpio.zst" 67108864
-sha256sum "$tree/bin/busybox" "$tree/sbin/veritysetup" "$tree/sbin/dmsetup" "$tree/mos-init" "$tree/fixture" "/w/$mode.cpio" "/w/$mode.cpio.zst"
+sha256sum "$tree/bin/busybox" "$tree/sbin/veritysetup" "$tree/sbin/dmsetup" "$tree/mica-init" "$tree/fixture" "/w/$mode.cpio" "/w/$mode.cpio.zst"
 veritysetup --version
 zstd --version

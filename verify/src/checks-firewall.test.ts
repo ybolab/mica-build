@@ -134,7 +134,7 @@ describe('nft, the native front-end the base image now carries', () => {
   })
 
   test('a root where nftables stopped being installed fails', async () => {
-    // What dropping `nftables` from mos-system's Depends produces on a profile
+    // What dropping `nftables` from mica-system's Depends produces on a profile
     // that also declines containers: no nft, so no complete view of the rules.
     const fx = await mutated('packed-nft-present', root =>
       rmSync(join(root, 'usr/sbin/nft')))
@@ -321,7 +321,7 @@ describe('the iptables front-end is in the packed root and can be run', () => {
   })
 
   test('a root where the dependency stopped being installed fails', async () => {
-    // The whole group gone, which is what dropping `iptables` from mos-system's
+    // The whole group gone, which is what dropping `iptables` from mica-system's
     // Depends produces -- and the profiles that decline containers then have no
     // firewall tool at all.
     const fx = await mutated('packed-iptables-present', (root) => {

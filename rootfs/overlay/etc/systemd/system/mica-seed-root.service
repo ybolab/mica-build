@@ -1,0 +1,24 @@
+[Unit]
+Description=Prepare the persistent root home directory on DATA
+Documentation=file:/usr/lib/mica/mica-seed-root
+# Creates the bind source for root.mount. mount(8) never creates the SOURCE of
+# a bind, so this has to complete before that unit is attempted, which puts it
+# inside the local mount phase after the /mos bind is ready.
+#
+# There is deliberately no ConditionPathExists= guard and no stamp file: the
+# script is idempotent by construction and overwrites nothing it finds already
+# present, and a stamp would freeze the tree at whatever a first boot happened
+# to make -- so a later image adding a dotfile would find no place to seed it.
+DefaultDependencies=no
+RequiresMountsFor=/mos
+After=mos.mount
+Before=root.mount local-fs.target shutdown.target
+Conflicts=shutdown.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/lib/mica/mica-seed-root
+
+[Install]
+WantedBy=local-fs.target

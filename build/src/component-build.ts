@@ -48,7 +48,7 @@ export async function packComponent(tree: string, output: string, name: 'rootfs'
     const hash = join(work, `${name}.roothash`)
     const signature = `${hash}.p7s`
     writeFileSync(hash, rootHash)
-    const signed = spawnSync('bash', [join(REPO_ROOT, 'pkgs/mos-boot/verity-tool.sh'), 'sign', hash, signing.key, signing.certificate, signature], { encoding: 'utf8', timeout: 120000 })
+    const signed = spawnSync('bash', [join(REPO_ROOT, 'pkgs/mica-boot/verity-tool.sh'), 'sign', hash, signing.key, signing.certificate, signature], { encoding: 'utf8', timeout: 120000 })
     if (signed.status !== 0) throw new Error(`Content signing failed (${signed.error?.message ?? `status ${signed.status}, signal ${signed.signal}`}): ${signed.stderr}`)
     const result: VerityImage = {
       image: artifactFile(image), rootHash, signature: artifactFile(signature),

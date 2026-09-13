@@ -3,7 +3,7 @@
 //   bash build/run.sh --build-rootfs --board x64 --dest _out/x64 \
 //        --platform linux/amd64 --arg KEY=VALUE ...
 //   bash build/run.sh --build-rootfs --board x64 --plan   (decide, run nothing)
-// rootfs/build.sh stages the build context -- it cross-builds mosd,
+// rootfs/build.sh stages the build context -- it cross-builds micad,
 // renders the overlay, checks the repart definitions against the layout and
 // computes every verity parameter -- and then calls this instead of running one
 // `docker buildx build` over one Dockerfile. This adds two things: it decides

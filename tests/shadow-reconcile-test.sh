@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Offline tests for rootfs/overlay/usr/lib/mos/mos-shadow-reconcile, with
+# Offline tests for rootfs/overlay/usr/lib/mica/mica-shadow-reconcile, with
 # the transient-root-password clearing as the subject. The REAL script is run,
 # once per case, against fixtures in a temp dir: MOS_SHADOW_PASSWD and
 # MOS_SHADOW_FACTORY redirect its two absolute inputs and the shadow path is
@@ -14,7 +14,7 @@
 set -euo pipefail
 
 HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-SCRIPT=$HERE/../rootfs/overlay/usr/lib/mos/mos-shadow-reconcile
+SCRIPT=$HERE/../rootfs/overlay/usr/lib/mica/mica-shadow-reconcile
 WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT
 PASS=0
@@ -22,8 +22,8 @@ FAIL=0
 
 [ -f "$SCRIPT" ] || { echo "no $SCRIPT to test" >&2; exit 1; }
 
-# A bcrypt hash of the shape mosd writes, and a second one standing in for a
-# hash mosd did NOT write -- set by hand over the serial console, say; no
+# A bcrypt hash of the shape micad writes, and a second one standing in for a
+# hash micad did NOT write -- set by hand over the serial console, say; no
 # buildable image can bake one, since the pack stage fails a factory shadow with
 # a usable hash. Opaque on purpose: the script compares them as strings and
 # never parses them.
@@ -224,7 +224,7 @@ check "unterminated factory -> daemon survived intact" "yes" \
 
 # --- 7. the destination directory is created if absent ----------------------
 #
-# /run/mos does not exist on a fresh boot: /run is an empty tmpfs, so the
+# /run/mica does not exist on a fresh boot: /run is an empty tmpfs, so the
 # script creates its own destination directory.
 new_case creates-its-directory ""
 rm -rf "$STATE"

@@ -27,7 +27,7 @@ test "$result" = 0
 if grep -F 'BOOT_STARTUP_GUEST_FAIL' "logs/$mode.console"; then exit 1; fi
 case "$mode" in
     transition)
-        grep -F 'mos-init: old root startup files reclaimed' "logs/$mode.console"
+        grep -F 'mica-init: old root startup files reclaimed' "logs/$mode.console"
         grep -F 'NATIVE_SWITCH_ROOT_API_AND_RECLAMATION_PASS' "logs/$mode.console" ;;
     unsigned-guard)
         grep -F 'SIGNATURE_READBACK_MUTATION_REFUSED' "logs/$mode.console"

@@ -1,4 +1,4 @@
-// Batch 4a: the connd contract, the Wi-Fi userland, and mosd's networkd namespace.
+// Batch 4a: the connd contract, the Wi-Fi userland, and micad's networkd namespace.
 //
 // Twenty-two conclusions on cx3576 and four on x64: one contract read,
 // nineteen assertions it feeds (all of them behind
@@ -6,9 +6,9 @@
 // board.
 //
 // Every path, prefix and unit name the Wi-Fi assertions compare against is read
-// out of `pkgs/mosd/mosd/src/reconciler/` rather than restated here, exactly as the
+// out of `pkgs/micad/micad/src/reconciler/` rather than restated here, exactly as the
 // oracle reads it. Reading those sources is in scope under the Scope
-// section -- "No change to ... `mosd/` Rust sources" -- while changing them is
+// section -- "No change to ... `micad/` Rust sources" -- while changing them is
 // not, and nothing here writes. A reconciler that renders into a directory the
 // image does not provide, or drives a unit the image does not install, fails on
 // the device and nowhere else.
@@ -58,7 +58,7 @@ import { skipped, verdict } from './verdict.ts'
  * `the image fixture contract` is its one caller.
  */
 export const RECONCILER_DIR: string = process.env['MOS_VERIFY_RECONCILER_DIR']
-  ?? join(REPO_ROOT, 'pkgs', 'mosd', 'mosd', 'src', 'reconciler')
+  ?? join(REPO_ROOT, 'pkgs', 'micad', 'micad', 'src', 'reconciler')
 
 export interface ConndContract {
   readonly staDir: string
@@ -73,7 +73,7 @@ export interface ConndContract {
   /**
    * EVERY suffix the sweep predicate accepts, in source order.
    *
-   * A LIST and not one string, because the predicate is a disjunction: mosd
+   * A LIST and not one string, because the predicate is a disjunction: micad
    * renders `.netdev` files as well as `.network` ones and sweeps both under
    * the same prefix. Reading only the first would describe a NARROWER sweep
    * than the code performs, and the collision check below would then let a
@@ -123,18 +123,18 @@ function allCaptures(lines: readonly string[], pattern: RegExp): string[] {
 }
 
 /** `const NAME: &str = "...";` at the start of a line. */
-function mosdConst(dir: string, file: string, name: string): string {
+function micadConst(dir: string, file: string, name: string): string {
   return firstCapture(sourceLines(dir, file), new RegExp(`^const ${name}: &str = "(.*)";$`))
 }
 
 /** The unit TEMPLATE behind `format!("x@{interface}.service")`. */
-function mosdUnitTemplate(dir: string, file: string): string {
+function micadUnitTemplate(dir: string, file: string): string {
   const stem = firstCapture(sourceLines(dir, file), /^ *format!\("(.*)@\{interface\}\.service"\)$/)
   return stem === '' ? '' : `${stem}@.service`
 }
 
 /** The rendered configuration file name, still carrying `{interface}`. */
-function mosdConfigName(dir: string, file: string): string {
+function micadConfigName(dir: string, file: string): string {
   return firstCapture(sourceLines(dir, file), /^ *format!\("([^"]*\{interface\}[^"]*\.conf)"\)$/)
 }
 
@@ -149,14 +149,14 @@ function mosdConfigName(dir: string, file: string): string {
  * would never touch.
  */
 export function readConndContract(dir: string): ConndContract {
-  const staDir = mosdConst(dir, 'wifi_client.rs', 'DEFAULT_CONFIG_DIR')
-  const apDir = mosdConst(dir, 'wifi_ap.rs', 'DEFAULT_CONFIG_DIR')
-  const staUnit = mosdUnitTemplate(dir, 'wifi_client.rs')
-  const apUnit = mosdUnitTemplate(dir, 'wifi_ap.rs')
-  const staConf = mosdConfigName(dir, 'wifi_client.rs')
-  const apConf = mosdConfigName(dir, 'wifi_ap.rs')
-  const staPrefix = mosdConst(dir, 'wifi_client.rs', 'NETWORKD_PREFIX')
-  const apPrefix = mosdConst(dir, 'wifi_ap.rs', 'NETWORKD_PREFIX')
+  const staDir = micadConst(dir, 'wifi_client.rs', 'DEFAULT_CONFIG_DIR')
+  const apDir = micadConst(dir, 'wifi_ap.rs', 'DEFAULT_CONFIG_DIR')
+  const staUnit = micadUnitTemplate(dir, 'wifi_client.rs')
+  const apUnit = micadUnitTemplate(dir, 'wifi_ap.rs')
+  const staConf = micadConfigName(dir, 'wifi_client.rs')
+  const apConf = micadConfigName(dir, 'wifi_ap.rs')
+  const staPrefix = micadConst(dir, 'wifi_client.rs', 'NETWORKD_PREFIX')
+  const apPrefix = micadConst(dir, 'wifi_ap.rs', 'NETWORKD_PREFIX')
   const network = sourceLines(dir, 'network.rs')
   const sweep = firstCapture(network, /.*file_name\.starts_with\("([^"]*)"\).*/)
   const sweepSuffixes = allCaptures(network, /file_name\.ends_with\("([^"]*)"\)/g)
@@ -181,7 +181,7 @@ const NO_WIFI_BOARDS = boardsWhere(b => !hasWifi(b))
 
 function contractMessage(c: ConndContract): string {
   return c.read
-    ? `read the connd contract out of mosd: ${c.staUnit} <- ${c.staDir}/${c.staConf}, ${c.apUnit} <- `
+    ? `read the connd contract out of micad: ${c.staUnit} <- ${c.staDir}/${c.staConf}, ${c.apUnit} <- `
       + `${c.apDir}/${c.apConf}, networkd prefixes '${c.staPrefix}'/'${c.apPrefix}', sweep `
       + `'${c.sweep}'*'${c.sweepSuffixes.join("'|'")}'`
     : `could not read the connd contract out of ${RECONCILER_DIR}: dirs '${c.staDir}'/'${c.apDir}', `
@@ -196,7 +196,7 @@ function contractMessage(c: ConndContract): string {
 const CONTRACT_CHECK: CheckCase = {
   id: 'connd-contract-read',
   shell: {
-    pass: 'read the connd contract out of mosd: ',
+    pass: 'read the connd contract out of micad: ',
     fail: 'could not read the connd contract out of ',
   },
   run: async (): Promise<readonly CheckResult[]> => {
@@ -245,7 +245,7 @@ function execStartCheck(input: { id: string, what: string, unit: string, dir: st
     shell: {
       pass: `${what}: ${base} reads `,
       fail: [
-        `${what}: ${unit} is not in the image, so mosd would drive a unit that does not exist`,
+        `${what}: ${unit} is not in the image, so micad would drive a unit that does not exist`,
         `${what}: ${base}'s ExecStart does not name `,
       ],
     },
@@ -253,7 +253,7 @@ function execStartCheck(input: { id: string, what: string, unit: string, dir: st
       const root = await packedRoot(ctx)
       if (!regularFileInRoot(root, unit)) {
         return [verdict(id, false,
-          `${what}: ${unit} is not in the image, so mosd would drive a unit that does not exist`)]
+          `${what}: ${unit} is not in the image, so micad would drive a unit that does not exist`)]
       }
       const execLines = readFileSync(pathInRoot(root, unit), 'utf8').split('\n').filter(l => l.includes('ExecStart='))
       for (const spec of ['%i', '%I']) {
@@ -271,13 +271,13 @@ function execStartCheck(input: { id: string, what: string, unit: string, dir: st
   }
 }
 
-/** mosd owns the template's lifecycle: a statically enabled instance would race it. */
+/** micad owns the template's lifecycle: a statically enabled instance would race it. */
 function notStaticallyEnabled(id: string, unit: string): CheckCase {
   return {
     id,
     boards: WIFI_BOARDS,
     shell: {
-      pass: `${unit} is installed but NOT statically enabled (mosd owns the lifecycle)`,
+      pass: `${unit} is installed but NOT statically enabled (micad owns the lifecycle)`,
       fail: `${unit} is statically enabled in the image;`,
     },
     run: async (ctx): Promise<readonly CheckResult[]> => {
@@ -287,9 +287,9 @@ function notStaticallyEnabled(id: string, unit: string): CheckCase {
         id,
         !enabled,
         enabled
-          ? `${unit} is statically enabled in the image; mosd owns that lifecycle and would race the `
+          ? `${unit} is statically enabled in the image; micad owns that lifecycle and would race the `
             + `image's own instance`
-          : `${unit} is installed but NOT statically enabled (mosd owns the lifecycle)`,
+          : `${unit} is installed but NOT statically enabled (micad owns the lifecycle)`,
       )]
     },
   }
@@ -323,10 +323,10 @@ function maskedCheck(unit: string): CheckCase {
         id,
         ok,
         ok
-          ? `${unit} is masked (-> /dev/null); it cannot start and fight mosd for the radio`
+          ? `${unit} is masked (-> /dev/null); it cannot start and fight micad for the radio`
           : `${unit} is not masked (it is '${dest === '' ? 'not a symlink to /dev/null' : dest}'). The `
             + `package enables it, and it starts a second daemon on the same radio against a config `
-            + `mosd never writes while mosd's own instance still reports healthy`,
+            + `micad never writes while micad's own instance still reports healthy`,
       )]
     },
   }
@@ -416,7 +416,7 @@ function renderTargetBind(id: string, where: string): CheckCase {
 /**
  * The bind SOURCE, which mount(8) does not create -- and its MODE.
  *
- * mos-seed-state is the only thing that runs early enough, and the assertion is
+ * mica-seed-state is the only thing that runs early enough, and the assertion is
  * in two halves because the seed creates both directories from ONE loop: the
  * loop does `mkdir -p` and `chmod 0700` under /mnt/data/state, and THIS directory's
  * name is one of the loop's items. Either half alone would pass for a script
@@ -429,7 +429,7 @@ function renderTargetBind(id: string, where: string): CheckCase {
 function seedStateCreates(id: string, where: string): CheckCase {
   const unit = mountUnitFor(where)
   const unitPath = `/etc/systemd/system/${unit}`
-  const seed = '/usr/lib/mos/mos-seed-state'
+  const seed = '/usr/lib/mica/mica-seed-state'
   return {
     id,
     boards: WIFI_BOARDS,
@@ -456,8 +456,8 @@ function seedStateCreates(id: string, where: string): CheckCase {
         id,
         ok,
         ok
-          ? `mos-seed-state creates ${src} at 0700 before ${unit} is attempted`
-          : `mos-seed-state does not create ${src} (0700); the bind would have no source on first boot `
+          ? `mica-seed-state creates ${src} at 0700 before ${unit} is attempted`
+          : `mica-seed-state does not create ${src} (0700); the bind would have no source on first boot `
             + `and ${where} would stay read-only`,
       )]
     },
@@ -497,11 +497,11 @@ const DNSMASQ_CHECK: CheckCase = {
 /**
  * Where the reload lives, spelled once.
  *
- * The unit is `mos-wifi` payload, installed into /etc/systemd/system with a
+ * The unit is `mica-wifi` payload, installed into /etc/systemd/system with a
  * multi-user.target.wants link beside it, because the image root is an
  * immutable dm-verity squashfs and nothing runs `systemctl enable` on it.
  */
-const REGDB_UNIT = 'mos-regdb-reload.service'
+const REGDB_UNIT = 'mica-regdb-reload.service'
 
 /**
  * The half that packaging alone does not buy, and the reason it is a separate
@@ -670,7 +670,7 @@ const NAMESPACE_CHECK: CheckCase = {
   // reconciler's unit, on the device and nowhere else.
   id: 'networkd-namespace-clear',
   shell: {
-    pass: "the image's networkd namespace is clear of mosd's:",
+    pass: "the image's networkd namespace is clear of micad's:",
     fail: [
       "the image's networkd namespace check did not run:",
       "the image's networkd namespace is empty:",
@@ -705,7 +705,7 @@ const NAMESPACE_CHECK: CheckCase = {
     }
     if (collisions.length === 0) {
       return [verdict(id, true,
-        `the image's networkd namespace is clear of mosd's: none of (${files.join(' ')} ) falls in a `
+        `the image's networkd namespace is clear of micad's: none of (${files.join(' ')} ) falls in a `
         + `reconciler-owned namespace ('${contract.sweep}'*'${contract.sweepSuffixes.join("'|'")}', `
         + `'${contract.staPrefix}', '${contract.apPrefix}')`)]
     }
@@ -755,7 +755,7 @@ const SORT_ORDER_CHECK: CheckCase = {
         ? `${DHCP_DEFAULT} sorts before both '${contract.staPrefix}' and '${contract.apPrefix}', so a `
           + `reconciler-rendered unit is never shadowed by the image's fallback`
         : `${DHCP_DEFAULT} does not sort before:${bad.join('')}; networkd applies the first match in `
-          + `lexical order, so the image's fallback would win over the unit mosd rendered for that interface`,
+          + `lexical order, so the image's fallback would win over the unit micad rendered for that interface`,
     )]
   },
 }

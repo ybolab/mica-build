@@ -147,23 +147,23 @@ CX_RADIOS="$(board_radios cx3576)"
 X64_RADIOS="$(board_radios x64)"
 VIRT_ARM64_RADIOS="$(board_radios virt-arm64)"
 
-# mos-busybox is in EVERY set below, including CX_MINIMAL, and that is what
+# mica-busybox is in EVERY set below, including CX_MINIMAL, and that is what
 # rootfs/packages/common.pkgs holding it means: the emergency binary is not
 # declinable, because the build that declined it is the image an operator is
 # holding when they need it (RFCT-281).
-CX_DEV="mos-apid mos-bluetooth mos-board-cx3576 mos-busybox mos-ca-trust mos-deploy mos-mqtt-broker mos-mqttd mos-podman mos-profile-dev mos-system mos-wifi mos-wifi-ap mosd"
-CX_PROD="mos-apid mos-bluetooth mos-board-cx3576 mos-busybox mos-ca-trust mos-deploy mos-mqtt-broker mos-mqttd mos-podman mos-profile-prod mos-system mos-wifi mos-wifi-ap mosd"
+CX_DEV="mica-apid mica-bluetooth mica-board-cx3576 mica-busybox mica-ca-trust mica-deploy mica-mqtt-broker mica-mqttd mica-podman mica-profile-dev mica-system mica-wifi mica-wifi-ap micad"
+CX_PROD="mica-apid mica-bluetooth mica-board-cx3576 mica-busybox mica-ca-trust mica-deploy mica-mqtt-broker mica-mqttd mica-podman mica-profile-prod mica-system mica-wifi mica-wifi-ap micad"
 # Kernel and module payloads are independent of every user-space root.
-X64_DEV="mos-apid mos-board-x64 mos-busybox mos-ca-trust mos-deploy mos-mqtt-broker mos-mqttd mos-podman mos-profile-dev mos-system mosd"
-X64_PROD="mos-apid mos-board-x64 mos-busybox mos-ca-trust mos-deploy mos-mqtt-broker mos-mqttd mos-podman mos-profile-prod mos-system mosd"
+X64_DEV="mica-apid mica-board-x64 mica-busybox mica-ca-trust mica-deploy mica-mqtt-broker mica-mqttd mica-podman mica-profile-dev mica-system micad"
+X64_PROD="mica-apid mica-board-x64 mica-busybox mica-ca-trust mica-deploy mica-mqtt-broker mica-mqttd mica-podman mica-profile-prod mica-system micad"
 # virt-arm64 is x64's set with its own board and kernel packages: the two
 # boards differ in architecture and firmware, not in what userland the image
 # carries, and BOARD_RADIOS is empty on both. Spelled out rather than derived
 # from X64_DEV by substitution -- a set computed from another set agrees with
 # it by construction and would not notice the day they stop agreeing.
-VA_DEV="mos-apid mos-board-virt-arm64 mos-busybox mos-ca-trust mos-deploy mos-mqtt-broker mos-mqttd mos-podman mos-profile-dev mos-system mosd"
-VA_PROD="mos-apid mos-board-virt-arm64 mos-busybox mos-ca-trust mos-deploy mos-mqtt-broker mos-mqttd mos-podman mos-profile-prod mos-system mosd"
-CX_MINIMAL="mos-board-cx3576 mos-busybox mos-ca-trust mos-deploy mos-profile-dev mos-system"
+VA_DEV="mica-apid mica-board-virt-arm64 mica-busybox mica-ca-trust mica-deploy mica-mqtt-broker mica-mqttd mica-podman mica-profile-dev mica-system micad"
+VA_PROD="mica-apid mica-board-virt-arm64 mica-busybox mica-ca-trust mica-deploy mica-mqtt-broker mica-mqttd mica-podman mica-profile-prod mica-system micad"
+CX_MINIMAL="mica-board-cx3576 mica-busybox mica-ca-trust mica-deploy mica-profile-dev mica-system"
 
 expect_set "cx3576 dev, radios '${CX_RADIOS}', nothing declined" "${CX_DEV}" \
     "${PACKAGES_DIR}" --board cx3576 --profile dev --radios "${CX_RADIOS}" --without ""
@@ -195,7 +195,7 @@ for va_pair in "x64:${X64_RADIOS}" "virt-arm64:${VIRT_ARM64_RADIOS}"; do
     leaked=""
     for pkg in ${resolve_out}; do
         case "${pkg}" in
-        mos-wifi | mos-wifi-ap | mos-bluetooth) leaked="${leaked}${pkg} " ;;
+        mica-wifi | mica-wifi-ap | mica-bluetooth) leaked="${leaked}${pkg} " ;;
         mos-board-*)
             [ "${pkg}" = "mos-board-${va_board}" ] || leaked="${leaked}${pkg} " ;;
         esac
@@ -210,8 +210,8 @@ done
 # Declining ONE radio keeps the other: wifi and bluetooth are independent
 # decline tokens, which is the whole point of the split -- the retired umbrella
 # token dropped both together.
-CX_NO_BT="mos-apid mos-board-cx3576 mos-busybox mos-ca-trust mos-deploy mos-mqtt-broker mos-mqttd mos-podman mos-profile-dev mos-system mos-wifi mos-wifi-ap mosd"
-CX_NO_WIFI="mos-apid mos-bluetooth mos-board-cx3576 mos-busybox mos-ca-trust mos-deploy mos-mqtt-broker mos-mqttd mos-podman mos-profile-dev mos-system mosd"
+CX_NO_BT="mica-apid mica-board-cx3576 mica-busybox mica-ca-trust mica-deploy mica-mqtt-broker mica-mqttd mica-podman mica-profile-dev mica-system mica-wifi mica-wifi-ap micad"
+CX_NO_WIFI="mica-apid mica-bluetooth mica-board-cx3576 mica-busybox mica-ca-trust mica-deploy mica-mqtt-broker mica-mqttd mica-podman mica-profile-dev mica-system micad"
 expect_set "cx3576 dev, --without bluetooth keeps Wi-Fi" "${CX_NO_BT}" \
     "${PACKAGES_DIR}" --board cx3576 --profile dev --radios "${CX_RADIOS}" --without "bluetooth"
 expect_set "cx3576 dev, --without wifi keeps Bluetooth" "${CX_NO_WIFI}" \
@@ -228,9 +228,9 @@ fi
 
 # Declining every feature drops exactly the feature packages and leaves a legal
 # image set: common, one profile, one board.
-expect_set "cx3576 dev, --without 'mosd mqtt containers wifi bluetooth'" "${CX_MINIMAL}" \
+expect_set "cx3576 dev, --without 'micad mqtt containers wifi bluetooth'" "${CX_MINIMAL}" \
     "${PACKAGES_DIR}" --board cx3576 --profile dev --radios "${CX_RADIOS}" \
-    --without "mosd mqtt containers wifi bluetooth"
+    --without "micad mqtt containers wifi bluetooth"
 dropped=""
 for pkg in ${CX_DEV}; do
     case " ${CX_MINIMAL} " in
@@ -238,7 +238,7 @@ for pkg in ${CX_DEV}; do
     *) dropped="${dropped}${pkg} " ;;
     esac
 done
-want_dropped="mos-apid mos-bluetooth mos-mqtt-broker mos-mqttd mos-podman mos-wifi mos-wifi-ap mosd"
+want_dropped="mica-apid mica-bluetooth mica-mqtt-broker mica-mqttd mica-podman mica-wifi mica-wifi-ap micad"
 if [ "${dropped% }" = "${want_dropped}" ]; then
     pass "declining all five features drops exactly: ${want_dropped}"
 else
@@ -278,7 +278,7 @@ fi
 # direction: a NEW feature manifest makes a previously illegal name legal, which
 # a hardcoded list of features could not do.
 dir="$(mutate feature-added)"
-printf '# scratch mutation\nmos-mqttd\n' >"${dir}/feature-zigbee.pkgs"
+printf '# scratch mutation\nmica-mqttd\n' >"${dir}/feature-zigbee.pkgs"
 run_resolve "${dir}" --board cx3576 --profile dev --radios "${CX_RADIOS}" --without "zigbee"
 if [ "${resolve_rc}" -eq 0 ]; then
     pass "adding feature-zigbee.pkgs to a copy makes --without zigbee legal there: the feature list is read from the tree"
@@ -294,7 +294,7 @@ expect_refusal "manifest names a package no producer declares" "mos-not-a-real-p
 
 # (c) both profile packages, and neither.
 dir="$(mutate two-profiles)"
-printf 'mos-profile-prod\n' >>"${dir}/common.pkgs"
+printf 'mica-profile-prod\n' >>"${dir}/common.pkgs"
 expect_refusal "resolution carries both profile packages" "2 profile packages" "${dir}" \
     --board cx3576 --profile dev --radios "${CX_RADIOS}" --without ""
 

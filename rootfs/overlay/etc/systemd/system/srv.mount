@@ -1,8 +1,8 @@
 [Unit]
 Description=Persistent user data on DATA
 DefaultDependencies=no
-Requires=mos-data-layout.service
-After=mos-data-layout.service
+Requires=mica-data-layout.service
+After=mica-data-layout.service
 Before=local-fs.target shutdown.target
 Conflicts=shutdown.target
 

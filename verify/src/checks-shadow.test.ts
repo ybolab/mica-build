@@ -26,8 +26,8 @@ const x64 = loadBoard(boardEnvPath('x64'))
 
 const SHADOW = '/etc/shadow'
 const FACTORY = '/usr/share/factory/etc/shadow'
-const REC_UNIT = '/etc/systemd/system/mos-shadow-reconcile.service'
-const REC_SCRIPT = '/usr/lib/mos/mos-shadow-reconcile'
+const REC_UNIT = '/etc/systemd/system/mica-shadow-reconcile.service'
+const REC_SCRIPT = '/usr/lib/mica/mica-shadow-reconcile'
 
 function checkNamed(id: string): CheckCase {
   const found = SHADOW_CHECKS.find(c => c.id === id)
@@ -119,10 +119,10 @@ describe('the path PAM opens', () => {
     }
   })
 
-  test('a /run/mos/shadow INSIDE the squashfs makes the link resolve to an image file', async () => {
+  test('a /run/mica/shadow INSIDE the squashfs makes the link resolve to an image file', async () => {
     const fx = await mutated('shadow-target-absent-in-image', (root) => {
-      mkdirSync(join(root, '/run/mos'), { recursive: true })
-      writeFileSync(join(root, '/run/mos/shadow'), 'root:!:20000:0:99999:7:::\n')
+      mkdirSync(join(root, '/run/mica'), { recursive: true })
+      writeFileSync(join(root, '/run/mica/shadow'), 'root:!:20000:0:99999:7:::\n')
     })
     try {
       expect(await verdictOf(fx, 'shadow-target-absent-in-image')).toBe('fail')
@@ -134,10 +134,10 @@ describe('the path PAM opens', () => {
     }
   })
 
-  test('a DANGLING /run/mos/shadow counts too: `-e` OR `-L`', async () => {
+  test('a DANGLING /run/mica/shadow counts too: `-e` OR `-L`', async () => {
     const fx = await mutated('shadow-target-absent-in-image', (root) => {
-      mkdirSync(join(root, '/run/mos'), { recursive: true })
-      symlinkSync('/nowhere', join(root, '/run/mos/shadow'))
+      mkdirSync(join(root, '/run/mica'), { recursive: true })
+      symlinkSync('/nowhere', join(root, '/run/mica/shadow'))
     })
     try {
       expect(await verdictOf(fx, 'shadow-target-absent-in-image')).toBe('fail')
@@ -167,7 +167,7 @@ describe('the path PAM opens', () => {
 
   test('/var is persistent for this purpose too, and is caught the same way', async () => {
     const fx = await mutated('shadow-link-not-persistent', root =>
-      retarget(root, '/var/lib/mos/shadow'))
+      retarget(root, '/var/lib/mica/shadow'))
     try {
       expect(await verdictOf(fx, 'shadow-link-not-persistent')).toBe('fail')
       expect(await verdictOf(fx, 'shadow-link-lands-on-tmpfs')).toBe('fail')
@@ -349,7 +349,7 @@ describe('the reconcile unit and script', () => {
     try {
       const got = await checkNamed('shadow-reconcile-ordered-before').run(fx.ctx)
       expect(got.map(r => r.instance)).toEqual([
-        'mosd.service', 'ssh.service', 'systemd-logind.service', 'systemd-user-sessions.service',
+        'micad.service', 'ssh.service', 'systemd-logind.service', 'systemd-user-sessions.service',
       ])
       expect([...new Set(got.map(r => r.verdict))]).toEqual(['pass'])
     }
@@ -361,10 +361,10 @@ describe('the reconcile unit and script', () => {
   test('a dropped Before= fails ONE firing and names the reader that would race', async () => {
     const fx = packedRootFixture(cx3576)
     try {
-      rewrite(fx.root, REC_UNIT, t => t.replace('Before=mosd.service ssh.service\n', 'Before=ssh.service\n'))
+      rewrite(fx.root, REC_UNIT, t => t.replace('Before=micad.service ssh.service\n', 'Before=ssh.service\n'))
       const got = await checkNamed('shadow-reconcile-ordered-before').run(fx.ctx)
       expect(got.map(r => `${r.instance}=${r.verdict}`)).toEqual([
-        'mosd.service=fail', 'ssh.service=pass',
+        'micad.service=fail', 'ssh.service=pass',
         'systemd-logind.service=pass', 'systemd-user-sessions.service=pass',
       ])
       expect(got[0]?.message).toContain('would look for /etc/shadow before this unit builds it')
@@ -380,7 +380,7 @@ describe('the reconcile unit and script', () => {
       rmSync(join(fx.root, '/usr/lib/systemd/system/ssh.service'))
       const got = await checkNamed('shadow-reconcile-ordered-before').run(fx.ctx)
       expect(got.map(r => `${r.instance}=${r.verdict}`)).toEqual([
-        'mosd.service=pass', 'ssh.service=fail',
+        'micad.service=pass', 'ssh.service=fail',
         'systemd-logind.service=pass', 'systemd-user-sessions.service=pass',
       ])
       expect(got[1]?.message).toContain('SILENTLY')
@@ -395,7 +395,7 @@ describe('the reconcile unit and script', () => {
     // accept it appearing in a comment.
     const fx = packedRootFixture(cx3576)
     try {
-      rewrite(fx.root, REC_UNIT, t => t.replace('Before=mosd.service ssh.service',
+      rewrite(fx.root, REC_UNIT, t => t.replace('Before=micad.service ssh.service',
         'Before=xmosd.serviceX ssh.service'))
       const got = await checkNamed('shadow-reconcile-ordered-before').run(fx.ctx)
       expect(got[0]?.verdict).toBe('fail')
@@ -411,25 +411,25 @@ describe('the reconcile unit and script', () => {
     // optional precisely because one of them puts the unit after the `=`.
     const pattern = checkNamed('shadow-reconcile-ordered-before').instance as RegExp
     for (const line of [
-      'mos-shadow-reconcile.service orders Before=mosd.service, and /usr/lib/systemd/system/mosd.service is present in the image',
-      'mos-shadow-reconcile.service is missing, so its Before=ssh.service ordering cannot be checked',
-      'mos-shadow-reconcile.service has no Before= naming systemd-logind.service; systemd-logind.service would look for /etc/shadow',
-      'mos-shadow-reconcile.service orders Before=systemd-user-sessions.service but /usr/lib/systemd/system/systemd-user-sessions.service is not in the image; systemd drops an ordering against a non-existent unit SILENTLY',
+      'mica-shadow-reconcile.service orders Before=micad.service, and /usr/lib/systemd/system/micad.service is present in the image',
+      'mica-shadow-reconcile.service is missing, so its Before=ssh.service ordering cannot be checked',
+      'mica-shadow-reconcile.service has no Before= naming systemd-logind.service; systemd-logind.service would look for /etc/shadow',
+      'mica-shadow-reconcile.service orders Before=systemd-user-sessions.service but /usr/lib/systemd/system/systemd-user-sessions.service is not in the image; systemd drops an ordering against a non-existent unit SILENTLY',
     ]) {
       const got = pattern.exec(line)?.[1]
       expect(`${line.slice(40, 70)} -> ${got}`).toBe(`${line.slice(40, 70)} -> ${expectedDep(line)}`)
     }
   })
 
-  test('an After= against var-lib-mos.mount fails, with the offending line quoted', async () => {
+  test('an After= against var-lib-mica.mount fails, with the offending line quoted', async () => {
     // It builds the file on a tmpfs systemd has already mounted; an ordering
     // against a storage mount that can fail can only delay or block the file
     // PAM opens -- and it tells the next reader the file still lives on STATE.
     const fx = await mutated('shadow-reconcile-no-state-dep', root =>
-      rewrite(root, REC_UNIT, t => t.replace('[Unit]\n', '[Unit]\nAfter=var-lib-mos.mount\n')))
+      rewrite(root, REC_UNIT, t => t.replace('[Unit]\n', '[Unit]\nAfter=var-lib-mica.mount\n')))
     try {
       expect(await verdictOf(fx, 'shadow-reconcile-no-state-dep')).toBe('fail')
-      expect(await messageOf(fx, 'shadow-reconcile-no-state-dep')).toContain('After=var-lib-mos.mount')
+      expect(await messageOf(fx, 'shadow-reconcile-no-state-dep')).toContain('After=var-lib-mica.mount')
     }
     finally {
       fx.dispose()
@@ -468,7 +468,7 @@ describe('the reconcile unit and script', () => {
 
   test('a destination outside /run is caught even though the link still points at /run', async () => {
     const fx = await mutated('shadow-reconcile-builds-in-ram', root =>
-      rewrite(root, REC_SCRIPT, t => t.replace('SHADOW="${MOS_SHADOW_PASSWD:-/run/mos/shadow}"',
+      rewrite(root, REC_SCRIPT, t => t.replace('SHADOW="${MOS_SHADOW_PASSWD:-/run/mica/shadow}"',
         'SHADOW="${MOS_SHADOW_PASSWD:-/mnt/data/state/mos/shadow}"')))
     try {
       expect(await verdictOf(fx, 'shadow-reconcile-builds-in-ram')).toBe('fail')
@@ -494,9 +494,9 @@ describe('the reconcile unit and script', () => {
     }
   })
 
-  test('mos-seed-state putting a shadow file on STATE is caught, comments excepted', async () => {
+  test('mica-seed-state putting a shadow file on STATE is caught, comments excepted', async () => {
     const fx = await mutated('seed-state-no-shadow-on-state', root =>
-      rewrite(root, '/usr/lib/mos/mos-seed-state', t => `${t}install -m 0600 /dev/null /mnt/data/state/mos/shadow\n`))
+      rewrite(root, '/usr/lib/mica/mica-seed-state', t => `${t}install -m 0600 /dev/null /mnt/data/state/mos/shadow\n`))
     try {
       expect(await verdictOf(fx, 'seed-state-no-shadow-on-state')).toBe('fail')
       expect(await messageOf(fx, 'seed-state-no-shadow-on-state')).toContain('/mnt/data/state/mos/shadow')
@@ -507,7 +507,7 @@ describe('the reconcile unit and script', () => {
     // A COMMENT saying it no longer does this is not a seeding.
     const documented = packedRootFixture(cx3576)
     try {
-      rewrite(documented.root, '/usr/lib/mos/mos-seed-state',
+      rewrite(documented.root, '/usr/lib/mica/mica-seed-state',
         t => `${t}# no /mnt/data/state/mos/shadow here: the file is built in RAM\n`)
       expect(await verdictOf(documented, 'seed-state-no-shadow-on-state')).toBe('pass')
     }
@@ -522,7 +522,7 @@ describe('the reconcile unit and script', () => {
     // where root's credentials are reconciled from and to, and every other
     // check here would still pass.
     const fx = await mutated('shadow-reconcile-no-test-override', (root) => {
-      const dir = join(root, '/etc/systemd/system/mos-shadow-reconcile.service.d')
+      const dir = join(root, '/etc/systemd/system/mica-shadow-reconcile.service.d')
       mkdirSync(dir, { recursive: true })
       writeFileSync(join(dir, '10-test.conf'), '[Service]\nEnvironment=MOS_SHADOW_FACTORY=/tmp/fake\n')
     })
@@ -537,9 +537,9 @@ describe('the reconcile unit and script', () => {
 
   test('the VENDOR drop-in directory is searched as well as /etc', async () => {
     const fx = await mutated('shadow-reconcile-no-test-override', (root) => {
-      const dir = join(root, '/usr/lib/systemd/system/mos-shadow-reconcile.service.d')
+      const dir = join(root, '/usr/lib/systemd/system/mica-shadow-reconcile.service.d')
       mkdirSync(dir, { recursive: true })
-      writeFileSync(join(dir, '20-vendor.conf'), '[Service]\nEnvironmentFile=/etc/mos/MOS_SHADOW_PASSWD.env\n')
+      writeFileSync(join(dir, '20-vendor.conf'), '[Service]\nEnvironmentFile=/etc/mica/MOS_SHADOW_PASSWD.env\n')
     })
     try {
       expect(await verdictOf(fx, 'shadow-reconcile-no-test-override')).toBe('fail')
@@ -552,7 +552,7 @@ describe('the reconcile unit and script', () => {
 
 /** Which unit each of the four message shapes should yield as its instance. */
 function expectedDep(line: string): string {
-  for (const dep of ['mosd.service', 'ssh.service', 'systemd-logind.service', 'systemd-user-sessions.service']) {
+  for (const dep of ['micad.service', 'ssh.service', 'systemd-logind.service', 'systemd-user-sessions.service']) {
     if (line.includes(`Before=${dep}`) || line.includes(`Before= naming ${dep}`)) return dep
   }
   return '(none)'

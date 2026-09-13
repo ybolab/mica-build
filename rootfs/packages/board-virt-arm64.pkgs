@@ -1,2 +1,2 @@
 # Board storage policy; kernel components are packaged independently.
-mos-board-virt-arm64
+mica-board-virt-arm64

@@ -4,9 +4,9 @@
 #
 #   bash rootfs/packages/resolve.sh --board cx3576 --profile dev \
 #        --radios "wifi bluetooth" --without ""
-#   -> mos-apid
-#      mos-board-cx3576
-#      mos-bluetooth
+#   -> mica-apid
+#      mica-board-cx3576
+#      mica-bluetooth
 #      ...
 #
 # One package name per line on stdout, LC_ALL=C sorted and deduplicated, and
@@ -291,9 +291,9 @@ for feature in "${FEATURES[@]}"; do
 done
 
 case " $RESOLVED " in
-*' mos-mqtt-reference '*)
+*' mica-mqtt-reference '*)
     [ "$PROFILE" != prod ] || { echo 'error: mqtt-reference is forbidden in production' >&2; exit 1; }
-    for required in mosd mos-mqttd mos-mqtt-broker; do
+    for required in micad mica-mqttd mica-mqtt-broker; do
         case " $RESOLVED " in
         *" $required "*) ;;
         *) echo "error: mqtt-reference requires selected $required" >&2; exit 1 ;;
@@ -312,8 +312,8 @@ for pkg in ${RESOLVED}; do RESOLVED_N=$((RESOLVED_N + 1)); done
 
 # EXACTLY ONE profile package, counted over the resolved set rather than assumed
 # from the fact that --profile picked one manifest: any manifest may name one,
-# and mos-profile-dev arriving alongside mos-profile-prod is an APT conflict
-# while NEITHER arriving is an image mosd reads as production with every check
+# and mica-profile-dev arriving alongside mica-profile-prod is an APT conflict
+# while NEITHER arriving is an image micad reads as production with every check
 # green. The two names come from the profile-* manifests themselves; a literal
 # pair here would be a second list to keep in step with them.
 PROFILE_PACKAGES=""
@@ -330,7 +330,7 @@ for pkg in ${RESOLVED}; do
 done
 [ "${PROFILE_IN_SET_N}" -eq 1 ] || {
     if [ "${PROFILE_IN_SET_N}" -eq 0 ]; then
-        echo "error: the resolution for --board ${BOARD} --profile ${PROFILE} carries NO profile package. mosd fails closed to prod when /usr/lib/mos/profile.conf is absent, so this image would behave as production -- SSH off on a dev build -- with nothing anywhere reporting a defect. One of ${PROFILE_PACKAGES% } has to be in the set" >&2
+        echo "error: the resolution for --board ${BOARD} --profile ${PROFILE} carries NO profile package. micad fails closed to prod when /usr/lib/mica/profile.conf is absent, so this image would behave as production -- SSH off on a dev build -- with nothing anywhere reporting a defect. One of ${PROFILE_PACKAGES% } has to be in the set" >&2
     else
         echo "error: the resolution for --board ${BOARD} --profile ${PROFILE} carries ${PROFILE_IN_SET_N} profile packages: ${PROFILE_IN_SET% }. They Conflict by name and are alternative renderings of one immutable file, so APT would refuse the transaction; exactly one belongs in an image" >&2
     fi

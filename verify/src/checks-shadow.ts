@@ -1,7 +1,7 @@
 // /etc/shadow lives in RAM, and the image ships no usable credential.
 //
 // Board-unconditional: 19 conclusions on each shipped board, measured
-// 2026-08-26. `/etc/shadow is a symlink to /run/mos/shadow` is written inline
+// 2026-08-26. `/etc/shadow is a symlink to /run/mica/shadow` is written inline
 // rather than through `sq_symlink`, so it carries a parenthetical batch 2a's
 // matcher would not have found.
 //
@@ -9,13 +9,13 @@
 // transient root password. The only path pam_unix reads it from on mos is
 // /etc/shadow, which is inside the dm-verity squashfs and unwritable by
 // construction, so it is a symlink onto /run -- a tmpfs systemd mounts before
-// any unit starts -- and mos-shadow-reconcile builds the file there from
+// any unit starts -- and mica-shadow-reconcile builds the file there from
 // /usr/share/factory/etc/shadow on every boot. The password is therefore
 // transient by construction and not by protocol: the memory is gone at the next
 // boot and nothing has to remember to clear it.
 //
 // The checks prove that from the artifact: the link exists and names
-// /run/mos/shadow, and nothing in the image satisfies either end of it, or PAM
+// /run/mica/shadow, and nothing in the image satisfies either end of it, or PAM
 // would read a file byte-identical on every device in the fleet; the reconciler
 // runs BEFORE every reader and each unit it orders against is in the image,
 // because systemd drops an ordering against an absent unit silently; it reads
@@ -38,11 +38,11 @@ import type { CheckResult } from './parity.ts'
 import { verdict } from './verdict.ts'
 
 const SHADOW = '/etc/shadow'
-const SHADOW_LINK_TARGET = '/run/mos/shadow'
+const SHADOW_LINK_TARGET = '/run/mica/shadow'
 const FACTORY_SHADOW = '/usr/share/factory/etc/shadow'
-const REC_UNIT = '/etc/systemd/system/mos-shadow-reconcile.service'
-const REC_SCRIPT = '/usr/lib/mos/mos-shadow-reconcile'
-const SEED_STATE = '/usr/lib/mos/mos-seed-state'
+const REC_UNIT = '/etc/systemd/system/mica-shadow-reconcile.service'
+const REC_SCRIPT = '/usr/lib/mica/mica-shadow-reconcile'
+const SEED_STATE = '/usr/lib/mica/mica-seed-state'
 
 /** What `stat -c %F` says, in the same three words the oracle compares against. */
 function shadowType(root: string): 'symbolic link' | 'regular file' | 'absent' | 'other' {
@@ -96,7 +96,7 @@ function lines(root: string, path: string): string[] {
 
 /** The units the reconciler must be ordered before, each with the file that must exist. */
 const BEFORE_PAIRS: readonly { dep: string, file: string }[] = [
-  { dep: 'mosd.service', file: '/usr/lib/systemd/system/mosd.service' },
+  { dep: 'micad.service', file: '/usr/lib/systemd/system/micad.service' },
   { dep: 'ssh.service', file: '/usr/lib/systemd/system/ssh.service' },
   { dep: 'systemd-logind.service', file: '/usr/lib/systemd/system/systemd-logind.service' },
   { dep: 'systemd-user-sessions.service', file: '/usr/lib/systemd/system/systemd-user-sessions.service' },
@@ -169,7 +169,7 @@ export const SHADOW_CHECKS: readonly CheckCase[] = [
             + `file -- byte-identical on every device in the fleet -- rather than to the copy built `
             + `in RAM at boot`
           : `${SHADOW_LINK_TARGET} does not exist inside the squashfs, so the symlink can only ever `
-            + `resolve to the file mos-shadow-reconcile builds in RAM`,
+            + `resolve to the file mica-shadow-reconcile builds in RAM`,
       )]
     },
   },
@@ -329,7 +329,7 @@ export const SHADOW_CHECKS: readonly CheckCase[] = [
     // the unit name after the `=` rather than at it.
     instance: /Before=(?: naming )?([A-Za-z0-9@._-]+)/,
     shell: {
-      pass: 'mos-shadow-reconcile.service orders ',
+      pass: 'mica-shadow-reconcile.service orders ',
       fail: [
         'ordering cannot be checked',
         'has no Before= naming',
@@ -350,21 +350,21 @@ export const SHADOW_CHECKS: readonly CheckCase[] = [
         const firing = { instance: dep }
         if (!unitPresent) {
           return verdict('shadow-reconcile-ordered-before', false,
-            `mos-shadow-reconcile.service is missing, so its Before=${dep} ordering cannot be checked`,
+            `mica-shadow-reconcile.service is missing, so its Before=${dep} ordering cannot be checked`,
             firing)
         }
         if (!named.has(dep)) {
           return verdict('shadow-reconcile-ordered-before', false,
-            `mos-shadow-reconcile.service has no Before= naming ${dep}; ${dep} would look for `
+            `mica-shadow-reconcile.service has no Before= naming ${dep}; ${dep} would look for `
             + `${SHADOW} before this unit builds it, and find no file at all`, firing)
         }
         if (entry(root, file)?.isFile() !== true) {
           return verdict('shadow-reconcile-ordered-before', false,
-            `mos-shadow-reconcile.service orders Before=${dep} but ${file} is not in the image; `
+            `mica-shadow-reconcile.service orders Before=${dep} but ${file} is not in the image; `
             + `systemd drops an ordering against a non-existent unit SILENTLY`, firing)
         }
         return verdict('shadow-reconcile-ordered-before', true,
-          `mos-shadow-reconcile.service orders Before=${dep}, and ${file} is present in the image`,
+          `mica-shadow-reconcile.service orders Before=${dep}, and ${file} is present in the image`,
           firing)
       })
     },
@@ -372,30 +372,30 @@ export const SHADOW_CHECKS: readonly CheckCase[] = [
 
   {
     // ...and NO ordering against STATE. The file is built on a tmpfs systemd
-    // has already mounted, so a dependency on var-lib-mos.mount would delay the
+    // has already mounted, so a dependency on var-lib-mica.mount would delay the
     // credential file behind a storage mount that can fail -- and it would say,
     // to the next reader of this unit, that the file still lives on STATE.
     id: 'shadow-reconcile-no-state-dep',
     shell: {
-      pass: 'declares no After=/Requires= against var-lib-mos.mount or /mnt/data/state',
+      pass: 'declares no After=/Requires= against var-lib-mica.mount or /mnt/data/state',
       fail: ['still depends on STATE:', 'so its lack of a STATE ordering cannot be checked'],
     },
     run: async (ctx): Promise<readonly CheckResult[]> => {
       const root = await packedRoot(ctx)
       if (entry(root, REC_UNIT)?.isFile() !== true) {
         return [verdict('shadow-reconcile-no-state-dep', false,
-          'mos-shadow-reconcile.service is missing, so its lack of a STATE ordering cannot be checked')]
+          'mica-shadow-reconcile.service is missing, so its lack of a STATE ordering cannot be checked')]
       }
       const hits = lines(root, REC_UNIT)
         .map((l, i) => ({ l, n: i + 1 }))
-        .filter(({ l }) => /^(After|Requires|RequiresMountsFor|BindsTo)=.*(var-lib-mos|\/mnt\/data\/state)/.test(l))
+        .filter(({ l }) => /^(After|Requires|RequiresMountsFor|BindsTo)=.*(var-lib-mica|\/mnt\/data\/state)/.test(l))
       return [verdict(
         'shadow-reconcile-no-state-dep',
         hits.length === 0,
         hits.length === 0
-          ? 'mos-shadow-reconcile.service declares no After=/Requires= against var-lib-mos.mount or '
+          ? 'mica-shadow-reconcile.service declares no After=/Requires= against var-lib-mica.mount or '
             + '/mnt/data/state; it needs only the tmpfs systemd has already mounted'
-          : `mos-shadow-reconcile.service still depends on STATE: `
+          : `mica-shadow-reconcile.service still depends on STATE: `
             + `${hits.map(h => `${h.n}:${h.l}`).join(' ')} . It builds ${SHADOW_LINK_TARGET} in RAM `
             + `and touches no persistent storage; an ordering against a mount it does not need can `
             + `only delay or block the file PAM opens`,
@@ -405,14 +405,14 @@ export const SHADOW_CHECKS: readonly CheckCase[] = [
 
   {
     // And nothing may seed a shadow file onto STATE behind its back.
-    // mos-seed-state ran the reconciler against /mnt/data/state/mos/shadow on first
+    // mica-seed-state ran the reconciler against /mnt/data/state/mos/shadow on first
     // boot, back when /etc/shadow resolved there; with the file in RAM that
     // line would put a credential on persistent storage that nothing reads and
     // nothing ever clears.
     id: 'seed-state-no-shadow-on-state',
     shell: {
-      pass: 'mos-seed-state seeds no shadow file onto STATE',
-      fail: ['mos-seed-state still puts a shadow file on STATE:', `${SEED_STATE} is not in the image`],
+      pass: 'mica-seed-state seeds no shadow file onto STATE',
+      fail: ['mica-seed-state still puts a shadow file on STATE:', `${SEED_STATE} is not in the image`],
     },
     run: async (ctx): Promise<readonly CheckResult[]> => {
       const root = await packedRoot(ctx)
@@ -424,14 +424,14 @@ export const SHADOW_CHECKS: readonly CheckCase[] = [
         .map((l, i) => ({ l, n: i + 1 }))
         // `grep -v '^[0-9]*:#'`: a COMMENT is not a seeding, and the file is
         // allowed to explain why it does not do this.
-        .filter(({ l }) => /mos-shadow-reconcile|\/mnt\/data\/state\/[a-z]*\/?shadow/.test(l) && !l.startsWith('#'))
+        .filter(({ l }) => /mica-shadow-reconcile|\/mnt\/data\/state\/[a-z]*\/?shadow/.test(l) && !l.startsWith('#'))
       return [verdict(
         'seed-state-no-shadow-on-state',
         hits.length === 0,
         hits.length === 0
-          ? `mos-seed-state seeds no shadow file onto STATE; the only ${SHADOW} on the device is the `
+          ? `mica-seed-state seeds no shadow file onto STATE; the only ${SHADOW} on the device is the `
             + `one built in RAM at boot`
-          : `mos-seed-state still puts a shadow file on STATE: ${hits.map(h => `${h.n}:${h.l}`).join(' ')} . `
+          : `mica-seed-state still puts a shadow file on STATE: ${hits.map(h => `${h.n}:${h.l}`).join(' ')} . `
             + `The only credential mos supports is a transient root password, and a copy on a `
             + `partition that survives reboots cannot be transient by construction`,
       )]
@@ -450,7 +450,7 @@ export const SHADOW_CHECKS: readonly CheckCase[] = [
     shell: {
       pass: 'in RAM from ',
       fail: [
-        'mos-shadow-reconcile would not make the root password transient:',
+        'mica-shadow-reconcile would not make the root password transient:',
         `${REC_SCRIPT} is not in the image`,
       ],
     },
@@ -485,10 +485,10 @@ export const SHADOW_CHECKS: readonly CheckCase[] = [
         'shadow-reconcile-builds-in-ram',
         defects.length === 0,
         defects.length === 0
-          ? `mos-shadow-reconcile builds ${SHADOW_LINK_TARGET} in RAM from ${FACTORY_SHADOW} on every `
+          ? `mica-shadow-reconcile builds ${SHADOW_LINK_TARGET} in RAM from ${FACTORY_SHADOW} on every `
             + `boot, locking every entry it copies and reading nothing from the previous boot -- which `
             + `is what makes the root password transient without a protocol to get wrong`
-          : `mos-shadow-reconcile would not make the root password transient:${defects.join('')}`,
+          : `mica-shadow-reconcile would not make the root password transient:${defects.join('')}`,
       )]
     },
   },
@@ -531,7 +531,7 @@ export const SHADOW_CHECKS: readonly CheckCase[] = [
     // What this proves: the shadow file that SHIPS carries no usable ROOT
     // password, so a signed rootfs -- byte-identical on every device in the
     // fleet -- cannot hand anyone a working login. What it does NOT prove is
-    // that the device ends up with a good password; that is mosd's job at
+    // that the device ends up with a good password; that is micad's job at
     // runtime and is only observable on a real boot.
     id: 'factory-shadow-root-locked',
     shell: {
@@ -563,7 +563,7 @@ export const SHADOW_CHECKS: readonly CheckCase[] = [
         `the packed rootfs carries a usable root password hash in ${FACTORY_SHADOW}. A signed rootfs `
         + `is byte-identical on every device, so this is a fleet-wide shared secret. Something in the `
         + `build wrote a root credential (the build has no ROOT_PASSWORD build arg on purpose); root access `
-        + `is provisioned at runtime — mosd's transient password`)]
+        + `is provisioned at runtime — micad's transient password`)]
     },
   },
 
@@ -642,8 +642,8 @@ export const SHADOW_CHECKS: readonly CheckCase[] = [
       const root = await packedRoot(ctx)
       const candidates = [
         REC_UNIT,
-        ...dropIns(root, '/etc/systemd/system/mos-shadow-reconcile.service.d'),
-        ...dropIns(root, '/usr/lib/systemd/system/mos-shadow-reconcile.service.d'),
+        ...dropIns(root, '/etc/systemd/system/mica-shadow-reconcile.service.d'),
+        ...dropIns(root, '/usr/lib/systemd/system/mica-shadow-reconcile.service.d'),
       ]
       const hits = candidates.filter(p => entry(root, p)?.isFile() === true
         && lines(root, p).some(l => /^[ \t]*Environment(File)?=.*(MOS_SHADOW_PASSWD|MOS_SHADOW_FACTORY)/.test(l)))
@@ -651,9 +651,9 @@ export const SHADOW_CHECKS: readonly CheckCase[] = [
         'shadow-reconcile-no-test-override',
         hits.length === 0,
         hits.length === 0
-          ? 'no Environment=/EnvironmentFile= in mos-shadow-reconcile.service or its drop-in dirs names '
+          ? 'no Environment=/EnvironmentFile= in mica-shadow-reconcile.service or its drop-in dirs names '
             + 'MOS_SHADOW_PASSWD or MOS_SHADOW_FACTORY (the test-harness overrides stay inert in the image)'
-          : `mos-shadow-reconcile.service is given a MOS_SHADOW_PASSWD/MOS_SHADOW_FACTORY override by:`
+          : `mica-shadow-reconcile.service is given a MOS_SHADOW_PASSWD/MOS_SHADOW_FACTORY override by:`
             + `${hits.map(p => ` ${p}`).join('')}. Those exist so the offline test harness can run the `
             + `real script; in the image they redirect where root's credentials are reconciled from and to`,
       )]

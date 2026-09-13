@@ -21,9 +21,9 @@ RUN set -eu; \
     bash /in/render.sh /src /render; \
     . /src/boards/cx3576/board.env; \
     PKG="mos-board-${LAYOUT_BOARD}"; ROOT="/stage/${PKG}"; \
-    install -d -m 0755 "${ROOT}/etc/repart.d" "${ROOT}/etc/mos" \
+    install -d -m 0755 "${ROOT}/etc/repart.d" "${ROOT}/etc/mica" \
         "${ROOT}/etc/systemd/system/multi-user.target.wants" \
-        "${ROOT}/usr/lib/mos" "${ROOT}/usr/lib/systemd/system" \
+        "${ROOT}/usr/lib/mica" "${ROOT}/usr/lib/systemd/system" \
         "${ROOT}/usr/lib/udev/rules.d" "${ROOT}/usr/lib/systemd/network"; \
     install -m 0644 /render/fstab "${ROOT}/etc/fstab"; \
     cp /render/repart.d/*.conf "${ROOT}/etc/repart.d/"; \
@@ -46,7 +46,7 @@ RUN set -eu; \
     \
     # PRESETS, taken as a set for the same reason as the drop-ins above. This \
     # board ships 50-mos-getty.preset, which resolves getty@tty1 to disabled so \
-    # HDMI shows PLAN-088's boot logo instead of a login prompt; mos-system \
+    # HDMI shows PLAN-088's boot logo instead of a login prompt; mica-system \
     # ships the ssh and nftables ones the same way, in /usr/lib rather than \
     # /etc so an operator's /etc still outranks board policy. \
     # \
@@ -65,10 +65,10 @@ RUN set -eu; \
     echo "presets: staged ${presets} board preset(s)"; \
     \
     # Hardware init, and THE SPLIT. Every fact in BOARD_HWINIT_CONFS ships as \
-    # /etc/mos/<n>.conf, bt.conf included: the UART, the protocol and the \
+    # /etc/mica/<n>.conf, bt.conf included: the UART, the protocol and the \
     # firmware node of the Bluetooth part are facts about this BOARD. The \
-    # program and unit that consume it, hwinit-bt and mos-bt.service, are \
-    # generic and belong to mos-bluetooth, so a board with a different radio \
+    # program and unit that consume it, hwinit-bt and mica-bt.service, are \
+    # generic and belong to mica-bluetooth, so a board with a different radio \
     # ships a different conf and the same application package. That is why the \
     # skip below is on the program/unit half only, and why removing it would \
     # leave a Bluetooth service inside a board package -- and make two \
@@ -79,12 +79,12 @@ RUN set -eu; \
     for n in ${BOARD_HWINIT_CONFS}; do \
         conf="/in/board-init/${n}.conf"; \
         [ -f "${conf}" ] || { echo "error: ${LAYOUT_BOARD} declares '${n}' in BOARD_HWINIT_CONFS and boards/${LAYOUT_BOARD}/bsp/init/${n}.conf does not exist; the unit that reads it would find no fact on the device" >&2; exit 1; }; \
-        install -m 0644 "${conf}" "${ROOT}/etc/mos/${n}.conf"; \
+        install -m 0644 "${conf}" "${ROOT}/etc/mica/${n}.conf"; \
         [ "${n}" != bt ] || continue; \
         script="/in/hwinit/hwinit-${n}"; unit="/in/hwinit/mos-${n}.service"; \
-        [ -f "${script}" ] || { echo "error: /etc/mos/${n}.conf is a board fact that no hwinit script reads (there is no boards/${LAYOUT_BOARD}/hwinit/hwinit-${n}); a fact nothing consumes is a silent no-op on the device" >&2; exit 1; }; \
+        [ -f "${script}" ] || { echo "error: /etc/mica/${n}.conf is a board fact that no hwinit script reads (there is no boards/${LAYOUT_BOARD}/hwinit/hwinit-${n}); a fact nothing consumes is a silent no-op on the device" >&2; exit 1; }; \
         [ -f "${unit}" ] || { echo "error: boards/${LAYOUT_BOARD}/hwinit/hwinit-${n} has no unit to run it (there is no boards/${LAYOUT_BOARD}/hwinit/mos-${n}.service)" >&2; exit 1; }; \
-        install -m 0755 "${script}" "${ROOT}/usr/lib/mos/hwinit-${n}"; \
+        install -m 0755 "${script}" "${ROOT}/usr/lib/mica/hwinit-${n}"; \
         install -m 0644 "${unit}" "${ROOT}/usr/lib/systemd/system/mos-${n}.service"; \
         # ENABLEMENT IS A FILE THIS PACKAGE OWNS. The image creates exactly \
         # this symlink today; a postinst `systemctl enable` would write it \
@@ -97,7 +97,7 @@ RUN set -eu; \
         done; \
         # ...and the systemd .link files beside them, same glob shape and same \
         # reason: a fact's udev-side payload ships with the fact rather than \
-        # being named here. 60-mos-mac-stable.link is what stops systemd's own \
+        # being named here. 60-mica-mac-stable.link is what stops systemd's own \
         # 99-default.link MACAddressPolicy=persistent from painting a \
         # machine-id-derived address over a port hwinit-mac is about to \
         # assign; without it that program is a no-op on this board, so the \
@@ -113,10 +113,10 @@ RUN set -eu; \
     # has no /sys/class/leds and the unit failed on every boot there, which is \
     # the difference BOARD_HAS_STATUS_LED exists to record. \
     if [ "${BOARD_HAS_STATUS_LED:-0}" = 1 ]; then \
-        install -m 0755 /in/board-overlay/usr/lib/mos/mos-status-led "${ROOT}/usr/lib/mos/mos-status-led"; \
-        install -m 0644 /in/board-overlay/usr/lib/systemd/system/mos-status-led.service "${ROOT}/usr/lib/systemd/system/mos-status-led.service"; \
-        cp -a /in/board-overlay/etc/systemd/system/multi-user.target.wants/mos-status-led.service \
-            "${ROOT}/etc/systemd/system/multi-user.target.wants/mos-status-led.service"; \
+        install -m 0755 /in/board-overlay/usr/lib/mica/mica-status-led "${ROOT}/usr/lib/mica/mica-status-led"; \
+        install -m 0644 /in/board-overlay/usr/lib/systemd/system/mica-status-led.service "${ROOT}/usr/lib/systemd/system/mica-status-led.service"; \
+        cp -a /in/board-overlay/etc/systemd/system/multi-user.target.wants/mica-status-led.service \
+            "${ROOT}/etc/systemd/system/multi-user.target.wants/mica-status-led.service"; \
     fi; \
     \
     install -D -m 0644 /in/copyright "${ROOT}/usr/share/doc/${PKG}/copyright"; \

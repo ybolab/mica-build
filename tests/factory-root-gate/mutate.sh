@@ -73,7 +73,7 @@ expect_agrees() {
     fi
 }
 
-target="${oci}/usr/bin/mos-deploy"
+target="${oci}/usr/bin/mica-deploy"
 [ -f "${target}" ] || {
     echo "error: ${target} is not in the export, so there is nothing to mutate here." >&2
     echo "       The mandatory native deployment package is absent from this factory root." >&2
@@ -96,17 +96,17 @@ expect_agrees "gid" "metadata" meta_cmp
 
 echo "== 3. a renamed path =="
 mv "${target}" "${target}-renamed"
-expect_differs "usr/bin/mos-deploy -> usr/bin/mos-deploy-renamed" "metadata" meta_cmp
+expect_differs "usr/bin/mica-deploy -> usr/bin/mica-deploy-renamed" "metadata" meta_cmp
 mv "${target}-renamed" "${target}"
 expect_agrees "rename" "metadata" meta_cmp
 
 echo "== 4. a single byte =="
-cp -a "${target}" "${work}/mos-deploy.orig"
+cp -a "${target}" "${work}/mica-deploy.orig"
 printf 'x' | dd of="${target}" bs=1 seek=64 conv=notrunc status=none
 expect_differs "one byte at offset 64" "content" content_cmp
 # Restored by copy rather than by writing the byte back: a revert that left the
 # mode or the mtime changed would make the next check pass for the wrong reason.
-cp -a "${work}/mos-deploy.orig" "${target}"
+cp -a "${work}/mica-deploy.orig" "${target}"
 expect_agrees "byte" "content" content_cmp
 
 # The device node the next three cases move, chosen off the export rather than
@@ -170,7 +170,7 @@ echo "== 8. a file capability =="
 # The one this root cannot demonstrate on its own, added to the OCI side only,
 # so the comparison has something to notice for the first time.
 setcap cap_net_raw+ep "${target}"
-expect_differs "cap_net_raw+ep added to usr/bin/mos-deploy" "capabilities" caps_cmp
+expect_differs "cap_net_raw+ep added to usr/bin/mica-deploy" "capabilities" caps_cmp
 setcap -r "${target}"
 expect_agrees "capability" "capabilities" caps_cmp
 
@@ -203,7 +203,7 @@ if [ -n "${linked}" ]; then
 else
     echo "  -- this root carries no multiply-linked file; making one instead of breaking one"
     ln "${target}" "${target}-link"
-    expect_differs "usr/bin/mos-deploy given a second name" "hardlink" links_cmp
+    expect_differs "usr/bin/mica-deploy given a second name" "hardlink" links_cmp
     rm "${target}-link"
     expect_agrees "hardlink" "hardlink" links_cmp
 fi

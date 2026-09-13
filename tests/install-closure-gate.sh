@@ -45,7 +45,7 @@
 #      status AND stderr match that signature. Anything else is a FAIL, and on
 #      the native route the same failure stays a FAIL.
 #
-#   4  THE RADIO PACKAGES, SEPARATELY. mos-wifi, mos-wifi-ap and mos-bluetooth
+#   4  THE RADIO PACKAGES, SEPARATELY. mica-wifi, mica-wifi-ap and mica-bluetooth
 #      each go into their OWN clean root -- three installs, not one with three
 #      names, because the claim under test is that they are independent. Their
 #      non-directory payloads must be disjoint, no root may end up holding
@@ -54,15 +54,15 @@
 #      that could not have pulled them proves nothing about whether it would
 #      have.
 #
-#   5  THE APT EXPERIMENT behind PLAN-036 decision (g). `mosd` declares
-#      `Depends: mos-profile`, a virtual name that mos-profile-dev and
-#      mos-profile-prod both Provide and that they Conflict over. What APT does
+#   5  THE APT EXPERIMENT behind PLAN-036 decision (g). `micad` declares
+#      `Depends: mica-profile`, a virtual name that mica-profile-dev and
+#      mica-profile-prod both Provide and that they Conflict over. What APT does
 #      when that dependency is UNSATISFIABLE, and what it does when TWO mutually
 #      conflicting packages offer it, are OBSERVATIONS and not assertions: the
 #      ruling assumed a behaviour nobody had run. This gate records the
 #      transcript and the exit status verbatim and judges neither. What it does
-#      assert is that the experiment had material -- that the mosd archive
-#      really names mos-profile, that the "neither" root really offers neither
+#      assert is that the experiment had material -- that the micad archive
+#      really names mica-profile, that the "neither" root really offers neither
 #      provider and the "both" root really offers both. Without those three the
 #      transcript is a recording of nothing.
 #
@@ -183,13 +183,13 @@ pin() {
 # pass or fail, under emulation exactly as natively.
 COMPONENTS="${WORK}/components.tsv"
 {
-    printf 'mosd\t/usr/bin/mosd\t%s\tbuild-env/deb/version.sh\t-\t-\n' "${CRATE_VERSION}"
+    printf 'micad\t/usr/bin/micad\t%s\tbuild-env/deb/version.sh\t-\t-\n' "${CRATE_VERSION}"
     printf 'apid\t/usr/bin/apid\t%s\tbuild-env/deb/version.sh\t-\t-\n' "${CRATE_VERSION}"
-    printf 'mos-mqttd\t/usr/bin/mos-mqttd\t%s\tbuild-env/deb/version.sh\t-\t-\n' "${CRATE_VERSION}"
-    printf 'mos-mqtt-broker\t/usr/bin/mos-mqtt-broker\t%s\tbuild-env/deb/version.sh\t-\t-\n' "${CRATE_VERSION}"
-    deploy_version=$(sed -n 's/^version = "\([^" ]*\)"/\1/p' "${REPO_ROOT}/pkgs/mos-deploy/Cargo.toml" | head -1)
+    printf 'mica-mqttd\t/usr/bin/mica-mqttd\t%s\tbuild-env/deb/version.sh\t-\t-\n' "${CRATE_VERSION}"
+    printf 'mica-mqtt-broker\t/usr/bin/mica-mqtt-broker\t%s\tbuild-env/deb/version.sh\t-\t-\n' "${CRATE_VERSION}"
+    deploy_version=$(sed -n 's/^version = "\([^" ]*\)"/\1/p' "${REPO_ROOT}/pkgs/mica-deploy/Cargo.toml" | head -1)
     test -n "$deploy_version"
-    printf 'mos-deploy\t/usr/bin/mos-deploy\t%s\tpkgs/mos-deploy/Cargo.toml\t-\t-\n' "$deploy_version"
+    printf 'mica-deploy\t/usr/bin/mica-deploy\t%s\tpkgs/mica-deploy/Cargo.toml\t-\t-\n' "$deploy_version"
     printf 'podman\t/usr/bin/podman\t%s\tPODMAN_VERSION\t-\t-\n' "$(pin "${PODMAN_VERSIONS}" PODMAN_VERSION)"
     printf 'quadlet\t/usr/libexec/podman/quadlet\t%s\tPODMAN_VERSION\t-\t-\n' "$(pin "${PODMAN_VERSIONS}" PODMAN_VERSION)"
     # crun 1.29.1 re-executes libcrun out of a memory file descriptor -- its
@@ -256,7 +256,7 @@ fail() { FAIL_N=$((FAIL_N + 1)); echo "FAIL: $1"; }
 #
 # e_type is what decides whether `ldd` means anything. ET_EXEC (2) and ET_DYN
 # (3) are loaded by the dynamic linker and have sonames to resolve; ET_REL (1)
-# is an object the kernel links itself -- every .ko in mos-board-cx3576 is one,
+# is an object the kernel links itself -- every .ko in mica-board-cx3576 is one,
 # and `ldd` over those would be thousands of meaningless invocations. Read out
 # of the header rather than guessed from the path or the mode bit, so a module
 # that arrived somewhere unexpected is still classified by what it is.
@@ -626,13 +626,13 @@ else
     tail -n 40 /tmp/install.log
 fi
 
-# mos-mqttd really absent. Without this the sweep below runs over a root that
+# mica-mqttd really absent. Without this the sweep below runs over a root that
 # still holds the package whose dependencies are the entire question, and it
 # could not have failed.
-st="$(dpkg-query -W -f='${Status}' mos-mqttd 2>/dev/null || true)"
+st="$(dpkg-query -W -f='${Status}' mica-mqttd 2>/dev/null || true)"
 case "${st}" in
-'install ok installed'*) fail "declined-mqtt: mos-mqttd is installed in the root that declined it, so this sweep is over the same closure as the full root and proves nothing about what its dependencies were carrying" ;;
-*) pass "declined-mqtt: mos-mqttd is absent, as required by the reduced manifest" ;;
+'install ok installed'*) fail "declined-mqtt: mica-mqttd is installed in the root that declined it, so this sweep is over the same closure as the full root and proves nothing about what its dependencies were carrying" ;;
+*) pass "declined-mqtt: mica-mqttd is absent, as required by the reduced manifest" ;;
 esac
 
 ALL_PATHS=/tmp/all-paths.txt
@@ -665,7 +665,7 @@ OTHERS="$2"
 apt-get update >/tmp/update.log 2>&1 || { fail "apt-get update failed"; tail -n 20 /tmp/update.log; }
 
 # That the OTHER radio packages were AVAILABLE, asserted before the install:
-# "this root does not hold mos-bluetooth" is worth nothing if mos-bluetooth was
+# "this root does not hold mica-bluetooth" is worth nothing if mica-bluetooth was
 # not installable here in the first place, and that check would then be over a
 # pool that could not have failed it.
 AVAILABLE_N=0
@@ -737,7 +737,7 @@ RADIO
 cat >"${IN}/experiment.sh" <<'EXP'
 #!/bin/bash
 # PLAN-036 decision (g)'s open question, RUN rather than reasoned about: what
-# does APT do with `Depends: mos-profile` when neither provider is available,
+# does APT do with `Depends: mica-profile` when neither provider is available,
 # and what does it do when both are and they Conflict?
 #
 # This script asserts only that the experiment has material. The outcome is
@@ -750,11 +750,11 @@ MODE="$1"
 
 if [ "${MODE}" = none ]; then
     before="$(grep -c '^Package: ' /dist/Packages)"
-    rm -f /dist/pool/mos-profile-dev_*.deb /dist/pool/mos-profile-prod_*.deb
+    rm -f /dist/pool/mica-profile-dev_*.deb /dist/pool/mica-profile-prod_*.deb
     awk 'BEGIN { RS = ""; FS = "\n"; ORS = "\n\n" }
          { keep = 1
            for (i = 1; i <= NF; i++)
-               if ($i == "Package: mos-profile-dev" || $i == "Package: mos-profile-prod") keep = 0
+               if ($i == "Package: mica-profile-dev" || $i == "Package: mica-profile-prod") keep = 0
            if (keep) print }' /dist/Packages >/dist/Packages.new
     mv /dist/Packages.new /dist/Packages
     after="$(grep -c '^Package: ' /dist/Packages)"
@@ -770,12 +770,12 @@ apt-get update >/tmp/update.log 2>&1 || { fail "apt-get update failed"; tail -n 
 # The material. Without these the transcript below records nothing: an
 # unsatisfied dependency that was never declared, or an "unavailable" provider
 # that was never in the pool to begin with.
-mosd_deps="$(apt-cache show mosd 2>/dev/null | sed -n 's/^Depends: //p' | head -n1)"
-case " ${mosd_deps//,/ } " in
-*" mos-profile "*) pass "the mosd archive in this pool declares mos-profile: ${mosd_deps}" ;;
-*) fail "the mosd archive does not name mos-profile in Depends ('${mosd_deps}'); this experiment would be about a dependency that is not there" ;;
+micad_deps="$(apt-cache show micad 2>/dev/null | sed -n 's/^Depends: //p' | head -n1)"
+case " ${micad_deps//,/ } " in
+*" mica-profile "*) pass "the micad archive in this pool declares mica-profile: ${micad_deps}" ;;
+*) fail "the micad archive does not name mica-profile in Depends ('${micad_deps}'); this experiment would be about a dependency that is not there" ;;
 esac
-for p in mos-profile-dev mos-profile-prod; do
+for p in mica-profile-dev mica-profile-prod; do
     cand="$(apt-cache policy "${p}" 2>/dev/null | sed -n 's/^  Candidate: //p')"
     case "${MODE}" in
     none)
@@ -793,24 +793,24 @@ for p in mos-profile-dev mos-profile-prod; do
     esac
 done
 
-echo "=== apt-cache policy mos-profile (the virtual name) ==="
-apt-cache policy mos-profile 2>&1 || true
-echo "=== apt-cache showpkg mos-profile ==="
-apt-cache showpkg mos-profile 2>&1 | head -n 30 || true
+echo "=== apt-cache policy mica-profile (the virtual name) ==="
+apt-cache policy mica-profile 2>&1 || true
+echo "=== apt-cache showpkg mica-profile ==="
+apt-cache showpkg mica-profile 2>&1 | head -n 30 || true
 
-echo "=== apt-get install -y mosd : VERBATIM ==="
+echo "=== apt-get install -y micad : VERBATIM ==="
 set +e
-apt-get install -y --no-install-recommends mosd 2>&1
+apt-get install -y --no-install-recommends micad 2>&1
 apt_status=$?
 set -e
-echo "=== apt-get install -y mosd : exit ${apt_status} ==="
+echo "=== apt-get install -y micad : exit ${apt_status} ==="
 
 echo "=== what the root holds afterwards ==="
-for p in mosd mos-system mos-profile-dev mos-profile-prod; do
+for p in micad mica-system mica-profile-dev mica-profile-prod; do
     echo "${p}: $(dpkg-query -W -f='${Status} ${Version}' "${p}" 2>/dev/null || echo 'not present')"
 done
 
-echo "OBSERVED-${MODE}: aptExit=${apt_status} mosd=[$(dpkg-query -W -f='${Status}' mosd 2>/dev/null || echo absent)] dev=[$(dpkg-query -W -f='${Status}' mos-profile-dev 2>/dev/null || echo absent)] prod=[$(dpkg-query -W -f='${Status}' mos-profile-prod 2>/dev/null || echo absent)]"
+echo "OBSERVED-${MODE}: aptExit=${apt_status} micad=[$(dpkg-query -W -f='${Status}' micad 2>/dev/null || echo absent)] dev=[$(dpkg-query -W -f='${Status}' mica-profile-dev 2>/dev/null || echo absent)] prod=[$(dpkg-query -W -f='${Status}' mica-profile-prod 2>/dev/null || echo absent)]"
 echo "RESULT-EXP ${MODE}: ${PASS_N} pass, ${FAIL_N} fail"
 echo "-- end exp ${MODE} --"
 EXP
@@ -840,13 +840,13 @@ FROM poolbase AS declined-mqtt
 RUN bash /in/assert-declined.sh >/report/declined.txt 2>&1; cat /report/declined.txt
 
 FROM poolbase AS radio-wifi
-RUN bash /in/assert-radio.sh mos-wifi "mos-wifi-ap mos-bluetooth" >/report/radio.txt 2>&1; cat /report/radio.txt
+RUN bash /in/assert-radio.sh mica-wifi "mica-wifi-ap mica-bluetooth" >/report/radio.txt 2>&1; cat /report/radio.txt
 
 FROM poolbase AS radio-wifi-ap
-RUN bash /in/assert-radio.sh mos-wifi-ap "mos-wifi mos-bluetooth" >/report/radio.txt 2>&1; cat /report/radio.txt
+RUN bash /in/assert-radio.sh mica-wifi-ap "mica-wifi mica-bluetooth" >/report/radio.txt 2>&1; cat /report/radio.txt
 
 FROM poolbase AS radio-bluetooth
-RUN bash /in/assert-radio.sh mos-bluetooth "mos-wifi mos-wifi-ap" >/report/radio.txt 2>&1; cat /report/radio.txt
+RUN bash /in/assert-radio.sh mica-bluetooth "mica-wifi mica-wifi-ap" >/report/radio.txt 2>&1; cat /report/radio.txt
 
 FROM poolbase AS exp-none
 RUN bash /in/experiment.sh none >/report/exp.txt 2>&1; cat /report/exp.txt
@@ -857,9 +857,9 @@ RUN bash /in/experiment.sh both >/report/exp.txt 2>&1; cat /report/exp.txt
 FROM scratch AS reports
 COPY --from=full /report/full.txt /full.txt
 COPY --from=declined-mqtt /report/declined.txt /declined.txt
-COPY --from=radio-wifi /report/radio.txt /radio-mos-wifi.txt
-COPY --from=radio-wifi-ap /report/radio.txt /radio-mos-wifi-ap.txt
-COPY --from=radio-bluetooth /report/radio.txt /radio-mos-bluetooth.txt
+COPY --from=radio-wifi /report/radio.txt /radio-mica-wifi.txt
+COPY --from=radio-wifi-ap /report/radio.txt /radio-mica-wifi-ap.txt
+COPY --from=radio-bluetooth /report/radio.txt /radio-mica-bluetooth.txt
 COPY --from=exp-none /report/exp.txt /exp-none.txt
 COPY --from=exp-both /report/exp.txt /exp-both.txt
 DOCKERFILE
@@ -898,8 +898,8 @@ count_of() {
     printf '%s\n' "${v:-0}"
 }
 
-REPORTS=(full.txt declined.txt radio-mos-wifi.txt radio-mos-wifi-ap.txt radio-mos-bluetooth.txt exp-none.txt exp-both.txt)
-TERMINATORS=("-- end full --" "-- end declined --" "-- end radio mos-wifi --" "-- end radio mos-wifi-ap --" "-- end radio mos-bluetooth --" "-- end exp none --" "-- end exp both --")
+REPORTS=(full.txt declined.txt radio-mica-wifi.txt radio-mica-wifi-ap.txt radio-mica-bluetooth.txt exp-none.txt exp-both.txt)
+TERMINATORS=("-- end full --" "-- end declined --" "-- end radio mica-wifi --" "-- end radio mica-wifi-ap --" "-- end radio mica-bluetooth --" "-- end exp none --" "-- end exp both --")
 
 for arch in "${ARCHES[@]}"; do
     echo
@@ -919,7 +919,7 @@ for arch in "${ARCHES[@]}"; do
     radios="$(sed -n 's/^BOARD_RADIOS="\(.*\)"$/\1/p' "${REPO_ROOT}/boards/${board}/board.env" | head -n1)"
 
     # `dev`, and it is the profile whose promise a missing profile package
-    # silently reverses: mosd fails closed to prod, so a dev resolution that
+    # silently reverses: micad fails closed to prod, so a dev resolution that
     # lost its profile package is the composition that looks green and ships
     # with SSH off. Installing the profile the failure mode is about is the
     # useful half of the pair.
@@ -1035,7 +1035,7 @@ for arch in "${ARCHES[@]}"; do
     # this difference that decides whether the declined root's ldd sweep could
     # have failed at all: a sweep over a root that lost nothing is a sweep that
     # was never going to find an undeclared dependency. Reported as the measured
-    # list rather than as a count, because WHICH libraries left with mos-mqttd is
+    # list rather than as a count, because WHICH libraries left with mica-mqttd is
     # the fact the ruling turns on.
     declined="${out}/declined.txt"
     if [ -f "${full}" ] && [ -f "${declined}" ]; then
@@ -1052,15 +1052,15 @@ for arch in "${ARCHES[@]}"; do
             echo "install-closure-gate: ${arch}: the full root holds ${full_n} package(s), the mqtt-declined root ${declined_n}; declining mqtt removed ${lost_n}: ${lost:-nothing at all}"
             DECLINED_LOST_TOTAL=$((DECLINED_LOST_TOTAL + lost_n))
             case " ${lost} " in
-            *" mos-mqttd "*)
+            *" mica-mqttd "*)
                 if [ "${lost_n}" -gt 1 ]; then
                     pass "${arch}: declining mqtt removed ${lost_n} package(s) beyond nothing, so the ldd sweep over that root had material that could have failed it"
                 else
-                    echo "install-closure-gate: ${arch}: mos-mqttd was the ONLY package that left. Nothing else's libraries went with it, so the sweep over the declined root could not have found an undeclared dependency -- it is a true green over an empty search space, and it is reported as that rather than quoted as a proof"
+                    echo "install-closure-gate: ${arch}: mica-mqttd was the ONLY package that left. Nothing else's libraries went with it, so the sweep over the declined root could not have found an undeclared dependency -- it is a true green over an empty search space, and it is reported as that rather than quoted as a proof"
                 fi
                 ;;
             *)
-                fail "${arch}: mos-mqttd is not among the packages the declined root lacks (${lost:-none}), so that root is not the mqtt-declined configuration it was meant to be"
+                fail "${arch}: mica-mqttd is not among the packages the declined root lacks (${lost:-none}), so that root is not the mqtt-declined configuration it was meant to be"
                 ;;
             esac
         fi
@@ -1072,7 +1072,7 @@ for arch in "${ARCHES[@]}"; do
     declare -A OWNER=()
     overlap=""
     radio_paths=0
-    for pkg in mos-wifi mos-wifi-ap mos-bluetooth; do
+    for pkg in mica-wifi mica-wifi-ap mica-bluetooth; do
         r="${out}/radio-${pkg}.txt"
         [ -f "${r}" ] || continue
         while IFS= read -r path; do
@@ -1100,8 +1100,8 @@ for arch in "${ARCHES[@]}"; do
         r="${out}/exp-${mode}.txt"
         [ -f "${r}" ] || continue
         echo
-        echo "--- ${arch}: APT with the mos-profile providers ${mode} available -- VERBATIM ---"
-        sed -n '/^=== apt-cache policy mos-profile (the virtual name) ===$/,/^=== what the root holds afterwards ===$/p' "${r}" | sed 's/^/  /'
+        echo "--- ${arch}: APT with the mica-profile providers ${mode} available -- VERBATIM ---"
+        sed -n '/^=== apt-cache policy mica-profile (the virtual name) ===$/,/^=== what the root holds afterwards ===$/p' "${r}" | sed 's/^/  /'
     done
 done
 

@@ -61,7 +61,7 @@ echo "### bind targets, present in the read-only image?"
 for p in /etc/ssh /etc/hostname /etc/containers/systemd /usr/local/lib/systemd/system \
          /etc/hostapd /etc/wpa_supplicant /mos /srv /home /root \
          /mnt/state /mnt/data /mnt/meta \
-         /var/lib/mos /var/lib/bluetooth /var/lib/systemd/timesync \
+         /var/lib/mica /var/lib/bluetooth /var/lib/systemd/timesync \
          /var/lib/systemd/random-seed /var/lib/systemd/rfkill /var/lib/systemd/linger \
          /var/lib/containers /var/tmp /var/log/wtmp.db /var/lib/wtmpdb; do
     if [ -e "$R$p" ] || [ -L "$R$p" ]; then echo "  present  $p"; else echo "  ABSENT   $p"; fi

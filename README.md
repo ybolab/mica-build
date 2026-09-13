@@ -9,9 +9,9 @@ Images build for x64, virt-arm64, cx3576 and s905x5m; see the
 [board status table](docs/boards/support-tiers.md#current-boards). Development and
 acceptance use fresh complete images; there are no old-layout readers or migrations.
 
-`mosd` owns device management and connectivity. `apid` exposes the authenticated
-API and React dashboard. `mos-init` authenticates the selected deployment before
-systemd starts; `mos-deploy` acquires, installs, confirms and retires deployments.
+`micad` owns device management and connectivity. `apid` exposes the authenticated
+API and React dashboard. `mica-init` authenticates the selected deployment before
+systemd starts; `mica-deploy` acquires, installs, confirms and retires deployments.
 
 Start with the [documentation portal](docs/README.md) or the
 [Chinese user guides](docs/zh/README.md).
@@ -21,9 +21,9 @@ Start with the [documentation portal](docs/README.md) or the
 | Path | Purpose |
 |---|---|
 | `boards/` | Board policy, kernel and boot-firmware BSPs |
-| `pkgs/mos-boot/` | UKI/FIT, initramfs and explicit development signing inputs |
-| `pkgs/mos-deploy/` | Native early boot and transactional deployment tools |
-| `pkgs/mosd/` | Management services, API, dashboard and MQTT |
+| `pkgs/mica-boot/` | UKI/FIT, initramfs and explicit development signing inputs |
+| `pkgs/mica-deploy/` | Native early boot and transactional deployment tools |
+| `pkgs/micad/` | Management services, API, dashboard and MQTT |
 | `rootfs/` | Userspace package composition and immutable root packing |
 | `build/` | Signed components, offline archives and complete image assembly |
 | `verify/`, `tests/` | Image verification, service tests and boot/fault acceptance |

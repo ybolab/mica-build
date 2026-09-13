@@ -8,9 +8,9 @@ update this file.
 ### Skill stack
 
 - `/pma` — workflow control, three-phase gate, task and plan tracking
-- `/pma-rust` — `pkgs/mosd/` (mosd, apid, mos-mqttd, broker, settings), `pkgs/mos-deploy/`
-- `/pma-bun` — `verify/`, `build/`, `update-server/`, `pkgs/mosd/tests/apid-api/`
-- `/pma-web` — `pkgs/mosd/apid/ui/` (React + Vite, embedded into apid)
+- `/pma-rust` — `pkgs/micad/` (micad, apid, mica-mqttd, broker, settings), `pkgs/mica-deploy/`
+- `/pma-bun` — `verify/`, `build/`, `update-server/`, `pkgs/micad/tests/apid-api/`
+- `/pma-web` — `pkgs/micad/apid/ui/` (React + Vite, embedded into apid)
 
 Large parts of this tree are bash and Dockerfiles (`rootfs/`, `build-env/`,
 `boards/*/bsp/`, `tests/`); no stack skill covers them, and `/pma`'s
@@ -27,9 +27,9 @@ the fast path; everything else waits for explicit approval such as `proceed`.
 
 - Source dependencies: `build-env/` (`ybolab/mica-build-env`) and `rootfs/debian/` (`ybolab/mica-debian`) are fetched at their pins in `deps/sources/` by `make deps` and are gitignored; a change inside either is committed, pushed and released in its own repository, then pinned here with `make deps-bump DEP=<repository>`
 
-- Primary language / runtime: Rust `1.96` (`pkgs/mosd/Cargo.toml` `rust-version`); Bun `1` pinned by digest as `IMAGE_BUN_1` in `build-env/images.env`
-- Database / storage: none — mosd persists to `DATA/state` and `DATA/meta` as files (`docs/design/`)
-- Dev URL routing: not used; the API is exercised through `pkgs/mosd/tests/apid-api/` against a QEMU guest
+- Primary language / runtime: Rust `1.96` (`pkgs/micad/Cargo.toml` `rust-version`); Bun `1` pinned by digest as `IMAGE_BUN_1` in `build-env/images.env`
+- Database / storage: none — micad persists to `DATA/state` and `DATA/meta` as files (`docs/design/`)
+- Dev URL routing: not used; the API is exercised through `pkgs/micad/tests/apid-api/` against a QEMU guest
 - Deployment target: embedded Linux images (signed file deployments, independent kernel/support and root components) for the boards under `boards/`
 - Quality-gate command: `make docs-verify` for documentation; the full gate set is the `make os-*` targets `.github/workflows/check.yml` runs — there is no single aggregate target yet
 - Fast path: enabled (default)

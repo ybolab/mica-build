@@ -41,20 +41,20 @@ function fixture(name: string, body: string): string {
  * statement of the requirement rather than a restatement of the
  * implementation. A register that quietly dropped an artifact would still
  * satisfy every property `pinCoverageFaults` checks -- the pin would just go
- * unclaimed if it had one, and mosd, apid, mos-mqttd and mos-mqtt-broker have
+ * unclaimed if it had one, and micad, apid, mica-mqttd and mica-mqtt-broker have
  * no `versions.env` pin at all, so three of the four could vanish without any
  * coverage direction noticing. This is what notices.
  *
- * Scope: "for mosd, apid, mos-mqttd, mos-mqtt-broker, mos-deploy, podman, quadlet,
+ * Scope: "for micad, apid, mica-mqttd, mica-mqtt-broker, mica-deploy, podman, quadlet,
  * crun, conmon, netavark, aardvark-dns -- minimal invocation inside that image
  * ... catatonit (static, no --version contract) gets an exec-only check."
  */
 const SCOPE_ARTIFACTS = [
-  'mosd',
+  'micad',
   'apid',
-  'mos-mqttd',
-  'mos-mqtt-broker',
-  'mos-deploy',
+  'mica-mqttd',
+  'mica-mqtt-broker',
+  'mica-deploy',
   'podman',
   'quadlet',
   'crun',
@@ -110,8 +110,8 @@ describe('the register names exactly the artifacts in scope', () => {
   // The commit half, and the set is stated here rather than derived from the
   // register for the reason the whole SCOPE_ARTIFACTS list is: this is an
   // independent statement of what the scope amendment authorised. The user
-  // lifted the exclusion for pkgs/mosd/mosd/src/main.rs and pkgs/mosd/apid/src/main.rs.
-  // mos-mqttd and mos-mqtt-broker are built by the same script from the same
+  // lifted the exclusion for pkgs/micad/micad/src/main.rs and pkgs/micad/apid/src/main.rs.
+  // mica-mqttd and mica-mqtt-broker are built by the same script from the same
   // workspace and were NOT named, so they do not embed a commit -- and if a
   // later change gives them one, this test is where that has to be argued for.
   // The executor-limited signature, locked to one entry for the reason
@@ -144,14 +144,14 @@ describe('the register names exactly the artifacts in scope', () => {
 
   test('exactly the two files the amendment named embed a build commit', () => {
     const embedding = ARTIFACTS.filter(a => a.embedsBuildCommit === true).map(a => a.name)
-    expect(embedding.sort()).toEqual(['apid', 'mosd'])
+    expect(embedding.sort()).toEqual(['apid', 'micad'])
 
     // ...and the other ten say nothing rather than `false`, which is the same
     // thing to the runner. Asserted so a future entry cannot claim a commit by
     // accident and go red against a record that says nothing about it.
     const silent = ARTIFACTS.filter(a => a.embedsBuildCommit !== true)
     expect(silent.length).toBe(ARTIFACTS.length - 2)
-    expect(silent.map(a => a.name)).not.toContain('mosd')
+    expect(silent.map(a => a.name)).not.toContain('micad')
   })
 })
 
@@ -223,12 +223,12 @@ describe('unclaimedFaults -- the category that must not grow silently', () => {
   // rather than from a mutated register against the shipped one, because
   // post-M7d nothing in the register is unclaimed to un-claim.
   test('an artifact that GAINS a version contract also refuses, until the record is updated', () => {
-    // The premise is a premise: mosd really is asked for a version now.
-    expect(ARTIFACTS.find(a => a.name === 'mosd')!.contract.kind).toBe('version')
+    // The premise is a premise: micad really is asked for a version now.
+    expect(ARTIFACTS.find(a => a.name === 'micad')!.contract.kind).toBe('version')
 
-    const faults = unclaimedFaults(ARTIFACTS, ['mosd'])
+    const faults = unclaimedFaults(ARTIFACTS, ['micad'])
     expect(faults.length).toBe(1)
-    expect(faults[0]!.message).toContain('mosd')
+    expect(faults[0]!.message).toContain('micad')
     expect(faults[0]!.message).toMatch(/GOOD direction/)
   })
 
@@ -240,7 +240,7 @@ describe('unclaimedFaults -- the category that must not grow silently', () => {
     // And the same pair with the stale entry still in it is NOT clean, so the
     // line above is about the record having moved and not about `[]` being
     // agreeable to everything.
-    expect(unclaimedFaults(ARTIFACTS, ['mosd', 'apid']).length).toBe(1)
+    expect(unclaimedFaults(ARTIFACTS, ['micad', 'apid']).length).toBe(1)
   })
 
   test('nothing infers the category at runtime -- an unclaimed entry is a literal', () => {
@@ -352,8 +352,8 @@ describe('pinCoverageFaults -- reverse, the direction that catches a NEW artifac
   })
 
   test('the deployment client reads its crate version', () => {
-    const deploy = ARTIFACTS.find(a => a.name === 'mos-deploy')!
-    expect(deploy.pin().file).toBe(join(REPO_ROOT, 'pkgs/mos-deploy/Cargo.toml'))
+    const deploy = ARTIFACTS.find(a => a.name === 'mica-deploy')!
+    expect(deploy.pin().file).toBe(join(REPO_ROOT, 'pkgs/mica-deploy/Cargo.toml'))
     expect(deploy.pin().key).toBe('package.version')
   })
 })

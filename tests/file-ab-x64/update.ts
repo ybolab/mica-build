@@ -43,8 +43,8 @@ try {
   if (kind !== 'kernel') {
     const tree = join(output, 'tree')
     await tb.must(['cp', '-a', resolve(join(evidence, '../tree')), tree])
-    writeFileSync(join(tree, 'etc/mos/component-proof'), `root-generation=${generation}\n`)
-    if (kind === 'bad-health') writeFileSync(join(tree, 'etc/mos/health.conf'), 'require=invalid-acceptance-probe\n')
+    writeFileSync(join(tree, 'etc/mica/component-proof'), `root-generation=${generation}\n`)
+    if (kind === 'bad-health') writeFileSync(join(tree, 'etc/mica/health.conf'), 'require=invalid-acceptance-probe\n')
     rootDirectory = join(output, 'root')
     rootfs = describeRoot(arch, `acceptance-${generation}`, await packComponent(tree, rootDirectory, 'rootfs', signing, tb))
     writeFileSync(join(rootDirectory, 'rootfs.json'), canonicalJson(rootfs))

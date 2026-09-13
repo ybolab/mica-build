@@ -30,7 +30,7 @@ set -euo pipefail
 
 HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 SCRIPT=$HERE/../boards/cx3576/hwinit/hwinit-mac
-RULE=$HERE/../boards/cx3576/hwinit/60-mos-mac-stable.rules
+RULE=$HERE/../boards/cx3576/hwinit/60-mica-mac-stable.rules
 WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT
 
@@ -206,7 +206,7 @@ CASES=$((CASES + 1))
 
 # --- 8. the rule hands it a name, and the scope holds ------------------------
 
-grep -q 'RUN+="/usr/lib/mos/hwinit-mac %k"' "$RULE" \
+grep -q 'RUN+="/usr/lib/mica/hwinit-mac %k"' "$RULE" \
     || fail "$RULE does not run the installed hwinit-mac with the kernel name; case 7 is then testing a call nothing makes"
 
 new_case scope

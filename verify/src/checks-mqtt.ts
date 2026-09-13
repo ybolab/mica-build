@@ -11,15 +11,15 @@
 // not be named by any `<policy user=>` and its ExecStart hardcoded a broker host
 // into a read-only squashfs. None of that is visible from the code side.
 // Inertness is the load-bearing half: `mqtt.enabled` is a master switch that
-// seeds false for every profile and mosd starts both units from it, so an
+// seeds false for every profile and micad starts both units from it, so an
 // enablement symlink baked into the image is the one thing that switch cannot
 // override, and the root is a read-only verity squashfs so nothing on the device
 // can remove it.
 //
 // Application access is positive and package-owned: a regular file named for
-// one exact `com.mos.<class>[.<suffix>]` service enrolls it, and a package policy
+// one exact `com.mica.<class>[.<suffix>]` service enrolls it, and a package policy
 // grants the static bridge user only that destination's Item1 members. There is
-// no mosd exception and no prefix-wide ownership policy.
+// no micad exception and no prefix-wide ownership policy.
 
 import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -28,15 +28,15 @@ import type { CheckCase } from './checks.ts'
 import type { CheckResult } from './parity.ts'
 import { verdict } from './verdict.ts'
 
-const MQTTD_BIN = '/usr/bin/mos-mqttd'
-const MQTTD_UNIT = '/usr/lib/systemd/system/mos-mqttd.service'
-const LEGACY_MQTTD_POLICY = '/usr/share/dbus-1/system.d/mos-mqttd.conf'
-const APPLICATIONS_DIR = '/usr/lib/mos/mqtt-applications.d'
-const DEVICE_ID_ENV = '/run/mos/mqttd-device.env'
-const MQTTD_WANTS = '/etc/systemd/system/multi-user.target.wants/mos-mqttd.service'
-const BROKER_BIN = '/usr/bin/mos-mqtt-broker'
-const BROKER_UNIT = '/usr/lib/systemd/system/mos-mqtt-broker.service'
-const BROKER_WANTS = '/etc/systemd/system/multi-user.target.wants/mos-mqtt-broker.service'
+const MQTTD_BIN = '/usr/bin/mica-mqttd'
+const MQTTD_UNIT = '/usr/lib/systemd/system/mica-mqttd.service'
+const LEGACY_MQTTD_POLICY = '/usr/share/dbus-1/system.d/mica-mqttd.conf'
+const APPLICATIONS_DIR = '/usr/lib/mica/mqtt-applications.d'
+const DEVICE_ID_ENV = '/run/mica/mqttd-device.env'
+const MQTTD_WANTS = '/etc/systemd/system/multi-user.target.wants/mica-mqttd.service'
+const BROKER_BIN = '/usr/bin/mica-mqtt-broker'
+const BROKER_UNIT = '/usr/lib/systemd/system/mica-mqtt-broker.service'
+const BROKER_WANTS = '/etc/systemd/system/multi-user.target.wants/mica-mqtt-broker.service'
 const POLICY_DIRS = ['/etc/dbus-1/system.d', '/usr/share/dbus-1/system.d'] as const
 
 /** `${prefix}: ${path} is a regular file`, as check_mqttd and check_mqtt_broker say it. */
@@ -148,8 +148,8 @@ function identityGroups(root: string, user: string): Set<string> {
 }
 
 /**
- * Every allow on com.mos.mosd that can apply to the bridge identity, across
- * both policy directories. Looking only at mos-mqttd.conf would miss a grant
+ * Every allow on com.mica.micad that can apply to the bridge identity, across
+ * both policy directories. Looking only at mica-mqttd.conf would miss a grant
  * added by a second package -- dbus-daemon unions all of the files. Default,
  * mandatory and at-console blocks are treated conservatively as applicable;
  * an image check cannot prove the runtime console classification will keep a
@@ -205,8 +205,8 @@ function identityPolicyRules(root: string, user: string): IdentityPolicyRule[] {
 }
 
 function exactApplicationName(name: string): boolean {
-  return /^com\.mos\.[A-Za-z_][A-Za-z0-9_-]*(?:\.[A-Za-z_][A-Za-z0-9_-]*)*$/.test(name)
-    && name !== 'com.mos.mosd'
+  return /^com\.mica\.[A-Za-z_][A-Za-z0-9_-]*(?:\.[A-Za-z_][A-Za-z0-9_-]*)*$/.test(name)
+    && name !== 'com.mica.micad'
 }
 
 function enrolledApplications(root: string): { names: Set<string>, invalid: string[] } {
@@ -311,8 +311,8 @@ const MQTTD_CHECKS: readonly CheckCase[] = [
   {
     id: 'mqttd-legacy-policy-absent',
     shell: {
-      pass: 'mqttd: the legacy mosd exception policy is absent',
-      fail: 'mqttd: the legacy mosd exception policy still exists',
+      pass: 'mqttd: the legacy micad exception policy is absent',
+      fail: 'mqttd: the legacy micad exception policy still exists',
     },
     run: async (ctx): Promise<readonly CheckResult[]> => {
       const present = entry(await packedRoot(ctx), LEGACY_MQTTD_POLICY) !== undefined
@@ -320,9 +320,9 @@ const MQTTD_CHECKS: readonly CheckCase[] = [
         'mqttd-legacy-policy-absent',
         !present,
         present
-          ? `mqttd: the legacy mosd exception policy still exists at ${LEGACY_MQTTD_POLICY}; the `
-            + 'bridge must receive no com.mos.mosd calls or signals'
-          : `mqttd: the legacy mosd exception policy is absent (${LEGACY_MQTTD_POLICY}); application `
+          ? `mqttd: the legacy micad exception policy still exists at ${LEGACY_MQTTD_POLICY}; the `
+            + 'bridge must receive no com.mica.micad calls or signals'
+          : `mqttd: the legacy micad exception policy is absent (${LEGACY_MQTTD_POLICY}); application `
             + 'packages own their exact Item1 grants',
       )]
     },
@@ -371,7 +371,7 @@ const MQTTD_CHECKS: readonly CheckCase[] = [
             + `— publishing against a broker the same switch has not started, which is the 30s retry `
             + `loop this work exists to end. The root filesystem is a read-only verity squashfs, so `
             + `nobody can disable it on the device`
-          : `mqttd: the bridge is NOT enabled in the image (${MQTTD_WANTS} absent); mosd starts it `
+          : `mqttd: the bridge is NOT enabled in the image (${MQTTD_WANTS} absent); micad starts it `
             + `when mqtt.enabled becomes true and not before`,
       )]
     },
@@ -454,29 +454,29 @@ const MQTTD_CHECKS: readonly CheckCase[] = [
           ? `mqttd: device identity is a mandatory /run input and an explicit argument (${DEVICE_ID_ENV})`
           : `mqttd: device identity is not isolated as the mandatory runtime input ${DEVICE_ID_ENV}: `
             + `ConditionPathExists=[${conditions.join(' ')}] EnvironmentFile=[${envfiles.join(' ')}] `
-            + `ExecStart=[${exec}]. It must not be fetched from com.mos.mosd`,
+            + `ExecStart=[${exec}]. It must not be fetched from com.mica.micad`,
       )]
     },
   },
 
   {
-    id: 'mqttd-zero-mosd-access',
+    id: 'mqttd-zero-micad-access',
     shell: {
-      pass: 'mqttd: no D-Bus policy grants the bridge access to com.mos.mosd',
-      fail: 'mqttd: D-Bus policy still grants the bridge access to com.mos.mosd',
+      pass: 'mqttd: no D-Bus policy grants the bridge access to com.mica.micad',
+      fail: 'mqttd: D-Bus policy still grants the bridge access to com.mica.micad',
     },
     run: async (ctx): Promise<readonly CheckResult[]> => {
       const root = await packedRoot(ctx)
       const user = unitValue(root, MQTTD_UNIT, 'User')
       const rules = identityPolicyRules(root, user).filter(rule =>
-        rule.tag.includes('send_destination="com.mos.mosd"')
-        || rule.tag.includes('receive_sender="com.mos.mosd"'))
+        rule.tag.includes('send_destination="com.mica.micad"')
+        || rule.tag.includes('receive_sender="com.mica.micad"'))
       return [verdict(
-        'mqttd-zero-mosd-access',
+        'mqttd-zero-micad-access',
         rules.length === 0,
         rules.length === 0
-          ? 'mqttd: no D-Bus policy grants the bridge calls to or signals from com.mos.mosd'
-          : `mqttd: D-Bus policy still grants the bridge access to com.mos.mosd: `
+          ? 'mqttd: no D-Bus policy grants the bridge calls to or signals from com.mica.micad'
+          : `mqttd: D-Bus policy still grants the bridge access to com.mica.micad: `
             + rules.map(rule => `${rule.path} [${rule.tag}]`).join(' '),
       )]
     },
@@ -496,9 +496,9 @@ const MQTTD_CHECKS: readonly CheckCase[] = [
       const applicationRules = identityPolicyRules(root, user).filter((rule) => {
         const endpoint = rule.tag.match(/(?:send_destination|receive_sender)="([^"]*)"/)?.[1]
         return endpoint === '*'
-          || endpoint?.startsWith('com.mos') === true
-          || rule.tag.includes('send_interface="com.mos.Item1"')
-          || rule.tag.includes('receive_interface="com.mos.Item1"')
+          || endpoint?.startsWith('com.mica') === true
+          || rule.tag.includes('send_interface="com.mica.Item1"')
+          || rule.tag.includes('receive_interface="com.mica.Item1"')
       })
       const granted = new Map<string, Set<string>>()
       const invalid = [...enrollment.invalid.map(name => `invalid enrollment ${name}`)]
@@ -510,7 +510,7 @@ const MQTTD_CHECKS: readonly CheckCase[] = [
         const allowedMember = direction === 'send'
           ? member === 'GetItems' || member === 'SetValue'
           : member === 'ItemsChanged'
-        if (!exactApplicationName(endpoint) || interfaceName !== 'com.mos.Item1' || !allowedMember) {
+        if (!exactApplicationName(endpoint) || interfaceName !== 'com.mica.Item1' || !allowedMember) {
           invalid.push(`${rule.path} [${rule.tag}]`)
           continue
         }
@@ -519,19 +519,19 @@ const MQTTD_CHECKS: readonly CheckCase[] = [
         granted.set(endpoint, members)
         if (!enrollment.names.has(endpoint)) invalid.push(`unenrolled grant ${endpoint} in ${rule.path}`)
       }
-      // mosd's registry probes every com.mos.* service with GetItems as root,
+      // micad's registry probes every com.mica.* service with GetItems as root,
       // and the stock system bus denies method calls by default with no root
       // exemption. A package that grants only the bridge is published to MQTT
       // and reported non-conforming by the registry on every boot.
       const registryGrants = identityPolicyRules(root, 'root').filter((rule) => {
         const interfaceName = rule.tag.match(/\bsend_interface="([^"]*)"/)?.[1]
         const member = rule.tag.match(/\bsend_member="([^"]*)"/)?.[1]
-        return (interfaceName === undefined || interfaceName === 'com.mos.Item1')
+        return (interfaceName === undefined || interfaceName === 'com.mica.Item1')
           && (member === undefined || member === 'GetItems')
       })
       for (const name of enrollment.names) {
         if (!registryGrants.some(rule => rule.tag.includes(`send_destination="${name}"`))) {
-          invalid.push(`enrollment ${name} lacks a root GetItems grant for the mosd registry`)
+          invalid.push(`enrollment ${name} lacks a root GetItems grant for the micad registry`)
         }
         const ownerGrants = ownership.filter(grant => grant.name === name)
         if (ownerGrants.length === 0) {
@@ -675,7 +675,7 @@ const BROKER_CHECKS: readonly CheckCase[] = [
     // listening from early boot, before anything had consulted the switch.
     //
     // There is no policy file in this set and that is not an omission. The
-    // broker speaks no D-Bus at all -- it reads one file mosd renders into /run
+    // broker speaks no D-Bus at all -- it reads one file micad renders into /run
     // and listens on a TCP socket -- so it has nothing to be granted.
     id: 'mqtt-broker-not-enabled',
     shell: {
@@ -689,11 +689,11 @@ const BROKER_CHECKS: readonly CheckCase[] = [
         !present,
         present
           ? `mqtt-broker: ${BROKER_WANTS} exists, so the broker listens from early boot on every `
-            + `device flashed with this image, before anything consulted mqtt.enabled — and mosd owns `
+            + `device flashed with this image, before anything consulted mqtt.enabled — and micad owns `
             + `the lifecycle, so the switch it is meant to obey is the one thing that cannot turn it `
             + `off. The root filesystem is a read-only verity squashfs, so systemctl disable has `
             + `nowhere to write on the device`
-          : `mqtt-broker: the broker is NOT enabled in the image (${BROKER_WANTS} absent); mosd owns `
+          : `mqtt-broker: the broker is NOT enabled in the image (${BROKER_WANTS} absent); micad owns `
             + `the lifecycle and starts it from mqtt.enabled`,
       )]
     },
@@ -702,7 +702,7 @@ const BROKER_CHECKS: readonly CheckCase[] = [
   {
     // A STATIC identity, for a DIFFERENT reason than the bridge's: a dynamic
     // uid is allocated at start and gone at stop, so
-    // /var/lib/mos/mqtt-broker-users.toml would be left owned by a number that
+    // /var/lib/mica/mqtt-broker-users.toml would be left owned by a number that
     // names nobody on the next boot.
     id: 'mqtt-broker-static-user',
     shell: {
@@ -721,7 +721,7 @@ const BROKER_CHECKS: readonly CheckCase[] = [
           ? `mqtt-broker: the unit runs as the static user '${user}', an identity a credentials file `
             + `on STATE can be owned by`
           : `mqtt-broker: the unit sets User='${user}' DynamicUser='${dynamic}'. A dynamic uid is `
-            + `allocated at start and gone at stop, so /var/lib/mos/mqtt-broker-users.toml would be `
+            + `allocated at start and gone at stop, so /var/lib/mica/mqtt-broker-users.toml would be `
             + `left owned by a number that names nobody on the next boot, and the only way to keep `
             + `the credentials readable would be to make them readable by everyone`,
       )]

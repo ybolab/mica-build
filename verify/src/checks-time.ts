@@ -23,7 +23,7 @@ import { entry, ETC_UNITS, packedRoot, wantsLink } from './checks-root.ts'
 import { verdict } from './verdict.ts'
 
 /** An independent transcription; checks-root.ts keeps its own. */
-const MANIFEST_PATH = '/usr/share/mos/manifest.tsv'
+const MANIFEST_PATH = '/usr/share/mica/manifest.tsv'
 const DROPIN_PATH = '/etc/systemd/timesyncd.conf.d/50-mos.conf'
 const UNIT = 'systemd-timesyncd.service'
 

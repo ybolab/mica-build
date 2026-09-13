@@ -128,20 +128,20 @@ The runtime composition never invokes APT. Compiler and packing tool images
 remain separate build dependencies.
 
 bluez and rfkill exist for the board hardware-init layer (btattach + rfkill
-unblock in `mos-bt`); with their new dependencies (libglib2.0-0, libdw1,
+unblock in `mica-bt`); with their new dependencies (libglib2.0-0, libdw1,
 libelf1) they add about 11 MB of installed size (TOTAL_MB 204, budget 400) —
 see `rootfs-report.txt`.
 
-- **`wpasupplicant`** — the WiFi station role. mosd's `wifi_client` reconciler
+- **`wpasupplicant`** — the WiFi station role. micad's `wifi_client` reconciler
   renders `/etc/wpa_supplicant/wpa_supplicant-<iface>.conf` and drives
   `wpa_supplicant@<iface>.service`. Both are the package's own contract, not a
   preference: the template's `ExecStart` has
   `-c/etc/wpa_supplicant/wpa_supplicant-%I.conf` baked in, so the file name and
-  the unit name have to agree with mosd's or the supplicant starts against a
+  the unit name have to agree with micad's or the supplicant starts against a
   configuration that is not there. Without this package `wifi.client` renders a
   file nothing reads and enables a unit that does not exist — which systemd
   reports on the device and nowhere else.
-- **`hostapd`** — the provisioning access point. mosd's `wifi_ap` reconciler
+- **`hostapd`** — the provisioning access point. micad's `wifi_ap` reconciler
   renders `/etc/hostapd/<iface>.conf` and drives `hostapd@<iface>.service`,
   whose `ExecStart` is `/usr/sbin/hostapd -B -P /run/hostapd.%i.pid $DAEMON_OPTS
   /etc/hostapd/%i.conf`. This is the path a device with no uplink is configured
@@ -159,8 +159,8 @@ assumed:
 
 | Unit | Ships | Enabled by the package | What the image does |
 |---|---|---|---|
-| `wpa_supplicant@.service` | yes, `-c/etc/wpa_supplicant/wpa_supplicant-%I.conf` | no | left installed and unenabled — mosd owns it |
-| `hostapd@.service` | yes, `… /etc/hostapd/%i.conf`, `ConditionFileNotEmpty=/etc/hostapd/%i.conf` | no | left installed and unenabled — mosd owns it |
+| `wpa_supplicant@.service` | yes, `-c/etc/wpa_supplicant/wpa_supplicant-%I.conf` | no | left installed and unenabled — micad owns it |
+| `hostapd@.service` | yes, `… /etc/hostapd/%i.conf`, `ConditionFileNotEmpty=/etc/hostapd/%i.conf` | no | left installed and unenabled — micad owns it |
 | `hostapd.service` | yes, non-templated, reads `/etc/hostapd/hostapd.conf` | **yes** | **masked** |
 | `wpa_supplicant.service` | yes, D-Bus mode, no condition | **yes** | **masked** |
 | `dbus-fi.w1.wpa_supplicant1.service` | `Alias=` link created by the postinst | — | **masked** (same unit under another name) |
@@ -171,7 +171,7 @@ away from a second hostapd fighting the reconciler for the radio while
 `hostapd@wlan0.service` still reports healthy. `wpa_supplicant.service` has no
 condition and does start; it also carries `RuntimeDirectory=wpa_supplicant`, so
 systemd deletes `/run/wpa_supplicant` when it stops — taking the control socket
-of the templated instance mosd started with it.
+of the templated instance micad started with it.
 
 Masked rather than disabled because `wpasupplicant` ships
 `/usr/share/dbus-1/system-services/fi.w1.wpa_supplicant1.service`: a plain
@@ -185,7 +185,7 @@ dm-verity squashfs, so each is a STATE-backed bind
 (`etc-wpa_supplicant.mount`, `etc-hostapd.mount`) exactly as `/etc/ssh` is; a
 reconciler rendering into a read-only path fails on device and nowhere else.
 
-## Image profile (`/usr/lib/mos/profile.conf`)
+## Image profile (`/usr/lib/mica/profile.conf`)
 
 `MOS_PROFILE=dev` by default; `MOS_PROFILE=prod bash rootfs/build.sh`
 builds the production image from the same tree. The build rejects anything that
@@ -195,14 +195,14 @@ Both profiles disable SSH by default. The immutable profile identifies the
 built userspace policy; it is not an administrator credential or a signing grade.
 The image verifier checks the packed profile and access defaults.
 
-## mosd
+## micad
 
-`build-env/deb/build.sh --producer mosd --arch amd64|arm64` builds the management
+`build-env/deb/build.sh --producer micad --arch amd64|arm64` builds the management
 packages in the pinned Rust toolchain. Composition installs them from the local
 package pool. The producer supplies the binaries, systemd units and exact D-Bus
 policies; the runtime needs no package manager or compiler.
 
-`/var/lib/mos` binds DATA/state/mos. Persistent credentials retain restricted
+`/var/lib/mica` binds DATA/state/mos. Persistent credentials retain restricted
 subdirectory/file ownership. The outer directory allows traversal for the
 explicitly group-readable WireGuard key store used by systemd-network.
 MQTT application enrollment remains package-specific; mqttd has no management
@@ -215,24 +215,24 @@ their scripts come from `boards/<board>/hwinit/` (six of each on cx3576; x64
 has no such directory and stages an empty one), and the board-specific facts
 they read — module names, sysfs paths, UART device, CAN defaults, MAC seed,
 gadget IDs — come from conf files staged from `BOARD_DIR/init/`, falling back to
-the in-repo `boards/<board>/bsp/init/`, into `/etc/mos/`. Both are package
+the in-repo `boards/<board>/bsp/init/`, into `/etc/mica/`. Both are package
 payload now: `mos-board-<board>` installs the programs, the units and the confs
 that `BOARD_HWINIT_CONFS` names, and refuses a fact no script reads or a script
 with no unit to run it. Every unit is condition-gated on
 its conf file and never blocks, delays, or fails the boot; WiFi association / BT
 pairing stay with connd. The units are enabled via `multi-user.target.wants`
-symlinks like mosd.
+symlinks like micad.
 
 | Unit | Conf | Does |
 |---|---|---|
-| `mos-modules` | `modules.conf` | `modprobe -q` the board's hardware modules; a module for an absent SKU is skipped |
-| `mos-otg` | `otg.conf` | write the USB OTG role to its syscon node (`/etc/mos/otg-mode` overrides) |
-| `mos-can` | `can.conf` | set bitrate / restart-ms / CAN FD and bring the interface up |
-| `mos-bt` | `bt.conf` | rfkill unblock + `btattach` on the configured UART (ordered after `mos-modules`) |
-| `mos-mac` | `mac.conf` | give every `eth*` with a kernel-random MAC a stable address derived from the eMMC CID and the port's place in the bus topology |
-| `mos-gadget` | `gadget.conf` | build the CDC ACM debug console gadget and bind it to the UDC |
+| `mica-modules` | `modules.conf` | `modprobe -q` the board's hardware modules; a module for an absent SKU is skipped |
+| `mica-otg` | `otg.conf` | write the USB OTG role to its syscon node (`/etc/mica/otg-mode` overrides) |
+| `mica-can` | `can.conf` | set bitrate / restart-ms / CAN FD and bring the interface up |
+| `mica-bt` | `bt.conf` | rfkill unblock + `btattach` on the configured UART (ordered after `mica-modules`) |
+| `mica-mac` | `mac.conf` | give every `eth*` with a kernel-random MAC a stable address derived from the eMMC CID and the port's place in the bus topology |
+| `mica-gadget` | `gadget.conf` | build the CDC ACM debug console gadget and bind it to the UDC |
 
-`mos-mac` exists because neither cx3576 NIC has a MAC in hardware, so the
+`mica-mac` exists because neither cx3576 NIC has a MAC in hardware, so the
 kernel invents a random one on every boot: gmac0/eth0's dts node carries
 neither `mac-address` nor `nvmem-cells`, and the PCIe RTL8168 has no EEPROM and
 takes `eth_hw_addr_random()`.
@@ -251,14 +251,14 @@ alone. `make os-mac-test` drives the derivation, including the red direction.
 The assignment ships as **three** files, and any one of them missing makes the
 other two a no-op:
 
-- `mos-mac.service` — the cold-plug sweep, ordered before `network-pre.target`.
+- `mica-mac.service` — the cold-plug sweep, ordered before `network-pre.target`.
   A one-shot pass cannot reach a port that registers later, and on cx3576 both
   NICs appear at 11.67 s, which may be after this unit has already run.
-- `60-mos-mac-stable.rules` — the mechanism: `hwinit-mac %k` on each net `add`
+- `60-mica-mac-stable.rules` — the mechanism: `hwinit-mac %k` on each net `add`
   event. udev writes the device database and broadcasts the event to libudev
   listeners only after a `RUN+=` program returns, so networkd cannot configure a
   link before the address is on it.
-- `60-mos-mac-stable.link` — `MACAddressPolicy=none` for `eth*`. Without it
+- `60-mica-mac-stable.link` — `MACAddressPolicy=none` for `eth*`. Without it
   systemd's own `99-default.link` (`MACAddressPolicy=persistent`) assigns these
   ports an address first — keyed on the machine id and, when the port has no
   `ID_NET_NAME_*` property, on the interface name — and the kernel then records
@@ -269,9 +269,9 @@ other two a no-op:
 The SoC OTP CPUID would be a deeper root of identity than the eMMC CID but has
 no dts node in this tree and no hardware validation.
 
-`mos-gadget` gives the board an out-of-band console: with the OTG port in `otg`
+`mica-gadget` gives the board an out-of-band console: with the OTG port in `otg`
 role the PHY enumerates as a device when a host PC is plugged in, and a udev
-rule (`60-mos-gadget-getty.rules`) pulls in `serial-getty@ttyGS0` when the port
+rule (`60-mica-gadget-getty.rules`) pulls in `serial-getty@ttyGS0` when the port
 appears. The gadget serial number reuses the `mac.conf` seed, so USB identity
 is stable too.
 
@@ -296,7 +296,7 @@ package/build reports and the factory root export.
 
 ```bash
 make os-deb-preflight
-bash build-env/deb/build.sh --producer mosd --arch amd64
+bash build-env/deb/build.sh --producer micad --arch amd64
 bash build-env/deb/repo.sh --arch amd64
 MOS_BOARD=x64 MOS_META_DIR=/absolute/public-defaults bash rootfs/build.sh
 ```
@@ -322,8 +322,8 @@ include state, meta, system/user application data and bounded disposable paths.
 The native loader establishes machine identity on DATA before starting PID 1.
 
 The root remains read-only; DATA/var is bound over the whole `/var` tree.
-`mos-data-layout` establishes directories and byte/inode project limits before
-`mos-seed-var` copies the initial template and `var.mount` exposes it. Protected
+`mica-data-layout` establishes directories and byte/inode project limits before
+`mica-seed-var` copies the initial template and `var.mount` exposes it. Protected
 identity and management credentials remain on DATA/state, outside the general
 var quota. New services can use `StateDirectory=` without another bind mount.
 Persistent extension units are separate from the immutable boot chain.

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Run inside the pinned boot tools container with this checkout at /src.
 set -euo pipefail
-source /src/pkgs/mos-boot/compression.sh
+source /src/pkgs/mica-boot/compression.sh
 work=$(mktemp -d)
 trap 'rm -r "$work"' EXIT
 printf '070701 deterministic archive fixture\n' > "$work/archive"

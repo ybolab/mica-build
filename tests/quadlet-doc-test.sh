@@ -245,7 +245,7 @@ check "section 9's image is pinned by digest, not by a tag someone can move" \
 # nothing reads it -- so this asserts it landed in [Service], as a unit
 # Environment= line rather than as a --env argument.
 check "section 9's credential path is the podman process's environment, not the container's" \
-    "grep -qE '^Environment=REGISTRY_AUTH_FILE=/var/lib/mos/containers-auth\\.json' '${GENERATED}'"
+    "grep -qE '^Environment=REGISTRY_AUTH_FILE=/var/lib/mica/containers-auth\\.json' '${GENERATED}'"
 check "and it is NOT handed to the container as --env" \
     "! grep -qE -- '--env REGISTRY_AUTH_FILE' '${GENERATED}'"
 

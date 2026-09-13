@@ -6,8 +6,8 @@ root=${1:?current composed root required}
 kernel=${2:?BSP kernel directory required}
 certificate=${3:?content certificate required}
 key=${4:?content key required}
-init=${5:?compiled mos-init required}
-shutdown=${6:?compiled mos-shutdown required}
+init=${5:?compiled mica-init required}
+shutdown=${6:?compiled mica-shutdown required}
 work=$(mktemp -d "$PWD/_out/large-root.XXXXXX")
 printf 'Evidence: %s\n' "$work"
 bash tests/file-ab-x64/runtime-build.sh "$root" "$kernel" "$certificate" "$key" "$init" x64 "$shutdown" > "$work/small-build.log" 2>&1
@@ -15,7 +15,7 @@ small=$(tail -1 "$work/small-build.log")
 mkdir "$work/tree"
 docker run --rm --label ai-agent=true --network traefik -v "$work:/w" -v "$root:/root.img:ro" \
     ai-agent/mos-p2-lab unsquashfs -no-progress -f -d /w/tree /root.img > "$work/extract.log"
-python3 - "$work/tree/usr/share/mos/large-root.dat" <<'PY'
+python3 - "$work/tree/usr/share/mica/large-root.dat" <<'PY'
 import hashlib, sys
 with open(sys.argv[1], 'xb') as output:
     for counter in range(384):

@@ -48,45 +48,45 @@ function seedHealthyRoot(root: string, board: Board): void {
 
   // --- the regular files ---
   for (const p of [
-    '/usr/lib/systemd/systemd', '/usr/bin/mosd',
+    '/usr/lib/systemd/systemd', '/usr/bin/micad',
     '/usr/lib/systemd/system/fstrim.service',
     '/usr/lib/systemd/system/serial-getty@.service',
     '/usr/lib/systemd/system/getty@.service',
-    '/usr/lib/systemd/system/mos-health.service',
+    '/usr/lib/systemd/system/mica-health.service',
     '/etc/passwd', '/etc/group', '/usr/share/factory/etc/shadow',
-    '/usr/lib/mos/mos-shadow-reconcile',
+    '/usr/lib/mica/mica-shadow-reconcile',
     '/etc/ssh/sshd_config.d/05-mos-authorized-keys.conf',
-    '/usr/lib/mos/mos-seed-home', '/usr/lib/mos/profile.conf',
+    '/usr/lib/mica/mica-seed-home', '/usr/lib/mica/profile.conf',
   ]) file(p)
 
   // --- the files a grep check reads, with content that satisfies it ---
   // health.conf carries CONTENT and not just a path: the gate's required set is
   // read out of it, and an empty file is the vacuity the check exists to catch.
-  file('/etc/mos/health.conf', 'require=boot-settled\nrequire=mosd\nrequire=apid\nsettle-sec=60\n')
+  file('/etc/mica/health.conf', 'require=boot-settled\nrequire=micad\nrequire=apid\nsettle-sec=60\n')
   file('/etc/systemd/network/80-dhcp.network', '[Network]\nDHCP=yes\n')
   // systemd's own default, on every board because the systemd package ships it
-  // on every board. It is here as the thing cx3576's 60-mos-mac-stable.link
+  // on every board. It is here as the thing cx3576's 60-mica-mac-stable.link
   // displaces and copies from, so a fixture without it would make that pair of
   // checks assert nothing.
   file('/usr/lib/systemd/network/99-default.link', DEFAULT_LINK)
   file('/etc/systemd/journald.conf.d/00-volatile.conf', '[Journal]\nStorage=volatile\n')
-  file('/usr/lib/systemd/system/mosd.service', '[Service]\nBusName=com.mos.mosd\n')
+  file('/usr/lib/systemd/system/micad.service', '[Service]\nBusName=com.mica.micad\n')
   file('/usr/lib/systemd/system/apid.service',
-    '[Unit]\nAfter=mosd.service\n[Service]\nStateDirectory=mos/apid\n')
-  file('/usr/share/dbus-1/system.d/com.mos.mosd.conf',
-    '<busconfig>\n<policy user="root">\n<allow own="com.mos.mosd"/>\n</policy>\n</busconfig>\n')
-  file('/etc/systemd/system/mos-shadow-reconcile.service',
-    '[Service]\nExecStart=/usr/lib/mos/mos-shadow-reconcile\n')
-  file('/etc/tmpfiles.d/mos-var.conf', 'q /var/tmp 1777 root root 10d\ne /var/cache - - - 30d\n')
+    '[Unit]\nAfter=micad.service\n[Service]\nStateDirectory=mos/apid\n')
+  file('/usr/share/dbus-1/system.d/com.mica.micad.conf',
+    '<busconfig>\n<policy user="root">\n<allow own="com.mica.micad"/>\n</policy>\n</busconfig>\n')
+  file('/etc/systemd/system/mica-shadow-reconcile.service',
+    '[Service]\nExecStart=/usr/lib/mica/mica-shadow-reconcile\n')
+  file('/etc/tmpfiles.d/mica-var.conf', 'q /var/tmp 1777 root root 10d\ne /var/cache - - - 30d\n')
 
   // --- the enablement symlinks ---
   for (const [target, unit] of [
-    ['multi-user.target.wants', 'mosd.service'],
+    ['multi-user.target.wants', 'micad.service'],
     ['multi-user.target.wants', 'apid.service'],
     ['sysinit.target.wants', 'systemd-resolved.service'],
-    ['multi-user.target.wants', 'mos-health.service'],
+    ['multi-user.target.wants', 'mica-health.service'],
     ['timers.target.wants', 'fstrim.timer'],
-    ['multi-user.target.wants', 'mos-shadow-reconcile.service'],
+    ['multi-user.target.wants', 'mica-shadow-reconcile.service'],
   ] as const) {
     const dir = join(root, '/etc/systemd/system', target)
     mkdirSync(dir, { recursive: true })
@@ -132,16 +132,16 @@ function seedHealthyRoot(root: string, board: Board): void {
   // stamp over the mos rows only, so a fixture of only mos packages would
   // leave the "Debian rows are not stamped" half of that rule untested.
   //
-  // mos-busybox is among them because it is what `packed-busybox-in-manifest`
+  // mica-busybox is among them because it is what `packed-busybox-in-manifest`
   // reads: the binary in the root and the row here are one fact, and a file that
   // arrived outside the package system would be in the image with no row -- so
   // the fixture has to be able to hold the two apart.
-  file('/usr/share/mos/manifest.tsv', [
+  file('/usr/share/mica/manifest.tsv', [
     '#package\tversion\tarchitecture',
     'libc6\t2.41-12\tamd64',
-    'mos-podman\t5.8.6+git0123456789ab-1\tamd64',
-    `mos-busybox\t${FIXTURE_POOL_VERSION}\tamd64`,
-    `mos-system\t${FIXTURE_POOL_VERSION}\tall`,
+    'mica-podman\t5.8.6+git0123456789ab-1\tamd64',
+    `mica-busybox\t${FIXTURE_POOL_VERSION}\tamd64`,
+    `mica-system\t${FIXTURE_POOL_VERSION}\tall`,
     'systemd-timesyncd\t257.7-1\tamd64',
     'zstd\t1.5.7+dfsg-2\tamd64',
     '',
@@ -340,9 +340,9 @@ function seedConnd(root: string, board: Board, file: WriteFile): void {
   // the failure in a pointer nothing re-reads, so the file alone is a file
   // nothing looks at. `iw` is what sends NL80211_CMD_RELOAD_REGDB.
   file('/usr/sbin/iw')
-  file('/etc/systemd/system/mos-regdb-reload.service',
+  file('/etc/systemd/system/mica-regdb-reload.service',
     '[Service]\nType=oneshot\nExecStart=/usr/sbin/iw reg reload\n')
-  enableEtcUnit(root, 'mos-regdb-reload.service', 'multi-user.target.wants')
+  enableEtcUnit(root, 'mica-regdb-reload.service', 'multi-user.target.wants')
 
   // Nothing at /usr/sbin/dnsmasq: the AP's DHCP server is systemd-networkd's own
   // DHCPServer=yes, and a second one on the same link is a conflict.
@@ -365,35 +365,35 @@ function seedShadow(root: string, file: WriteFile): void {
   ownAsRoot(root, '/usr/share/factory/etc/shadow', SHADOW_GID)
 
   // The path pam_unix opens, pointing at the tmpfs -- and NOTHING at the
-  // destination inside the tree, because a /run/mos/shadow in the image would
+  // destination inside the tree, because a /run/mica/shadow in the image would
   // be a credential identical on every device in the fleet.
   mkdirSync(join(root, '/etc'), { recursive: true })
-  symlinkSync('/run/mos/shadow', join(root, '/etc/shadow'))
+  symlinkSync('/run/mica/shadow', join(root, '/etc/shadow'))
 
   // The reconcile unit's ordering, and the four units it orders against. An
   // ordering naming a unit that is not in the image is dropped by systemd
   // SILENTLY, so the check asserts the pair and so does the fixture.
-  file('/etc/systemd/system/mos-shadow-reconcile.service',
+  file('/etc/systemd/system/mica-shadow-reconcile.service',
     '[Unit]\n'
-    + 'Before=mosd.service ssh.service\n'
+    + 'Before=micad.service ssh.service\n'
     + 'Before=systemd-logind.service systemd-user-sessions.service\n'
-    + '[Service]\nExecStart=/usr/lib/mos/mos-shadow-reconcile\n')
+    + '[Service]\nExecStart=/usr/lib/mica/mica-shadow-reconcile\n')
   for (const u of ['ssh.service', 'systemd-logind.service', 'systemd-user-sessions.service']) {
     file(`/usr/lib/systemd/system/${u}`, '[Unit]\n')
   }
 
   // The script, in the shape the check reads it: source, destination, the
   // build loop's input redirection, and the locked password field.
-  file('/usr/lib/mos/mos-shadow-reconcile',
+  file('/usr/lib/mica/mica-shadow-reconcile',
     '#!/bin/sh\n'
     + 'FACTORY="${MOS_SHADOW_FACTORY:-/usr/share/factory/etc/shadow}"\n'
-    + 'SHADOW="${MOS_SHADOW_PASSWD:-/run/mos/shadow}"\n'
+    + 'SHADOW="${MOS_SHADOW_PASSWD:-/run/mica/shadow}"\n'
     + 'while IFS= read -r line; do\n'
     + '  printf \'%s\\n\' "${line}" | awk -F: \'{ $2 = "!"; print }\'\n'
     + 'done <"$FACTORY"\n')
 
   // Current state initializer: private radio leaves are created by ensure_dir.
-  file('/usr/lib/mos/mos-seed-state', `#!/bin/sh
+  file('/usr/lib/mica/mica-seed-state', `#!/bin/sh
 state=/mnt/data/state
 ensure_dir() {
     [ ! -L "$state/$1" ] || exit 1
@@ -406,34 +406,34 @@ for name in mos ssh bluetooth wpa_supplicant hostapd; do ensure_dir "$name" 0700
 }
 
 function seedMqtt(root: string, file: WriteFile): void {
-  file('/usr/bin/mos-mqttd')
-  file('/usr/bin/mos-mqtt-broker')
+  file('/usr/bin/mica-mqttd')
+  file('/usr/bin/mica-mqtt-broker')
 
   // A STATIC identity, a broker EnvironmentFile on a STATE-backed bind, and a
   // mandatory root-rendered topic identity under /run.
-  file('/usr/lib/systemd/system/mos-mqttd.service',
+  file('/usr/lib/systemd/system/mica-mqttd.service',
     '[Unit]\n'
-    + 'ConditionPathExists=/run/mos/mqttd-device.env\n'
+    + 'ConditionPathExists=/run/mica/mqttd-device.env\n'
     + '[Service]\n'
-    + 'User=mos-mqttd\n'
-    + 'EnvironmentFile=-/var/lib/mos/mqttd.env\n'
-    + 'EnvironmentFile=/run/mos/mqttd-device.env\n'
-    + 'ExecStart=/usr/bin/mos-mqttd --device-id ${MOS_MQTT_DEVICE_ID} '
+    + 'User=mica-mqttd\n'
+    + 'EnvironmentFile=-/var/lib/mica/mqttd.env\n'
+    + 'EnvironmentFile=/run/mica/mqttd-device.env\n'
+    + 'ExecStart=/usr/bin/mica-mqttd --device-id ${MOS_MQTT_DEVICE_ID} '
     + '--broker-host ${MOS_MQTT_BROKER_HOST}\n')
-  file('/usr/lib/systemd/system/mos-mqtt-broker.service',
-    '[Service]\nUser=mos-mqtt-broker\n')
+  file('/usr/lib/systemd/system/mica-mqtt-broker.service',
+    '[Service]\nUser=mica-mqtt-broker\n')
 
-  // The bind that makes /var/lib/mos writable and persistent. The check looks
+  // The bind that makes /var/lib/mica writable and persistent. The check looks
   // for a unit whose Where= is the EnvironmentFile's directory, so the fixture
   // ships the same unit the image does rather than a stand-in.
-  file('/etc/systemd/system/var-lib-mos.mount',
-    '[Mount]\nWhat=/mnt/data/state/mos\nWhere=/var/lib/mos\nType=none\nOptions=bind\n')
+  file('/etc/systemd/system/var-lib-mica.mount',
+    '[Mount]\nWhat=/mnt/data/state/mos\nWhere=/var/lib/mica\nType=none\nOptions=bind\n')
 
   // Empty is valid: no application is remotely published until its package
   // installs both an exact enrollment file and its exact Item1 policy.
-  mkdirSync(join(root, '/usr/lib/mos/mqtt-applications.d'), { recursive: true })
+  mkdirSync(join(root, '/usr/lib/mica/mqtt-applications.d'), { recursive: true })
 
-  // NOT enabled: no *.wants symlink for either. mosd starts them from
+  // NOT enabled: no *.wants symlink for either. micad starts them from
   // mqtt.enabled, and an enablement baked into the image is the one thing that
   // switch cannot override.
 }
@@ -519,15 +519,15 @@ const SHADOW_GID = 42
  * the template, and every entry in the template is locked. A hundred accounts
  * would test the same relation more slowly.
  *
- * `mos-mqttd` and `mos-mqtt-broker` are here because the MQTT checks assert
+ * `mica-mqttd` and `mica-mqtt-broker` are here because the MQTT checks assert
  * their units run as identities the image actually defines; that is one fact
  * about one file and it belongs in one place.
  */
 const ACCOUNTS: readonly { name: string, uid: number, gid: number, shell: string }[] = [
   { name: 'root', uid: 0, gid: 0, shell: '/bin/bash' },
   { name: 'mos', uid: 1000, gid: 1000, shell: '/bin/bash' },
-  { name: 'mos-mqttd', uid: 970, gid: 970, shell: '/usr/sbin/nologin' },
-  { name: 'mos-mqtt-broker', uid: 969, gid: 969, shell: '/usr/sbin/nologin' },
+  { name: 'mica-mqttd', uid: 970, gid: 970, shell: '/usr/sbin/nologin' },
+  { name: 'mica-mqtt-broker', uid: 969, gid: 969, shell: '/usr/sbin/nologin' },
 ]
 
 export function packedRootFixture(board: Board): RootFixture {

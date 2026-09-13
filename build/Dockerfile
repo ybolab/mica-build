@@ -10,7 +10,7 @@ FROM ${MOS_BUN_IMAGE}
 COPY --from=cli /usr/local/bin/docker /usr/local/bin/docker
 COPY --from=cli /usr/local/libexec/docker/cli-plugins/docker-buildx /usr/local/libexec/docker/cli-plugins/docker-buildx
 RUN apt-get update && apt-get install -y --no-install-recommends python3 libcap2-bin && \
-    mkdir -p /etc/mos-build && \
+    mkdir -p /etc/mica-build && \
     dpkg-query -W python3 libcap2-bin libcap2 > /etc/mos-build/build-tools.tsv && \
     rm -rf /var/lib/apt/lists/* && \
     command -v getcap && command -v setcap && python3 --version && \

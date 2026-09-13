@@ -113,7 +113,7 @@ echo "== content: the bytes of every regular file, the target of every symlink =
 # what it can read.
 #
 # Symlinks are compared by their TARGET and never followed: /etc/shadow ->
-# /run/mos/shadow is dangling by design, and following it would compare nothing
+# /run/mica/shadow is dangling by design, and following it would compare nothing
 # on both sides and call that agreement -- which is what `--no-dereference`
 # bought here before, and `%l` buys now.
 content "${work}/sq" > "${work}/sq.content"

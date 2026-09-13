@@ -3,11 +3,11 @@ import type { CheckCase } from './checks.ts'
 import { ANY_UNITS, entry, linkTargetInRoot, packedRoot, pathInRoot, regularFileInRoot, wantsLink } from './checks-root.ts'
 import { verdict } from './verdict.ts'
 
-const required = ['/usr/lib/systemd/systemd', '/usr/bin/mosd', '/usr/bin/apid', '/usr/bin/mos-deploy',
-  '/usr/lib/mos/mos-health', '/usr/lib/mos/mos-boot-failure', '/usr/lib/mos/mos-data-layout',
-  '/usr/lib/mos/mos-seed-state', '/usr/lib/mos/mos-seed-var', '/usr/share/mos/manifest.tsv', '/usr/share/mos/release-identity.env']
+const required = ['/usr/lib/systemd/systemd', '/usr/bin/micad', '/usr/bin/apid', '/usr/bin/mica-deploy',
+  '/usr/lib/mica/mica-health', '/usr/lib/mica/mica-boot-failure', '/usr/lib/mica/mica-data-layout',
+  '/usr/lib/mica/mica-seed-state', '/usr/lib/mica/mica-seed-var', '/usr/share/mica/manifest.tsv', '/usr/share/mica/release-identity.env']
 
-const META_ROOT = '/usr/share/mos/meta'
+const META_ROOT = '/usr/share/mica/meta'
 const MANIFEST_PATH = `${META_ROOT}/updates/manifest.json`
 const MARKER_PATH = `${META_ROOT}/GENERATED`
 const PUBLIC_DEFAULTS_FACT = 'baked defaults contain no metadata anchors or private keys'
@@ -230,7 +230,7 @@ const DBUS_DIAGNOSTICS: readonly NativeDiagnostic[] = [
 ]
 
 const NATIVE_DIAGNOSTICS: Readonly<Record<string, readonly NativeDiagnostic[]>> = {
-  '/usr/bin/mosd': [
+  '/usr/bin/micad': [
     ...DBUS_DIAGNOSTICS,
     { text: 'Invalid interface name. See https://dbus.freedesktop.org/doc/dbus-specification.html#message-protocol-names-interface', following: ['Invalid well-known name. See https://dbus.freedesktop.org/doc/dbus-specification.html#message-protocol-names-bus'] },
     { text: 'Invalid well-known name. See https://dbus.freedesktop.org/doc/dbus-specification.html#message-protocol-names-bus', following: ['Invalid error name. See https://dbus.freedesktop.org/doc/dbus-specification.html#message-protocol-names-error'] },
@@ -241,7 +241,7 @@ const NATIVE_DIAGNOSTICS: Readonly<Record<string, readonly NativeDiagnostic[]>> 
     { text: 'peer closed connection without sending TLS close_notify: https://docs.rs/rustls/latest/rustls/manual/_03_howto/index.html#unexpected-eof', following: ['internal error: entered unreachable code', 'is not valid for any names (according to its subjectAltName extension)'] },
     { text: 'Node.js ES modules are not directly supported, see https://docs.rs/getrandom#nodejs-es-module-support', following: ['Errorinternal_codedescriptionunknown_code\0'] },
   ],
-  '/usr/bin/mos-deploy': [
+  '/usr/bin/mica-deploy': [
     { text: 'Fatal internal error. Please consider filing a bug report at https://github.com/clap-rs/clap/issues', following: ['a Display implementation returned an error unexpectedly', 'falseTryFromIntErrora Display implementation returned an error unexpectedly', 'internal error: entered unreachable code', '!'] },
   ],
 }
@@ -249,7 +249,7 @@ const NATIVE_DIAGNOSTICS: Readonly<Record<string, readonly NativeDiagnostic[]>> 
 // Exact embedded-source attribution is recorded in the native endpoint plan.
 // Complete D-Bus/UI namespaces and UI diagnostic locations, scoped by binary.
 const NATIVE_NON_ENDPOINTS: Readonly<Record<string, ReadonlySet<string>>> = {
-  '/usr/bin/mosd': new Set(['http://www.freedesktop.org/standards/dbus/1.0/introspect.dtd']),
+  '/usr/bin/micad': new Set(['http://www.freedesktop.org/standards/dbus/1.0/introspect.dtd']),
   '/usr/bin/apid': new Set([
     'http://www.freedesktop.org/standards/dbus/1.0/introspect.dtd',
     'https://react.i18next.com/latest/usetranslation-hook',
@@ -287,14 +287,14 @@ export const ROOT_CHECKS: readonly CheckCase[] = [
       const obsolete = ['var-lib', 'var-cache', 'var-log', 'var-tmp', 'var-lib-systemd-timesync',
         'var-lib-systemd-network', 'var-lib-systemd-timers', 'var-lib-systemd-linger']
         .some(name => entry(root, `/etc/systemd/system/${name}.mount`) !== undefined)
-      const binds = ['var-lib-mos', 'etc-ssh', 'usr-local-lib-systemd-system', 'etc-containers-systemd']
+      const binds = ['var-lib-mica', 'etc-ssh', 'usr-local-lib-systemd-system', 'etc-containers-systemd']
       const varUnit = entry(root, '/etc/systemd/system/var.mount')?.isFile()
         ? read('/etc/systemd/system/var.mount') : ''
       const ok = lines.length === 2 && lines.some(l => l.join(' ') === `PARTUUID=${ctx.board.get('DATA_GUID')?.toLowerCase()} /mnt/data ext4 noatime,prjquota,x-systemd.growfs 0 2`)
         && lines.some(l => l[0] === 'tmpfs' && l[1] === '/tmp' && l[3]?.includes('size=128M') && l[3]?.includes('nr_inodes=32768'))
         && !obsolete && /^What=\/mnt\/data\/var$/m.test(varUnit) && /^Where=\/var$/m.test(varUnit)
         && /^Options=bind,private,nosuid,nodev$/m.test(varUnit)
-        && regularFileInRoot(root, '/etc/systemd/system/mos-seed-var.service')
+        && regularFileInRoot(root, '/etc/systemd/system/mica-seed-var.service')
         && binds.every(name => /^What=\/mnt\/data\/state\//m.test(read(`/etc/systemd/system/${name}.mount`)))
       return [verdict('file-root-data-policy', ok, 'DATA owns bounded writable var and protected state')]
     },
@@ -312,8 +312,8 @@ export const ROOT_CHECKS: readonly CheckCase[] = [
       const ok = /^What=\/mnt\/data\/containers$/m.test(unit) && /^Where=\/mos\/containers$/m.test(unit)
         && /^Options=bind,private,nosuid,nodev$/m.test(unit)
         && /^Options=bind,private$/m.test(parent)
-        && /^Requires=.*\bmos-data-layout\.service\b.*\bmos\.mount$/m.test(unit)
-        && /^After=.*\bmos-data-layout\.service\b.*\bmos\.mount$/m.test(unit)
+        && /^Requires=.*\bmica-data-layout\.service\b.*\bmos\.mount$/m.test(unit)
+        && /^After=.*\bmica-data-layout\.service\b.*\bmos\.mount$/m.test(unit)
         && wantsLink(root, ANY_UNITS, 'mos-containers.mount') !== undefined
         && /^RequiresMountsFor=.*\/mos\/containers(?: |$)/m.test(quadlet)
         && /^graphroot = "\/mos\/containers\/storage"$/m.test(storage)
@@ -338,11 +338,11 @@ export const ROOT_CHECKS: readonly CheckCase[] = [
     id: 'file-root-health', shell: { pass: 'native health confirmation and failure handling are enabled' },
     run: async ctx => {
       const root = await packedRoot(ctx), read = (p: string) => readFileSync(pathInRoot(root, p), 'utf8')
-      const service = read('/usr/lib/systemd/system/mos-health.service')
-      return [verdict('file-root-health', wantsLink(root, ANY_UNITS, 'mos-health.service') !== undefined
-        && service.includes('OnFailure=mos-boot-failure.service')
-        && read('/usr/lib/mos/mos-health').includes('mos-deploy confirm')
-        && read('/usr/lib/mos/mos-boot-failure').includes('mos-deploy fail-boot'), 'native health confirmation and failure handling are enabled')]
+      const service = read('/usr/lib/systemd/system/mica-health.service')
+      return [verdict('file-root-health', wantsLink(root, ANY_UNITS, 'mica-health.service') !== undefined
+        && service.includes('OnFailure=mica-boot-failure.service')
+        && read('/usr/lib/mica/mica-health').includes('mica-deploy confirm')
+        && read('/usr/lib/mica/mica-boot-failure').includes('mica-deploy fail-boot'), 'native health confirmation and failure handling are enabled')]
     },
   },
   {
@@ -359,15 +359,15 @@ export const ROOT_CHECKS: readonly CheckCase[] = [
     run: async ctx => {
       const root = await packedRoot(ctx)
       if (entry(root, '/')?.isDirectory() !== true) throw new Error(`${root} is not an actual unpacked-image directory`)
-      const paths = ['/usr/bin/mosd', '/usr/bin/apid', '/usr/bin/mos-deploy']
+      const paths = ['/usr/bin/micad', '/usr/bin/apid', '/usr/bin/mica-deploy']
       const examined: string[] = [], endpoints: string[] = []
       let byteCount = 0
       const result = (ok: boolean, reason: string) => [verdict('file-root-native-endpoints', ok,
         `${reason}; scannedFiles=${examined.length}; scannedBytes=${byteCount}; examinedPaths=${examined.join(',')}`)]
       for (const parent of ['/usr', '/usr/bin']) {
         const directory = entry(root, parent)
-        if (directory === undefined) return result(false, `/usr/bin/mosd: required directory ${parent} is missing`)
-        if (!directory.isDirectory()) return result(false, `/usr/bin/mosd: ${parent} must be a regular non-symlink directory`)
+        if (directory === undefined) return result(false, `/usr/bin/micad: required directory ${parent} is missing`)
+        if (!directory.isDirectory()) return result(false, `/usr/bin/micad: ${parent} must be a regular non-symlink directory`)
       }
       for (const path of paths) {
         const file = entry(root, path)

@@ -11,24 +11,24 @@ cat > "$work/bin/systemctl" <<'SH'
 echo "systemctl $*" >> "$MOS_TEST_TRACE"
 case "$1" in is-active) exit "$MOS_TEST_DATA";; esac
 SH
-cat > "$work/bin/mos-deploy" <<'SH'
+cat > "$work/bin/mica-deploy" <<'SH'
 #!/bin/sh
-echo "mos-deploy $*" >> "$MOS_TEST_TRACE"
+echo "mica-deploy $*" >> "$MOS_TEST_TRACE"
 exit "$MOS_TEST_RETIRE"
 SH
 chmod +x "$work/bin/"*
 export PATH="$work/bin:$PATH"
 # Keep even an existing host recovery marker outside this isolated test.
-sed "s@/run/mos/shared-data-failure@$work/shared-data-failure@g" \
-    "$repo/rootfs/overlay/usr/lib/mos/mos-boot-failure" > "$work/failure"
+sed "s@/run/mica/shared-data-failure@$work/shared-data-failure@g" \
+    "$repo/rootfs/overlay/usr/lib/mica/mica-boot-failure" > "$work/failure"
 run_case() {
     : > "$MOS_TEST_TRACE"
     bash "$work/failure"
 }
 run_case
-grep -qx 'mos-deploy fail-boot' "$MOS_TEST_TRACE"
+grep -qx 'mica-deploy fail-boot' "$MOS_TEST_TRACE"
 grep -qx 'systemctl --no-block reboot' "$MOS_TEST_TRACE"
-test "$(tail -n2 "$MOS_TEST_TRACE" | head -n1)" = 'mos-deploy fail-boot'
+test "$(tail -n2 "$MOS_TEST_TRACE" | head -n1)" = 'mica-deploy fail-boot'
 export MOS_TEST_RETIRE=1
 run_case
 grep -qx 'systemctl --no-block poweroff' "$MOS_TEST_TRACE"
@@ -36,10 +36,10 @@ grep -qx 'systemctl --no-block poweroff' "$MOS_TEST_TRACE"
 export MOS_TEST_RETIRE=0 MOS_TEST_DATA=1
 run_case
 grep -qx 'systemctl --no-block poweroff' "$MOS_TEST_TRACE"
-! grep -q mos-deploy "$MOS_TEST_TRACE"
+! grep -q mica-deploy "$MOS_TEST_TRACE"
 export MOS_TEST_DATA=0
 touch "$work/shared-data-failure"
 run_case
 grep -qx 'systemctl --no-block poweroff' "$MOS_TEST_TRACE"
-! grep -q mos-deploy "$MOS_TEST_TRACE"
+! grep -q mica-deploy "$MOS_TEST_TRACE"
 echo 'BOOT_FAILURE_TEST_PASS'

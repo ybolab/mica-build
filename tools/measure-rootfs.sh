@@ -106,9 +106,9 @@ printf 'factory-root-sha256\t%s\n' "$(sha256sum "${OCI}" | cut -d' ' -f1)"
 printf 'factory-root-bytes\t%s\n' "$(stat -c %s "${OCI}")"
 [ -f "${OUT_DIR}/rootfs-report.txt" ] &&
     printf 'report-TOTAL_MB\t%s\n' "$(grep -m1 '^TOTAL_MB ' "${OUT_DIR}/rootfs-report.txt" | cut -d' ' -f2)"
-if [ -f "${WORK}/usr/share/mos/manifest.tsv" ]; then
-    printf 'packages-shipped\t%s\n' "$(grep -vc '^#' "${WORK}/usr/share/mos/manifest.tsv")"
-    printf 'packages-local\t%s\n' "$(grep -c '^mos' "${WORK}/usr/share/mos/manifest.tsv")"
+if [ -f "${WORK}/usr/share/mica/manifest.tsv" ]; then
+    printf 'packages-shipped\t%s\n' "$(grep -vc '^#' "${WORK}/usr/share/mica/manifest.tsv")"
+    printf 'packages-local\t%s\n' "$(grep -c '^mos' "${WORK}/usr/share/mica/manifest.tsv")"
 fi
 
 # ------------------------------------------------------------------ payload
@@ -175,10 +175,10 @@ printf 'kernel-module-index-bytes\t%s\n' "$(find "${WORK}/usr/lib/modules" -type
 
 echo
 echo "== boot inputs retained inside the root =="
-for path in /boot /usr/lib/mos/board; do
+for path in /boot /usr/lib/mica/board; do
     printf '%s\t%s\n' "${path}" "$(set_bytes "${path}")"
 done
-printf 'boot-bytes\t%s\n' "$(set_bytes /boot /usr/lib/mos/board)"
+printf 'boot-bytes\t%s\n' "$(set_bytes /boot /usr/lib/mica/board)"
 
 # ELF sections. `.symtab`/`.strtab` are the static symbol table a `strip` would
 # take; `.debug*` is what a `--only-keep-debug` split would move out. Kernel
@@ -264,7 +264,7 @@ echo "== non-ELF consumer surfaces (file counts) =="
 for path in /usr/lib/systemd/system /usr/lib/systemd/system-generators /etc/systemd/system \
             /usr/share/dbus-1 /etc/dbus-1 /usr/lib/tmpfiles.d /usr/lib/sysusers.d \
             /etc/pam.d /usr/lib/udev/rules.d /usr/lib/firmware /usr/share/ca-certificates \
-            /usr/share/zoneinfo /usr/lib/mos /usr/share/doc; do
+            /usr/share/zoneinfo /usr/lib/mica /usr/share/doc; do
     printf '%s\t%s\t%s\n' "${path}" \
         "$(find "${WORK}${path}" -type f 2>/dev/null | wc -l)" \
         "$(set_bytes "${path}")"

@@ -29,20 +29,20 @@ class CompositionTest(unittest.TestCase):
         shutil.copytree(f.db, self.inputs / 'info')
         shutil.copyfile(f.manifest, self.inputs / 'manifest.tsv')
         shutil.copyfile(f.packages, self.inputs / 'selected.pkgs')
-        (self.inputs / 'upstream.tsv').write_text('libfixture\t1\tamd64\t' + 'a' * 64 + '\thttps://example.invalid/library.deb\tmos-system\nunused\t1\tall\t' + 'b' * 64 + '\thttps://example.invalid/unused.deb\tbase\n')
-        (self.inputs / 'Packages').write_text('Package: mos-system\nVersion: 1\nArchitecture: all\nFilename: pool/mos-system.deb\nSHA256: ' + 'c' * 64 + '\n\n')
-        (self.inputs / 'sources.tsv').write_text('mos-system\tmos-system\t1\nlibfixture\tfixture-source\t1\nunused\tunused\t1\n')
+        (self.inputs / 'upstream.tsv').write_text('libfixture\t1\tamd64\t' + 'a' * 64 + '\thttps://example.invalid/library.deb\tmica-system\nunused\t1\tall\t' + 'b' * 64 + '\thttps://example.invalid/unused.deb\tbase\n')
+        (self.inputs / 'Packages').write_text('Package: mica-system\nVersion: 1\nArchitecture: all\nFilename: pool/mica-system.deb\nSHA256: ' + 'c' * 64 + '\n\n')
+        (self.inputs / 'sources.tsv').write_text('mica-system\tmica-system\t1\nlibfixture\tfixture-source\t1\nunused\tunused\t1\n')
         (self.inputs / 'alternatives').mkdir()
         (self.inputs / 'enablement').mkdir()
         (self.inputs / 'preset-removed.tsv').write_text('')
-        f.write('/usr/share/mos/manifest.tsv', f.manifest.read_bytes())
-        f.rules['consumers']['mos-system']['roots'].append({'paths': ['/usr/share/mos', '/usr/share/mos/manifest.tsv'], 'kind': 'resource', 'reason': 'shipping inventory', 'generated': 'runtime composition'})
+        f.write('/usr/share/mica/manifest.tsv', f.manifest.read_bytes())
+        f.rules['consumers']['mica-system']['roots'].append({'paths': ['/usr/share/mica', '/usr/share/mica/manifest.tsv'], 'kind': 'resource', 'reason': 'shipping inventory', 'generated': 'runtime composition'})
         # An unselected executable is an operator omission, even when owned.
         f.root.joinpath('usr/bin/unselected').unlink()
         f.rules_path.write_text(json.dumps(f.rules))
-        for path in (f.manifest, self.inputs / 'manifest.tsv', self.inputs / 'sources.tsv', f.root / 'usr/share/mos/manifest.tsv'):
-            path.write_text(path.read_text().replace('mos-system\t1\t', 'mos-system\t' + PACKAGE_VERSION + '\t')
-                            .replace('mos-system\tmos-system\t1\n', 'mos-system\tmos-system\t' + PACKAGE_VERSION + '\n'))
+        for path in (f.manifest, self.inputs / 'manifest.tsv', self.inputs / 'sources.tsv', f.root / 'usr/share/mica/manifest.tsv'):
+            path.write_text(path.read_text().replace('mica-system\t1\t', 'mica-system\t' + PACKAGE_VERSION + '\t')
+                            .replace('mica-system\tmica-system\t1\n', 'mica-system\tmica-system\t' + PACKAGE_VERSION + '\n'))
         index = self.inputs / 'Packages'
         index.write_text(index.read_text().replace('Version: 1\n', 'Version: ' + PACKAGE_VERSION + '\n'))
         self.lineage()
@@ -56,13 +56,13 @@ class CompositionTest(unittest.TestCase):
                 (self.inputs / name).write_text('fixture pool index\n')
         files = {name: hashlib.sha256((self.inputs / name).read_bytes()).hexdigest()
                  for name in ('Packages', 'SHA256SUMS', 'manifest.txt')}
-        files['pool/mos-system.deb'] = 'c' * 64
+        files['pool/mica-system.deb'] = 'c' * 64
         record = dict(schema='mos/source-lineage/v1', architecture=arch, root_epoch=1000000000,
                       package_source=dict(commit='a' * 40, tree='b' * 40, epoch=1000000000, version=PACKAGE_VERSION),
                       composition_source=dict(commit='a' * 40, tree='b' * 40, epoch=1000000000),
                       lock=[], unlocked=[], pool=dict(files=files, packages=[dict(
-                          package='mos-system', version=PACKAGE_VERSION, architecture='all',
-                          archive='pool/mos-system.deb', sha256='c' * 64, control_sha256='d' * 64,
+                          package='mica-system', version=PACKAGE_VERSION, architecture='all',
+                          archive='pool/mica-system.deb', sha256='c' * 64, control_sha256='d' * 64,
                           source_repo='mica-build', source_commit='a' * 40)]))
         (self.inputs / 'source-lineage.json').write_text(json.dumps(record, sort_keys=True, separators=(',', ':')) + '\n')
 
@@ -88,7 +88,7 @@ class CompositionTest(unittest.TestCase):
         shutil.copytree(self.f.db, self.inputs / 'info', dirs_exist_ok=True)
         shutil.copyfile(self.f.manifest, self.inputs / 'manifest.tsv')
         with (self.inputs / 'upstream.tsv').open('a') as stream:
-            stream.write('iproute2\t6.15.0-1\tamd64\t' + 'e' * 64 + '\thttps://example.invalid/iproute2.deb\tmos-system\n')
+            stream.write('iproute2\t6.15.0-1\tamd64\t' + 'e' * 64 + '\thttps://example.invalid/iproute2.deb\tmica-system\n')
         with (self.inputs / 'sources.tsv').open('a') as stream:
             stream.write('iproute2\tiproute2\t6.15.0-1\n')
         self.f.rules_path.write_text(json.dumps(self.f.rules))
@@ -135,37 +135,37 @@ class CompositionTest(unittest.TestCase):
         self.assertIn('excluded routel must be a regular iproute2 file', r.stderr)
 
     def podman_alias(self):
-        declared = json.loads((REPO / 'rootfs/runtime/consumers.json').read_text())['consumers']['mos-podman']
+        declared = json.loads((REPO / 'rootfs/runtime/consumers.json').read_text())['consumers']['mica-podman']
         entries = declared['roots'][0]['paths']
         for path in entries:
             self.f.write(path, elf(needed=['libpodman-fixture.so'], interp='/usr/lib/podman-loader.so'), 0o755)
         self.f.write('/usr/lib/libpodman-fixture.so', elf())
         self.f.write('/usr/lib/podman-loader.so', elf(), 0o755)
-        self.f.write('/usr/share/doc/mos-podman/copyright', b'Podman fixture license\n')
+        self.f.write('/usr/share/doc/mica-podman/copyright', b'Podman fixture license\n')
         self.f.link('/usr/bin/docker', 'podman')
         owned = [*entries, '/usr/bin/docker', '/usr/lib/libpodman-fixture.so',
-                 '/usr/lib/podman-loader.so', '/usr/share/doc/mos-podman/copyright']
+                 '/usr/lib/podman-loader.so', '/usr/share/doc/mica-podman/copyright']
         owned = sorted(set(owned) | {str(parent) for path in owned for parent in Path(path).parents})
-        (self.inputs / 'info/mos-podman.list').write_text('\n'.join(owned) + '\n')
-        for path in (self.inputs / 'manifest.tsv', self.f.root / 'usr/share/mos/manifest.tsv'):
+        (self.inputs / 'info/mica-podman.list').write_text('\n'.join(owned) + '\n')
+        for path in (self.inputs / 'manifest.tsv', self.f.root / 'usr/share/mica/manifest.tsv'):
             with path.open('a') as stream:
-                stream.write(f'mos-podman\t{PACKAGE_VERSION}\tamd64\n')
+                stream.write(f'mica-podman\t{PACKAGE_VERSION}\tamd64\n')
         with (self.inputs / 'sources.tsv').open('a') as stream:
-            stream.write(f'mos-podman\tmos-podman\t{PACKAGE_VERSION}\n')
+            stream.write(f'mica-podman\tmica-podman\t{PACKAGE_VERSION}\n')
         with (self.inputs / 'selected.pkgs').open('a') as stream:
-            stream.write('mos-podman\n')
+            stream.write('mica-podman\n')
         with (self.inputs / 'Packages').open('a') as stream:
-            stream.write(f'Package: mos-podman\nVersion: {PACKAGE_VERSION}\nArchitecture: amd64\n'
-                         'Filename: pool/mos-podman.deb\nSHA256: ' + 'e' * 64 + '\n\n')
+            stream.write(f'Package: mica-podman\nVersion: {PACKAGE_VERSION}\nArchitecture: amd64\n'
+                         'Filename: pool/mica-podman.deb\nSHA256: ' + 'e' * 64 + '\n\n')
         self.lineage()
         path = self.inputs / 'source-lineage.json'
         record = json.loads(path.read_text())
-        record['pool']['files']['pool/mos-podman.deb'] = 'e' * 64
-        record['pool']['packages'].append(dict(package='mos-podman', version=PACKAGE_VERSION,
-            architecture='amd64', archive='pool/mos-podman.deb', sha256='e' * 64, control_sha256='f' * 64,
+        record['pool']['files']['pool/mica-podman.deb'] = 'e' * 64
+        record['pool']['packages'].append(dict(package='mica-podman', version=PACKAGE_VERSION,
+            architecture='amd64', archive='pool/mica-podman.deb', sha256='e' * 64, control_sha256='f' * 64,
             source_repo='mica-build', source_commit='a' * 40))
         path.write_text(json.dumps(record, sort_keys=True, separators=(',', ':')) + '\n')
-        self.f.rules['consumers']['mos-podman'] = dict(roots=[declared['roots'][0],
+        self.f.rules['consumers']['mica-podman'] = dict(roots=[declared['roots'][0],
             *(row for row in declared['roots'] if row['paths'] == ['/usr/bin/docker'])], runtime_links=[])
         self.f.rules_path.write_text(json.dumps(self.f.rules))
         return entries
@@ -180,7 +180,7 @@ class CompositionTest(unittest.TestCase):
         row = rows['/usr/bin/docker']
         self.assertEqual((row['type'], row['target'], row['mode'], row['uid'], row['gid']),
                          ('symlink', 'podman', 0o777, 0, 0))
-        self.assertEqual(report['provenance']['files']['/usr/bin/docker']['archives'][0]['package'], 'mos-podman')
+        self.assertEqual(report['provenance']['files']['/usr/bin/docker']['archives'][0]['package'], 'mica-podman')
         self.assertEqual(os.readlink(self.f.out / 'usr/bin/docker'), 'podman')
         for path in entries:
             self.assertEqual((self.f.out / path[1:]).read_bytes(), (self.f.root / path[1:]).read_bytes())
@@ -198,7 +198,7 @@ class CompositionTest(unittest.TestCase):
                 self.addCleanup(fixture.doCleanups)
                 fixture.podman_alias()
                 if mutation in ('owner', 'wrong-owner'):
-                    owner = fixture.inputs / 'info/mos-podman.list'
+                    owner = fixture.inputs / 'info/mica-podman.list'
                     owner.write_text(owner.read_text().replace('/usr/bin/docker\n', ''))
                     if mutation == 'wrong-owner':
                         with (fixture.inputs / 'info/unused.list').open('a') as stream:
@@ -208,14 +208,14 @@ class CompositionTest(unittest.TestCase):
                     fixture.f.link('/usr/bin/docker', 'crun')
                 elif mutation == 'mode':
                     # Linux symlink modes are fixed; a conflicting required mode must refuse.
-                    fixture.f.rules['consumers']['mos-podman']['roots'][-1]['expect']['mode'] = 0o755
+                    fixture.f.rules['consumers']['mica-podman']['roots'][-1]['expect']['mode'] = 0o755
                 elif mutation in ('missing-target', 'interpreter', 'library'):
                     path = {'missing-target': 'usr/bin/podman', 'interpreter': 'usr/lib/podman-loader.so',
                             'library': 'usr/lib/libpodman-fixture.so'}[mutation]
                     (fixture.f.root / path).unlink()
                 else:
                     fixture.f.link('/usr/bin/unexpected-podman-alias', 'podman')
-                    with (fixture.inputs / 'info/mos-podman.list').open('a') as stream:
+                    with (fixture.inputs / 'info/mica-podman.list').open('a') as stream:
                         stream.write('/usr/bin/unexpected-podman-alias\n')
                 fixture.f.rules_path.write_text(json.dumps(fixture.f.rules))
                 fixture.capture()
@@ -250,9 +250,9 @@ class CompositionTest(unittest.TestCase):
         links['/etc/rcS.d/S01procps'] = '../init.d/procps'
         expected = set(operators) | {p for paths in resources.values() for p in paths} | set(links)
         declared = json.loads((REPO / 'rootfs/runtime/consumers.json').read_text())
-        rows = [row for row in declared['consumers']['mos-system']['roots']
+        rows = [row for row in declared['consumers']['mica-system']['roots']
                 if set(row['paths']) & expected]
-        system = self.f.rules['consumers']['mos-system']['roots']
+        system = self.f.rules['consumers']['mica-system']['roots']
         system.extend(rows)
         owners = {}
         for path, (owner, target) in operators.items():
@@ -288,7 +288,7 @@ class CompositionTest(unittest.TestCase):
             with (self.inputs / 'manifest.tsv').open('a') as stream:
                 stream.write(f'{owner}\t1\tamd64\n')
             with (self.inputs / 'upstream.tsv').open('a') as stream:
-                stream.write(f'{owner}\t1\tamd64\t' + 'e' * 64 + f'\thttps://example.invalid/{owner}.deb\tmos-system\n')
+                stream.write(f'{owner}\t1\tamd64\t' + 'e' * 64 + f'\thttps://example.invalid/{owner}.deb\tmica-system\n')
             with (self.inputs / 'sources.tsv').open('a') as stream:
                 stream.write(f'{owner}\t{owner}\t1\n')
         self.f.rules_path.write_text(json.dumps(self.f.rules))
@@ -343,7 +343,7 @@ class CompositionTest(unittest.TestCase):
                     path = f.f.root / 'dev/unexpected'
                     path.parent.mkdir(exist_ok=True)
                     os.mkfifo(path)
-                    f.f.rules['consumers']['mos-system']['roots'].append(dict(
+                    f.f.rules['consumers']['mica-system']['roots'].append(dict(
                         paths=['/dev/unexpected'], kind='resource', reason='negative special node', generated='negative fixture'))
                 elif mutation == 'mode':
                     (f.f.root / 'usr/bin/dpkg-realpath').chmod(0o700)
@@ -359,7 +359,7 @@ class CompositionTest(unittest.TestCase):
                     f.f.link('/usr/bin/unexpected-alias' if mutation == 'omitted' else '/usr/bin/dpkg', 'systemctl')
                 else:
                     f.f.write('/var/lib/dpkg/status', b'fixture forbidden database\n')
-                    f.f.rules['consumers']['mos-system']['roots'].append(dict(
+                    f.f.rules['consumers']['mica-system']['roots'].append(dict(
                         paths=['/var/lib/dpkg', '/var/lib/dpkg/status'], kind='resource',
                         reason='negative forbidden database', generated='negative fixture'))
                 f.f.rules_path.write_text(json.dumps(f.f.rules))
@@ -390,17 +390,17 @@ class CompositionTest(unittest.TestCase):
             '/usr/lib/systemd', '/usr/lib/systemd/system', '/usr/share/doc/systemd',
             *masks, unit, license_path,
         ]) + '\n')
-        for path in (self.inputs / 'manifest.tsv', self.f.root / 'usr/share/mos/manifest.tsv'):
+        for path in (self.inputs / 'manifest.tsv', self.f.root / 'usr/share/mica/manifest.tsv'):
             with path.open('a') as stream:
                 stream.write('systemd\t257\tamd64\n')
         with (self.inputs / 'upstream.tsv').open('a') as stream:
-            stream.write('systemd\t257\tamd64\t' + 'e' * 64 + '\thttps://example.invalid/systemd.deb\tmos-system\n')
+            stream.write('systemd\t257\tamd64\t' + 'e' * 64 + '\thttps://example.invalid/systemd.deb\tmica-system\n')
         with (self.inputs / 'sources.tsv').open('a') as stream:
             stream.write('systemd\tsystemd\t257\n')
-        system = self.f.rules['consumers']['mos-system']
+        system = self.f.rules['consumers']['mica-system']
         system['roots'].append(dict(paths=[*masks, unit], packages=['systemd'], kind='resource',
                                     reason='units, live udev rules, PAM and D-Bus resources'))
-        declared = json.loads((REPO / 'rootfs/runtime/consumers.json').read_text())['consumers']['mos-system']
+        declared = json.loads((REPO / 'rootfs/runtime/consumers.json').read_text())['consumers']['mica-system']
         system['runtime_links'].extend(row for row in declared['runtime_links'] if row['path'] in masks)
         if with_device:
             self.bootstrap_device('null', 1, 3)
@@ -454,7 +454,7 @@ class CompositionTest(unittest.TestCase):
                     fixture.f.link(extra, '/dev/null')
                     with (fixture.inputs / 'info/systemd.list').open('a') as stream:
                         stream.write(extra + '\n')
-                    fixture.f.rules['consumers']['mos-system']['roots'][-1]['paths'].append(extra)
+                    fixture.f.rules['consumers']['mica-system']['roots'][-1]['paths'].append(extra)
                     fixture.f.rules_path.write_text(json.dumps(fixture.f.rules))
                 fixture.capture()
                 result = fixture.compose()
@@ -515,7 +515,7 @@ class CompositionTest(unittest.TestCase):
     def test_selected_bootstrap_device_still_refuses(self):
         self.bootstrap_device()
         self.capture()
-        self.f.rules['consumers']['mos-system']['roots'].append({
+        self.f.rules['consumers']['mica-system']['roots'].append({
             'paths': ['/dev/console'], 'kind': 'resource', 'reason': 'invalid shipped device',
             'generated': 'fixture',
         })
@@ -583,14 +583,14 @@ class CompositionTest(unittest.TestCase):
         for path in ['var/lib/dpkg', 'mos-compose', '.debian-extra', 'usr/lib/udev/hwdb.bin', 'usr/lib/debug', 'usr/lib/modules/modules.dep']:
             self.assertFalse(self.f.out.joinpath(path).exists(), path)
         self.assertEqual(os.readlink(self.f.out / 'etc/systemd/system-generators/systemd-ssh-generator'), '/dev/null')
-        self.assertEqual(os.readlink(self.f.out / 'var/log/wtmp'), '/run/mos/wtmp')
+        self.assertEqual(os.readlink(self.f.out / 'var/log/wtmp'), '/run/mica/wtmp')
         self.assertEqual((self.f.out / 'var/lib/seed').stat().st_ino, (self.f.out / 'var/lib/seed-alias').stat().st_ino)
         self.assertEqual((self.f.out / 'var/lib/seed').stat().st_uid, 123)
         self.assertEqual(os.getxattr(self.f.out / 'var/lib/seed', 'user.fixture'), b'value')
         self.assertEqual(os.getxattr(self.f.out / 'usr/bin/captool', 'security.capability'), os.getxattr(self.f.root / 'usr/bin/captool', 'security.capability'))
-        self.assertNotIn('unused\t', (self.f.out / 'usr/share/mos/manifest.tsv').read_text())
-        self.assertEqual({p['package'] for p in report['provenance']['build_packages']}, {'mos-system', 'libfixture', 'unused'})
-        self.assertEqual({p['package'] for p in report['provenance']['shipped_packages']}, {'mos-system', 'libfixture'})
+        self.assertNotIn('unused\t', (self.f.out / 'usr/share/mica/manifest.tsv').read_text())
+        self.assertEqual({p['package'] for p in report['provenance']['build_packages']}, {'mica-system', 'libfixture', 'unused'})
+        self.assertEqual({p['package'] for p in report['provenance']['shipped_packages']}, {'mica-system', 'libfixture'})
         self.assertLess(report['measurements']['unique_file_bytes'], report['measurements']['apparent_file_bytes'])
         self.assertEqual(report['measurements']['runtime_allocation'], 'pending B7 guest evidence')
         check = subprocess.run([sys.executable, str(REPO / 'rootfs/runtime/select.py'), 'verify', '--root', str(self.f.out), '--report', str(self.f.report)], capture_output=True, text=True)
@@ -599,7 +599,7 @@ class CompositionTest(unittest.TestCase):
     def test_accounting_link_capture_preserves_producer_identity(self):
         links = self.f.accounting_links()
         self.f.rules_path.write_text(json.dumps(self.f.rules))
-        shutil.copyfile(self.f.db / 'mos-system.list', self.inputs / 'info/mos-system.list')
+        shutil.copyfile(self.f.db / 'mica-system.list', self.inputs / 'info/mica-system.list')
         self.capture()
         result = self.compose()
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -610,7 +610,7 @@ class CompositionTest(unittest.TestCase):
             self.assertEqual(rows[link['path']]['runtime_link'], link)
             for path in link['requires']:
                 self.assertEqual(rows[path]['sha256'], snapshot[path]['sha256'])
-                self.assertIn({'package': 'mos-system', 'version': PACKAGE_VERSION, 'architecture': 'all'}, rows[path]['origins'])
+                self.assertIn({'package': 'mica-system', 'version': PACKAGE_VERSION, 'architecture': 'all'}, rows[path]['origins'])
         self.assertEqual(report['provenance']['capture_sha256']['configured.json'],
                          hashlib.sha256((self.inputs / 'configured.json').read_bytes()).hexdigest())
 
@@ -619,14 +619,14 @@ class CompositionTest(unittest.TestCase):
         self.f.write('/etc/ld.so.cache', cache)
         self.f.write('/usr/sbin/ldconfig', elf(), 0o755)
         self.f.write('/var/cache/ldconfig/aux-cache', b'host-specific optimizer state\n')
-        self.f.rules['consumers']['mos-system']['roots'].append({
+        self.f.rules['consumers']['mica-system']['roots'].append({
             'paths': ['/etc/ld.so.cache', '/usr/sbin/ldconfig'],
             'kind': 'resource',
             'reason': 'runtime dynamic loader state and maintenance tool',
         })
         self.f.rules_path.write_text(json.dumps(self.f.rules))
         self.f.capture_ownership()
-        shutil.copyfile(self.f.db / 'mos-system.list', self.inputs / 'info/mos-system.list')
+        shutil.copyfile(self.f.db / 'mica-system.list', self.inputs / 'info/mica-system.list')
         self.capture()
 
         r = self.compose()
@@ -689,7 +689,7 @@ class CompositionTest(unittest.TestCase):
 
     def test_explicit_residue_rule_is_refused(self):
         self.f.write('/var/lib/dpkg/status', b'build database')
-        self.f.rules['consumers']['mos-system']['roots'].append({'paths': ['/var/lib/dpkg', '/var/lib/dpkg/status'], 'kind': 'resource', 'reason': 'invalid build-state root', 'generated': 'fixture'})
+        self.f.rules['consumers']['mica-system']['roots'].append({'paths': ['/var/lib/dpkg', '/var/lib/dpkg/status'], 'kind': 'resource', 'reason': 'invalid build-state root', 'generated': 'fixture'})
         self.f.rules_path.write_text(json.dumps(self.f.rules))
         self.capture()
         r = self.compose()
@@ -730,9 +730,9 @@ class CompositionTest(unittest.TestCase):
         self.f.write(target, b'[Service]\nExecStart=/usr/bin/helper\n')
         self.f.link(link, target)
         self.f.capture_ownership()
-        native = self.f.db / 'mos-system.list'
+        native = self.f.db / 'mica-system.list'
         native.write_text(native.read_text().replace(link + '\n', ''))
-        shutil.copyfile(native, self.inputs / 'info/mos-system.list')
+        shutil.copyfile(native, self.inputs / 'info/mica-system.list')
         (self.inputs / 'enablement/fixture.service.dsh-also').write_text(link + '\n')
         self.capture()
         r = self.compose()
@@ -755,9 +755,9 @@ class CompositionTest(unittest.TestCase):
         self.f.write(policy, b'disable fixture.service\n')
         self.f.link(link, '/usr/bin/helper')
         self.f.capture_ownership()
-        native = self.f.db / 'mos-system.list'
+        native = self.f.db / 'mica-system.list'
         native.write_text(native.read_text().replace(link + '\n', ''))
-        shutil.copyfile(native, self.inputs / 'info/mos-system.list')
+        shutil.copyfile(native, self.inputs / 'info/mica-system.list')
         (self.inputs / 'enablement/fixture.service.dsh-also').write_text(link + '\n')
         self.capture()
         self.f.root.joinpath(link[1:]).unlink()
@@ -778,17 +778,17 @@ class CompositionTest(unittest.TestCase):
         self.assertFalse(self.f.out.joinpath('usr/share/man').exists())
 
     def test_current_policy_resources_survive_final_composition(self):
-        anchors = ['/etc/systemd/system/mos-load-extensions.service',
+        anchors = ['/etc/systemd/system/mica-load-extensions.service',
                    '/etc/systemd/system/usr-local-lib-systemd-system.mount',
                    '/etc/systemd/system/etc-containers-systemd.mount',
                    '/etc/ssh/sshd_config.d/05-mos-authorized-keys.conf',
-                   '/etc/tmpfiles.d/mos-var.conf']
+                   '/etc/tmpfiles.d/mica-var.conf']
         for path in anchors:
             self.f.write(path, (REPO / 'rootfs/overlay' / path[1:]).read_bytes())
-        self.f.rules['consumers']['mos-system']['roots'].append({'paths': anchors, 'kind': 'resource', 'reason': 'current policy resources'})
+        self.f.rules['consumers']['mica-system']['roots'].append({'paths': anchors, 'kind': 'resource', 'reason': 'current policy resources'})
         self.f.rules_path.write_text(json.dumps(self.f.rules))
         self.f.capture_ownership()
-        shutil.copyfile(self.f.db / 'mos-system.list', self.inputs / 'info/mos-system.list')
+        shutil.copyfile(self.f.db / 'mica-system.list', self.inputs / 'info/mica-system.list')
         self.capture()
         r = self.compose()
         self.assertEqual(r.returncode, 0, r.stderr)
@@ -797,8 +797,8 @@ class CompositionTest(unittest.TestCase):
 
     def readline_configuration(self):
         policy = json.loads((REPO / 'rootfs/runtime/consumers.json').read_text())
-        rule = next(r for r in policy['consumers']['mos-wifi']['roots'] if '/etc/inputrc' in r['paths'])
-        self.f.rules['consumers']['mos-system']['roots'].append(rule)
+        rule = next(r for r in policy['consumers']['mica-wifi']['roots'] if '/etc/inputrc' in r['paths'])
+        self.f.rules['consumers']['mica-system']['roots'].append(rule)
         self.f.rules_path.write_text(json.dumps(self.f.rules))
         self.f.write('/etc/inputrc', b'fixture readline defaults\n')
         self.capture()
@@ -826,12 +826,12 @@ class CompositionTest(unittest.TestCase):
     def public_metadata(self, marker=None):
         producer = 'rootfs/build.sh public-meta staging; compose-install.sh meta_install'
         rules = json.loads((REPO / 'rootfs/runtime/consumers.json').read_text())
-        rule = next(r for r in rules['consumers']['mos-system']['roots'] if r.get('generated') == producer)
-        self.f.rules['consumers']['mos-system']['roots'].append(rule)
+        rule = next(r for r in rules['consumers']['mica-system']['roots'] if r.get('generated') == producer)
+        self.f.rules['consumers']['mica-system']['roots'].append(rule)
         self.f.rules_path.write_text(json.dumps(self.f.rules))
-        self.f.write('/usr/share/mos/meta/updates/manifest.json', (REPO / 'meta.example/updates/manifest.json').read_bytes())
+        self.f.write('/usr/share/mica/meta/updates/manifest.json', (REPO / 'meta.example/updates/manifest.json').read_bytes())
         if marker is not None:
-            self.f.write('/usr/share/mos/meta/GENERATED', marker)
+            self.f.write('/usr/share/mica/meta/GENERATED', marker)
 
     def test_current_public_manifest_and_conditional_marker_survive(self):
         self.public_metadata(b'DEVELOPMENT-GRADE\nDOMAINS=boot verity updates\n')
@@ -839,7 +839,7 @@ class CompositionTest(unittest.TestCase):
         r = self.compose()
         self.assertEqual(r.returncode, 0, r.stderr)
         report = json.loads(self.f.report.read_text())
-        for path in ['/usr/share/mos/meta/updates/manifest.json', '/usr/share/mos/meta/GENERATED']:
+        for path in ['/usr/share/mica/meta/updates/manifest.json', '/usr/share/mica/meta/GENERATED']:
             self.assertEqual(self.f.out.joinpath(path.lstrip('/')).read_bytes(), self.f.root.joinpath(path.lstrip('/')).read_bytes())
             provenance = report['provenance']['files'][path]
             self.assertEqual(provenance['configured']['sha256'], provenance['final']['sha256'])
@@ -851,12 +851,12 @@ class CompositionTest(unittest.TestCase):
         self.capture()
         r = self.compose()
         self.assertEqual(r.returncode, 0, r.stderr)
-        self.assertFalse(self.f.out.joinpath('usr/share/mos/meta/GENERATED').exists())
+        self.assertFalse(self.f.out.joinpath('usr/share/mica/meta/GENERATED').exists())
 
     def test_changed_or_lost_public_input_refuses(self):
         self.public_metadata(b'DEVELOPMENT-GRADE\nDOMAINS=boot\n')
         self.capture()
-        self.f.root.joinpath('usr/share/mos/meta/GENERATED').unlink()
+        self.f.root.joinpath('usr/share/mica/meta/GENERATED').unlink()
         r = self.compose()
         self.assertNotEqual(r.returncode, 0)
         self.assertIn('public metadata', r.stderr)
@@ -864,7 +864,7 @@ class CompositionTest(unittest.TestCase):
     def test_public_manifest_tamper_refuses(self):
         self.public_metadata()
         self.capture()
-        self.f.write('/usr/share/mos/meta/updates/manifest.json', b'{}')
+        self.f.write('/usr/share/mica/meta/updates/manifest.json', b'{}')
         r = self.compose()
         self.assertNotEqual(r.returncode, 0)
         self.assertIn('public metadata', r.stderr)
@@ -877,19 +877,19 @@ class CompositionTest(unittest.TestCase):
         self.assertIn('public metadata', r.stderr)
 
     def test_uncaptured_public_metadata_refuses(self):
-        self.f.write('/usr/share/mos/meta/fixture.json', b'{}')
+        self.f.write('/usr/share/mica/meta/fixture.json', b'{}')
         self.capture()
         r = self.compose()
         self.assertNotEqual(r.returncode, 0)
-        self.assertIn('undeclared public metadata: /usr/share/mos/meta/fixture.json', r.stderr)
+        self.assertIn('undeclared public metadata: /usr/share/mica/meta/fixture.json', r.stderr)
 
     def test_unknown_public_metadata_directory_refuses(self):
         self.public_metadata()
-        self.f.root.joinpath('usr/share/mos/meta/unapproved').mkdir()
+        self.f.root.joinpath('usr/share/mica/meta/unapproved').mkdir()
         self.capture()
         r = self.compose()
         self.assertNotEqual(r.returncode, 0)
-        self.assertIn('undeclared public metadata: /usr/share/mos/meta/unapproved', r.stderr)
+        self.assertIn('undeclared public metadata: /usr/share/mica/meta/unapproved', r.stderr)
 
     def test_missing_native_producer_capture_refuses(self):
         (self.inputs / 'enablement/fixture.service.dsh-also').write_text('/etc/systemd/system/fixture.service\n')
@@ -904,7 +904,7 @@ class CompositionTest(unittest.TestCase):
         with sparse.open('wb') as stream:
             stream.seek(1024 * 1024)
             stream.write(b'x')
-        self.f.rules['consumers']['mos-system']['roots'].append({'paths': ['/var/lib/sparse'], 'kind': 'resource', 'reason': 'sparse fixture', 'generated': 'fixture'})
+        self.f.rules['consumers']['mica-system']['roots'].append({'paths': ['/var/lib/sparse'], 'kind': 'resource', 'reason': 'sparse fixture', 'generated': 'fixture'})
         self.f.rules_path.write_text(json.dumps(self.f.rules))
         self.capture()
         r = self.compose()
@@ -933,16 +933,16 @@ class CompositionTest(unittest.TestCase):
 
     def test_current_transform_exclusions_are_exact(self):
         f = self.f
-        with (f.db / 'mos-system.list').open('a') as stream:
+        with (f.db / 'mica-system.list').open('a') as stream:
             stream.write('/usr/bin/systemd-hwdb\n/usr/sbin/pam_getenv\n')
-        f.rules['consumers']['mos-system']['roots'].append({'paths': ['/usr/bin/systemd-hwdb', '/usr/sbin/pam_getenv', '/usr/bin/app'], 'packages': ['mos-system'], 'kind': 'executable', 'reason': 'approved transformation survivors'})
+        f.rules['consumers']['mica-system']['roots'].append({'paths': ['/usr/bin/systemd-hwdb', '/usr/sbin/pam_getenv', '/usr/bin/app'], 'packages': ['mica-system'], 'kind': 'executable', 'reason': 'approved transformation survivors'})
         r = f.command()
         self.assertEqual(r.returncode, 0, r.stderr)
         shutil.rmtree(f.out)
         f.report.unlink()
-        with (f.db / 'mos-system.list').open('a') as stream:
+        with (f.db / 'mica-system.list').open('a') as stream:
             stream.write('/usr/bin/required-new-tool\n')
-        f.rules['consumers']['mos-system']['roots'][-1]['paths'].append('/usr/bin/required-new-tool')
+        f.rules['consumers']['mica-system']['roots'][-1]['paths'].append('/usr/bin/required-new-tool')
         r = f.command()
         self.assertNotEqual(r.returncode, 0)
         self.assertIn('required-new-tool', r.stderr)

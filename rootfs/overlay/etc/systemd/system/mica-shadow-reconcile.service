@@ -1,0 +1,24 @@
+[Unit]
+Description=Build /etc/shadow in RAM from the accounts the image ships
+Documentation=file:/usr/lib/mica/mica-shadow-reconcile
+# Every unit that touches the file must see it already built: sshd's PAM stack
+# READS it through pam_unix, and micad WRITES the root: line when it applies the
+# transient password. Running after either of them would mean a boot where PAM
+# finds no file at all, or a race with micad's atomic replace.
+# EVERYTHING THAT READS /etc/shadow, because the file does not exist until
+# this runs. That is deliberate: if this unit fails, PAM finds no shadow file
+# and every account is unauthenticable, which is the safe direction. The old
+# design failed the other way -- a failed run left a "transient" password live
+# on STATE with sshd starting regardless.
+#
+# No STATE dependency any more: /run is a tmpfs systemd has already mounted,
+# so this can run as early as it needs to.
+Before=micad.service ssh.service systemd-logind.service systemd-user-sessions.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/lib/mica/mica-shadow-reconcile
+
+[Install]
+WantedBy=multi-user.target

@@ -18,7 +18,7 @@ this directory once had a driver of their own; it was retired into that one and
 its refusals went with it. What follows is what is specific to THESE producers:
 what a producer declares, and what each of the four emits.
 
-The pool is **shared** with `pkgs/mosd`'s producers. A producer deletes only
+The pool is **shared** with `pkgs/micad`'s producers. A producer deletes only
 its own archives from it (`rm -f <package>_*.deb`), never the whole directory.
 `bash build-env/deb/repo.sh --arch <arch>` then indexes it.
 
@@ -68,7 +68,7 @@ How many symlinks under `/etc/systemd/system/multi-user.target.wants/` each
 package's payload carries, one entry per package:
 
 ```
-ENABLEMENT="mos-wifi=0 mos-wifi-ap=0 mos-bluetooth=1"
+ENABLEMENT="mica-wifi=0 mica-wifi-ap=0 mica-bluetooth=1"
 ```
 
 The counting rule is narrow, and both halves of it matter:
@@ -76,9 +76,9 @@ The counting rule is narrow, and both halves of it matter:
 - **Symlinks only.** A regular file with the right name under that directory
   starts nothing, so it is not enablement.
 - **That one directory.** A link under `local-fs.target.wants` or
-  `timers.target.wants` is not counted. `mos-system` ships fifteen of the first
-  and one of the second and declares `mos-system=6`; `mos-wifi`, `mos-wifi-ap`
-  and `mos-board-x64` each ship one `local-fs` link and declare `0`. Those links
+  `timers.target.wants` is not counted. `mica-system` ships fifteen of the first
+  and one of the second and declares `mica-system=6`; `mica-wifi`, `mica-wifi-ap`
+  and `mica-board-x64` each ship one `local-fs` link and declare `0`. Those links
   are ordinary payload, and it is the byte-for-byte payload checks that speak
   about them.
 
@@ -200,7 +200,7 @@ revision: these packages have no upstream/downstream split, so it does not
 move.
 
 `0.1.0` comes from `build-env/deb/version.sh`, which reads it out of the
-mosd workspace's crate manifests and is the ONE version the whole shared pool
+micad workspace's crate manifests and is the ONE version the whole shared pool
 carries. Nothing here is built from a manifest and there is no upstream release
 to read, so these packages take the pool's number rather than declaring one --
 and it is written in exactly one place, because a second copy is a number that
@@ -234,27 +234,27 @@ to know that one of its packages was filed under arm64.
 
 | Producer | Emits | Architecture |
 | --- | --- | --- |
-| `profile` | `mos-profile-dev`, `mos-profile-prod` | `all` |
-| `system` | `mos-system` | `all` |
-| `wifi` | `mos-wifi`, `mos-wifi-ap` | `all` |
-| `bluetooth` | `mos-bluetooth` | `all` |
-| `ca-trust` | `mos-ca-trust` | `all` |
-| `busybox` | `mos-busybox` | `amd64 arm64` |
-| `board-x64` (`boards/x64/deb/board-x64`) | `mos-board-x64` | `amd64` |
-| `board-cx3576` (`boards/cx3576/deb/board-cx3576`) -- stages its BSP inputs through `PREPARE` | `mos-board-cx3576` | `arm64` |
+| `profile` | `mica-profile-dev`, `mica-profile-prod` | `all` |
+| `system` | `mica-system` | `all` |
+| `wifi` | `mica-wifi`, `mica-wifi-ap` | `all` |
+| `bluetooth` | `mica-bluetooth` | `all` |
+| `ca-trust` | `mica-ca-trust` | `all` |
+| `busybox` | `mica-busybox` | `amd64 arm64` |
+| `board-x64` (`boards/x64/deb/board-x64`) | `mica-board-x64` | `amd64` |
+| `board-cx3576` (`boards/cx3576/deb/board-cx3576`) -- stages its BSP inputs through `PREPARE` | `mica-board-cx3576` | `arm64` |
 
 ### `profile`
 
-Each package's entire payload is `/usr/lib/mos/profile.conf` mode 0444, holding
+Each package's entire payload is `/usr/lib/mica/profile.conf` mode 0444, holding
 `MOS_PROFILE=dev` or `MOS_PROFILE=prod`, plus its own
 `/usr/share/doc/<package>/copyright`. The path, the mode and the bytes are the
-ones the retired stage chain wrote, trailing newline included: mosd's
+ones the retired stage chain wrote, trailing newline included: micad's
 comparison is case-sensitive and fails closed to `prod`, so a payload differing
 by a byte would disable SSH on a dev image with every gate green.
 
-The two `Conflicts:` each other by name and both `Provides: mos-profile`. They
+The two `Conflicts:` each other by name and both `Provides: mica-profile`. They
 are alternative renderings of one immutable file, so they are mutually
-exclusive by construction and an image carries exactly one; `mos-profile` is
+exclusive by construction and an image carries exactly one; `mica-profile` is
 what a package that needs "some profile is installed" depends on. Neither
 declares `Depends` -- there is no runtime relationship to declare, and there is
 no ELF for a `${shlibs:Depends}` to resolve, which `build-env/deb/README.md`
@@ -355,7 +355,7 @@ A producer packaging Debian-sourced or vendor content does not use this file. It
 records that content's own licence honestly instead. `ca-trust` is the case
 where both are true at once: the anchors are Debian's and the doc directory is
 this repository's, so it lifts the `License: Apache-2.0` stanza out of this
-file, scopes it to `/usr/share/doc/mos-ca-trust/*`, and appends
+file, scopes it to `/usr/share/doc/mica-ca-trust/*`, and appends
 `/usr/share/doc/ca-certificates/copyright` verbatim, harvested in the
 generation stage from the package that shipped the certificates. ~150 anchors
 under GPL-2+ and MPL-2.0 are not something this repository can restate

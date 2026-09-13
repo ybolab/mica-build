@@ -233,7 +233,7 @@
           "health": {
             "components": [
               {
-                "component": "mosd",
+                "component": "micad",
                 "status": "ok"
               },
               {
@@ -347,7 +347,7 @@
           "health": {
             "components": [
               {
-                "component": "mosd",
+                "component": "micad",
                 "status": "ok"
               },
               {

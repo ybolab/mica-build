@@ -493,7 +493,7 @@ describe('the Quadlet directory is writable, persistent and NOT enabled', () => 
 
   test('a STATICALLY ENABLED mount fails -- the branch with teeth', async () => {
     // The bind would come up at every boot whatever container.enabled says,
-    // Quadlet would generate units from STATE and they would start. mosd's
+    // Quadlet would generate units from STATE and they would start. micad's
     // ContainerReconciler is what may enable it, at runtime.
     const fx = await mutated('container-engine-quadlet-bind', (root) => {
       mkdirSync(join(root, '/etc/systemd/system/local-fs.target.wants'), { recursive: true })

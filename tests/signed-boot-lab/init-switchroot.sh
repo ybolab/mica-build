@@ -47,7 +47,7 @@ mount -t squashfs -o ro /dev/mapper/vroot /newroot || {
 exec switch_root /newroot /bin/sh -c '
     /bin/echo "PROOF switchroot RUNNING-FROM-NEW-ROOT $(/bin/cat /etc/hostname 2>/dev/null)"
     /bin/echo "PROOF switchroot os-release $(/bin/sed -n "s/^PRETTY_NAME=//p" /etc/os-release)"
-    /bin/echo "PROOF switchroot mos-release $(/bin/cat /etc/mos-release 2>/dev/null | /usr/bin/tr "\n" " ")"
+    /bin/echo "PROOF switchroot mos-release $(/bin/cat /etc/mica-release 2>/dev/null | /usr/bin/tr "\n" " ")"
     /bin/echo "PROOF switchroot root-mount $(/bin/grep " / " /proc/mounts)"
     /bin/echo "PROOF switchroot binary $(/bin/ls -l /bin/sh)"
     /bin/echo "PROOF END"

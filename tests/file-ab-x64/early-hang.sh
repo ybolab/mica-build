@@ -7,7 +7,7 @@ board=${2:?board required}
 init=$(realpath "${3:?fault-injected init required}")
 cert=$(realpath "${4:?content certificate required}")
 key=$(realpath "${5:?content key required}")
-shutdown=${6:?compiled mos-shutdown required}
+shutdown=${6:?compiled mica-shutdown required}
 case "$board" in x64|virt-arm64) ;; *) exit 1;; esac
 work=$(mktemp -d "$PWD/_out/early-hang.XXXXXX")
 out="$work/boot"
@@ -38,7 +38,7 @@ for attempt in 1 2 3; do
         -v "$out:/w" -v "$PWD/tests/file-ab-x64:/harness:ro" ai-agent/mos-p2-lab \
         python3 /harness/qmp-boot.py "/w/events-$attempt.jsonl" bash /w/boot.sh image/disk.img writable 400 "$board" > "$out/attempt-$attempt.log" 2>&1
     grep -F 'FILE_AB_EARLY_HANG_TRIGGER: before SYSTEM and systemd' "$out/attempt-$attempt.log"
-    ! grep -F 'mos-init: verified deployment' "$out/attempt-$attempt.log"
+    ! grep -F 'mica-init: verified deployment' "$out/attempt-$attempt.log"
     ! grep -F 'systemd[1]:' "$out/attempt-$attempt.log"
     python3 - "$out/events-$attempt.jsonl" <<'PY'
 from pathlib import Path
@@ -55,6 +55,6 @@ timeout -k 15 450 docker run --rm --label ai-agent=true --network traefik \
     -v "$out:/w" -v "$PWD/tests/file-ab-x64:/harness:ro" ai-agent/mos-p2-lab \
     bash /harness/boot.sh image/disk.img writable 400 "$board" > "$out/fallback.log" 2>&1
 grep -F FILE_AB_RUNTIME_PASS "$out/fallback.log"
-! grep -F "mos-init: verified deployment $bad;" "$out/fallback.log"
+! grep -F "mica-init: verified deployment $bad;" "$out/fallback.log"
 bash tests/file-ab-x64/shutdown-check.sh "$out/fallback.log"
 echo "FILE_AB_EARLY_HANG_FALLBACK_PASS: $board"

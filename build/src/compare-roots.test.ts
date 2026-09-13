@@ -46,9 +46,9 @@ function fixtureRoot(dir: string, name: string): string {
   const root = join(dir, name)
   mkdirSync(join(root, 'usr', 'bin'), { recursive: true })
   mkdirSync(join(root, 'etc'), { recursive: true })
-  writeFileSync(join(root, 'usr', 'bin', 'mosd'), 'ELF-ish\n')
+  writeFileSync(join(root, 'usr', 'bin', 'micad'), 'ELF-ish\n')
   writeFileSync(join(root, 'etc', 'passwd'), 'root:x:0:0::/root:/bin/sh\n')
-  symlinkSync('/run/mos/shadow', join(root, 'etc', 'shadow'))
+  symlinkSync('/run/mica/shadow', join(root, 'etc', 'shadow'))
   return root
 }
 
@@ -209,14 +209,14 @@ describe('the classifier, over real trees on disk', () => {
       writeFileSync(join(b, 'usr', 'bin', 'newthing'), 'x\n') // added
       rmSync(join(a, 'etc', 'passwd')) // gone from A, so: added
       writeFileSync(join(b, 'etc', 'motd'), 'hello\n') // added
-      rmSync(join(b, 'usr', 'bin', 'mosd'))
-      mkdirSync(join(b, 'usr', 'bin', 'mosd')) // type: file -> dir
+      rmSync(join(b, 'usr', 'bin', 'micad'))
+      mkdirSync(join(b, 'usr', 'bin', 'micad')) // type: file -> dir
       writeFileSync(join(a, 'etc', 'hosts'), 'a\n')
       writeFileSync(join(b, 'etc', 'hosts'), 'b\n') // content
       chmodSync(join(a, 'etc', 'hosts'), 0o600) // mode
       chmodSync(join(b, 'etc', 'hosts'), 0o644) // pinned on both sides: umask is not a fixture
       rmSync(join(b, 'etc', 'shadow'))
-      symlinkSync('/run/mos/elsewhere', join(b, 'etc', 'shadow')) // symlink target
+      symlinkSync('/run/mica/elsewhere', join(b, 'etc', 'shadow')) // symlink target
 
       const diffs = diffTrees(readTree(a).tree, readTree(b).tree)
       const seen = new Map(diffs.map(d => [`${d.path} ${d.cls}`, d]))
@@ -229,15 +229,15 @@ describe('the classifier, over real trees on disk', () => {
         // A file that became a directory changed its mode too, and both are
         // reported: they are separate claims and a ledger sanctions them
         // separately.
-        '/usr/bin/mosd mode',
-        '/usr/bin/mosd type',
+        '/usr/bin/micad mode',
+        '/usr/bin/micad type',
         '/usr/bin/newthing added',
       ])
-      expect(seen.get('/usr/bin/mosd type')?.a).toBe('file')
-      expect(seen.get('/usr/bin/mosd type')?.b).toBe('dir')
+      expect(seen.get('/usr/bin/micad type')?.a).toBe('file')
+      expect(seen.get('/usr/bin/micad type')?.b).toBe('dir')
       expect(seen.get('/etc/hosts mode')?.a).toBe('0600')
       expect(seen.get('/etc/hosts mode')?.b).toBe('0644')
-      expect(seen.get('/etc/shadow symlink')?.b).toBe('/run/mos/elsewhere')
+      expect(seen.get('/etc/shadow symlink')?.b).toBe('/run/mica/elsewhere')
     })
   })
 
@@ -333,7 +333,7 @@ describe('file capabilities, through the real getcap', () => {
     withWork('cmp-caps', dir => {
       const a = fixtureRoot(dir, 'a')
       const b = fixtureRoot(dir, 'b')
-      const target = join(b, 'usr', 'bin', 'mosd')
+      const target = join(b, 'usr', 'bin', 'micad')
       const set = Bun.spawnSync(['setcap', 'cap_net_bind_service=ep', target], { stdout: 'pipe', stderr: 'pipe' })
       if (set.exitCode !== 0) {
         // Setting one needs CAP_SETFCAP and a filesystem that stores it;
@@ -346,11 +346,11 @@ describe('file capabilities, through the real getcap', () => {
         expect(new TextDecoder().decode(set.stderr)).not.toBe('')
         return
       }
-      expect(readFileCaps(b).get('/usr/bin/mosd')).toBe('cap_net_bind_service=ep')
+      expect(readFileCaps(b).get('/usr/bin/micad')).toBe('cap_net_bind_service=ep')
       const r = compareRoots({ a, b, ledgerPath: ledger(dir, ''), minPaths: 1 })
       expect(r.counts.capsA).toBe(0)
       expect(r.counts.capsB).toBe(1)
-      expect(r.unsanctioned.map(d => `${d.path} ${d.cls}`)).toEqual(['/usr/bin/mosd caps'])
+      expect(r.unsanctioned.map(d => `${d.path} ${d.cls}`)).toEqual(['/usr/bin/micad caps'])
       expect(r.exitCode).toBe(1)
     })
   })
@@ -426,12 +426,12 @@ describe("the ledger's two hard rules", () => {
 
       // The difference arrives. It is BOTH unsanctioned and a promotion the
       // author now owes -- a pending stanza is written down, not in force.
-      mkdirSync(join(b, 'usr', 'share', 'doc', 'mos-system'), { recursive: true })
-      writeFileSync(join(b, 'usr', 'share', 'doc', 'mos-system', 'copyright'), 'Apache-2.0\n')
+      mkdirSync(join(b, 'usr', 'share', 'doc', 'mica-system'), { recursive: true })
+      writeFileSync(join(b, 'usr', 'share', 'doc', 'mica-system', 'copyright'), 'Apache-2.0\n')
       const live = compareRoots({ a, b, ledgerPath: ledger(dir, body, 'live.md'), minPaths: 1 })
       expect(live.exitCode).toBe(1)
       expect(live.livePending.map(s => s.pattern)).toEqual(['/usr/share/doc/**'])
-      expect(live.unsanctioned.map(d => d.path)).toContain('/usr/share/doc/mos-system/copyright')
+      expect(live.unsanctioned.map(d => d.path)).toContain('/usr/share/doc/mica-system/copyright')
       expect(formatReport(live)).toContain('PENDING SANCTION NOW LIVE')
     })
   })
@@ -605,13 +605,13 @@ describe('expect-diff: a content sanction narrowed to one exact difference', () 
   // Two accounts, transposed -- the shape of the real difference, small enough
   // to read. Line 1 is common so the fixture is not two files that share
   // nothing.
-  const A_PASSWD = 'root:x:0:0::/root:/bin/sh\nmos-mqttd:x:970:970::/nonexistent:/usr/sbin/nologin\nmos-mqtt-broker:x:969:969::/nonexistent:/usr/sbin/nologin\n'
-  const B_PASSWD = 'root:x:0:0::/root:/bin/sh\nmos-mqtt-broker:x:969:969::/nonexistent:/usr/sbin/nologin\nmos-mqttd:x:970:970::/nonexistent:/usr/sbin/nologin\n'
+  const A_PASSWD = 'root:x:0:0::/root:/bin/sh\nmica-mqttd:x:970:970::/nonexistent:/usr/sbin/nologin\nmica-mqtt-broker:x:969:969::/nonexistent:/usr/sbin/nologin\n'
+  const B_PASSWD = 'root:x:0:0::/root:/bin/sh\nmica-mqtt-broker:x:969:969::/nonexistent:/usr/sbin/nologin\nmica-mqttd:x:970:970::/nonexistent:/usr/sbin/nologin\n'
   const TRANSPOSED = [
-    '2 -mos-mqttd:x:970:970::/nonexistent:/usr/sbin/nologin',
-    '2 +mos-mqtt-broker:x:969:969::/nonexistent:/usr/sbin/nologin',
-    '3 -mos-mqtt-broker:x:969:969::/nonexistent:/usr/sbin/nologin',
-    '3 +mos-mqttd:x:970:970::/nonexistent:/usr/sbin/nologin',
+    '2 -mica-mqttd:x:970:970::/nonexistent:/usr/sbin/nologin',
+    '2 +mica-mqtt-broker:x:969:969::/nonexistent:/usr/sbin/nologin',
+    '3 -mica-mqtt-broker:x:969:969::/nonexistent:/usr/sbin/nologin',
+    '3 +mica-mqttd:x:970:970::/nonexistent:/usr/sbin/nologin',
   ]
 
   function stanza(rows: readonly string[]): string {
@@ -656,8 +656,8 @@ describe('expect-diff: a content sanction narrowed to one exact difference', () 
 
   test('RED: an account VANISHING from B is not covered by the transposition stanza', () => {
     withWork('cmp-xd-vanish', dir => {
-      // The case L1 named. B loses mos-mqtt-broker entirely.
-      const vanished = 'root:x:0:0::/root:/bin/sh\nmos-mqttd:x:970:970::/nonexistent:/usr/sbin/nologin\n'
+      // The case L1 named. B loses mica-mqtt-broker entirely.
+      const vanished = 'root:x:0:0::/root:/bin/sh\nmica-mqttd:x:970:970::/nonexistent:/usr/sbin/nologin\n'
       const { a, b } = roots(dir, A_PASSWD, vanished)
       const r = compareRoots({ a, b, ledgerPath: ledger(dir, stanza(TRANSPOSED)), minPaths: 1 })
       expect(r.counts.unsanctioned).toBe(1)
@@ -673,8 +673,8 @@ describe('expect-diff: a content sanction narrowed to one exact difference', () 
 
   test('RED: a THIRD line moving is not covered either', () => {
     withWork('cmp-xd-third', dir => {
-      const a = 'root:x:0:0::/root:/bin/sh\nmos-mqttd:x:970:970::/nonexistent:/usr/sbin/nologin\nmos-mqtt-broker:x:969:969::/nonexistent:/usr/sbin/nologin\nsshd:x:105:65534::/run/sshd:/usr/sbin/nologin\n'
-      const b = 'sshd:x:105:65534::/run/sshd:/usr/sbin/nologin\nroot:x:0:0::/root:/bin/sh\nmos-mqtt-broker:x:969:969::/nonexistent:/usr/sbin/nologin\nmos-mqttd:x:970:970::/nonexistent:/usr/sbin/nologin\n'
+      const a = 'root:x:0:0::/root:/bin/sh\nmica-mqttd:x:970:970::/nonexistent:/usr/sbin/nologin\nmica-mqtt-broker:x:969:969::/nonexistent:/usr/sbin/nologin\nsshd:x:105:65534::/run/sshd:/usr/sbin/nologin\n'
+      const b = 'sshd:x:105:65534::/run/sshd:/usr/sbin/nologin\nroot:x:0:0::/root:/bin/sh\nmica-mqtt-broker:x:969:969::/nonexistent:/usr/sbin/nologin\nmica-mqttd:x:970:970::/nonexistent:/usr/sbin/nologin\n'
       const r0 = roots(dir, a, b)
       const r = compareRoots({ a: r0.a, b: r0.b, ledgerPath: ledger(dir, stanza(TRANSPOSED)), minPaths: 1 })
       expect(r.counts.unsanctioned).toBe(1)
@@ -685,8 +685,8 @@ describe('expect-diff: a content sanction narrowed to one exact difference', () 
 
   test('RED: a field changing INSIDE a transposed line is not covered', () => {
     withWork('cmp-xd-field', dir => {
-      // The same transposition, except mos-mqttd's uid moved 970 -> 971.
-      const b = 'root:x:0:0::/root:/bin/sh\nmos-mqtt-broker:x:969:969::/nonexistent:/usr/sbin/nologin\nmos-mqttd:x:971:970::/nonexistent:/usr/sbin/nologin\n'
+      // The same transposition, except mica-mqttd's uid moved 970 -> 971.
+      const b = 'root:x:0:0::/root:/bin/sh\nmica-mqtt-broker:x:969:969::/nonexistent:/usr/sbin/nologin\nmica-mqttd:x:971:970::/nonexistent:/usr/sbin/nologin\n'
       const { a, b: bRoot } = roots(dir, A_PASSWD, b)
       const r = compareRoots({ a, b: bRoot, ledgerPath: ledger(dir, stanza(TRANSPOSED)), minPaths: 1 })
       expect(r.counts.unsanctioned).toBe(1)
@@ -765,7 +765,7 @@ describe('the shipped ledger is self-consistent under its own rules', () => {
     // it. That one asserted the Sanctions section does not contain the
     // substring "mqtt", which was a proxy for "the proof-material stanzas are
     // not shipped" -- and a proxy that fails on a legitimate stanza about
-    // /usr/bin/mos-mqttd, which is a BINARY and not one of the eight account
+    // /usr/bin/mica-mqttd, which is a BINARY and not one of the eight account
     // files the proof material covered.
     //
     // The claim itself is unchanged and is what matters: no shipped stanza may

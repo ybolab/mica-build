@@ -6,7 +6,7 @@ import sys
 from pathlib import Path
 
 log = Path(sys.argv[1]).read_text(errors='replace')
-metrics = re.findall(r'mos-init: metrics elapsedMs=(\d+) peakRssKiB=(\d+)', log)
+metrics = re.findall(r'mica-init: metrics elapsedMs=(\d+) peakRssKiB=(\d+)', log)
 assert len(metrics) == 1, 'expected exactly one measured early-init record'
 elapsed, rss = map(int, metrics[0])
 assert elapsed > 0 and rss > 0

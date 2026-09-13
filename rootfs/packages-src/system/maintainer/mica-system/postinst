@@ -1,0 +1,181 @@
+#!/bin/sh
+# Create the pinned mos operator account (uid/gid 1000) and assert its grant.
+#
+# This is rootfs/scripts/account-mos.sh moved into the package that owns the
+# account, and it is not a copy of it. That script runs once, against a base
+# image nobody has touched, so "uid 1000 already exists" can only mean the base
+# changed under it and a hard failure is right. A postinst runs again on every
+# upgrade and every reinstall, where uid 1000 existing is the NORMAL case -- it
+# is the account this package created last time. Failing on it would make a
+# package that installs exactly once.
+#
+# So the check distinguishes the two: the pin already being in place is
+# accepted and does nothing, while the name or the uid being held by somebody
+# ELSE is still a failure that names what it found.
+#
+# useradd, groupadd and chage come from the `passwd` package, which is declared
+# in Depends because dpkg-shlibdeps cannot see a program exec'd by name.
+#
+# postinst, not preinst: no path in this package's payload is owned by this
+# account -- /home is the empty mountpoint of home.mount and the real
+# /home/mos is created on DATA by mica-seed-home -- so the account is needed
+# when the units run and not when the files are unpacked.
+#
+# Nothing here calls systemctl, and nothing here enables or disables a unit.
+# This package's enablement is entirely payload: the wants-symlinks it ships and
+# the preset it ships. The one unit-related line below is an ASSERTION over what
+# that payload achieved, which arranges nothing -- see the ssh block.
+set -e
+
+case "$1" in
+configure) ;;
+abort-upgrade | abort-remove | abort-deconfigure) exit 0 ;;
+*) echo "error: postinst called with unknown argument '$1'" >&2; exit 1 ;;
+esac
+
+# A PRESET PREVENTS; IT DOES NOT RETRACT. That one measured asymmetry decides
+# three things in this tree, and this block is the third of them.
+#
+# ssh.service must be DISABLED in the finished root, on both profiles: micad
+# seeds `access.ssh.enabled` false for dev and prod alike and owns the
+# lifecycle, so an image that shipped sshd enabled would be listening from early
+# boot until micad's first reconcile shut it down.
+#
+# WHAT ARRANGES THAT IS PAYLOAD, NOT THIS SCRIPT: the preset this package ships
+# at /usr/lib/systemd/system-preset/50-mos-ssh.preset. openssh-server's own
+# postinst enables ssh.service through deb-systemd-helper, and deb-systemd-helper
+# reads that preset and writes no link. The Dockerfile records the measurement.
+#
+# A PRESET IS NOT A WORKAROUND HERE, IT IS ONE OF THE TWO SANCTIONED FORMS.
+# docs/plan/PLAN-036.md, Risks: "enablement is represented by owned symlinks or
+# explicit image presets." A measurement only shows that a mechanism WORKS -- a
+# postinst that removed the link would work too, which is why the measurement
+# alone cannot stop someone swapping this for one. The plan names the two forms,
+# and a maintainer script removing another package's link is neither of them.
+# On the stage chain the ordering is the other way round -- 10-base installs
+# openssh-server before rootfs/scripts/network-and-ssh-units.sh runs -- so
+# that script still needs its `rm -f`, because the preset it writes lands after
+# the link already exists. Same sentence, other direction.
+#
+# DO NOT DELETE THE LINE BELOW AS "A MAINTAINER SCRIPT DOING ENABLEMENT". The
+# standing ruling forbids a script that ARRANGES enablement -- `systemctl
+# enable`, deb-systemd-helper, anything deciding at install time what a payload
+# should have declared. This creates no link, removes none, and its only effect
+# is to refuse. Three things make it right rather than merely allowed:
+#
+#   IT GUARDS A FAILURE THE PAYLOAD CANNOT COVER. A third ordering exists that
+#   neither the preset nor the chain's `rm` reaches: a caller that configured
+#   openssh-server in an EARLIER apt transaction already holds the link, and a
+#   preset cannot retract one that exists. That is an ordering this package does
+#   not control, so it is asserted rather than assumed.
+#
+#   A REFUSAL HERE IS A BUILD FAILURE, NOT A BROKEN DEVICE, and the plan says so
+#   rather than this being an inference about when packages are installed.
+#   PLAN-036.md, Risks: "The running image still removes APT/dpkg. These `.deb`
+#   files are build and composition artifacts, not an on-device update
+#   mechanism." So refusing turns "sshd enabled at boot" into a failed
+#   composition -- strictly better than finding it in a dual-build comparison
+#   afterwards, which is exactly how it was found this time.
+#
+#   IT PUTS THE CLAIM WHERE THE CLAIM NOW LIVES. The chain asserts this same
+#   fact in a build script; the decision moved into a package, so the assertion
+#   moved with it. A claim is machine-checkable at the point where it could
+#   break, or it is not checked at all.
+SSH_LINK=/etc/systemd/system/multi-user.target.wants/ssh.service
+[ ! -e "${SSH_LINK}" ] ||
+    { echo "error: ${SSH_LINK} exists, so sshd would start at boot. mica-system ships /usr/lib/systemd/system-preset/50-mos-ssh.preset to stop openssh-server's postinst writing it, which only works if that postinst runs after this package's payload is unpacked -- configure openssh-server in the same apt transaction as mica-system" >&2; exit 1; }
+echo "ssh.service left DISABLED in the image (both profiles; micad owns the lifecycle)"
+
+# The same assertion for nftables.service, and it guards a different mechanism.
+# Nothing in Debian's nftables packaging enables the unit, so this is not about
+# another package's postinst -- it is about the preset FALLBACK. No preset
+# matched nftables.service before 50-mos-nftables.preset, and an unmatched unit
+# presets to ENABLE: measured in a clean trixie root, `systemctl preset
+# nftables.service` with the stock set writes sysinit.target.wants. The unit's
+# ExecStart is `nft -f /etc/nftables.conf` and that config opens with `flush
+# ruleset`, so an enabled unit clears netavark's rules at every boot. Asserting
+# the outcome here does not arrange it -- the preset does -- but it turns the
+# link's arrival into a failed composition instead of a device that loses its
+# container network on the second boot.
+NFT_LINK=/etc/systemd/system/sysinit.target.wants/nftables.service
+[ ! -e "${NFT_LINK}" ] ||
+    { echo "error: ${NFT_LINK} exists, so nftables.service would run at boot and its ExecStart 'nft -f /etc/nftables.conf' begins with 'flush ruleset' -- it would clear the container network's rules on every boot. mica-system ships /usr/lib/systemd/system-preset/50-mos-nftables.preset to keep the unit disabled; something enabled it anyway" >&2; exit 1; }
+echo "nftables.service left DISABLED in the image (the tool ships; no ruleset is loaded at boot)"
+
+NAME=mos
+ID=1000
+HOME_DIR=/home/mos
+LOGIN_SHELL=/bin/bash
+COMMENT="mos operator"
+
+test -x "${LOGIN_SHELL}" ||
+    { echo "error: ${LOGIN_SHELL} is not installed, so it cannot be the ${NAME} login shell" >&2; exit 1; }
+
+# The group first, because useradd --gid names it. Both halves of the pin are
+# checked -- the name and the numeric id -- because either can be taken
+# independently, and a check that looks at only one is blind to the other.
+#
+# Not --system: 1000 is a regular-account id, and it is pinned rather than
+# allocated because /home/mos sits on the DATA partition and outlives the
+# rootfs that created it. If a later image resolved the id differently, every
+# file already in /home/mos would be owned by a uid that no longer exists, and
+# nothing would fail at install time, during the update, or on the next boot.
+group="$(awk -F: -v n="${NAME}" -v g="${ID}" '$1 == n || $3 == g' /etc/group)"
+if [ -z "${group}" ]; then
+    groupadd --gid "${ID}" "${NAME}"
+else
+    case "${group}" in
+    "${NAME}:x:${ID}:"*) ;;
+    *) echo "error: gid ${ID} or the group name ${NAME} is held by something else: ${group}" >&2; exit 1 ;;
+    esac
+fi
+
+# --no-create-home: /home is the mountpoint of home.mount and must stay empty
+# in the packed root, which is a read-only verity squashfs.
+passwd_entry="$(awk -F: -v n="${NAME}" -v u="${ID}" '$1 == n || $3 == u' /etc/passwd)"
+if [ -z "${passwd_entry}" ]; then
+    useradd --uid "${ID}" --gid "${ID}" --no-create-home --home-dir "${HOME_DIR}" \
+            --shell "${LOGIN_SHELL}" --comment "${COMMENT}" "${NAME}"
+else
+    # A second line here cannot match a single-line pattern, so a name and a uid
+    # held by two different accounts fails as loudly as one foreign account does.
+    case "${passwd_entry}" in
+    "${NAME}:x:${ID}:${ID}:"*":${HOME_DIR}:${LOGIN_SHELL}") ;;
+    *) echo "error: uid ${ID} or the name ${NAME} is held by another account: ${passwd_entry}" >&2; exit 1 ;;
+    esac
+fi
+
+# Unconditional, and not only on the path that created the account: the shadow
+# last-change field would otherwise be the install date, and the packed rootfs
+# -- and therefore its dm-verity root hash -- must not change with the
+# calendar. Running it again writes the same value, which is what makes it safe
+# on an account an older version of this package created without it.
+chage -d 2020-01-01 "${NAME}"
+
+entry="$(awk -F: -v n="${NAME}" '$1 == n' /etc/passwd)"
+case "${entry}" in
+"${NAME}:x:${ID}:${ID}:"*":${HOME_DIR}:${LOGIN_SHELL}") ;;
+*) echo "error: the ${NAME} passwd entry is not the pinned one: ${entry}" >&2; exit 1 ;;
+esac
+
+# No sudo and no supplementary groups, deliberately. Not adm, not shadow,
+# nothing reaching the settings tree: the web UI is the admin surface, and a
+# guessed privilege policy would outlive the release that guessed it. The
+# account buys a persistent working directory and a non-root default shell; it
+# does not buy a weaker grant, because sshd authorises root and mos from one
+# key list.
+extra="$(awk -F: -v n="${NAME}" '$1 != n && $4 ~ "(^|,)" n "(,|$)" { print $1 }' /etc/group | tr '\n' ' ')"
+[ -z "${extra}" ] ||
+    { echo "error: ${NAME} is a member of supplementary group(s): ${extra}; this package grants none, and no sudo" >&2; exit 1; }
+
+# The shadow field must be a LOCKED marker, and empty is not one: pam_unix
+# accepts any password, including none, against an empty field. A usable hash
+# is the other failure -- a signed rootfs is byte-identical on every device, so
+# any hash inside one is a fleet-wide shared secret.
+mh="$(awk -F: -v n="${NAME}" '$1 == n { print $2; exit }' /etc/shadow)"
+case "${mh}" in
+"") echo "error: the ${NAME} entry in /etc/shadow has an EMPTY password field, which means PASSWORDLESS login: pam_unix accepts any password, including none. Empty is not a locked marker" >&2; exit 1 ;;
+'!'* | '*'*) ;;
+*) echo "error: the ${NAME} entry in /etc/shadow carries a usable password hash. A signed rootfs is byte-identical on every device, so any hash inside one is a fleet-wide shared secret" >&2; exit 1 ;;
+esac
+echo "${NAME} operator account: ${entry}, no supplementary groups, shadow field '${mh}'"

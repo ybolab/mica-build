@@ -230,7 +230,7 @@ export function featureOf(stage: StageFile): string | undefined {
 /**
  * The chain with named features left out -- "stage selection". This replaces `--build-arg WITH_CONTAINERS=0`, and the difference is not
  * spelling: a WITH_* argument reached the build and every RUN and script that
- * cared had to test it -- five copies for the container engine, four for mosd,
+ * cared had to test it -- five copies for the container engine, four for micad,
  * each an independent chance to build an image with the engine installed and
  * its assertions skipped. Here the decision is made once, before docker starts,
  * and a declined feature is a file that is not built. It refuses a name it

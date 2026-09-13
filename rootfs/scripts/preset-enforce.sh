@@ -5,7 +5,7 @@
 # Make the enablement links in the packed root agree with the preset policy the
 # root ships, for the units that policy DISABLES.
 #
-# WHY THIS EXISTS, AND WHY A PRESET FILE ALONE WAS NOT ENOUGH. mos-system's
+# WHY THIS EXISTS, AND WHY A PRESET FILE ALONE WAS NOT ENOUGH. mica-system's
 # 50-mos-ssh.preset works by ORDERING: apt unpacks that package's data before it
 # configures openssh-server, so deb-systemd-helper reads the rule and never
 # writes the link. PLAN-088 assumed the same ordering would hold for
@@ -20,7 +20,7 @@
 # or an upstream packaging change. This step is the RECONCILIATION -- it removes
 # the link that was already there when the decision arrived. Removing the link
 # without shipping the preset would be an absence rather than a decision, which
-# is the failure mos-system's own comments describe at length.
+# is the failure mica-system's own comments describe at length.
 #
 # THE RESOLUTION IS IMPLEMENTED HERE RATHER THAN IMPORTED, and that is
 # deliberate. verify/src/unit-state.ts implements the same systemd rule in

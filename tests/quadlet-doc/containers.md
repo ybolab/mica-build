@@ -50,10 +50,10 @@ connect to if you were expecting one.
 ## 2. The switch
 
 `container.enabled` in the management settings tree, `false` by default. It is
-read and written through APID, which calls mosd's validated `GetSettings` and
-`SetSettings` methods. mosd exports no system Item1 projection, and
-`mos-mqttd` admits only application packages enrolled by exact direct
-`com.mos.<class>[.<suffix>]` name, with `com.mos.mosd` structurally forbidden,
+read and written through APID, which calls micad's validated `GetSettings` and
+`SetSettings` methods. micad exports no system Item1 projection, and
+`mica-mqttd` admits only application packages enrolled by exact direct
+`com.mica.<class>[.<suffix>]` name, with `com.mica.micad` structurally forbidden,
 so container enablement has no MQTT read or write path. `mqtt.enabled` is kept
 on the same management side for the same reason: a system lifecycle switch is
 not application data.
@@ -430,7 +430,7 @@ Image=registry.example.com/acme/app@sha256:0123456789abcdef0123456789abcdef01234
 Pull=never
 
 [Service]
-Environment=REGISTRY_AUTH_FILE=/var/lib/mos/containers-auth.json
+Environment=REGISTRY_AUTH_FILE=/var/lib/mica/containers-auth.json
 
 [Install]
 WantedBy=multi-user.target
@@ -468,10 +468,10 @@ nobody asked for.
 root is under `/run` — a tmpfs, gone at the next boot:
 
 ```
-podman login --authfile /var/lib/mos/containers-auth.json registry.example.com
+podman login --authfile /var/lib/mica/containers-auth.json registry.example.com
 ```
 
-`/var/lib/mos` is a bind of DATA/state, so the file survives a reboot and an A/B
+`/var/lib/mica` is a bind of DATA/state, so the file survives a reboot and an A/B
 update. The unit points at it with `Environment=` in `[Service]`, which is the
 environment of the `podman` process and not of the container:
 `REGISTRY_AUTH_FILE` is read by podman itself. `[Container]`'s own

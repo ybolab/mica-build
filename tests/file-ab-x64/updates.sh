@@ -5,9 +5,9 @@ cd "$(dirname "${BASH_SOURCE[0]}")/../.."
 evidence=${1:?full runtime evidence directory required}
 certificate=${2:?public content certificate required}
 key=${3:?external content key required}
-init=${4:?compiled mos-init required}
+init=${4:?compiled mica-init required}
 board=${5:?x64 or virt-arm64 required}
-shutdown=${6:?compiled mos-shutdown required}
+shutdown=${6:?compiled mica-shutdown required}
 case "$board" in x64) firmware=BOOTX64.EFI;; virt-arm64) firmware=BOOTAA64.EFI;; *) exit 1;; esac
 test -f "$evidence/image/factory-disk.img"
 test ! -e "$evidence/updates"
@@ -36,7 +36,7 @@ for spec in '3 root' '4 kernel' '5 bad-health' '6 combined'; do
             bash /harness/confirmed-health.sh "$board"
         for attempt in 1 2 3; do
             boot "$output/attempt-$attempt.log"
-            grep -F 'mos-init: verified deployment' "$output/attempt-$attempt.log"
+            grep -F 'mica-init: verified deployment' "$output/attempt-$attempt.log"
             ! grep -F FILE_AB_RUNTIME_PASS "$output/attempt-$attempt.log"
         done
         boot "$output/fallback.log"

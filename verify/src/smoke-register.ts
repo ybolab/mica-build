@@ -1,5 +1,5 @@
-// The twelve artifacts this repository BUILDS -- mosd, apid, mos-mqttd,
-// mos-mqtt-broker, mos-deploy, podman, quadlet, crun, conmon, netavark, aardvark-dns
+// The twelve artifacts this repository BUILDS -- micad, apid, mica-mqttd,
+// mica-mqtt-broker, mica-deploy, podman, quadlet, crun, conmon, netavark, aardvark-dns
 // and catatonit -- where each lands in the factory root, and how each is asked
 // what version it is. No version STRING is written down here, only identity:
 // every `pin` is a function that reads the value from the file that owns it at
@@ -77,16 +77,16 @@ export interface Artifact {
   /**
    * Whether this artifact also reports the COMMIT it was built from.
    *
-   * Two of the twelve do -- mosd and apid, which print
+   * Two of the twelve do -- micad and apid, which print
    * `<name> <version> (<commit>)` -- and the runner asserts that commit against
-   * the one the BUILD recorded embedding, out of `_out/<board>/mosd-build.txt`,
-   * which `rootfs/build.sh` reads from the mosd archive's `Mos-Source-Commit`
+   * the one the BUILD recorded embedding, out of `_out/<board>/micad-build.txt`,
+   * which `rootfs/build.sh` reads from the micad archive's `Mos-Source-Commit`
    * control field.
    * A property of the artifact and not a second contract kind: it is orthogonal
    * to how the artifact is asked, since the argv is the same `--version` and the
    * exit status and version identity are asserted the same way. Absent means the
    * same as `false` -- the ten upstream artifacts have no commit of ours to
-   * report, and mos-mqttd and mos-mqtt-broker do not report one because the
+   * report, and mica-mqttd and mica-mqtt-broker do not report one because the
    * scope amendment named two files, not four.
    */
   readonly embedsBuildCommit?: boolean
@@ -106,21 +106,21 @@ const crate = (name: string) => () => readCratePackageVersion(cratePath(name))
 export const ARTIFACTS: readonly Artifact[] = [
   // The four this repository writes in Rust. Their recorded version is the
   // `[package] version` of the crate that builds them, the only place this tree
-  // records one: there is no `pkgs/mosd/versions.env`, because a pin file exists to
+  // records one: there is no `pkgs/micad/versions.env`, because a pin file exists to
   // fix an UPSTREAM version and these have no upstream.
   {
-    // mosd and apid answer `--version` before any daemon initialisation --
+    // micad and apid answer `--version` before any daemon initialisation --
     // provisioning, bus connection, key generation -- because asking a daemon
-    // for its version must not MUTATE. pkgs/mosd/mosd/src/main.rs answers from a
+    // for its version must not MUTATE. pkgs/micad/micad/src/main.rs answers from a
     // synchronous `main`, before the tokio runtime, the subscriber, the settings
     // store and provisioning, so this invocation reports, exits 0 and leaves
-    // nothing behind. `/usr/bin/mosd` with no argv still provisions (secrets/,
+    // nothing behind. `/usr/bin/micad` with no argv still provisions (secrets/,
     // settings.toml) and still exits 1 on the absent system bus, and
-    // `/usr/bin/mosd -v` -- NOT this flag -- falls through into that daemon and
+    // `/usr/bin/micad -v` -- NOT this flag -- falls through into that daemon and
     // prints no version at all.
-    name: 'mosd',
-    path: '/usr/bin/mosd',
-    pin: crate('mosd'),
+    name: 'micad',
+    path: '/usr/bin/micad',
+    pin: crate('micad'),
     contract: { kind: 'version', argv: ['--version'] },
     embedsBuildCommit: true,
   },
@@ -134,8 +134,8 @@ export const ARTIFACTS: readonly Artifact[] = [
     embedsBuildCommit: true,
   },
   {
-    name: 'mos-mqttd',
-    path: '/usr/bin/mos-mqttd',
+    name: 'mica-mqttd',
+    path: '/usr/bin/mica-mqttd',
     pin: crate('mqttd'),
     // The two crates that CAN answer are the two that declare clap and carry
     // `#[command(name = ..., version)]`, which emits CARGO_PKG_VERSION -- so
@@ -143,17 +143,17 @@ export const ARTIFACTS: readonly Artifact[] = [
     contract: { kind: 'version', argv: ['--version'] },
   },
   {
-    name: 'mos-mqtt-broker',
-    path: '/usr/bin/mos-mqtt-broker',
+    name: 'mica-mqtt-broker',
+    path: '/usr/bin/mica-mqtt-broker',
     pin: crate('broker'),
     contract: { kind: 'version', argv: ['--version'] },
   },
 
   // The authenticated file-deployment client.
   {
-    name: 'mos-deploy',
-    path: '/usr/bin/mos-deploy',
-    pin: () => readCratePackageVersion(join(REPO_ROOT, 'pkgs/mos-deploy/Cargo.toml')),
+    name: 'mica-deploy',
+    path: '/usr/bin/mica-deploy',
+    pin: () => readCratePackageVersion(join(REPO_ROOT, 'pkgs/mica-deploy/Cargo.toml')),
     contract: { kind: 'version', argv: ['--version'] },
   },
 
@@ -262,8 +262,8 @@ export const ARTIFACTS: readonly Artifact[] = [
 /** Optional binaries follow the composition record, including independent radio declines. */
 export function artifactsForPackages(packages: ReadonlySet<string>): readonly Artifact[] {
   const result = [...ARTIFACTS]
-  if (packages.has('mos-mqtt-reference')) result.push({
-    name: 'mos-mqtt-reference', path: '/usr/bin/mos-mqtt-reference',
+  if (packages.has('mica-mqtt-reference')) result.push({
+    name: 'mica-mqtt-reference', path: '/usr/bin/mica-mqtt-reference',
     pin: crate('mqtt-reference'), contract: { kind: 'version', argv: ['--version'] },
   })
   return result

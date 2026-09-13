@@ -39,7 +39,7 @@ maintain /w/image/old-loader.img /w/loader-replacement /w/firmware-next/firmware
 result=0
 boot image/old-loader.img "$evidence/removed-boot-key.log" 60 || result=$?
 test "$result" = 124
-! grep -F 'mos-init:' "$evidence/removed-boot-key.log"
+! grep -F 'mica-init:' "$evidence/removed-boot-key.log"
 grep -Ei 'Security Violation|Access Denied|Image failed to load' "$evidence/removed-boot-key.log"
 cp --reflink=auto --sparse=always "$evidence/image/disk.img" "$evidence/image/retained-key.img"
 id=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["id"])' "$evidence/updates/5/inputs.json")

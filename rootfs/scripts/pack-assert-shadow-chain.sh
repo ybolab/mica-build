@@ -5,10 +5,10 @@
 
 set -eu
 link="$(readlink /rootfs/etc/shadow || true)"
-[ "${link}" = "/run/mos/shadow" ] ||
-    { echo "error: /etc/shadow is '${link:-not a symlink}', expected a symlink to /run/mos/shadow" >&2; exit 1; }
-grep -qx 'Where=/var/lib/mos' /rootfs/etc/systemd/system/var-lib-mos.mount ||
-    { echo "error: the /etc/shadow symlink target is not the Where= of var-lib-mos.mount, so it is not STATE-backed" >&2; exit 1; }
+[ "${link}" = "/run/mica/shadow" ] ||
+    { echo "error: /etc/shadow is '${link:-not a symlink}', expected a symlink to /run/mica/shadow" >&2; exit 1; }
+grep -qx 'Where=/var/lib/mica' /rootfs/etc/systemd/system/var-lib-mica.mount ||
+    { echo "error: the /etc/shadow symlink target is not the Where= of var-lib-mica.mount, so it is not STATE-backed" >&2; exit 1; }
 fac=/rootfs/usr/share/factory/etc/shadow
 test -f "${fac}"
 mode="$(stat -c %a "${fac}")"
@@ -23,7 +23,7 @@ rh="$(awk -F: '$1 == "root" { print $2; exit }' "${fac}")"
 case "${rh}" in
     "") echo "error: the root: entry in the factory shadow has an EMPTY hash field, which means PASSWORDLESS root login: pam_unix accepts any password, including none. Empty is not a locked marker; only '!' (including '!!' and '!'-prefixed forms that retain a hash) and '*' lock an account" >&2; exit 1 ;;
     '!'* | '*'*) ;;
-    *) echo "error: the packed rootfs carries a usable root password hash. A signed rootfs is byte-identical on every device, so this is a fleet-wide shared secret. Something in the build wrote a root credential; the rootfs build has no ROOT_PASSWORD build arg on purpose, and root access is provisioned at runtime (mosd's transient password)" >&2; exit 1 ;;
+    *) echo "error: the packed rootfs carries a usable root password hash. A signed rootfs is byte-identical on every device, so this is a fleet-wide shared secret. Something in the build wrote a root credential; the rootfs build has no ROOT_PASSWORD build arg on purpose, and root access is provisioned at runtime (micad's transient password)" >&2; exit 1 ;;
 esac
 missing=""; empty=""; hashed=""
 while IFS=: read -r u _; do
@@ -43,13 +43,13 @@ done < /rootfs/etc/passwd
     { echo "error: account(s) in the factory shadow with an EMPTY password field:${empty}. An empty field means PASSWORDLESS login -- pam_unix accepts any password, including none. Empty is not a locked marker; only '!' (including '!!' and '!'-prefixed forms that retain a hash) and '*' lock an account" >&2; exit 1; }
 [ -z "${hashed}" ] ||
     { echo "error: account(s) in the factory shadow carrying a usable password hash:${hashed}. A signed rootfs is byte-identical on every device in the fleet, so any hash baked into one is a shared secret by construction. Passwords are provisioned per device at runtime, never in the image" >&2; exit 1; }
-unit=/rootfs/etc/systemd/system/mos-shadow-reconcile.service
+unit=/rootfs/etc/systemd/system/mica-shadow-reconcile.service
 test -f "${unit}"
-test -x /rootfs/usr/lib/mos/mos-shadow-reconcile
-test -L /rootfs/etc/systemd/system/multi-user.target.wants/mos-shadow-reconcile.service ||
-    { echo "error: mos-shadow-reconcile.service is installed but not enabled; /etc/shadow would never converge with the image accounts" >&2; exit 1; }
+test -x /rootfs/usr/lib/mica/mica-shadow-reconcile
+test -L /rootfs/etc/systemd/system/multi-user.target.wants/mica-shadow-reconcile.service ||
+    { echo "error: mica-shadow-reconcile.service is installed but not enabled; /etc/shadow would never converge with the image accounts" >&2; exit 1; }
 # ORDERED BEFORE EVERY READER, not after a mount. The reconciler used to
-# require var-lib-mos.mount because the shadow file lived on STATE; it now
+# require var-lib-mica.mount because the shadow file lived on STATE; it now
 # builds the file in /run, which systemd has already mounted, so there is
 # no storage dependency left to order against.
 #
@@ -57,26 +57,26 @@ test -L /rootfs/etc/systemd/system/multi-user.target.wants/mos-shadow-reconcile.
 # exists. If this ordering is lost the failure is not a wrong password --
 # it is PAM finding no shadow file at all, which fails closed for every
 # account including the transient root the operator is trying to use.
-for reader in mosd.service ssh.service systemd-logind.service; do
+for reader in micad.service ssh.service systemd-logind.service; do
     grep -qE "^Before=.*\\b${reader}\\b" "${unit}" ||
-        { echo "error: mos-shadow-reconcile.service does not order Before=${reader}; that reader would find no /etc/shadow at all, because the file is built in RAM by this unit" >&2; exit 1; }
+        { echo "error: mica-shadow-reconcile.service does not order Before=${reader}; that reader would find no /etc/shadow at all, because the file is built in RAM by this unit" >&2; exit 1; }
 done
-if grep -qE '^After=.*var-lib-mos' "${unit}"; then
-    echo "error: mos-shadow-reconcile.service still orders After=var-lib-mos.mount, but it no longer touches STATE -- the shadow file is built in /run. A storage dependency that is not needed delays the unit behind a mount that can fail." >&2; exit 1
+if grep -qE '^After=.*var-lib-mica' "${unit}"; then
+    echo "error: mica-shadow-reconcile.service still orders After=var-lib-mica.mount, but it no longer touches STATE -- the shadow file is built in /run. A storage dependency that is not needed delays the unit behind a mount that can fail." >&2; exit 1
 fi
-for dep in mosd.service ssh.service; do
+for dep in micad.service ssh.service; do
     grep -qE "^Before=.*\b${dep}\b" "${unit}" ||
-        { echo "error: mos-shadow-reconcile.service does not order Before=${dep}" >&2; exit 1; }
+        { echo "error: mica-shadow-reconcile.service does not order Before=${dep}" >&2; exit 1; }
 done
 test -f /rootfs/usr/lib/systemd/system/ssh.service ||
-    { echo "error: mos-shadow-reconcile.service orders Before=ssh.service but that unit is not in the image; systemd drops such an ordering silently" >&2; exit 1; }
+    { echo "error: mica-shadow-reconcile.service orders Before=ssh.service but that unit is not in the image; systemd drops such an ordering silently" >&2; exit 1; }
 # The last-change day, read back out of the PACKED TREE rather than trusted from
 # the step that set it. It is the day the account was created, so an unpinned
 # one is the build date sitting inside the verity-covered root; the pin is
 # account-pin-shadow-dates.sh in the `closed` stage.
 #
 # BOTH files, because both ship and they are not the same file: the factory copy
-# is what mos-shadow-reconcile derives /etc/shadow from, while /etc/shadow- is
+# is what mica-shadow-reconcile derives /etc/shadow from, while /etc/shadow- is
 # useradd's pre-modification backup, which keeps its own rows and lagged the pin
 # by one pass until the pin was made to run twice.
 #

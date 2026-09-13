@@ -8,7 +8,7 @@
 // nobody reached, kept for the next artifact this tree builds and cannot yet
 // ask -- and `executor-limited`, the one case where a non-zero exit is a
 // statement about the emulated executor rather than about the artifact; both
-// are exercised in smoke.test.ts. mosd and apid also report their build
+// are exercised in smoke.test.ts. micad and apid also report their build
 // commit, asserted against a recorded build fact and never against
 // `git rev-parse HEAD`; see `BuildCommitFact`.
 
@@ -107,7 +107,7 @@ export interface SmokeResult {
  * A pin's file, relative to the repository root.
  *
  * NOT `basename`: four of the twelve read a `Cargo.toml`, and
- * `pkgs/mosd/mqttd/Cargo.toml` and `pkgs/mosd/broker/Cargo.toml` are different files with
+ * `pkgs/micad/mqttd/Cargo.toml` and `pkgs/micad/broker/Cargo.toml` are different files with
  * the same last component, so a row saying "in Cargo.toml" would not tell a
  * reader which one to edit. Absolute paths carry a worktree prefix that differs
  * per checkout and turns every line into noise.
@@ -125,7 +125,7 @@ export function pinSource(file: string): string {
  *   tool 1.13            podman version 5.8.6   5.8.6
  *   crun version 1.29.1  conmon version 2.2.1   netavark 2.1.0
  *   aardvark-dns 2.1.0   tini version 0.2.1_catatonit
- *   mos-mqttd 0.1.0      mos-mqtt-broker 0.1.0
+ *   mica-mqttd 0.1.0      mica-mqtt-broker 0.1.0
  *
  * -- and a per-artifact regex fails open when upstream reflows one: no token
  * read looks like no mismatch. A value read from the pin file can only mismatch.
@@ -148,16 +148,16 @@ export function versionTokens(line: string): string[] {
 /**
  * The commit half of the version contract.
  *
- * The mosd archive carries the commit its producer built from in its
+ * The micad archive carries the commit its producer built from in its
  * `Mos-Source-Commit` control field (`build-env/deb/pack.sh`), `rootfs/build.sh`
- * reads it into `_out/<board>/mosd-build.txt` beside the factory root,
+ * reads it into `_out/<board>/micad-build.txt` beside the factory root,
  * `readMosdBuildFact` reads it back and `judge` compares the two; see
  * `BuildCommitFact`. The printed-only
  * state is a branch, not a deletion: with no record -- a hand-assembled `_out/`
  * -- the runner says so on its own first lines and the row says the commit was
  * not asserted, and the reported line is carried verbatim into every version
  * verdict (`[said: ...]`) either way. One limit:
- * `mosd 0.1.0-rc.1 (abc1234)` yields the numeric head only, so a pre-release pin
+ * `micad 0.1.0-rc.1 (abc1234)` yields the numeric head only, so a pre-release pin
  * and output go red naming both sides. Neither crate takes a pre-release version
  * today; if one does, `versionTokens` is where to look.
  */
@@ -165,7 +165,7 @@ export function versionTokens(line: string): string[] {
 /**
  * Whether a `--version` line reports exactly this commit.
  *
- * mosd and apid print `<name> <version> (<commit>)`; the commit half is compared
+ * micad and apid print `<name> <version> (<commit>)`; the commit half is compared
  * here rather than by `versionTokens`, which reads dotted numbers and would never
  * see a sha. A token match, not a substring, because of `-dirty`:
  * `line.includes('00b674e9a628')` is satisfied by `(00b674e9a628-dirty)`, so a
@@ -195,9 +195,9 @@ export function firstLine(stdout: string): string {
  * The expectation is a build fact, never `git rev-parse HEAD`: comparing the
  * reported sha against HEAD at run time passes on any freshly built tree and
  * asserts only that somebody had just rebuilt, never that the embedding works.
- * The mosd archive a composed root installs carries the commit its producer
+ * The micad archive a composed root installs carries the commit its producer
  * built from in its `Mos-Source-Commit` control field, `rootfs/build.sh` reads
- * it into `_out/<board>/mosd-build.txt` beside the factory root, and this is
+ * it into `_out/<board>/micad-build.txt` beside the factory root, and this is
  * what the runner reads back.
  *
  * WHAT THAT COMPARISON IS AND IS NOT. The two sides are the string compiled
@@ -457,7 +457,7 @@ export async function checkArtifact(
 ): Promise<SmokeResult> {
   const pin = artifact.pin()
   if (artifact.contract.kind === 'unclaimed') {
-    // Not invoked, and that is a decision rather than an omission. mosd's only
+    // Not invoked, and that is a decision rather than an omission. micad's only
     // invocation provisions a device and apid's never returns; running them to
     // produce a `fail` would trade a clear "nobody asked" for a 25-second hang
     // and a mutated /var, and would report the artifact as broken when what is
@@ -513,7 +513,7 @@ export function conclude(results: readonly SmokeResult[], expected: number): Con
     + `${counts.unclaimed} unclaimed, of ${counts.total}`
 
   // The names, not just the number: "2 unclaimed" is a count a reader stops
-  // seeing, and "mosd, apid" is something they can act on. This run's steady
+  // seeing, and "micad, apid" is something they can act on. This run's steady
   // state is non-zero, so the names go on the RESULT line itself and not only
   // in the table above it.
   const named = (verdict: Verdict): string =>
@@ -591,7 +591,7 @@ export function outDir(board: string): string {
  * Read a `key<TAB>value` record as data.
  *
  * Tab-separated, exactly as `ociRecord` in build/src/stages.ts writes it and
- * as `pkgs/mosd/hack/build-deb.sh` writes `_out/mosd-build-<arch>.txt`, parsed rather
+ * as `pkgs/micad/hack/build-deb.sh` writes `_out/micad-build-<arch>.txt`, parsed rather
  * than sourced. Comment lines are skipped by having no tab, which is why
  * `# Load it with: docker load -i ...` cannot become a key -- a reader that
  * split on whitespace would have made one. One reader for both records, because
@@ -676,20 +676,20 @@ export function readFactoryRoot(
 /** `_out/<board>/rootfs-stages.txt` -- what the driver recorded about the build. */
 export const STAGE_MANIFEST_NAME = 'rootfs-stages.txt'
 
-/** `_out/<board>/mosd-build.txt` -- the commit this board's mosd and apid carry. */
-export const MOSD_BUILD_RECORD_NAME = 'mosd-build.txt'
+/** `_out/<board>/micad-build.txt` -- the commit this board's micad and apid carry. */
+export const MOSD_BUILD_RECORD_NAME = 'micad-build.txt'
 
 /**
- * The commit the mosd and apid in this board's factory root were built from.
+ * The commit the micad and apid in this board's factory root were built from.
  *
- * Read out of the record `pkgs/mosd/hack/build-deb.sh` wrote and
+ * Read out of the record `pkgs/micad/hack/build-deb.sh` wrote and
  * `rootfs/build.sh` copied in beside the image -- NOT out of the working
  * tree. See [`BuildCommitFact`]. Absent is not a refusal here, unlike the
  * factory root itself: an image built before RFCT-356 moved the record onto the
  * path that compiles the shipped binaries may still be sitting in `_out/`, so a
  * fact the runner cannot see is printed and asserted about nothing. A root built
  * by rootfs/build.sh at or after that change always has it: that script refuses
- * to finish without one, except when mosd is declined and it writes none -- and
+ * to finish without one, except when micad is declined and it writes none -- and
  * then `declinedFeatures` refuses the run first. A record that exists and cannot
  * be read IS a refusal: a file with no `commit` key was written by something
  * other than build-deb.sh, and reading that as "nothing recorded" would switch
@@ -702,7 +702,7 @@ export function readMosdBuildFact(board: string, dir: string = outDir(board)): B
     return {
       source:
         `${shown} does not exist, so no commit was recorded for this image. It is written by `
-        + `pkgs/mosd/hack/build-deb.sh whenever it compiles mosd and apid, and copied here by `
+        + `pkgs/micad/hack/build-deb.sh whenever it compiles micad and apid, and copied here by `
         + `rootfs/build.sh; rebuild the board to have the commit asserted rather than printed`,
     }
   }
@@ -713,13 +713,13 @@ export function readMosdBuildFact(board: string, dir: string = outDir(board)): B
       `${path} carries no \`commit\` field. rootfs/build.sh writes one every time it `
       + `compiles them -- so a record without the key was written by `
       + `something else. Reading that as "nothing was recorded" would switch off the commit half of `
-      + `mosd's and apid's version check without saying so.`,
+      + `micad's and apid's version check without saying so.`,
     )
   }
   if (commit === '') {
     return {
       source:
-        `${shown} records an EMPTY commit: the build could not resolve one, so mosd and apid report `
+        `${shown} records an EMPTY commit: the build could not resolve one, so micad and apid report `
         + `"unknown" and there is nothing to compare that against`,
     }
   }
@@ -1383,7 +1383,7 @@ export interface SmokeRunOptions {
    * commit assertion is one that has just run a full rootfs build.
    *
    * When it is omitted and the CLI is driving a real image, the fact is read
-   * from `_out/<board>/mosd-build.txt`.
+   * from `_out/<board>/micad-build.txt`.
    */
   readonly buildCommit?: BuildCommitFact
   /** Skip `docker load`; the suite has no archive to load. */
@@ -1454,7 +1454,7 @@ export async function smokeRun(opts: SmokeRunOptions): Promise<{ results: SmokeR
     log(`verify smoke: ${opts.board} ${record.ref} (${record.platform}, ${record.bytes} bytes, sha256 ${record.sha256})`)
 
     // A full shared smoke register requires each owning feature package.
-    const required = ['mosd', 'mos-mqttd', 'mos-mqtt-broker', 'mos-deploy', 'mos-podman']
+    const required = ['micad', 'mica-mqttd', 'mica-mqtt-broker', 'mica-deploy', 'mica-podman']
     const missing = required.filter(p => !packages?.has(p))
     if (missing.length > 0) throw new Error(`smoke requires the full feature package set; absent from ${packageRecord}: ${missing.join(', ')}`)
 

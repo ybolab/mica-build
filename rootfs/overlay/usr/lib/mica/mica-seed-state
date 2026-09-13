@@ -1,0 +1,35 @@
+#!/bin/sh
+# Converge only approved DATA state leaves; preserve existing identity and content.
+set -eu
+state=/mnt/data/state
+[ -d "$state" ] && [ ! -L "$state" ] || exit 1
+ensure_dir() {
+    [ ! -L "$state/$1" ] || { echo "mica-seed-state: symbolic state leaf $1" >&2; exit 1; }
+    mkdir -p "$state/$1"
+    chmod "$2" "$state/$1"
+}
+# networkd must traverse the bound state root to its group-readable key store.
+# Private credential subdirectories and documents retain their own 0700/0600 modes.
+ensure_dir mos 0711
+for name in ssh bluetooth wpa_supplicant hostapd; do ensure_dir "$name" 0700; done
+for name in systemd-units quadlet; do ensure_dir "$name" 0755; done
+for name in ssh wpa_supplicant hostapd; do
+    if [ -d "/etc/$name" ]; then cp -an "/etc/$name/." "$state/$name/"; fi
+done
+for name in hostname random-seed; do
+    [ ! -L "$state/$name" ] || { echo "mica-seed-state: symbolic state file $name" >&2; exit 1; }
+    if [ ! -e "$state/$name" ]; then
+        if [ "$name" = hostname ]; then cp -a /etc/hostname "$state/$name";
+        else (umask 077; : >"$state/$name"); fi
+    fi
+    [ -f "$state/$name" ] || exit 1
+done
+for type in rsa ecdsa ed25519; do
+    key="$state/ssh/ssh_host_${type}_key"
+    [ ! -L "$key" ] && [ ! -L "$key.pub" ] || exit 1
+    [ -f "$key" ] || ssh-keygen -q -t "$type" -f "$key" -N '' -C ''
+done
+chmod 0755 "$state/ssh"
+chmod 0600 "$state/ssh"/ssh_host_*_key "$state/random-seed"
+chmod 0644 "$state/ssh"/ssh_host_*_key.pub
+sync -f "$state"

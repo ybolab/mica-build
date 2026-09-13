@@ -4,12 +4,12 @@ Description=Third-party systemd units from DATA/state
 # the system unit directory and letting systemd own its lifecycle. On mos every
 # unit directory the image ships is inside the read-only dm-verity squashfs, so
 # without this bind there is nowhere on the device to install one that survives
-# a reboot -- which is why every mosd reconciler enables units with runtime=true
+# a reboot -- which is why every micad reconciler enables units with runtime=true
 # into /run/systemd/system today.
 #
 # /etc/systemd/system was the originally planned target and was REJECTED on
 # 2026-08-22: the image ships this boot chain's own units there (etc-ssh.mount,
-# var-lib-mos.mount, mos-seed-state.service, ... ) together with the
+# var-lib-mica.mount, mica-seed-state.service, ... ) together with the
 # local-fs.target.wants symlinks that enable them, so a bind over it would be
 # performed by a unit living in the directory it hides and would take the
 # enablement of every other STATE mount with it. /usr/local/lib/systemd/system
@@ -18,7 +18,7 @@ Description=Third-party systemd units from DATA/state
 # systemd reads it BELOW /etc/systemd/system and /run/systemd/system in the unit
 # load path. An extension therefore cannot override a shipped mos unit. That
 # is the intended property, not a shortfall: a third party silently replacing
-# var-lib-mos.mount is not a capability this appliance offers.
+# var-lib-mica.mount is not a capability this appliance offers.
 #
 # Measured twice, and it survived the base upgrade: `systemd-analyze
 # unit-paths` on systemd 252 (bookworm, 2026-08-22) and again on systemd 257
@@ -29,8 +29,8 @@ Description=Third-party systemd units from DATA/state
 # The source is named for what it holds rather than mirroring the target path,
 # because /mnt/data/state/usr/local/lib/systemd/system would put four empty
 # directories on STATE to say one thing.
-Requires=mos-seed-state.service
-After=mos-seed-state.service
+Requires=mica-seed-state.service
+After=mica-seed-state.service
 RequiresMountsFor=/mnt/data/state
 
 [Mount]

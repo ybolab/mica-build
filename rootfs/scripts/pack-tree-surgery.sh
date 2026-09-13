@@ -19,5 +19,5 @@ ln -sf ../../../etc/machine-id /rootfs/var/lib/dbus/machine-id
 # Login accounting is volatile and bounded by /run, never an unbounded DATA log.
 for file in wtmp btmp lastlog; do
     rm -f "/rootfs/var/log/$file"
-    ln -s "/run/mos/$file" "/rootfs/var/log/$file"
+    ln -s "/run/mica/$file" "/rootfs/var/log/$file"
 done

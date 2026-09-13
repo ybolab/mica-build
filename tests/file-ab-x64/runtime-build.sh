@@ -6,9 +6,9 @@ root_image=${1:?root image required}
 kernel=${2:?BSP kernel directory required}
 certificate=${3:?public content certificate required}
 key=${4:?external content signing key required}
-init=${5:?compiled mos-init required}
+init=${5:?compiled mica-init required}
 board=${6:?x64 or virt-arm64 required}
-shutdown=${7:?compiled mos-shutdown required}
+shutdown=${7:?compiled mica-shutdown required}
 case "$board" in x64|virt-arm64) ;; *) echo 'unsupported acceptance board' >&2; exit 1;; esac
 scratch=$(mktemp -d "$PWD/_out/file-runtime.XXXXXX")
 evidence="$scratch/boot"
@@ -18,7 +18,7 @@ docker run --rm --label ai-agent=true --network traefik -v "$scratch:/w" \
     -v "$root_image:/root.img:ro" ai-agent/mos-boot-tools-amd64 \
     unsquashfs -f -d /w/tree /root.img >/dev/null
 # mos-build-side: host
-install -m 0755 tests/file-ab-x64/runtime.sh "$scratch/tree/usr/lib/mos/test-file-runtime"
+install -m 0755 tests/file-ab-x64/runtime.sh "$scratch/tree/usr/lib/mica/test-file-runtime"
 install -m 0644 tests/file-ab-x64/runtime.service "$scratch/tree/etc/systemd/system/test-file-runtime.service"
 ln -s /etc/systemd/system/test-file-runtime.service "$scratch/tree/etc/systemd/system/multi-user.target.wants/test-file-runtime.service"
 install -m 0644 tests/file-ab-x64/var-state.service "$scratch/tree/etc/systemd/system/test-var-state.service"
@@ -32,7 +32,7 @@ Description=Persistent extension acceptance
 Before=test-file-runtime.service
 [Service]
 Type=oneshot
-ExecStart=/usr/bin/touch /run/mos/persistent-unit-ran
+ExecStart=/usr/bin/touch /run/mica/persistent-unit-ran
 RemainAfterExit=yes
 [Install]
 WantedBy=multi-user.target

@@ -24,8 +24,8 @@ Description=Quadlet unit directory on DATA/state
 # administrator's, so it is the one bound. /usr/share/containers/systemd stays
 # inside the verity root, which is the intended asymmetry: units WE ship are
 # immutable, units the operator installs are theirs.
-Requires=mos-seed-state.service
-After=mos-seed-state.service
+Requires=mica-seed-state.service
+After=mica-seed-state.service
 RequiresMountsFor=/mnt/data/state /mos/containers
 
 [Mount]

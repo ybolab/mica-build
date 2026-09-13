@@ -191,7 +191,7 @@ bash verify/run.sh --verify --board x64 --image PATH
 
 `src/verify-cli.ts` runs the register against one assembled image and prints one
 `PASS:`/`FAIL:`/`SKIP:` line per conclusion and a `RESULT:` line. That format is
-a contract rather than a preference: `pkgs/mosd/tests/apid-api` describes its own output as
+a contract rather than a preference: `pkgs/micad/tests/apid-api` describes its own output as
 that shape, and several `docs/task/` records quote `RESULT:` lines as evidence.
 
 It needs **docker** on a host without `sgdisk`/`mtools`/`debugfs`/`unsquashfs`/
@@ -201,8 +201,8 @@ an image of its own".
 
 ## The smoke runner — "it linked", "it runs" and "it is the version we decided"
 
-Twelve artifacts in the image are built by this repository — mosd, apid,
-mos-mqttd, mos-mqtt-broker, rauc, podman, quadlet, crun, conmon, netavark,
+Twelve artifacts in the image are built by this repository — micad, apid,
+mica-mqttd, mica-mqtt-broker, rauc, podman, quadlet, crun, conmon, netavark,
 aardvark-dns, catatonit. Three different claims are easy to read as one, and
 only the first is established by linking them:
 
@@ -229,7 +229,7 @@ with `--rm --network none`.
 
 No version string is written down in this package. Every pin is read, at run
 time, out of the file that owns it: `pkgs/podman/versions.env`,
-`pkgs/rauc/versions.env`, and `pkgs/mosd/<crate>/Cargo.toml` for the four
+`pkgs/rauc/versions.env`, and `pkgs/micad/<crate>/Cargo.toml` for the four
 binaries this repository writes. That is the whole of what makes the third
 acceptance clause true — *bumping a pin without rebuilding the artifact turns
 the smoke run red* — and it is the reason the register carries identity (which
@@ -276,10 +276,10 @@ softened nothing.
 
 ### The commit half of the version contract
 
-`mosd` and `apid` print `<name> <version> (<commit>)`. Comparing that commit
+`micad` and `apid` print `<name> <version> (<commit>)`. Comparing that commit
 against `git rev-parse HEAD` at run time is refused by name: it would be
 trivially green on any freshly built tree, asserting that somebody just built
-rather than that the embedding works. `pkgs/mosd/hack/build-deb.sh` — the producer hook
+rather than that the embedding works. `pkgs/micad/hack/build-deb.sh` — the producer hook
 that compiles the binaries a composed root installs — writes the commit it
 handed the compiler into a build fact instead, and the runner compares the
 reported line against **that**. Where the build recorded no commit there is

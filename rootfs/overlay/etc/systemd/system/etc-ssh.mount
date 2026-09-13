@@ -4,8 +4,8 @@ Description=sshd configuration and host keys from DATA/state
 # update, so sshd's host keys have to live outside it or the device changes
 # identity on each upgrade. Binding over a mountpoint does not write to the
 # underlying read-only filesystem.
-Requires=mos-seed-state.service
-After=mos-seed-state.service
+Requires=mica-seed-state.service
+After=mica-seed-state.service
 RequiresMountsFor=/mnt/data/state
 Before=ssh.service
 

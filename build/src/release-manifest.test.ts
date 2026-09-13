@@ -46,13 +46,13 @@ case.setUp()
 try:
     marker = work / 'meta/GENERATED'
     case.public_metadata(marker.read_bytes() if marker.exists() else None)
-    case.f.write('/usr/share/mos/meta/updates/manifest.json', (work / 'meta/updates/manifest.json').read_bytes())
+    case.f.write('/usr/share/mica/meta/updates/manifest.json', (work / 'meta/updates/manifest.json').read_bytes())
     if arch == 'arm64':
         for path in case.f.root.rglob('*'):
             if not path.is_symlink() and path.is_file() and path.read_bytes().startswith(b'\\x7fELF'):
                 data = bytearray(path.read_bytes()); struct.pack_into('<H', data, 18, 183); path.write_bytes(data)
         os.setxattr(case.f.root / 'usr/bin/captool', 'security.capability', bytes.fromhex(CAP))
-        for path in [case.f.manifest, case.inputs / 'manifest.tsv', case.inputs / 'upstream.tsv', case.f.root / 'usr/share/mos/manifest.tsv']:
+        for path in [case.f.manifest, case.inputs / 'manifest.tsv', case.inputs / 'upstream.tsv', case.f.root / 'usr/share/mica/manifest.tsv']:
             path.write_text(path.read_text().replace('amd64', 'arm64'))
         for directory in [case.f.db, case.inputs / 'info']:
             (directory / 'libfixture:amd64.list').rename(directory / 'libfixture:arm64.list')
@@ -70,7 +70,7 @@ try:
     result = case.command('measure-packed', root=case.f.out, out=case.f.base)
     assert result.returncode == 0, result.stderr
     shutil.copyfile(case.f.report, work / 'runtime-report.json')
-    shutil.copyfile(case.f.out / 'usr/share/mos/manifest.tsv', work / 'packages.tsv')
+    shutil.copyfile(case.f.out / 'usr/share/mica/manifest.tsv', work / 'packages.tsv')
 finally:
     case.doCleanups()
 `, new URL('../../', import.meta.url).pathname, work, arch], { encoding: 'utf8', timeout: 15000 })
@@ -101,7 +101,7 @@ beforeEach(() => {
   writeFileSync(join(work, 'firmware/firmware.json'), JSON.stringify(signer.sign(JSON.parse(canonicalJson(f)))))
   writeFileSync(join(work, 'firmware/BOOTX64.EFI'), bytes)
   writeFileSync(join(work, IMAGE), 'fixture image; image boot acceptance is separate\n')
-  writeFileSync(join(work, 'packages.tsv'), '#package\tversion\tarchitecture\nmos-system\t1\tall\nlibc6\t2.41\tamd64\n')
+  writeFileSync(join(work, 'packages.tsv'), '#package\tversion\tarchitecture\nmica-system\t1\tall\nlibc6\t2.41\tamd64\n')
   writeFileSync(join(work, 'meta/updates/manifest.json'), readFileSync(new URL('../../meta.example/updates/manifest.json', import.meta.url)))
   writeFileSync(join(work, 'meta/GENERATED'), 'DEVELOPMENT-GRADE\nDOMAINS=boot verity updates\n')
   writeFileSync(join(work, 'notes.md'), '# Current release\n\nDevelopment evidence only.\n')
@@ -150,7 +150,7 @@ test('current release binds independent artifacts and derives inventory and prov
   const report = gateRelease(inputs.out, keys)
   expect(report.manifest.schema).toBe('mos/release/v1')
   expect(report.manifest.board).toBe('x64')
-  expect(read('sbom.cdx.json').components.map((c: { name: string }) => c.name)).toEqual(['libfixture', 'mos-system'])
+  expect(read('sbom.cdx.json').components.map((c: { name: string }) => c.name)).toEqual(['libfixture', 'mica-system'])
   expect(read('provenance.json').source).toEqual(inputs.source)
   expect(() => assembleRelease(inputs)).toThrow('exists')
 })
@@ -188,7 +188,7 @@ test('empty notes and duplicate package inventory are refused before output', ()
   writeFileSync(inputs.notes, ' \n')
   expect(() => assembleRelease(inputs)).toThrow('notes')
   writeFileSync(inputs.notes, '# Notes')
-  writeFileSync(inputs.packages, 'mos-system\t1\tall\nmos-system\t2\tall\n')
+  writeFileSync(inputs.packages, 'mica-system\t1\tall\nmica-system\t2\tall\n')
   expect(() => assembleRelease(inputs)).toThrow('duplicate package')
 })
 test('signed artifacts refuse unknown metadata keys and forged archive bytes even when repinned', () => {
@@ -382,7 +382,7 @@ test('runtime report joins actual file owners, sources, licenses and build-only 
   const provenance = read('provenance.json').runtime
   expect(provenance.buildPackages.map((p: { package: string }) => p.package)).toContain('unused')
   expect(provenance.shippedPackages.map((p: { package: string }) => p.package)).not.toContain('unused')
-  expect(provenance.files['/usr/bin/app'].archives[0].source).toEqual({ package: 'mos-system', version: '0.1.0+git' + 'a'.repeat(12) + '-1' })
+  expect(provenance.files['/usr/bin/app'].archives[0].source).toEqual({ package: 'mica-system', version: '0.1.0+git' + 'a'.repeat(12) + '-1' })
   expect(read('licenses.json').packages.find((p: { name: string }) => p.name === 'libfixture').resources[0].sha256).toMatch(/^[a-f0-9]{64}$/)
   expect(provenance.files['/usr/bin/app'].debug.path).toBe('.build-id/ab/cd.debug')
   expect(provenance.files['/usr/bin/app'].configured.sha256).not.toBe(provenance.files['/usr/bin/app'].final.sha256)
@@ -427,7 +427,7 @@ test('runtime report tampering still refuses after outer artifact digests are re
 
 
 test('runtime report rejects a different shipped package inventory before output', () => {
-  writeFileSync(inputs.packages, 'mos-system\twrong\tall\n')
+  writeFileSync(inputs.packages, 'mica-system\twrong\tall\n')
   expect(() => assembleRelease(inputs)).toThrow('runtime shipped inventory')
   expect(existsSync(inputs.out)).toBe(false)
 })
@@ -649,7 +649,7 @@ test.each(['missing', 'unknown', 'source', 'split-source', 'pool', 'stamp', 'epo
   if (mutation === 'lock-differs') lineage.lock[0].sha256 = '0'.repeat(64)
   if (mutation === 'lock-unsorted') lineage.lock.unshift({ ...IMPORTED, package: 'zzz' })
   if (mutation === 'lock-dirty') { lineage.lock[0].version = '2.0.0+git' + 'b'.repeat(12) + '.dirty-1'; lineage.pool.packages.at(-1).version = lineage.lock[0].version }
-  if (mutation === 'unlocked-unknown') lineage.unlocked = ['mos-system']
+  if (mutation === 'unlocked-unknown') lineage.unlocked = ['mica-system']
   if (mutation === 'stray-stamp') { lineage.lock = []; lineage.pool.packages.at(-1).version = '2.0.0+git' + 'c'.repeat(12) + '-1' }
   if (mutation === 'locked-missing') { lineage.pool.packages.pop(); delete lineage.pool.files['pool/mos-imported.deb'] }
   if (mutation === 'no-source') delete lineage.pool.packages[0].source_commit

@@ -2,8 +2,8 @@
 Description=Persistent root home directory from the DATA partition
 # The /mos/root source is seeded before binding this persistent user-data leaf.
 # Identity and credentials live in separate protected DATA/state directories.
-Requires=mos-seed-root.service
-After=mos-seed-root.service
+Requires=mica-seed-root.service
+After=mica-seed-root.service
 RequiresMountsFor=/mos
 
 [Mount]

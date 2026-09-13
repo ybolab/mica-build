@@ -23,7 +23,7 @@ timeout 110 docker run --rm --label ai-agent=true --network traefik \
     -v "$HOST_REPO:/src:ro" -v "$HOST_REPO/_out/b3-rust/target:/target" \
     -v "$HOST_REPO/_out/b3-rust/registry:/usr/local/cargo/registry" \
     -v "$HOST_REPO/_out/b3-rust/git:/usr/local/cargo/git" \
-    -e "ARM_ABI=$ARM_ABI" -e CARGO_TARGET_DIR=/target -w /src/pkgs/mos-deploy --entrypoint /bin/bash "$IMAGE" -c '
+    -e "ARM_ABI=$ARM_ABI" -e CARGO_TARGET_DIR=/target -w /src/pkgs/mica-deploy --entrypoint /bin/bash "$IMAGE" -c '
 set -euo pipefail
 for tool in cargo gcc; do command -v "$tool" >/dev/null; done
 cargo test --locked --offline --lib boot::shutdown::tests

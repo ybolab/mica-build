@@ -1,7 +1,7 @@
 // The connd contract and the Wi-Fi userland, driven from the failing side.
 //
 // The contract read is driven against MUTATED
-// COPIES of the mosd sources, which is what `MOS_VERIFY_RECONCILER_DIR` exists
+// COPIES of the micad sources, which is what `MOS_VERIFY_RECONCILER_DIR` exists
 // for: without it the rot the oracle records could not be driven, only waited
 // for. The image-side assertions are driven against a mutated packed root.
 //
@@ -16,7 +16,7 @@
 //     device and nowhere else.
 //   - hostapd.service DISABLED rather than MASKED. Disabling does not block the
 //     D-Bus activation path wpasupplicant ships, so a second daemon still comes
-//     up on the same radio while mosd's own instance reports healthy.
+//     up on the same radio while micad's own instance reports healthy.
 //   - a render target bound from a tmpfs, which loses every configured network
 //     on reboot and reports nothing.
 
@@ -44,7 +44,7 @@ const x64 = loadBoard(boardEnvPath('x64'))
 const WANTS = '/etc/systemd/system/local-fs.target.wants'
 const STA_UNIT_PATH = `/usr/lib/systemd/system/${CONTRACT.staUnit}`
 const AP_UNIT_PATH = `/usr/lib/systemd/system/${CONTRACT.apUnit}`
-const SEED_STATE = '/usr/lib/mos/mos-seed-state'
+const SEED_STATE = '/usr/lib/mica/mica-seed-state'
 
 function checkNamed(id: string): CheckCase {
   const found = CONND_CHECKS.find(c => c.id === id)
@@ -313,14 +313,14 @@ describe('the daemons and their unit templates', () => {
     const fx = await mutated('wifi-ap-execstart', root => rmSync(join(root, AP_UNIT_PATH)))
     try {
       expect(await messageOf(fx, 'wifi-ap-execstart'))
-        .toContain('so mosd would drive a unit that does not exist')
+        .toContain('so micad would drive a unit that does not exist')
     }
     finally {
       fx.dispose()
     }
   })
 
-  test('a STATICALLY ENABLED template instance fails: it would race mosd', async () => {
+  test('a STATICALLY ENABLED template instance fails: it would race micad', async () => {
     const fx = await mutated('wifi-station-template-not-enabled', (root) => {
       mkdirSync(join(root, '/etc/systemd/system/multi-user.target.wants'), { recursive: true })
       symlinkSync(STA_UNIT_PATH, join(root, '/etc/systemd/system/multi-user.target.wants', CONTRACT.staUnit))
@@ -328,7 +328,7 @@ describe('the daemons and their unit templates', () => {
     try {
       expect(await verdictOf(fx, 'wifi-station-template-not-enabled')).toBe('fail')
       expect(await messageOf(fx, 'wifi-station-template-not-enabled'))
-        .toContain('mosd owns that lifecycle and would race the image\'s own instance')
+        .toContain('micad owns that lifecycle and would race the image\'s own instance')
     }
     finally {
       fx.dispose()
@@ -524,7 +524,7 @@ describe('the regulatory database and the unit that loads it', () => {
 
   test('a database with no unit to load it: the file is there and unread', async () => {
     const fx = await mutated('wifi-regdb-reload-enabled',
-      root => rmSync(join(root, '/etc/systemd/system/mos-regdb-reload.service')))
+      root => rmSync(join(root, '/etc/systemd/system/mica-regdb-reload.service')))
     try {
       expect(await messageOf(fx, 'wifi-regdb-reload-enabled')).toContain('is not in the image at')
       // This is the shape that packaging alone produces, and the file check is
@@ -537,7 +537,7 @@ describe('the regulatory database and the unit that loads it', () => {
 
   test('a unit nothing wants never runs, and the root cannot be enabled on device', async () => {
     const fx = await mutated('wifi-regdb-reload-enabled',
-      root => rmSync(join(root, '/etc/systemd/system/multi-user.target.wants/mos-regdb-reload.service')))
+      root => rmSync(join(root, '/etc/systemd/system/multi-user.target.wants/mica-regdb-reload.service')))
     try {
       const message = await messageOf(fx, 'wifi-regdb-reload-enabled')
       expect(message).toContain('nothing wants it')
@@ -565,7 +565,7 @@ describe('the regulatory database and the unit that loads it', () => {
 
   test('a unit whose ExecStart was emptied is red, not green about nothing', async () => {
     const fx = await mutated('wifi-regdb-reload-tool',
-      root => rewrite(root, '/etc/systemd/system/mos-regdb-reload.service',
+      root => rewrite(root, '/etc/systemd/system/mica-regdb-reload.service',
         t => t.replace('ExecStart=/usr/sbin/iw reg reload', 'ExecStart=')))
     try {
       expect(await messageOf(fx, 'wifi-regdb-reload-tool')).toContain('declares no ExecStart')
@@ -702,8 +702,8 @@ describe("the image's fallback sorts first", () => {
 
   test('a prefix that sorts FIRST fails, and it is named', () => {
     // Driven through the reader rather than the check, because the value comes
-    // from mosd's sources and not from the image: a `70-` prefix would let the
-    // image's fallback win over the unit mosd rendered for that interface.
+    // from micad's sources and not from the image: a `70-` prefix would let the
+    // image's fallback win over the unit micad rendered for that interface.
     const dir = reconcilerCopy((f, t) =>
       f === 'wifi_ap.rs' ? t.replace('"90-wifi-ap-"', '"70-wifi-ap-"') : t)
     try {
@@ -758,9 +758,9 @@ describe('the seed script is READ inside the root, not off the host', () => {
   // against.
 
   test('a seed script that is an absolute symlink to an identical host file fails', async () => {
-    const seed = '/usr/lib/mos/mos-seed-state'
+    const seed = '/usr/lib/mica/mica-seed-state'
     const host = mkdtempSync(join(tmpdir(), 'mos-host-probe-'))
-    const planted = join(host, 'mos-seed-state')
+    const planted = join(host, 'mica-seed-state')
     const fx = await mutated('wifi-ap-config-seeded', (root) => {
       copyFileSync(join(root, seed), planted)
       rmSync(join(root, seed))

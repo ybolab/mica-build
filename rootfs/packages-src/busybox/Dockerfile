@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1@sha256:ecfaec9ed6d810b56388c508f4121597bfbba70d41a6dfeee4d8cad5f295fc32
 # check=skip=InvalidDefaultArgInFrom
-# The busybox producer: the `mos-busybox` package.
+# The busybox producer: the `mica-busybox` package.
 #
 #   bash build-env/deb/build.sh --producer busybox --arch amd64
 #   bash build-env/deb/build.sh --producer busybox --arch arm64
@@ -45,7 +45,7 @@ FROM ${MOS_IMAGE_DEBIAN_TRIXIE} AS harvest
 # re-points it on every point release. rootfs/packages-src/ca-trust/Dockerfile
 # states that shape at length for the trust store and it is the same here.
 #
-# A `VERSION_FROM` pin was considered and NOT taken. It is what podman and mos-deploy
+# A `VERSION_FROM` pin was considered and NOT taken. It is what podman and mica-deploy
 # use, and both are right to: this repository chooses their versions and
 # compiles them from source, so the tree can state one. busybox is neither
 # chosen nor compiled here -- it is whatever the pinned base's suite currently
@@ -169,7 +169,7 @@ ARG MOS_DEB_SOURCE_COMMIT
 # git stamp, which says which commit built the archive.
 RUN set -eu; \
     version="$(cat /in/harvest/busybox.version)"; \
-    install -d -m 0755 /stage/usr/share/doc/mos-busybox; \
+    install -d -m 0755 /stage/usr/share/doc/mica-busybox; \
     { \
         echo 'Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/'; \
         echo 'Upstream-Name: busybox'; \
@@ -203,13 +203,13 @@ RUN set -eu; \
         echo '# --------------------------------------------------------------------------'; \
         echo ''; \
         cat /in/harvest/GPL-2; \
-    } >/stage/usr/share/doc/mos-busybox/copyright; \
-    chmod 0644 /stage/usr/share/doc/mos-busybox/copyright; \
-    grep -q 'GNU GENERAL PUBLIC LICENSE' /stage/usr/share/doc/mos-busybox/copyright || \
+    } >/stage/usr/share/doc/mica-busybox/copyright; \
+    chmod 0644 /stage/usr/share/doc/mica-busybox/copyright; \
+    grep -q 'GNU GENERAL PUBLIC LICENSE' /stage/usr/share/doc/mica-busybox/copyright || \
         { echo "error: the composed copyright lost the GPL-2 text" >&2; exit 1; }; \
-    grep -q 'ftp.busybox.net' /stage/usr/share/doc/mos-busybox/copyright || \
+    grep -q 'ftp.busybox.net' /stage/usr/share/doc/mica-busybox/copyright || \
         { echo "error: the composed copyright lost the harvested busybox text" >&2; exit 1; }; \
-    echo "busybox: copyright composed for busybox ${version}, $(wc -l </stage/usr/share/doc/mos-busybox/copyright) lines"
+    echo "busybox: copyright composed for busybox ${version}, $(wc -l </stage/usr/share/doc/mica-busybox/copyright) lines"
 
 # The payload itself, and the assertion that it is the WHOLE payload.
 #
@@ -233,7 +233,7 @@ RUN set -eu; \
 RUN set -eu; \
     install -D -m 0755 /in/harvest/busybox /stage/usr/bin/busybox; \
     got="$(find /stage -mindepth 1 -printf '%y %P\n' | sort | tr '\n' ';')"; \
-    want='d usr;d usr/bin;d usr/share;d usr/share/doc;d usr/share/doc/mos-busybox;f usr/bin/busybox;f usr/share/doc/mos-busybox/copyright;'; \
+    want='d usr;d usr/bin;d usr/share;d usr/share/doc;d usr/share/doc/mica-busybox;f usr/bin/busybox;f usr/share/doc/mica-busybox/copyright;'; \
     [ "${got}" = "${want}" ] || \
         { echo "error: the staged payload is '${got}' and this package ships exactly '${want}'. An extra entry here is an applet link, a PATH drop-in or a stray file reaching the image; a missing one is a package that does not do its job" >&2; exit 1; }; \
     hard="$(find /stage -type f -links +1 -printf '%P\n')"; \
@@ -251,10 +251,10 @@ RUN set -eu; \
 # cannot see. pack.sh refuses the token if no ELF was staged, which is the
 # other direction of the same check.
 RUN set -eu; \
-    pack.sh --root /stage --control /in/control/mos-busybox.control \
+    pack.sh --root /stage --control /in/control/mica-busybox.control \
         --version "${MOS_DEB_VERSION}" --arch "${MOS_DEB_ARCH}" --out /out
 
-# The export stage, the shape pkgs/mosd/deb/mosd/Dockerfile ends in:
+# The export stage, the shape pkgs/micad/deb/micad/Dockerfile ends in:
 # `-o type=local` writes this stage's filesystem into _out/debs/<arch>/pool/
 # and nothing here installs into a root.
 FROM scratch AS out

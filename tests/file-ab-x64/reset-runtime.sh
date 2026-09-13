@@ -4,17 +4,17 @@ set -eu
 exec >/dev/console 2>&1
 fail() {
     echo "FILE_AB_RESET_FAIL: $*"
-    journalctl --no-pager -b -u mosd -u mos-health -n 100
+    journalctl --no-pager -b -u micad -u mica-health -n 100
     systemctl poweroff --force
     exit 1
 }
-bus() { busctl --system call com.mos.mosd /com/mos/mosd com.mos.mosd1 "$@"; }
-tier=$(cat /usr/lib/mos/reset-test-tier)
-proof=/var/lib/mos/reset-proof
-booted=$(mos-deploy booted)
+bus() { busctl --system call com.mica.micad /com/mos/micad com.mica.micad1 "$@"; }
+tier=$(cat /usr/lib/mica/reset-test-tier)
+proof=/var/lib/mica/reset-proof
+booted=$(mica-deploy booted)
 confirmed=0
 for n in $(seq 1 90); do
-    if mos-deploy status | grep -F "\"current\":\"$booted\"" >/dev/null; then confirmed=1; break; fi
+    if mica-deploy status | grep -F "\"current\":\"$booted\"" >/dev/null; then confirmed=1; break; fi
     sleep 1
 done
 [ "$confirmed" = 1 ] || fail 'health confirmation'
@@ -65,14 +65,14 @@ else
             ;;
         *) fail 'unknown reset tier';;
     esac
-    for path in /mnt/data /mos /mos/containers /srv /var /var/lib/mos; do
+    for path in /mnt/data /mos /mos/containers /srv /var /var/lib/mica; do
         findmnt -rn -M "$path" || fail "missing reset mount $path"
     done
     [ "$(stat -c %a /mnt/data/state/mos)" = 711 ] || fail 'state parent mode changed'
-    [ "$(stat -c %a /var/lib/mos/apid)" = 700 ] || fail 'private state mode changed'
-    [ -s /var/lib/mos/apid/identity.pem ] || fail 'TLS identity lost'
+    [ "$(stat -c %a /var/lib/mica/apid)" = 700 ] || fail 'private state mode changed'
+    [ -s /var/lib/mica/apid/identity.pem ] || fail 'TLS identity lost'
     repquota -P -n /mnt/data || fail 'quotas lost'
-    mos-deploy firmware-readback | grep -F '"readbackVerified":true' || fail 'firmware changed'
+    mica-deploy firmware-readback | grep -F '"readbackVerified":true' || fail 'firmware changed'
     echo "FILE_AB_RESET_RETRY_PASS: $tier"
 fi
 systemctl --no-block poweroff

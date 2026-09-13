@@ -1,6 +1,6 @@
 # The gates this repository already defines, executed on every push.
 #
-# It runs `pkgs/mosd/hack/check.sh` and the `make` targets rather than restating
+# It runs `pkgs/micad/hack/check.sh` and the `make` targets rather than restating
 # what they do. That is deliberate and it is the whole design: a workflow that
 # spelled out `cargo clippy -- -D warnings` here would be a second copy of the
 # gate definition, free to drift from the one a developer runs locally, and the
@@ -92,17 +92,17 @@ jobs:
             [ -n "$v" ] || { echo "no rust-version in $1" >&2; exit 1; }
             echo "$v"
           }
-          mosd_msrv=$(read_msrv pkgs/mosd/Cargo.toml)
-          sign_msrv=$(read_msrv pkgs/mos-deploy/Cargo.toml)
-          [ "$mosd_msrv" = "$sign_msrv" ] || {
+          micad_msrv=$(read_msrv pkgs/micad/Cargo.toml)
+          sign_msrv=$(read_msrv pkgs/mica-deploy/Cargo.toml)
+          [ "$micad_msrv" = "$sign_msrv" ] || {
             echo "error: the two workspaces disagree about the MSRV." >&2
-            echo "       pkgs/mosd/Cargo.toml:         $mosd_msrv" >&2
-            echo "       pkgs/mos-deploy/Cargo.toml:    $sign_msrv" >&2
+            echo "       pkgs/micad/Cargo.toml:         $micad_msrv" >&2
+            echo "       pkgs/mica-deploy/Cargo.toml:    $sign_msrv" >&2
             echo "       tests/rust-gate.sh runs both gates in ONE image, which carries one" >&2
             echo "       rustc, so it cannot honour two MSRVs. Reconcile them, or split the gate." >&2
             exit 1
           }
-          echo "workspace MSRV (both manifests agree): $mosd_msrv"
+          echo "workspace MSRV (both manifests agree): $micad_msrv"
 
       # The images the gate runs in. build-env/build.sh builds the whole table
       # in dependency order; rust-check is the last row and the one this job
@@ -127,13 +127,13 @@ jobs:
       # BOTH workspaces are named. `tests/rust-gate.sh` with no argument takes
       # both; a future default that quietly took one would leave the second
       # crate shipping unchecked with this job still green, which is the exact
-      # failure the separate mos-deploy step here used to guard against.
+      # failure the separate mica-deploy step here used to guard against.
       - name: The Rust gate, both workspaces, in localhost/mos-build-rust-check
         run: |
           set -euo pipefail
           image="$(bash build-env/from.sh --arch=amd64 --ref LOCAL_MOS_BUILD_RUST_CHECK)"
           make os-rust-gate 2>&1 | tee /tmp/rust-gate.log
-          for w in mosd mos-deploy; do
+          for w in micad mica-deploy; do
             grep -qF "=== rust gate: pkgs/${w} in ${image} ===" /tmp/rust-gate.log || {
               echo "error: the gate passed, but nothing said pkgs/${w} ran in ${image}." >&2
               echo "       tests/rust-gate.sh prints one such line per workspace, and it is the" >&2
@@ -184,8 +184,8 @@ jobs:
           make os-deb-preflight-test
           SUDO=""
           [ "$(id -u)" -eq 0 ] || SUDO="sudo"
-          $SUDO bash tests/mos-data-layout-test.sh
-          $SUDO bash tests/mos-seed-var-test.sh
+          $SUDO bash tests/mica-data-layout-test.sh
+          $SUDO bash tests/mica-seed-var-test.sh
 
       - name: The transient /etc/shadow reconciler
         run: make os-shadow-test
@@ -345,7 +345,7 @@ jobs:
       - name: The built-in apid SPA builds as ignored production assets
         run: |
           make os-apid-ui-build-contract-test
-          bash pkgs/mosd/apid/ui/run.sh
+          bash pkgs/micad/apid/ui/run.sh
 
       - name: What this job does not cover
         if: always()

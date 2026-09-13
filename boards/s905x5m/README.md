@@ -45,8 +45,8 @@ make os-rootfs-s905x5m MOS_META_DIR="$PWD/tmp/s905x5m-keys"
 
 The Bluetooth producer builds its own bridge; the board package contains only
 root-side hardware/storage policy. Kernel modules and radio firmware belong to
-the authenticated kernel support image. Build `mos-init` using
-`pkgs/mos-deploy/hack/build-deb.sh --producer init --bins mos-init --arch arm64 --stage DIR`.
+the authenticated kernel support image. Build `mica-init` using
+`pkgs/mica-deploy/hack/build-deb.sh --producer init --bins mica-init --arch arm64 --stage DIR`.
 
 Use `bash build/run.sh --components --help` to package `root`, `kernel`,
 `firmware`, two distinct `deployment` generations, and an `archive`. Set
@@ -90,7 +90,7 @@ keys and the derived controller address use protected `DATA/state/bluetooth`,
 mounted at `/var/lib/bluetooth` by the shared Bluetooth package.
 
 `MOS_ROOTFS_COMPONENTS=bm201-front-panel` includes the optional executable
-clock/link-status service. It is off by default and reads `/run/mos/timezone`.
+clock/link-status service. It is off by default and reads `/run/mica/timezone`.
 
 ## Verification
 

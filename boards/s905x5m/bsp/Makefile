@@ -11,7 +11,7 @@ UBOOT_PACKAGE_DIR := $(BSP_OUT)/uboot-package
 
 VERITY_TRUST_CERT ?= ../../../meta/verity/signer.cert.pem
 FIT_TRUST_CERT ?=
-VERITY_TOOL := ../../../pkgs/mos-boot/verity-tool.sh
+VERITY_TOOL := ../../../pkgs/mica-boot/verity-tool.sh
 
 kernel:
 	TRUST_DIR="$$(bash $(VERITY_TOOL) stage "$(VERITY_TRUST_CERT)" "$(BSP_OUT)/verity-trust")" && \
@@ -45,7 +45,7 @@ fit-tools:
 	docker build --label ai-agent=true -t ai-agent/mos-fit-tools-amd64 \
 	  --build-arg MOS_BOOT_TOOLS=ai-agent/mos-boot-tools-amd64 \
 	  --build-context fit-tools=$(BSP_OUT)/uboot/tools \
-	  -f ../../../pkgs/mos-boot/Dockerfile.fit ../../../pkgs/mos-boot
+	  -f ../../../pkgs/mica-boot/Dockerfile.fit ../../../pkgs/mica-boot
 
 # Packaging is a separate consumer of the section-3 U-Boot artifact interface.
 # It deliberately does not rebuild U-Boot: first produce the three artifacts

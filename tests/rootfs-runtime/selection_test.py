@@ -64,9 +64,9 @@ class SelectionTest(unittest.TestCase):
         self.db = self.base / 'dpkg-info'
         self.db.mkdir()
         self.manifest = self.base / 'manifest.tsv'
-        self.manifest.write_text('#package\tversion\tarchitecture\nmos-system\t1\tall\nlibfixture\t1\tamd64\nunused\t1\tall\n')
+        self.manifest.write_text('#package\tversion\tarchitecture\nmica-system\t1\tall\nlibfixture\t1\tamd64\nunused\t1\tall\n')
         self.packages = self.base / 'selected.pkgs'
-        self.packages.write_text('mos-system\n')
+        self.packages.write_text('mica-system\n')
         self.report = self.base / 'rootfs-report.runtime.json'
         self.rules_path = self.base / 'rules.json'
         self.write('/usr/bin/app', elf(needed=['libfirst.so'], interp='/lib/loader.so'), 0o755)
@@ -83,7 +83,7 @@ class SelectionTest(unittest.TestCase):
         self.write('/etc/nsswitch.conf', b'passwd: fixture\n')
         self.write('/etc/generated.conf', b'generated\n', 0o640)
         self.write('/etc/license', b'license\n')
-        self.write('/usr/share/doc/mos-system/copyright', b'system license\n')
+        self.write('/usr/share/doc/mica-system/copyright', b'system license\n')
         self.write('/usr/share/doc/libfixture/copyright', b'library license\n')
         self.write('/var/lib/seed', b'seed\n', 0o640)
         os.chown(self.root / 'var/lib/seed', 123, 456)
@@ -101,11 +101,11 @@ class SelectionTest(unittest.TestCase):
         self.root.joinpath('etc/systemd/system-generators/systemd-ssh-generator').unlink()
         self.link('/etc/systemd/system-generators/systemd-ssh-generator', '/dev/null')
         self.write('/usr/lib/systemd/systemd-tmpfiles', elf(), 0o755)
-        self.write('/etc/tmpfiles.d/mos-var.conf', b'f /run/mos/wtmp 0664 root utmp -\n')
-        self.link('/var/log/wtmp', '/run/mos/wtmp')
+        self.write('/etc/tmpfiles.d/mica-var.conf', b'f /run/mica/wtmp 0664 root utmp -\n')
+        self.link('/var/log/wtmp', '/run/mica/wtmp')
         self.write('/etc/systemd/system/systemd-tmpfiles-setup.service', b'[Service]\n')
         self.root.joinpath('mnt/data').mkdir(parents=True)
-        self.rules = {'library_dirs': ['/usr/lib'], 'path': ['/usr/bin'], 'consumers': {'mos-system': {
+        self.rules = {'library_dirs': ['/usr/lib'], 'path': ['/usr/bin'], 'consumers': {'mica-system': {
             'roots': [
                 {'paths': ['/usr/bin/app', '/usr/bin/entry', '/usr/bin/helper', '/usr/bin/captool'], 'kind': 'executable', 'reason': 'entrypoints and invoked helper'},
                 {'paths': ['/usr/lib/security/pam_fixture.so', '/usr/lib/libnss_fixture.so.2', '/etc/pam.d/login', '/etc/nsswitch.conf', '/etc/license', '/etc/absolute', '/etc/relative', '/etc/systemd/system-generators/systemd-ssh-generator'], 'kind': 'resource', 'reason': 'authentication and policy'},
@@ -116,7 +116,7 @@ class SelectionTest(unittest.TestCase):
             ],
             'runtime_links': [
                 {'path': '/etc/systemd/system-generators/systemd-ssh-generator', 'target': '/dev/null', 'generator': 'kernel devtmpfs', 'ordering': 'before systemd generators', 'test': 'B7 SSH listen and image-only keys', 'requires': []},
-                {'path': '/var/log/wtmp', 'target': '/run/mos/wtmp', 'generator': 'systemd-tmpfiles', 'ordering': 'systemd-tmpfiles-setup before login', 'test': 'B7 repeated login bounds', 'requires': ['/usr/lib/systemd/systemd-tmpfiles', '/etc/tmpfiles.d/mos-var.conf', '/etc/systemd/system/systemd-tmpfiles-setup.service']},
+                {'path': '/var/log/wtmp', 'target': '/run/mica/wtmp', 'generator': 'systemd-tmpfiles', 'ordering': 'systemd-tmpfiles-setup before login', 'test': 'B7 repeated login bounds', 'requires': ['/usr/lib/systemd/systemd-tmpfiles', '/etc/tmpfiles.d/mica-var.conf', '/etc/systemd/system/systemd-tmpfiles-setup.service']},
             ],
         }}}
         self.capture_ownership()
@@ -137,12 +137,12 @@ class SelectionTest(unittest.TestCase):
         for parent, dirs, files in os.walk(self.root, followlinks=False):
             paths.extend('/' + str((Path(parent) / p).relative_to(self.root)) for p in dirs + files)
         paths = [p for p in paths if p not in ['/etc/generated.conf', '/var/lib/seed', '/var/lib/seed-alias']]
-        (self.db / 'mos-system.list').write_text('\n'.join(sorted(set(paths))) + '\n')
+        (self.db / 'mica-system.list').write_text('\n'.join(sorted(set(paths))) + '\n')
         (self.db / 'libfixture:amd64.list').write_text('/usr/lib/libsecond.so\n/usr/share/doc/libfixture/copyright\n')
-        text = (self.db / 'mos-system.list').read_text().replace('/usr/lib/libsecond.so\n', '').replace('/usr/share/doc/libfixture/copyright\n', '')
-        (self.db / 'mos-system.list').write_text(text)
+        text = (self.db / 'mica-system.list').read_text().replace('/usr/lib/libsecond.so\n', '').replace('/usr/share/doc/libfixture/copyright\n', '')
+        (self.db / 'mica-system.list').write_text(text)
         (self.db / 'unused.list').write_text('/usr/bin/unselected\n')
-        (self.db / 'mos-system.list').write_text(text.replace('/usr/bin/unselected\n', ''))
+        (self.db / 'mica-system.list').write_text(text.replace('/usr/bin/unselected\n', ''))
 
     def command(self, command='select', **overrides):
         self.rules_path.write_text(json.dumps(self.rules))
@@ -265,11 +265,11 @@ class SelectionTest(unittest.TestCase):
         self.refuse('ambiguous ownership')
 
     def test_unowned_selected_path(self):
-        p = self.db / 'mos-system.list'; p.write_text(p.read_text().replace('/usr/bin/app\n', ''))
+        p = self.db / 'mica-system.list'; p.write_text(p.read_text().replace('/usr/bin/app\n', ''))
         self.refuse('no origin')
 
     def test_ambiguous_inventory(self):
-        with self.manifest.open('a') as f: f.write('mos-system\t2\tall\n')
+        with self.manifest.open('a') as f: f.write('mica-system\t2\tall\n')
         self.refuse('duplicate package')
 
     def test_wrong_architecture(self):
@@ -279,23 +279,23 @@ class SelectionTest(unittest.TestCase):
         (self.root / 'usr/bin/helper').chmod(0o644); self.refuse('not executable')
 
     def test_missing_feature_declaration(self):
-        self.packages.write_text('mos-system\nnew-feature\n'); self.refuse('no runtime declaration')
+        self.packages.write_text('mica-system\nnew-feature\n'); self.refuse('no runtime declaration')
 
     def test_runtime_link_requires_generator(self):
-        (self.root / 'etc/tmpfiles.d/mos-var.conf').unlink(); self.refuse('/etc/tmpfiles.d/mos-var.conf')
+        (self.root / 'etc/tmpfiles.d/mica-var.conf').unlink(); self.refuse('/etc/tmpfiles.d/mica-var.conf')
 
     def accounting_links(self):
         repo = SELECTOR.parents[2]
         policy = json.loads((repo / 'rootfs/runtime/consumers.json').read_text())
         paths = {'/var/log/wtmp', '/var/log/btmp', '/var/log/lastlog'}
-        links = [link for link in policy['consumers']['mos-system']['runtime_links'] if link['path'] in paths]
+        links = [link for link in policy['consumers']['mica-system']['runtime_links'] if link['path'] in paths]
         self.assertEqual({link['path'] for link in links}, paths)
         (self.root / 'usr/lib/systemd/systemd-tmpfiles').unlink()
         (self.root / 'etc/systemd/system/systemd-tmpfiles-setup.service').unlink()
         self.write('/usr/bin/systemd-tmpfiles', elf(needed=['libfirst.so'], interp='/lib/loader.so'), 0o755)
         self.write('/usr/lib/systemd/system/systemd-tmpfiles-setup.service', b'[Service]\nExecStart=systemd-tmpfiles --create --remove --boot\n')
-        self.write('/etc/tmpfiles.d/mos-var.conf', (repo / 'rootfs/overlay/etc/tmpfiles.d/mos-var.conf').read_bytes())
-        declared = self.rules['consumers']['mos-system']['runtime_links']
+        self.write('/etc/tmpfiles.d/mica-var.conf', (repo / 'rootfs/overlay/etc/tmpfiles.d/mica-var.conf').read_bytes())
+        declared = self.rules['consumers']['mica-system']['runtime_links']
         declared[:] = [link for link in declared if link['path'] not in paths]
         declared.extend(links)
         for link in links:
@@ -321,7 +321,7 @@ class SelectionTest(unittest.TestCase):
     def test_accounting_links_refuse_missing_dependencies(self):
         self.accounting_links()
         for path in ['/usr/bin/systemd-tmpfiles', '/usr/lib/systemd/system/systemd-tmpfiles-setup.service',
-                     '/etc/tmpfiles.d/mos-var.conf', '/etc/license']:
+                     '/etc/tmpfiles.d/mica-var.conf', '/etc/license']:
             with self.subTest(path=path):
                 at = self.root / path[1:]
                 saved = self.base / 'held-resource'
@@ -353,28 +353,28 @@ class SelectionTest(unittest.TestCase):
                             self.report.unlink()
         report = self.selected()
         rows = {row['path']: row for row in report['files']}
-        for link in self.rules['consumers']['mos-system']['runtime_links']:
+        for link in self.rules['consumers']['mica-system']['runtime_links']:
             self.assertEqual(rows[link['path']]['type'], 'symlink')
             self.assertEqual(rows[link['path']]['target'], link['target'])
             self.assertEqual(rows[link['path']]['runtime_link'], link)
 
     def test_runtime_link_declaration_is_itself_required(self):
-        declaration = self.rules['consumers']['mos-system']
+        declaration = self.rules['consumers']['mica-system']
         for rule in declaration['roots']:
             rule['paths'] = [path for path in rule['paths'] if path != '/var/log/wtmp']
         declaration['roots'] = [rule for rule in declaration['roots'] if rule['paths']]
         report = self.selected()
         rows = {row['path']: row for row in report['files']}
         self.assertIn('/var/log/wtmp', rows)
-        self.assertIn('/etc/tmpfiles.d/mos-var.conf', rows)
+        self.assertIn('/etc/tmpfiles.d/mica-var.conf', rows)
         shutil.rmtree(self.out); self.report.unlink()
-        (self.root / 'etc/tmpfiles.d/mos-var.conf').unlink()
-        self.refuse('/etc/tmpfiles.d/mos-var.conf')
+        (self.root / 'etc/tmpfiles.d/mica-var.conf').unlink()
+        self.refuse('/etc/tmpfiles.d/mica-var.conf')
 
     def test_runtime_link_declaration_uses_canonical_parent(self):
         self.link('/etc-alias', 'etc')
         self.capture_ownership()
-        self.rules['consumers']['mos-system']['runtime_links'][0]['path'] = '/etc-alias/systemd/system-generators/systemd-ssh-generator'
+        self.rules['consumers']['mica-system']['runtime_links'][0]['path'] = '/etc-alias/systemd/system-generators/systemd-ssh-generator'
         report = self.selected()
         rows = {row['path']: row for row in report['files']}
         path = '/etc/systemd/system-generators/systemd-ssh-generator'
@@ -388,15 +388,15 @@ class SelectionTest(unittest.TestCase):
     def test_runtime_link_canonical_alias_is_ambiguous(self):
         self.link('/etc-alias', 'etc')
         self.capture_ownership()
-        links = self.rules['consumers']['mos-system']['runtime_links']
+        links = self.rules['consumers']['mica-system']['runtime_links']
         links.append({**links[0], 'path': '/etc-alias/systemd/system-generators/systemd-ssh-generator'})
         self.refuse('duplicate runtime link')
 
     def test_multi_package_roots_require_each_ownership_list(self):
         self.write('/usr/share/doc/unused/copyright', b'operator tool copyright')
         (self.db / 'unused.list').write_text('/usr/bin/unselected\n/usr/share/doc/unused\n/usr/share/doc/unused/copyright\n')
-        self.rules['consumers']['mos-system']['roots'].append({
-            'packages': ['mos-system', 'unused'], 'paths': ['/usr/bin/*'],
+        self.rules['consumers']['mica-system']['roots'].append({
+            'packages': ['mica-system', 'unused'], 'paths': ['/usr/bin/*'],
             'kind': 'executable', 'reason': 'selected operator tools from two required installed packages',
         })
         report = self.selected()
@@ -408,8 +408,8 @@ class SelectionTest(unittest.TestCase):
         self.assertFalse(self.out.exists())
 
     def test_selected_consumer_requires_ownership_capture(self):
-        (self.db / 'mos-system.list').unlink()
-        self.refuse('missing ownership list: mos-system')
+        (self.db / 'mica-system.list').unlink()
+        self.refuse('missing ownership list: mica-system')
 
     def test_unrequired_package_ownership_may_be_omitted(self):
         (self.db / 'unused.list').unlink()
@@ -421,7 +421,7 @@ class SelectionTest(unittest.TestCase):
         self.refuse('duplicate ownership list: libfixture')
 
     def test_undeclared_runtime_link(self):
-        self.rules['consumers']['mos-system']['runtime_links'].pop(); self.refuse('broken link')
+        self.rules['consumers']['mica-system']['runtime_links'].pop(); self.refuse('broken link')
 
     def test_output_overlap_or_symlink(self):
         self.refuse('overlap', output=self.root / 'output')
@@ -493,7 +493,7 @@ class SelectionTest(unittest.TestCase):
         self.write('/usr/bin/app', elf(needed=['libcore.so', 'libshared.so'], runpath='/usr/private'), 0o755)
         self.write('/usr/private/libcore.so', elf(needed=['libshared.so']))
         self.write('/usr/private/libshared.so', elf())
-        self.rules['consumers']['mos-system']['roots'].append({
+        self.rules['consumers']['mica-system']['roots'].append({
             'paths': ['/usr/private/libcore.so'], 'kind': 'resource', 'reason': 'independent ELF entry',
         })
         self.capture_ownership(); self.refuse('shared library libshared.so for /usr/private/libcore.so')
@@ -582,8 +582,8 @@ class SelectionTest(unittest.TestCase):
         self.capture_ownership()
         self.root.joinpath(unit[1:]).unlink()
         self.root.joinpath(link[1:]).unlink()
-        self.rules['consumers']['mos-system']['roots'].append({
-            'packages': ['mos-system'],
+        self.rules['consumers']['mica-system']['roots'].append({
+            'packages': ['mica-system'],
             'paths': ['/usr/lib/systemd/system/*.service', '/usr/lib/systemd/system/*.wants/*'],
             'kind': 'resource', 'reason': 'owned units after the existing exact hwdb removal',
         })
@@ -597,8 +597,8 @@ class SelectionTest(unittest.TestCase):
         self.write(path, b'[Service]\n')
         self.capture_ownership()
         self.root.joinpath(path[1:]).unlink()
-        self.rules['consumers']['mos-system']['roots'].append({
-            'packages': ['mos-system'], 'paths': ['/usr/lib/systemd/system/*.service'],
+        self.rules['consumers']['mica-system']['roots'].append({
+            'packages': ['mica-system'], 'paths': ['/usr/lib/systemd/system/*.service'],
             'kind': 'resource', 'reason': 'unrelated required unit',
         })
         self.refuse('missing path: ' + path)
@@ -608,8 +608,8 @@ class SelectionTest(unittest.TestCase):
         self.link(path, '/etc/systemd/system/systemd-tmpfiles-setup.service')
         self.capture_ownership()
         self.root.joinpath(path[1:]).unlink()
-        self.rules['consumers']['mos-system']['roots'].append({
-            'packages': ['mos-system'], 'paths': ['/usr/lib/systemd/system/*.wants/*'],
+        self.rules['consumers']['mica-system']['roots'].append({
+            'packages': ['mica-system'], 'paths': ['/usr/lib/systemd/system/*.wants/*'],
             'kind': 'resource', 'reason': 'unrelated required enablement',
         })
         self.refuse('missing path: ' + path)
@@ -619,7 +619,7 @@ class SelectionTest(unittest.TestCase):
         self.write('/usr/lib/systemd/system/systemd-hwdb-update.service', b'[Service]\n')
         self.link(path, '../systemd-hwdb-update.service')
         self.capture_ownership()
-        self.rules['consumers']['mos-system']['roots'].append({
+        self.rules['consumers']['mica-system']['roots'].append({
             'paths': [path], 'kind': 'resource', 'reason': 'accidental explicit selection',
         })
         self.refuse('excluded runtime payload: ' + path)
@@ -628,12 +628,12 @@ class SelectionTest(unittest.TestCase):
         for p in ['/usr/lib/udev/hwdb.bin', '/usr/lib/debug/app.debug', '/usr/lib/modules/modules.dep']:
             with self.subTest(path=p):
                 r = {'paths': [p], 'kind': 'resource', 'reason': 'bad accidental selection'}
-                self.rules['consumers']['mos-system']['roots'].append(r)
+                self.rules['consumers']['mica-system']['roots'].append(r)
                 self.refuse('excluded runtime payload')
-                self.rules['consumers']['mos-system']['roots'].pop()
+                self.rules['consumers']['mica-system']['roots'].pop()
 
     def test_no_recursive_directory_copy(self):
-        self.rules['consumers']['mos-system']['roots'].append({'paths': ['/usr'], 'kind': 'directory', 'reason': 'parent only'})
+        self.rules['consumers']['mica-system']['roots'].append({'paths': ['/usr'], 'kind': 'directory', 'reason': 'parent only'})
         self.selected(); self.assertFalse((self.out / 'usr/bin/unselected').exists())
 
     def test_loader_cache_precedes_default_directories(self):
@@ -674,17 +674,17 @@ class SelectionTest(unittest.TestCase):
     def test_owned_executable_patterns_are_not_recursive(self):
         self.write('/usr/bin/nested/not-a-root', elf(), 0o755)
         self.capture_ownership()
-        self.rules['consumers']['mos-system']['roots'].append({'packages': ['mos-system'], 'paths': ['/usr/bin/*'], 'kind': 'executable', 'reason': 'operator tools'})
+        self.rules['consumers']['mica-system']['roots'].append({'packages': ['mica-system'], 'paths': ['/usr/bin/*'], 'kind': 'executable', 'reason': 'operator tools'})
         self.selected()
         self.assertFalse((self.out / 'usr/bin/nested/not-a-root').exists())
 
     def test_owned_executable_lost_mode(self):
-        self.rules['consumers']['mos-system']['roots'] = [{'packages': ['mos-system'], 'paths': ['/usr/bin/helper'], 'kind': 'executable', 'reason': 'helper'}]
+        self.rules['consumers']['mica-system']['roots'] = [{'packages': ['mica-system'], 'paths': ['/usr/bin/helper'], 'kind': 'executable', 'reason': 'helper'}]
         (self.root / 'usr/bin/helper').chmod(0o644)
         self.refuse('not executable')
 
     def test_owned_payload_missing_is_not_a_smaller_selection(self):
-        self.rules['consumers']['mos-system']['roots'] = [{'packages': ['mos-system'], 'paths': ['/usr/bin/*'], 'kind': 'executable', 'reason': 'tools'}]
+        self.rules['consumers']['mica-system']['roots'] = [{'packages': ['mica-system'], 'paths': ['/usr/bin/*'], 'kind': 'executable', 'reason': 'tools'}]
         (self.root / 'usr/bin/helper').unlink()
         self.refuse('/usr/bin/helper')
 
@@ -721,8 +721,8 @@ class SelectionTest(unittest.TestCase):
 
     def readline_resources(self, radios=()):
         policy = json.loads(SELECTOR.with_name('consumers.json').read_text())
-        resource = next(r for r in policy['consumers']['mos-system']['roots'] if '/etc/services' in r['paths'])
-        self.rules['consumers'] = {'mos-system': {'roots': [resource], 'runtime_links': []}}
+        resource = next(r for r in policy['consumers']['mica-system']['roots'] if '/etc/services' in r['paths'])
+        self.rules['consumers'] = {'mica-system': {'roots': [resource], 'runtime_links': []}}
         owners = {'netbase': '/etc/services', 'tzdata': '/usr/share/zoneinfo/Etc/UTC',
                   'ncurses-base': '/usr/share/terminfo/x/xterm', 'login.defs': '/etc/login.defs',
                   'libaudit-common': '/etc/libaudit.conf'}
@@ -733,7 +733,7 @@ class SelectionTest(unittest.TestCase):
             self.write(path, b'readline configuration\n' if package == 'readline-common' else b'required resource\n')
             self.write('/usr/share/doc/' + package + '/copyright', b'fixture license\n')
         self.capture_ownership()
-        system = self.db / 'mos-system.list'
+        system = self.db / 'mica-system.list'
         transferred = {'/etc/inputrc', *owners.values(),
                        *('/usr/share/doc/' + package + '/copyright' for package in owners)}
         system.write_text(''.join(path + '\n' for path in system.read_text().splitlines() if path not in transferred))
@@ -748,7 +748,7 @@ class SelectionTest(unittest.TestCase):
                          '/usr/share/readline/inputrc' in r['paths'] or '/etc/inputrc' in r['paths']]
                 self.assertEqual(len(rules), 2)
                 self.rules['consumers'][radio] = {'roots': rules, 'runtime_links': []}
-        self.packages.write_text('\n'.join(['mos-system', *radios]) + '\n')
+        self.packages.write_text('\n'.join(['mica-system', *radios]) + '\n')
 
     def test_readline_is_not_required_without_radios(self):
         self.readline_resources()
@@ -765,27 +765,27 @@ class SelectionTest(unittest.TestCase):
         self.assertEqual(self.command('verify').returncode, 0)
 
     def test_readline_wifi_resource(self):
-        self.selected_readline(['mos-wifi'])
+        self.selected_readline(['mica-wifi'])
 
     def test_readline_bluetooth_resource(self):
-        self.selected_readline(['mos-bluetooth'])
+        self.selected_readline(['mica-bluetooth'])
 
     def test_readline_shared_radio_resource(self):
-        self.selected_readline(['mos-wifi', 'mos-bluetooth'])
+        self.selected_readline(['mica-wifi', 'mica-bluetooth'])
 
     def test_readline_missing_owner_refuses(self):
-        self.readline_resources(['mos-wifi'])
+        self.readline_resources(['mica-wifi'])
         self.manifest.write_text(self.manifest.read_text().replace('readline-common\t1\tall\n', ''))
         (self.db / 'readline-common.list').unlink()
         self.refuse('root package not installed: readline-common')
 
     def test_readline_missing_template_refuses(self):
-        self.readline_resources(['mos-wifi'])
+        self.readline_resources(['mica-wifi'])
         (self.root / 'usr/share/readline/inputrc').unlink()
         self.refuse('missing path: /usr/share/readline/inputrc')
 
     def test_readline_missing_generated_resource_refuses(self):
-        self.readline_resources(['mos-bluetooth'])
+        self.readline_resources(['mica-bluetooth'])
         (self.root / 'etc/inputrc').unlink()
         self.refuse('missing path: /etc/inputrc')
 
@@ -808,26 +808,26 @@ class SelectionTest(unittest.TestCase):
             stream.write('nftables\t1\tall\n')
         (self.db / 'nftables.list').write_text(path + '\n/usr/lib/systemd/system\n/usr/share/doc/nftables\n/usr/share/doc/nftables/copyright\n')
         policy = json.loads(SELECTOR.with_name('consumers.json').read_text())
-        self.rules['consumers']['mos-system']['roots'].extend(
-            r for r in policy['consumers']['mos-system']['roots'] if path in r['paths'])
+        self.rules['consumers']['mica-system']['roots'].extend(
+            r for r in policy['consumers']['mica-system']['roots'] if path in r['paths'])
         rows = {r['path']: r for r in self.selected()['files']}
         self.assertIn(path, rows)
         self.assertEqual((self.out / path[1:]).read_bytes(), (self.root / path[1:]).read_bytes())
         self.assertFalse((self.out / 'etc/systemd/system/sysinit.target.wants/nftables.service').exists())
 
     def test_empty_mqtt_enrollment_directory_survives_runtime_selection(self):
-        path = '/usr/lib/mos/mqtt-applications.d'
+        path = '/usr/lib/mica/mqtt-applications.d'
         (self.root / path[1:]).mkdir(parents=True)
-        self.write('/usr/share/doc/mos-mqttd/copyright', b'mqtt license\n')
+        self.write('/usr/share/doc/mica-mqttd/copyright', b'mqtt license\n')
         with self.manifest.open('a') as stream:
-            stream.write('mos-mqttd\t1\tall\n')
-        (self.db / 'mos-mqttd.list').write_text(path + '\n/usr/lib/mos\n/usr/share/doc/mos-mqttd\n/usr/share/doc/mos-mqttd/copyright\n')
+            stream.write('mica-mqttd\t1\tall\n')
+        (self.db / 'mica-mqttd.list').write_text(path + '\n/usr/lib/mica\n/usr/share/doc/mica-mqttd\n/usr/share/doc/mica-mqttd/copyright\n')
         with self.packages.open('a') as stream:
-            stream.write('mos-mqttd\n')
+            stream.write('mica-mqttd\n')
         policy = json.loads(SELECTOR.with_name('consumers.json').read_text())
-        self.rules['consumers']['mos-mqttd'] = {
-            'roots': [r for r in policy['consumers']['mos-mqttd']['roots'] if path in r['paths']] + [
-                {'paths': ['/usr/share/doc/mos-mqttd/copyright'], 'kind': 'resource', 'reason': 'fixture package license'}],
+        self.rules['consumers']['mica-mqttd'] = {
+            'roots': [r for r in policy['consumers']['mica-mqttd']['roots'] if path in r['paths']] + [
+                {'paths': ['/usr/share/doc/mica-mqttd/copyright'], 'kind': 'resource', 'reason': 'fixture package license'}],
             'runtime_links': []}
         rows = {r['path']: r for r in self.selected()['files']}
         self.assertIn(path, rows)
@@ -840,14 +840,14 @@ class SelectionTest(unittest.TestCase):
         self.write('/usr/bin/bluetoothctl', elf(), 0o755)
         self.write('/usr/share/doc/bluez/copyright', b'bluez license\n')
         with self.manifest.open('a') as stream:
-            stream.write('bluez\t5.82-1.1\tamd64\nmos-bluetooth\t1\tall\n')
+            stream.write('bluez\t5.82-1.1\tamd64\nmica-bluetooth\t1\tall\n')
         (self.db / 'bluez.list').write_text(path + '\n/usr/libexec\n/usr/libexec/bluetooth\n/usr/bin/bluetoothctl\n/usr/share/doc/bluez\n/usr/share/doc/bluez/copyright\n')
-        (self.db / 'mos-bluetooth.list').write_text('/.\n')
+        (self.db / 'mica-bluetooth.list').write_text('/.\n')
         with self.packages.open('a') as stream:
-            stream.write('mos-bluetooth\n')
+            stream.write('mica-bluetooth\n')
         policy = json.loads(SELECTOR.with_name('consumers.json').read_text())
-        self.rules['consumers']['mos-bluetooth'] = {
-            'roots': [r for r in policy['consumers']['mos-bluetooth']['roots'] if r['kind'] == 'executable'],
+        self.rules['consumers']['mica-bluetooth'] = {
+            'roots': [r for r in policy['consumers']['mica-bluetooth']['roots'] if r['kind'] == 'executable'],
             'runtime_links': []}
         rows = {r['path']: r for r in self.selected()['files']}
         self.assertIn(path, rows)
@@ -863,18 +863,18 @@ class SelectionTest(unittest.TestCase):
         self.write(library, elf(needed=['libfirst.so']))
         for path in data:
             self.write(path, b'board bluetooth input\n')
-        license = '/usr/share/doc/mos-s905x5m-bluetooth/copyright'
+        license = '/usr/share/doc/mica-s905x5m-bluetooth/copyright'
         self.write(license, b'board license\n')
         with self.manifest.open('a') as stream:
-            stream.write('mos-s905x5m-bluetooth\t1\tall\n')
+            stream.write('mica-s905x5m-bluetooth\t1\tall\n')
         owned = [bridge, library, *data, license, '/usr/sbin', '/usr/lib/bluetooth',
-                 '/usr/lib/bluetooth/plugins', '/etc/bluetooth', '/usr/share/doc/mos-s905x5m-bluetooth']
-        (self.db / 'mos-s905x5m-bluetooth.list').write_text('\n'.join(owned) + '\n')
+                 '/usr/lib/bluetooth/plugins', '/etc/bluetooth', '/usr/share/doc/mica-s905x5m-bluetooth']
+        (self.db / 'mica-s905x5m-bluetooth.list').write_text('\n'.join(owned) + '\n')
         with self.packages.open('a') as stream:
-            stream.write('mos-s905x5m-bluetooth\n')
+            stream.write('mica-s905x5m-bluetooth\n')
         policy = json.loads(SELECTOR.with_name('consumers.json').read_text())
-        self.rules['consumers']['mos-s905x5m-bluetooth'] = {
-            'roots': [r for r in policy['consumers']['mos-s905x5m-bluetooth']['roots']
+        self.rules['consumers']['mica-s905x5m-bluetooth'] = {
+            'roots': [r for r in policy['consumers']['mica-s905x5m-bluetooth']['roots']
                       if any(p in r['paths'] for p in [bridge, library, *data])] + [
                 {'paths': [license], 'kind': 'resource', 'reason': 'fixture board license'}],
             'runtime_links': []}
@@ -890,10 +890,10 @@ class SelectionTest(unittest.TestCase):
                    '/usr/sbin/rtacct', '/usr/sbin/rtmon', '/usr/sbin/tc', '/usr/sbin/tipc', '/usr/sbin/vdpa',
                    '/usr/bin/ctstat', '/usr/bin/rtstat', '/usr/sbin/ip']
         policy = json.loads(SELECTOR.with_name('consumers.json').read_text())
-        rule = next(r for r in policy['consumers']['mos-system']['roots']
+        rule = next(r for r in policy['consumers']['mica-system']['roots']
                     if r.get('packages') == ['iproute2'] and r['kind'] == 'executable')
-        self.rules['consumers']['mos-system']['roots'].append(rule)
-        self.rules['consumers']['mos-system']['roots'].append({'paths': ['/usr/bin/env'], 'kind': 'executable', 'reason': 'retained environment tool'})
+        self.rules['consumers']['mica-system']['roots'].append(rule)
+        self.rules['consumers']['mica-system']['roots'].append({'paths': ['/usr/bin/env'], 'kind': 'executable', 'reason': 'retained environment tool'})
         for path in entries:
             self.write(path, elf(), 0o755)
         self.write('/usr/bin/routel', b'#! /usr/bin/env python3\nimport json\n', 0o755)
@@ -901,7 +901,7 @@ class SelectionTest(unittest.TestCase):
         self.write('/usr/share/doc/iproute2/copyright', b'iproute fixture license\n')
         self.capture_ownership()
         owned = [*entries, '/usr/bin/routel', '/usr/share/doc/iproute2/copyright']
-        system = self.db / 'mos-system.list'
+        system = self.db / 'mica-system.list'
         system.write_text(''.join(p + '\n' for p in system.read_text().splitlines() if p not in owned))
         (self.db / 'iproute2.list').write_text('\n'.join(owned) + '\n')
         with self.manifest.open('a') as stream:
@@ -930,9 +930,9 @@ class SelectionTest(unittest.TestCase):
 
     def retained_named_resources(self):
         policy = json.loads(SELECTOR.with_name('consumers.json').read_text())
-        roots = [r for r in policy['consumers']['mos-system']['roots'] if r['kind'] == 'resource' and r.get('packages') in
+        roots = [r for r in policy['consumers']['mica-system']['roots'] if r['kind'] == 'resource' and r.get('packages') in
                  [['tzdata'], ['debianutils', 'bash', 'dash'], ['e2fsprogs']]]
-        self.rules['consumers']['mos-system']['roots'].extend(roots)
+        self.rules['consumers']['mica-system']['roots'].extend(roots)
         owners = {'tzdata': ['/usr/share/zoneinfo/iso3166.tab', '/usr/share/zoneinfo/Europe/London'],
                   'debianutils': ['/usr/share/debianutils/shells'], 'bash': ['/usr/share/debianutils/shells.d/bash'],
                   'dash': ['/usr/share/debianutils/shells.d/dash'], 'e2fsprogs': ['/etc/e2scrub.conf']}
@@ -941,7 +941,7 @@ class SelectionTest(unittest.TestCase):
             for path in paths:
                 self.write(path, b'configured retained tool resource\n')
         self.capture_ownership()
-        system = self.db / 'mos-system.list'
+        system = self.db / 'mica-system.list'
         transferred = {p for paths in owners.values() for p in paths}
         system.write_text(''.join(p + '\n' for p in system.read_text().splitlines() if p not in transferred))
         with self.manifest.open('a') as stream:
@@ -971,28 +971,28 @@ class SelectionTest(unittest.TestCase):
         self.assertEqual(set(policy['consumers']), consumers)
         for name, consumer in policy['consumers'].items():
             self.assertTrue(consumer['roots'], name)
-        system = policy['consumers']['mos-system']
+        system = policy['consumers']['mica-system']
         explicit = {p for r in system['roots'] for p in r['paths']}
         for p in ['/usr/bin/bash', '/usr/bin/ssh', '/usr/bin/scp', '/usr/bin/systemctl',
-                  '/etc/systemd/system/mos-load-extensions.service', '/etc/tmpfiles.d/mos-var.conf']:
+                  '/etc/systemd/system/mica-load-extensions.service', '/etc/tmpfiles.d/mica-var.conf']:
             self.assertIn(p, explicit)
-        podman = policy['consumers']['mos-podman']
+        podman = policy['consumers']['mica-podman']
         self.assertIn('/usr/libexec/podman/quadlet', {p for r in podman['roots'] for p in r['paths']})
 
     def test_current_extension_ssh_and_accounting_resources(self):
         repo = SELECTOR.parents[2]
         anchors = [
-            '/etc/systemd/system/mos-load-extensions.service',
+            '/etc/systemd/system/mica-load-extensions.service',
             '/etc/systemd/system/usr-local-lib-systemd-system.mount',
             '/etc/systemd/system/etc-containers-systemd.mount',
             '/etc/ssh/sshd_config.d/05-mos-authorized-keys.conf',
-            '/etc/tmpfiles.d/mos-var.conf',
+            '/etc/tmpfiles.d/mica-var.conf',
         ]
         for path in anchors:
             self.write(path, (repo / 'rootfs/overlay' / path[1:]).read_bytes())
         self.write('/usr/libexec/podman/quadlet', elf(), 0o755)
         anchors.append('/usr/libexec/podman/quadlet')
-        self.rules['consumers']['mos-system']['roots'].append({'paths': anchors, 'kind': 'resource', 'reason': 'current residual policy resources'})
+        self.rules['consumers']['mica-system']['roots'].append({'paths': anchors, 'kind': 'resource', 'reason': 'current residual policy resources'})
         self.capture_ownership(); self.selected()
         for path in anchors:
             self.assertEqual((self.root / path[1:]).read_bytes(), (self.out / path[1:]).read_bytes())

@@ -164,19 +164,19 @@ candidate | verify)
     journalctl -b -u systemd-random-seed.service --no-pager -o cat 2>/dev/null | tail -6 | tag LOADLOG
 
     say "---- PrivateTmp=yes against a read-only /var ----"
-    for u in mosd apid; do
+    for u in micad apid; do
         systemctl restart "$u.service" 2>&1 | tag "RESTART-$u"
         say "PRIVTMPYES $u: $(systemctl show "$u.service" -p ActiveState -p Result -p ExecMainStatus --value 2>&1 | tr '\n' ' ')"
         journalctl -b -u "$u.service" --no-pager -o cat 2>/dev/null | tail -3 | tag "PRIVTMPYESLOG-$u"
     done
 
     say "---- PrivateTmp=disconnected against a read-only /var ----"
-    for u in mosd apid; do
+    for u in micad apid; do
         mkdir -p "/run/systemd/system/$u.service.d"
         printf '[Service]\nPrivateTmp=disconnected\n' >"/run/systemd/system/$u.service.d/10-p1.conf"
     done
     systemctl daemon-reload
-    for u in mosd apid; do
+    for u in micad apid; do
         systemctl restart "$u.service" 2>&1 | tag "RESTART2-$u"
         say "PRIVTMPDISC $u: $(systemctl show "$u.service" -p ActiveState -p Result -p ExecMainStatus -p PrivateTmp --value 2>&1 | tr '\n' ' ')"
         journalctl -b -u "$u.service" --no-pager -o cat 2>/dev/null | tail -3 | tag "PRIVTMPDISCLOG-$u"

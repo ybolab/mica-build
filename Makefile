@@ -65,7 +65,7 @@ help:
 	@echo "  os-health-test      run the health and failure-handler tests"
 	@echo "  os-shadow-test      run the offline tests for the DATA /etc/shadow reconciler"
 	@echo "  os-mac-test         prove the stable-MAC derivation follows the port, not the interface name; drives the by-name defect red"
-	@echo "  os-dbus-policy-test prove the shipped mosd D-Bus policy is root-only against a real dbus-daemon"
+	@echo "  os-dbus-policy-test prove the shipped micad D-Bus policy is root-only against a real dbus-daemon"
 	@echo "  os-repart-test      prove first-boot repart growth grows DATA and cannot wipe the loader (privileged docker)"
 	@echo "  os-cx3576-flash-test    drive the cx3576 flash read-back against a stub rkdeveloptool: argv, sector arithmetic, and a hole that must go red before rd"
 	@echo "  os-host-toolchain-lint  no compiler, filesystem maker or assembler runs on the host (docs/design/build.md section 0)"
@@ -190,7 +190,7 @@ os-gadget-test:
 os-mac-test:
 	bash tests/mac-stable-test.sh
 
-# Drives the real mos-shadow-reconcile against fixtures in a temp dir: the
+# Drives the real mica-shadow-reconcile against fixtures in a temp dir: the
 # transient-root-password clearing, the mismatch branch that lets a dev image's
 # ROOT_PASSWORD survive a reboot, and the pre-existing append rule. Needs no
 # root and touches no host state.
@@ -198,14 +198,14 @@ os-shadow-test:
 	bash tests/shadow-reconcile-test.sh
 
 # Stands up a real dbus-daemon whose configuration <include>s the SHIPPED
-# pkgs/mosd/dist/com.mos.mosd.conf, owns com.mos.mosd from a root connection, and
+# pkgs/micad/dist/com.mica.micad.conf, owns com.mica.micad from a root connection, and
 # drives root and non-root clients at it. Reading the XML back would only prove
 # the file says the right thing; this proves dbus-daemon acts on it. Both
 # directions of every guard — a refusal-only suite passes just as well against a
 # policy that denies root too. Needs root (it drops to uid 65534 with setpriv)
 # and fails loudly when it cannot run rather than skipping.
 os-dbus-policy-test:
-	bash pkgs/mosd/tests/dbus-policy-test.sh
+	bash pkgs/micad/tests/dbus-policy-test.sh
 
 # Behavioural check on first-boot growth: a real systemd-repart, with discard
 # enabled, over a copy of each assembled image on a loop device. It proves two
@@ -255,7 +255,7 @@ os-apid-ui-build-contract-test:
 os-build-test:
 	bash build/run.sh
 # ONE PRODUCER, every architecture it declares, resolved against discovery.
-# This is a PATTERN rule and not a list: `make os-deb-mosd`, `make os-deb-mqtt`
+# This is a PATTERN rule and not a list: `make os-deb-micad`, `make os-deb-mqtt`
 # and `make os-deb-<anything build-env/deb/producers.sh finds>` all route
 # here. A producer added to the tree gets its target with no edit to this file
 # -- which is the point, because the workstreams adding the next producers have
@@ -394,7 +394,7 @@ os-lock-bump:
 # The package-level gates of PLAN-036 section 6, over the pool os-pool built:
 # unique file ownership with no Replaces escape, the fields and the Depends
 # closure read back out of each archive, a non-empty copyright per package, the
-# enablement asymmetry between the mosd and MQTT packages, no conffiles, and
+# enablement asymmetry between the micad and MQTT packages, no conffiles, and
 # `sh -n` over every maintainer script.
 #
 # It also REBUILDS one producer for each architecture on a buildx builder it
@@ -408,7 +408,7 @@ os-deb-package-gate:
 # The INSTALL-time half of PLAN-036 section 6, over the same pools: APT installs
 # the set rootfs/packages/resolve.sh yields into a clean pinned Debian base,
 # once per architecture, and again with optional services declined; the three radio packages
-# go into three separate roots; and the mos-profile provider experiment is run
+# go into three separate roots; and the mica-profile provider experiment is run
 # and recorded verbatim.
 #
 # Separate from the gate above rather than folded into it, because they answer
@@ -579,7 +579,7 @@ os-netavark-kernel-test:
 build-env:
 	bash build-env/build.sh
 
-# The Rust gate: `pkgs/mosd/hack/check.sh` and `pkgs/mos-deploy/hack/check.sh`,
+# The Rust gate: `pkgs/micad/hack/check.sh` and `pkgs/mica-deploy/hack/check.sh`,
 # UNMODIFIED, inside localhost/mos-build-rust-check. Five commands per
 # workspace -- `cargo fmt --all --check`, clippy at `-D warnings`, nextest,
 # doctests, and `cargo deny check licenses bans advisories`.
@@ -592,7 +592,7 @@ build-env:
 # silently. A substrate that can evaporate without a single failure is one
 # nobody is told about; reachable as a target, it is at least noticeable.
 #
-# `bash tests/rust-gate.sh mosd` runs one workspace. Needs docker, and it builds
+# `bash tests/rust-gate.sh micad` runs one workspace. Needs docker, and it builds
 # the built-in UI tree first because the gate embeds it; it fails loudly when
 # the image is missing rather than skipping, with `make build-env` as the
 # remedy.
@@ -625,7 +625,7 @@ virt-arm64-%:
 # The apid API suite: boot the x64 image in QEMU with apid's port forwarded,
 # wait for the daemon to answer, and drive it over a real socket. It is the
 # only thing in this repository that TALKS TO apid rather than reading it --
-# os-verify inspects the binary and the image, mosd's own tests
+# os-verify inspects the binary and the image, micad's own tests
 # exercise handlers in-process, and neither can tell a route that exists in
 # routes.rs from a route the running daemon actually serves. A session cookie
 # that is missing Secure, a redirect that names a port nothing can reach, an
@@ -644,17 +644,17 @@ virt-arm64-%:
 # another container holds that directory rather than discovering the collision
 # halfway through a nine-minute boot.
 #
-# `bash pkgs/mosd/tests/apid-api/run.sh --dry-run` performs the preconditions and the
+# `bash pkgs/micad/tests/apid-api/run.sh --dry-run` performs the preconditions and the
 # network discovery and boots nothing; it is how to check the harness in
 # seconds. Needs docker, and it fails loudly when it cannot run rather than
 # skipping.
 os-apid-api-test:
-	bash pkgs/mosd/tests/apid-api/run.sh
+	bash pkgs/micad/tests/apid-api/run.sh
 
 # The BUILD-TIME half of that suite, and the only part of it that runs on a
 # checkout: every literal a phase pins which openapi.json ALSO states, asserted
 # to agree with the document. No image, no QEMU, no network -- it reads the
-# phase files' own bytes and pkgs/mosd/apid/openapi.json and compares them.
+# phase files' own bytes and pkgs/micad/apid/openapi.json and compares them.
 #
 # It exists because os-apid-api-test above is the only thing that runs the
 # phases, and it needs a built image and a nine-minute boot. A milestone that
@@ -666,10 +666,10 @@ os-apid-api-test:
 # pinned as IMAGE_BUN_1 otherwise, and says which. MOS_APID_CONTAINER=1 forces
 # the pinned container.
 os-apid-api-spec-pins:
-	bash pkgs/mosd/tests/apid-api/spec-pins.sh
+	bash pkgs/micad/tests/apid-api/spec-pins.sh
 
 os-boot-tools:
-	bash pkgs/mos-boot/build-tools.sh
+	bash pkgs/mica-boot/build-tools.sh
 
 # Explicit component inputs and signing material are supplied as CLI arguments.
 os-components:
@@ -692,10 +692,10 @@ os-debian-test:
 MOS_SIGNING_OUTPUT ?= meta
 .PHONY: os-keys-init
 os-keys-init:
-	bash pkgs/mos-boot/init-keys.sh --out "$(MOS_SIGNING_OUTPUT)"
+	bash pkgs/mica-boot/init-keys.sh --out "$(MOS_SIGNING_OUTPUT)"
 
 os-devkeys:
-	bash pkgs/mos-boot/dev-keys.sh --out "$(MOS_SIGNING_OUTPUT)"
+	bash pkgs/mica-boot/dev-keys.sh --out "$(MOS_SIGNING_OUTPUT)"
 
 os-rootfs-x64:
 	MOS_BOARD=x64 bash rootfs/build.sh

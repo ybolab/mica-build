@@ -2,7 +2,7 @@
 #
 # BOTH packages, because the one radio name `wifi` has always meant
 # wpasupplicant AND hostapd: the board declares the radio, not which of
-# station and access-point mode it will be asked to run, and mosd reconciles
+# station and access-point mode it will be asked to run, and micad reconciles
 # either at runtime.
-mos-wifi
-mos-wifi-ap
+mica-wifi
+mica-wifi-ap

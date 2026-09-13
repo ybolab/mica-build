@@ -12,9 +12,9 @@ import type { CheckResult, Verdict } from './parity.ts'
 
 const cx3576 = loadBoard(boardEnvPath('cx3576'))
 const x64 = loadBoard(boardEnvPath('x64'))
-const MOSD_POLICY = '/usr/share/dbus-1/system.d/com.mos.mosd.conf'
-const MOSD_UNIT = '/usr/lib/systemd/system/mosd.service'
-const LEGACY_EXT_POLICY = '/usr/share/dbus-1/system.d/com.mos.ext.conf'
+const MOSD_POLICY = '/usr/share/dbus-1/system.d/com.mica.micad.conf'
+const MOSD_UNIT = '/usr/lib/systemd/system/micad.service'
+const LEGACY_EXT_POLICY = '/usr/share/dbus-1/system.d/com.mica.ext.conf'
 const BLUEZ_POLICY = '/usr/share/dbus-1/system.d/bluetooth.conf'
 
 function checkNamed(id: string): CheckCase {
@@ -79,15 +79,15 @@ describe('the policy readers', () => {
   })
 
   test('wrapped attributes are one tag and own_prefix is not own', () => {
-    const tags = policyTags('<policy user="root"><allow\n own="com.mos.mosd"/></policy>')
-    expect(tags).toContain('<allow own="com.mos.mosd"/>')
-    const facts = policyFacts('<policy context="default"><allow own_prefix="com.mos"/></policy>',
-      'com.mos.mosd')
+    const tags = policyTags('<policy user="root"><allow\n own="com.mica.micad"/></policy>')
+    expect(tags).toContain('<allow own="com.mica.micad"/>')
+    const facts = policyFacts('<policy context="default"><allow own_prefix="com.mica"/></policy>',
+      'com.mica.micad')
     expect(`${facts.ownRoot}/${facts.ownOther}`).toBe('0/0')
   })
 })
 
-describe('mosd is a local root-owned management service', () => {
+describe('micad is a local root-owned management service', () => {
   test('both system bus units are required', async () => {
     const fx = await mutated('dbus-system-bus-present', root =>
       rmSync(join(root, '/usr/lib/systemd/system/dbus.socket')))
@@ -95,59 +95,59 @@ describe('mosd is a local root-owned management service', () => {
     finally { fx.dispose() }
   })
 
-  test('the mosd policy must ship and remain root-only in both directions', async () => {
-    const missing = await mutated('mosd-policy-ships', root => rmSync(join(root, MOSD_POLICY)))
-    try { expect(await verdictOf(missing, 'mosd-policy-ships')).toBe('fail') }
+  test('the micad policy must ship and remain root-only in both directions', async () => {
+    const missing = await mutated('micad-policy-ships', root => rmSync(join(root, MOSD_POLICY)))
+    try { expect(await verdictOf(missing, 'micad-policy-ships')).toBe('fail') }
     finally { missing.dispose() }
 
-    const defaultAllow = await mutated('mosd-policy-no-default-allow', root =>
+    const defaultAllow = await mutated('micad-policy-no-default-allow', root =>
       rewrite(root, MOSD_POLICY, text => text.replace('</busconfig>',
-        '<policy context="default"><allow receive_sender="com.mos.mosd"/></policy></busconfig>')))
-    try { expect(await verdictOf(defaultAllow, 'mosd-policy-no-default-allow')).toBe('fail') }
+        '<policy context="default"><allow receive_sender="com.mica.micad"/></policy></busconfig>')))
+    try { expect(await verdictOf(defaultAllow, 'micad-policy-no-default-allow')).toBe('fail') }
     finally { defaultAllow.dispose() }
 
-    const nonRootOwner = await mutated('mosd-policy-own-root-only', root =>
+    const nonRootOwner = await mutated('micad-policy-own-root-only', root =>
       rewrite(root, MOSD_POLICY, text => text.replace('</busconfig>',
-        '<policy user="nobody"><allow own="com.mos.mosd"/></policy></busconfig>')))
-    try { expect(await verdictOf(nonRootOwner, 'mosd-policy-own-root-only')).toBe('fail') }
+        '<policy user="nobody"><allow own="com.mica.micad"/></policy></busconfig>')))
+    try { expect(await verdictOf(nonRootOwner, 'micad-policy-own-root-only')).toBe('fail') }
     finally { nonRootOwner.dispose() }
   })
 
   test('the policy name must match the unit', async () => {
-    const fx = await mutated('mosd-policy-names-the-owned-bus', root =>
-      rewrite(root, MOSD_UNIT, text => text.replace('BusName=com.mos.mosd', 'BusName=com.mos.other')))
-    try { expect(await verdictOf(fx, 'mosd-policy-names-the-owned-bus')).toBe('fail') }
+    const fx = await mutated('micad-policy-names-the-owned-bus', root =>
+      rewrite(root, MOSD_UNIT, text => text.replace('BusName=com.mica.micad', 'BusName=com.mica.other')))
+    try { expect(await verdictOf(fx, 'micad-policy-names-the-owned-bus')).toBe('fail') }
     finally { fx.dispose() }
   })
 
   test('even a narrow second policy exception is forbidden', async () => {
-    const fx = await mutated('mosd-policy-no-second-file-widens', root => write(
+    const fx = await mutated('micad-policy-no-second-file-widens', root => write(
       root,
       '/etc/dbus-1/system.d/mqttd-exception.conf',
-      '<busconfig><policy user="mos-mqttd">'
-      + '<allow send_destination="com.mos.mosd" send_member="GetState"/>'
+      '<busconfig><policy user="mica-mqttd">'
+      + '<allow send_destination="com.mica.micad" send_member="GetState"/>'
       + '</policy></busconfig>\n',
     ))
     try {
-      expect(await verdictOf(fx, 'mosd-policy-no-second-file-widens')).toBe('fail')
-      expect(await messageOf(fx, 'mosd-policy-no-second-file-widens')).toContain('GetState')
+      expect(await verdictOf(fx, 'micad-policy-no-second-file-widens')).toBe('fail')
+      expect(await messageOf(fx, 'micad-policy-no-second-file-widens')).toContain('GetState')
     }
     finally { fx.dispose() }
   })
 })
 
 describe('application names require exact package grants', () => {
-  test('the legacy com.mos.ext policy remains absent', async () => {
+  test('the legacy com.mica.ext policy remains absent', async () => {
     const fx = await mutated('legacy-ext-policy-absent', root => write(
       root,
       LEGACY_EXT_POLICY,
-      '<busconfig><policy context="default"><allow own_prefix="com.mos.ext"/></policy></busconfig>\n',
+      '<busconfig><policy context="default"><allow own_prefix="com.mica.ext"/></policy></busconfig>\n',
     ))
     try { expect(await verdictOf(fx, 'legacy-ext-policy-absent')).toBe('fail') }
     finally { fx.dispose() }
   })
 
-  for (const prefix of ['com.mos', 'com.mos.sensor']) {
+  for (const prefix of ['com.mica', 'com.mica.sensor']) {
     test(`an own_prefix=${prefix} grant in any policy fails`, async () => {
       const fx = await mutated('mos-namespace-no-prefix-ownership', root => write(
         root,
@@ -166,7 +166,7 @@ describe('application names require exact package grants', () => {
     const fx = packedRootFixture(cx3576)
     try {
       write(fx.root, '/etc/dbus-1/system.d/comment.conf',
-        '<busconfig><!-- <allow own_prefix="com.mos"/> --></busconfig>\n')
+        '<busconfig><!-- <allow own_prefix="com.mica"/> --></busconfig>\n')
       expect(await verdictOf(fx, 'mos-namespace-no-prefix-ownership')).toBe('pass')
     }
     finally { fx.dispose() }

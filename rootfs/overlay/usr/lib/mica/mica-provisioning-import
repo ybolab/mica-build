@@ -1,0 +1,135 @@
+#!/bin/sh
+# Stage an offline provisioning document where micad reads it.
+#
+# docs/design/provisioning.md section 4.1 is the contract. This script is the
+# TRANSPORT half of it and applies nothing: it makes the two documented sources
+# readable under /run/mica/provisioning and stops. micad's provisioning_doc.rs is
+# the half that parses, validates and applies, so every rule about what a
+# document may say lives in one place, in Rust, with tests.
+#
+# THE SPLIT IS THE POINT. A shell script that also applied would need the
+# settings schema, the validators and the single-save discipline in shell, and
+# a device with a half-written settings file is a device nobody can log in to.
+#
+# The two sources, in the preference order docs/design/access.md section 7
+# gives:
+#
+#   boot  -- the UEFI ESP, by its current GPT partition label. Physical
+#            possession of the boot medium already implies full control of the
+#            device, so a document written there with any card reader is the
+#            most authoritative one available.
+#   media -- an attached removable block device. Only consulted when the boot
+#            medium carries no document.
+#
+# In both cases the document is ONE fixed path: mos-provisioning.toml at the
+# root of the filesystem. Nothing here globs, follows a link or takes a path
+# from the medium.
+#
+# NOTHING IS EVER WRITTEN TO THE MEDIUM. Every mount is read-only, and the
+# document is left exactly as the operator wrote it -- see section 4.5 of the
+# design document for why deleting it was refused.
+#
+# This script must never fail the boot. A medium that will not mount, a
+# filesystem type the kernel does not have, an unreadable document: each is a
+# source that is skipped, and the device comes up unclaimed and configurable.
+set -eu
+
+STAGING_ROOT=${MOS_PROVISIONING_ROOT:-/run/mica/provisioning}
+DOCUMENT=mos-provisioning.toml
+# UEFI boards expose one ESP. cx3576 has raw firmware and uses removable media.
+BOOT_PARTLABEL=esp
+# noexec/nosuid/nodev because the medium is operator-supplied and mos never
+# runs anything off it; ro because nothing here may write to it.
+MOUNT_OPTIONS="ro,nosuid,nodev,noexec"
+
+log() {
+    echo "mica-provisioning-import: $*"
+}
+
+release() {
+    for name in boot media; do
+        dir=${STAGING_ROOT}/${name}
+        [ -d "$dir" ] || continue
+        umount "$dir" 2>/dev/null || :
+        rmdir "$dir" 2>/dev/null || :
+    done
+    rmdir "$STAGING_ROOT" 2>/dev/null || :
+}
+
+if [ "${1:-}" = "--release" ]; then
+    release
+    log "staged media released"
+    exit 0
+fi
+
+# 0700 on the staging root: a document may carry an administrator password and
+# a WPA2 pre-shared key, and a vfat mount presents every file world-readable
+# whatever the medium says. A directory a non-root process cannot traverse is
+# what keeps the content unreachable, whichever filesystem is underneath.
+mkdir -p "${STAGING_ROOT%/*}"
+mkdir -p "$STAGING_ROOT"
+chmod 0700 "$STAGING_ROOT"
+
+# Mount `device` as `source` and keep it only if the one documented path under
+# it is a regular file. Anything else -- a directory, a symbolic link planted
+# on the medium, a device node -- leaves nothing mounted, which is the same
+# rule micad's find_document enforces on the other side.
+try_source() {
+    source=$1
+    device=$2
+    dir=${STAGING_ROOT}/${source}
+    [ -b "$device" ] || return 1
+    mkdir -p "$dir"
+    if ! mount -o "$MOUNT_OPTIONS" "$device" "$dir" 2>/dev/null; then
+        rmdir "$dir" 2>/dev/null || :
+        return 1
+    fi
+    if [ -f "${dir}/${DOCUMENT}" ] && [ ! -L "${dir}/${DOCUMENT}" ]; then
+        log "staged a ${source} document from ${device} at ${dir}/${DOCUMENT}"
+        return 0
+    fi
+    umount "$dir" 2>/dev/null || :
+    rmdir "$dir" 2>/dev/null || :
+    return 1
+}
+
+staged=
+
+if try_source boot "/dev/disk/by-partlabel/${BOOT_PARTLABEL}"; then
+    staged=boot
+fi
+
+# Removable media, only when the boot medium carried nothing. `removable` is
+# the kernel's own answer, so the internal eMMC or NVMe this device boots from
+# is never a candidate: it reports 0 and is skipped before anything is mounted.
+# A `size` of 0 is an empty slot -- a card reader with no card in it.
+if [ -z "$staged" ]; then
+    for disk in /sys/block/*; do
+        [ -r "${disk}/removable" ] || continue
+        [ "$(cat "${disk}/removable" 2>/dev/null || echo 0)" = "1" ] || continue
+        [ "$(cat "${disk}/size" 2>/dev/null || echo 0)" != "0" ] || continue
+        name=${disk##*/}
+        # Partitions first, then the bare device: a stick formatted with no
+        # partition table is a filesystem on the disk itself.
+        candidates=
+        for part in "${disk}/${name}"*; do
+            [ -d "$part" ] || continue
+            candidates="${candidates} /dev/${part##*/}"
+        done
+        candidates="${candidates} /dev/${name}"
+        for device in $candidates; do
+            if try_source media "$device"; then
+                staged=media
+                break
+            fi
+        done
+        [ -z "$staged" ] || break
+    done
+fi
+
+if [ -z "$staged" ]; then
+    log "no provisioning document on the boot medium or on removable media"
+else
+    log "${staged} document staged; micad validates and applies it"
+fi
+exit 0

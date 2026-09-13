@@ -15,7 +15,7 @@ HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # The scripts under test are the ones that SHIP: the overlay is copied into the
 # image verbatim by the mos rootfs build, so testing that copy tests the file the
 # device runs. The overlay is the only copy there is.
-HEALTH=$HERE/../rootfs/overlay/usr/lib/mos
+HEALTH=$HERE/../rootfs/overlay/usr/lib/mica
 WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT
 PASS=0
@@ -32,9 +32,9 @@ new_case() {
     : >"$CALLS"
     CASE_PATH=
     # Fast settle so the tests never sleep. The required set mirrors the
-    # SHIPPED /etc/mos/health.conf, so the default case exercises the decision
+    # SHIPPED /etc/mica/health.conf, so the default case exercises the decision
     # the image actually makes; the cases that are about the set override it.
-    printf 'require=boot-settled\nrequire=mosd\nrequire=apid\n' >"$CONF"
+    printf 'require=boot-settled\nrequire=micad\nrequire=apid\n' >"$CONF"
     printf 'settle-sec=0\nprobe-timeout-sec=5\nvar-threshold-pct=85\n' >>"$CONF"
 }
 
@@ -50,7 +50,7 @@ set_required() {
 # either would be. Dropping the fakes is not enough — the host's own curl is on
 # the default PATH and `command -v` would find it, and the probe would then
 # reach out of the sandbox — so the PATH is narrowed to the fakes plus the
-# handful of real tools mos-health and the fakes need, and nothing else. `sh` is
+# handful of real tools mica-health and the fakes need, and nothing else. `sh` is
 # on the list because `env` resolves it through this PATH, and `cat` because the
 # rauc fake reads its fixture with it.
 no_http_client() {
@@ -82,7 +82,7 @@ write_deployment_status() {
 
 healthy_fakes() {
     write_deployment_status "$(printf a%.0s {1..64})"
-    fake mos-deploy '
+    fake mica-deploy '
 case "$1" in
   "booted")
       [ -n "${FAKE_DEPLOY_STDERR:-}" ] && echo "$FAKE_DEPLOY_STDERR" >&2
@@ -96,7 +96,7 @@ case "$1" in
   is-system-running) echo "${FAKE_SYS_STATE:-running}" ;;
   list-jobs) printf "%s" "${FAKE_JOBS:-}" ;;
   list-units) printf "%s" "${FAKE_FAILED_UNITS:-}" ;;
-  list-unit-files) case "${FAKE_UNITS:-mosd.service apid.service}" in *"$3"*) echo "$3 enabled" ;; esac ;;
+  list-unit-files) case "${FAKE_UNITS:-micad.service apid.service}" in *"$3"*) echo "$3 enabled" ;; esac ;;
 esac
 exit 0'
     fake busctl 'exit ${FAKE_BUSCTL_RC:-0}'
@@ -108,7 +108,7 @@ exit 0'
 run_health() {
     env -i PATH="${CASE_PATH:-$BIN:/usr/bin:/bin}" CALLS_FILE="$CALLS" MOS_HEALTH_CONF="$CONF" \
         CASE_DIR="$CASE" \
-        "$@" sh "$HEALTH/mos-health"
+        "$@" sh "$HEALTH/mica-health"
 }
 
 check() {
@@ -122,7 +122,7 @@ check() {
     fi
 }
 
-marked_good() { grep -qx 'mos-deploy confirm' "$CALLS" && echo yes || echo no; }
+marked_good() { grep -qx 'mica-deploy confirm' "$CALLS" && echo yes || echo no; }
 
 # Missing, failed or malformed deployment status must never confirm a boot.
 new_case backend-absent
@@ -161,7 +161,7 @@ check "healthy -> confirmed log" "yes" \
 check "healthy -> deployment identity reported" "yes" \
     "$(grep -q 'booted deployment: aaaaa' <<<"$out" && echo yes || echo no)"
 check "healthy -> the required set is in the journal" "yes" \
-    "$(grep -q 'required set: boot-settled mosd apid' <<<"$out" && echo yes || echo no)"
+    "$(grep -q 'required set: boot-settled micad apid' <<<"$out" && echo yes || echo no)"
 check "healthy -> every required member concluded OK" "3" \
     "$(grep -c 'required member .*: OK' <<<"$out")"
 
@@ -170,7 +170,7 @@ healthy_fakes
 run_health >/dev/null 2>&1
 out=$(run_health 2>&1) && rc=0 || rc=$?
 check "second run -> exit 0" "0" "$rc"
-check "second run -> mark-good again" "2" "$(grep -cx 'mos-deploy confirm' "$CALLS")"
+check "second run -> mark-good again" "2" "$(grep -cx 'mica-deploy confirm' "$CALLS")"
 
 # --- health gate: a failed unit is REPORTED, never fatal (PLAN-089)
 #
@@ -182,16 +182,16 @@ check "second run -> mark-good again" "2" "$(grep -cx 'mos-deploy confirm' "$CAL
 # learns it failed, so the same enumeration now reports instead.
 new_case failed-unit-reported
 healthy_fakes
-out=$(run_health FAKE_SYS_STATE=degraded FAKE_FAILED_UNITS='mos-regdb-reload.service loaded failed failed X
+out=$(run_health FAKE_SYS_STATE=degraded FAKE_FAILED_UNITS='mica-regdb-reload.service loaded failed failed X
 ' 2>&1) && rc=0 || rc=$?
 check "failed unit -> exit 0" "0" "$rc"
 check "failed unit -> mark-good, so the boot credit is NOT spent" "yes" "$(marked_good)"
 check "failed unit -> named in the journal" "yes" \
-    "$(grep -q 'note: failed unit: mos-regdb-reload.service' <<<"$out" && echo yes || echo no)"
+    "$(grep -q 'note: failed unit: mica-regdb-reload.service' <<<"$out" && echo yes || echo no)"
 check "failed unit -> flagged not fatal" "yes" \
     "$(grep -q 'REPORTED, not fatal' <<<"$out" && echo yes || echo no)"
-check "failed unit -> reported to mosd, naming it" "yes" \
-    "$(grep -q 'ReportHealth sss units degraded 1 failed: mos-regdb-reload.service' "$CALLS" &&
+check "failed unit -> reported to micad, naming it" "yes" \
+    "$(grep -q 'ReportHealth sss units degraded 1 failed: mica-regdb-reload.service' "$CALLS" &&
         echo yes || echo no)"
 
 new_case no-failed-units
@@ -200,7 +200,7 @@ out=$(run_health 2>&1) && rc=0 || rc=$?
 check "no failed units -> reported ok" "yes" \
     "$(grep -q 'ReportHealth sss units ok' "$CALLS" && echo yes || echo no)"
 
-# mosd caps a health detail at 1024 bytes and refuses a longer one, so the
+# micad caps a health detail at 1024 bytes and refuses a longer one, so the
 # report names a bounded sample and says how many it left out. The journal
 # above and the snapshot's own `failures.units` reader carry the whole list.
 new_case failed-units-capped
@@ -231,7 +231,7 @@ check "maintenance -> named as the required member" "yes" \
 # could be decoration held up only by the empty-set refusal.
 new_case maintenance-boot-settled-not-required
 healthy_fakes
-set_required mosd apid
+set_required micad apid
 out=$(run_health FAKE_SYS_STATE=maintenance 2>&1) && rc=0 || rc=$?
 check "maintenance with boot-settled dropped -> exit 0" "0" "$rc"
 check "maintenance with boot-settled dropped -> mark-good" "yes" "$(marked_good)"
@@ -240,7 +240,7 @@ check "maintenance with boot-settled dropped -> says what it would have failed o
 
 # --- health gate: `starting`, which is the state this gate ALWAYS sees
 #
-# mos-health.service is WantedBy=multi-user.target, so it is a job in the
+# mica-health.service is WantedBy=multi-user.target, so it is a job in the
 # initial transaction and `is-system-running` cannot report anything but
 # `starting` while it runs. Until these cases existed the suite only ever
 # handed the probe `running` (the stub's default), so the one state the gate
@@ -248,22 +248,22 @@ check "maintenance with boot-settled dropped -> says what it would have failed o
 # failed every real boot while the suite stayed green.
 #
 # The `list-jobs` columns are, in order: JOB, UNIT, then TYPE and STATE. A job
-# in state `waiting` is blocked on ordering (mos-status-led.service waits on
+# in state `waiting` is blocked on ordering (mica-status-led.service waits on
 # this gate by design); only a job still `running` means something else is
 # genuinely in flight.
 
 new_case starting-self-only
 healthy_fakes
-# This gate is the only job running, and mos-status-led is waiting on it.
-out=$(run_health FAKE_SYS_STATE=starting FAKE_JOBS='1 mos-health.service start running
-2 mos-status-led.service start waiting
+# This gate is the only job running, and mica-status-led is waiting on it.
+out=$(run_health FAKE_SYS_STATE=starting FAKE_JOBS='1 mica-health.service start running
+2 mica-status-led.service start waiting
 ' 2>&1) && rc=0 || rc=$?
 check "starting with only this gate running -> exit 0" "0" "$rc"
 check "starting with only this gate running -> mark-good" "yes" "$(marked_good)"
 
 new_case starting-other-job-running
 healthy_fakes
-out=$(run_health FAKE_SYS_STATE=starting FAKE_JOBS='1 mos-health.service start running
+out=$(run_health FAKE_SYS_STATE=starting FAKE_JOBS='1 mica-health.service start running
 2 something-slow.service start running
 ' 2>&1) && rc=0 || rc=$?
 check "starting with another job running -> exit 1" "1" "$rc"
@@ -276,7 +276,7 @@ healthy_fakes
 # Settled by the self-only rule with a unit failed. Before PLAN-089 this path
 # refused; now it confirms and reports, because a failed unit says nothing
 # about whether this slot can be recovered.
-out=$(run_health FAKE_SYS_STATE=starting FAKE_JOBS='1 mos-health.service start running
+out=$(run_health FAKE_SYS_STATE=starting FAKE_JOBS='1 mica-health.service start running
 ' FAKE_FAILED_UNITS='broken.service loaded failed failed X
 ' 2>&1) && rc=0 || rc=$?
 check "starting + failed unit -> exit 0" "0" "$rc"
@@ -295,14 +295,14 @@ check "starting + failed unit -> reported" "yes" \
 # A daemon that owns its bus name and stops answering is `active (running)` to
 # systemd, never `failed`, so the allowlist sweep these replace marked such a
 # slot GOOD. The required set is stronger here, not just kinder above.
-new_case mosd-wedged
+new_case micad-wedged
 healthy_fakes
 out=$(run_health FAKE_BUSCTL_RC=1 2>&1) && rc=0 || rc=$?
-check "mosd wedged -> exit 1" "1" "$rc"
-check "mosd wedged -> no mark-good" "no" "$(marked_good)"
-check "mosd wedged -> named as the required member" "yes" \
-    "$(grep -q 'required member mosd' <<<"$out" && echo yes || echo no)"
-check "mosd wedged -> and systemd saw no failed unit at all" "no" \
+check "micad wedged -> exit 1" "1" "$rc"
+check "micad wedged -> no mark-good" "no" "$(marked_good)"
+check "micad wedged -> named as the required member" "yes" \
+    "$(grep -q 'required member micad' <<<"$out" && echo yes || echo no)"
+check "micad wedged -> and systemd saw no failed unit at all" "no" \
     "$(grep -q 'note: failed unit:' <<<"$out" && echo yes || echo no)"
 
 new_case apid-wedged
@@ -320,8 +320,8 @@ healthy_fakes
 out=$(run_health FAKE_BUSCTL_RC=1 FAKE_CURL_RC=22 2>&1) && rc=0 || rc=$?
 check "bad update -> exit 1" "1" "$rc"
 check "bad update -> no mark-good" "no" "$(marked_good)"
-check "bad update -> names mosd, the first member it could not establish" "yes" \
-    "$(grep -q 'required member mosd' <<<"$out" && echo yes || echo no)"
+check "bad update -> names micad, the first member it could not establish" "yes" \
+    "$(grep -q 'required member micad' <<<"$out" && echo yes || echo no)"
 
 # --- health gate: a required member the gate CANNOT PROBE is a refusal
 #
@@ -330,17 +330,17 @@ check "bad update -> names mosd, the first member it could not establish" "yes" 
 # and a green there confirms a slot with no route into it. An image that
 # genuinely ships no apid drops the line; that is a build-time decision in a
 # file inside the read-only root.
-new_case require-mosd-not-installed
+new_case require-micad-not-installed
 healthy_fakes
 out=$(run_health FAKE_UNITS=apid.service 2>&1) && rc=0 || rc=$?
-check "mosd.service absent while required -> exit 1" "1" "$rc"
-check "mosd.service absent while required -> no mark-good" "no" "$(marked_good)"
-check "mosd.service absent while required -> says the image does not ship it" "yes" \
-    "$(grep -q 'mosd.service is not installed' <<<"$out" && echo yes || echo no)"
+check "micad.service absent while required -> exit 1" "1" "$rc"
+check "micad.service absent while required -> no mark-good" "no" "$(marked_good)"
+check "micad.service absent while required -> says the image does not ship it" "yes" \
+    "$(grep -q 'micad.service is not installed' <<<"$out" && echo yes || echo no)"
 
 new_case require-apid-not-installed
 healthy_fakes
-out=$(run_health FAKE_UNITS=mosd.service 2>&1) && rc=0 || rc=$?
+out=$(run_health FAKE_UNITS=micad.service 2>&1) && rc=0 || rc=$?
 check "apid.service absent while required -> exit 1" "1" "$rc"
 check "apid.service absent while required -> no mark-good" "no" "$(marked_good)"
 check "apid.service absent while required -> says the image does not ship it" "yes" \
@@ -363,7 +363,7 @@ check "no curl and no wget -> says so" "yes" \
 #
 # AN EMPTY REQUIRED SET IS "ALWAYS MARK GOOD" — the empty `tolerate-failed`
 # allowlist read from the other side, and the one failure this gate cannot
-# have. It is reachable in production and not only here: /etc/mos/health.conf
+# have. It is reachable in production and not only here: /etc/mica/health.conf
 # missing from the overlay, unreadable, or shipped with its `require=` lines
 # deleted all produce it. There is deliberately no compiled-in default set to
 # fall back to.
@@ -388,14 +388,14 @@ check "conf absent -> names the file" "yes" \
 # The empty set arriving by instalments: one typo and the set silently shrinks.
 new_case require-unknown-member
 healthy_fakes
-set_required boot-settled mosd apid mosdd
+set_required boot-settled micad apid micadd
 out=$(run_health 2>&1) && rc=0 || rc=$?
 check "unknown required member -> exit 1" "1" "$rc"
 check "unknown required member -> no mark-good" "no" "$(marked_good)"
 check "unknown required member -> named" "yes" \
-    "$(grep -q 'requires `mosdd`' <<<"$out" && echo yes || echo no)"
+    "$(grep -q 'requires `micadd`' <<<"$out" && echo yes || echo no)"
 check "unknown required member -> lists the vocabulary" "yes" \
-    "$(grep -q 'boot-settled, mosd, apid' <<<"$out" && echo yes || echo no)"
+    "$(grep -q 'boot-settled, micad, apid' <<<"$out" && echo yes || echo no)"
 
 # --- health gate: each `require=` line is what makes ITS member fatal
 #
@@ -403,21 +403,21 @@ check "unknown required member -> lists the vocabulary" "yes" \
 # the set is decoration and only the empty-set refusal is holding the gate up.
 new_case apid-down-but-not-required
 healthy_fakes
-set_required boot-settled mosd
+set_required boot-settled micad
 out=$(run_health FAKE_CURL_RC=22 2>&1) && rc=0 || rc=$?
 check "apid down but not required -> exit 0" "0" "$rc"
 check "apid down but not required -> mark-good" "yes" "$(marked_good)"
 check "apid down but not required -> never probed at all" "no" \
     "$(grep -q '^curl ' "$CALLS" && echo yes || echo no)"
 
-new_case mosd-down-but-not-required
+new_case micad-down-but-not-required
 healthy_fakes
 set_required boot-settled apid
 out=$(run_health FAKE_BUSCTL_RC=1 2>&1) && rc=0 || rc=$?
-check "mosd down but not required -> exit 0" "0" "$rc"
-check "mosd down but not required -> mark-good" "yes" "$(marked_good)"
-check "mosd down but not required -> GetState never called" "no" \
-    "$(grep -q 'com.mos.mosd1 GetState' "$CALLS" && echo yes || echo no)"
+check "micad down but not required -> exit 0" "0" "$rc"
+check "micad down but not required -> mark-good" "yes" "$(marked_good)"
+check "micad down but not required -> GetState never called" "no" \
+    "$(grep -q 'com.mica.micad1 GetState' "$CALLS" && echo yes || echo no)"
 
 # --- health gate: /var pressure is reported, never fatal
 new_case var-pressure

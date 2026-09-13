@@ -18,7 +18,7 @@ if [ "${2:-}" = --empty ]; then
     status=0
     chroot /empty "${runner[@]}" reboot > /tmp/empty-public.log 2>&1 || status=$?
     [ "$status" = 1 ]
-    grep -Fx 'mos-shutdown requires PID 1' /tmp/empty-public.log >/dev/null
+    grep -Fx 'mica-shutdown requires PID 1' /tmp/empty-public.log >/dev/null
     printf '%s\n' EMPTY_EXEC_LOADER_PASS
     status=0
     chroot /empty "${runner[@]}" --lifecycle-worker '"Scan"' > /tmp/empty-scan.log 2>&1 || status=$?

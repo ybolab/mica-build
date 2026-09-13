@@ -1,4 +1,4 @@
-// The D-Bus policies: the system bus, mosd's local root-only management name,
+// The D-Bus policies: the system bus, micad's local root-only management name,
 // the absence of namespace-wide application grants, and bluez's policy.
 //
 // Eleven conclusions on each board, one of them a SKIP on x64. Everything here
@@ -16,8 +16,8 @@
 // the awk , rules collected per <policy> block, because a rule's block
 // decides who it applies to.
 //
-// The bus name is read, never written down. `com.mos.mosd` appears nowhere here
-// as the name being checked: the oracle reads it out of mosd.service's
+// The bus name is read, never written down. `com.mica.micad` appears nowhere here
+// as the name being checked: the oracle reads it out of micad.service's
 // `BusName=` so that a policy for a name nothing owns fails rather than
 // sails through. Restating it would put the constant back in two places.
 
@@ -29,9 +29,9 @@ import type { CheckCase } from './checks.ts'
 import type { CheckResult } from './parity.ts'
 import { skipped, verdict } from './verdict.ts'
 
-const MOSD_POLICY_PATH = '/usr/share/dbus-1/system.d/com.mos.mosd.conf'
-const LEGACY_EXT_POLICY_PATH = '/usr/share/dbus-1/system.d/com.mos.ext.conf'
-const MOSD_UNIT = '/usr/lib/systemd/system/mosd.service'
+const MOSD_POLICY_PATH = '/usr/share/dbus-1/system.d/com.mica.micad.conf'
+const LEGACY_EXT_POLICY_PATH = '/usr/share/dbus-1/system.d/com.mica.ext.conf'
+const MOSD_UNIT = '/usr/lib/systemd/system/micad.service'
 const POLICY_DIRS = ['/etc/dbus-1/system.d', '/usr/share/dbus-1/system.d'] as const
 
 // reading a file the way the oracle's shell reads one
@@ -60,7 +60,7 @@ function readOrEmpty(root: string, path: string): string {
  * lines, an unterminated `<!--` swallows the rest of the file, and every input
  * line still produces exactly one output line. That last property is not
  * incidental -- `check_ext_policy` runs `grep -Eo` over the result and the
- * mosd parse splits it on `<policy`, and both would read differently if the
+ * micad parse splits it on `<policy`, and both would read differently if the
  * stripper joined lines.
  */
 export function stripXmlComments(text: string): string {
@@ -112,7 +112,7 @@ export function policyTags(text: string): string[] {
     .filter(s => s !== '')
 }
 
-// the mosd policy, parsed per <policy> BLOCK
+// the micad policy, parsed per <policy> BLOCK
 
 export interface PolicyFacts {
   /** `<allow>` rules in a default-context block naming the bus in either direction. */
@@ -121,7 +121,7 @@ export interface PolicyFacts {
   readonly ownRoot: number
   /** ...and anywhere else. */
   readonly ownOther: number
-  /** Every `com.mos.*` name any rule mentions, sorted and deduplicated. */
+  /** Every `com.mica.*` name any rule mentions, sorted and deduplicated. */
   readonly names: readonly string[]
 }
 
@@ -175,7 +175,7 @@ export function policyFacts(text: string, bus: string): PolicyFacts {
       const send = attrValue(tag, 'send_destination')
       const receive = attrValue(tag, 'receive_sender')
       for (const v of [own, send, receive]) {
-        if (/^com\.mos\./.test(v)) names.add(v)
+        if (/^com\.mica\./.test(v)) names.add(v)
       }
       if (kind === 'allow' && isDefault && (send === bus || receive === bus)) defaultAllows += 1
       if (kind === 'allow' && own === bus && own !== '') {
@@ -197,7 +197,7 @@ export function policyFacts(text: string, bus: string): PolicyFacts {
  * of a key in a unit file, and a unit carrying two would otherwise be judged
  * against a value it does not use.
  */
-export function mosdBusName(root: string): string {
+export function micadBusName(root: string): string {
   const lines = readOrEmpty(root, MOSD_UNIT).split('\n')
     .filter(l => l.startsWith('BusName='))
     .map(l => l.slice('BusName='.length).replace(/^[ \t]*/, '').replaceAll('\r', ''))
@@ -220,7 +220,7 @@ export interface SecondFile {
  * blessed file is excluded by name rather than by directory, because a second
  * file in /usr/share is exactly as dangerous as one in /etc.
  *
- * mosd is a local management service. Its own policy is the only policy file
+ * micad is a local management service. Its own policy is the only policy file
  * allowed to mention its exact name; mqttd and application packages receive no
  * exception, even when a second rule looks narrow.
  */
@@ -253,7 +253,7 @@ export function secondPolicyFiles(root: string, bus: string): SecondFile[] {
 
 const MOSD_CHECKS: readonly CheckCase[] = [
   {
-    // The system bus itself. Two files, one conclusion: apid, mosd and bluez
+    // The system bus itself. Two files, one conclusion: apid, micad and bluez
     // all address each other over it, so either one missing is the same fault.
     id: 'dbus-system-bus-present',
     shell: {
@@ -269,7 +269,7 @@ const MOSD_CHECKS: readonly CheckCase[] = [
         ok,
         ok
           ? 'the D-Bus system bus (dbus.service + dbus.socket) is present, so bus-activated services can run'
-          : 'dbus.service and/or dbus.socket missing; apid, mosd and bluez all address each other '
+          : 'dbus.service and/or dbus.socket missing; apid, micad and bluez all address each other '
             + 'over the system bus',
       )]
     },
@@ -283,7 +283,7 @@ const MOSD_CHECKS: readonly CheckCase[] = [
     // The test is on the file's CONTENT being non-empty, because that is what
     // `[ -n "$(cat ...)" ]` asks: a zero-byte file at the right path passes
     // every "is it there" check and governs nothing.
-    id: 'mosd-policy-ships',
+    id: 'micad-policy-ships',
     shell: {
       pass: `${MOSD_POLICY_PATH} ships and is readable`,
       fail: `${MOSD_POLICY_PATH} is missing or empty`,
@@ -292,10 +292,10 @@ const MOSD_CHECKS: readonly CheckCase[] = [
       const text = readOrEmpty(await packedRoot(ctx), MOSD_POLICY_PATH)
       const ok = text !== ''
       return [verdict(
-        'mosd-policy-ships',
+        'micad-policy-ships',
         ok,
         ok
-          ? `${MOSD_POLICY_PATH} ships and is readable, i.e. the mosd bus policy is where dbus-daemon `
+          ? `${MOSD_POLICY_PATH} ships and is readable, i.e. the micad bus policy is where dbus-daemon `
             + `actually looks for it`
           : `${MOSD_POLICY_PATH} is missing or empty. dbus-daemon reads system-bus policy from this `
             + `directory; with nothing here the base system.conf decides alone, and every local uid `
@@ -309,25 +309,25 @@ const MOSD_CHECKS: readonly CheckCase[] = [
     // the half that is easy to leave open, because SettingsChanged broadcasts
     // the settings VALUE -- a uid that may not call anything can still
     // subscribe and read access.webAdmin.password_hash.
-    id: 'mosd-policy-no-default-allow',
+    id: 'micad-policy-no-default-allow',
     shell: {
       pass: 'no <policy context="default"> allows send_destination= or receive_sender= for ',
       fail: 'default-context allow rule(s) for ',
     },
     run: async (ctx): Promise<readonly CheckResult[]> => {
       const root = await packedRoot(ctx)
-      const bus = mosdBusName(root)
+      const bus = micadBusName(root)
       const facts = policyFacts(readOrEmpty(root, MOSD_POLICY_PATH), bus)
       const ok = facts.defaultAllows === 0
       return [verdict(
-        'mosd-policy-no-default-allow',
+        'micad-policy-no-default-allow',
         ok,
         ok
           ? `no <policy context="default"> allows send_destination= or receive_sender= for `
-            + `${bus === '' ? 'the mosd bus name' : bus}, so neither calling it nor listening to its `
+            + `${bus === '' ? 'the micad bus name' : bus}, so neither calling it nor listening to its `
             + `signals is open to every local uid`
-          : `the mosd D-Bus policy has ${facts.defaultAllows} default-context allow rule(s) for `
-            + `${bus === '' ? 'the mosd bus name' : bus}: any local uid can call `
+          : `the micad D-Bus policy has ${facts.defaultAllows} default-context allow rule(s) for `
+            + `${bus === '' ? 'the micad bus name' : bus}: any local uid can call `
             + `Reboot/SetSettings/SetTransientRootPassword and/or subscribe to SettingsChanged, which `
             + `carries settings values including access.webAdmin.password_hash`,
       )]
@@ -335,53 +335,53 @@ const MOSD_CHECKS: readonly CheckCase[] = [
   },
 
   {
-    // own= is what lets mosd take the name at all. At least once under root and
-    // nowhere else: zero under root would mean mosd cannot own its own name,
+    // own= is what lets micad take the name at all. At least once under root and
+    // nowhere else: zero under root would mean micad cannot own its own name,
     // and one anywhere else would let an unprivileged process take it FIRST.
-    id: 'mosd-policy-own-root-only',
+    id: 'micad-policy-own-root-only',
     shell: {
       pass: 'appears only under <policy user="root">',
       fail: 'time(s) under <policy user="root"> and ',
     },
     run: async (ctx): Promise<readonly CheckResult[]> => {
       const root = await packedRoot(ctx)
-      const bus = mosdBusName(root)
+      const bus = micadBusName(root)
       const facts = policyFacts(readOrEmpty(root, MOSD_POLICY_PATH), bus)
       const ok = facts.ownRoot !== 0 && facts.ownOther === 0
       return [verdict(
-        'mosd-policy-own-root-only',
+        'micad-policy-own-root-only',
         ok,
         ok
           ? `allow own="${bus}" appears only under <policy user="root">`
           : `allow own= for '${bus}' appears ${facts.ownRoot} time(s) under <policy user="root"> and `
             + `${facts.ownOther} time(s) elsewhere; it must appear at least once under root and nowhere `
-            + `else, or an unprivileged process could take the name before mosd does`,
+            + `else, or an unprivileged process could take the name before micad does`,
       )]
     },
   },
 
   {
-    // The typo that is invisible by inspection: a deny naming com.mos.mosdx
+    // The typo that is invisible by inspection: a deny naming com.mica.micadx
     // denies nothing, and the default-context check above would still report
     // zero allows while the real name sat wide open.
-    id: 'mosd-policy-names-the-owned-bus',
+    id: 'micad-policy-names-the-owned-bus',
     shell: {
-      pass: 'the policy names exactly the bus mosd.service declares (BusName=',
+      pass: 'the policy names exactly the bus micad.service declares (BusName=',
       fail: 'policy/unit bus-name mismatch: ',
     },
     run: async (ctx): Promise<readonly CheckResult[]> => {
       const root = await packedRoot(ctx)
-      const bus = mosdBusName(root)
+      const bus = micadBusName(root)
       const facts = policyFacts(readOrEmpty(root, MOSD_POLICY_PATH), bus)
       const mentioned = facts.names.join(' ')
       const ok = bus !== '' && mentioned === bus
       return [verdict(
-        'mosd-policy-names-the-owned-bus',
+        'micad-policy-names-the-owned-bus',
         ok,
         ok
-          ? `the policy names exactly the bus mosd.service declares (BusName=${bus}); it is not a `
+          ? `the policy names exactly the bus micad.service declares (BusName=${bus}); it is not a `
             + `policy for a name nothing owns`
-          : `policy/unit bus-name mismatch: mosd.service declares BusName='${bus}' but the policy `
+          : `policy/unit bus-name mismatch: micad.service declares BusName='${bus}' but the policy `
             + `mentions '${mentioned}'. A policy naming anything else guards a name nothing owns while `
             + `the real one is governed by system.conf alone`,
       )]
@@ -391,25 +391,25 @@ const MOSD_CHECKS: readonly CheckCase[] = [
   {
     // One policy file. A narrow-looking second exception is still a management
     // export and therefore a boundary violation.
-    id: 'mosd-policy-no-second-file-widens',
+    id: 'micad-policy-no-second-file-widens',
     shell: {
       pass: ' is the ONLY file under ',
       fail: 'a second D-Bus policy file mentions ',
     },
     run: async (ctx): Promise<readonly CheckResult[]> => {
       const root = await packedRoot(ctx)
-      const bus = mosdBusName(root)
+      const bus = micadBusName(root)
       const others = secondPolicyFiles(root, bus)
-      const id = 'mosd-policy-no-second-file-widens'
+      const id = 'micad-policy-no-second-file-widens'
       if (others.length > 0) {
         const detail = others.map(f => ` ${f.path} [${f.unscoped.join(' ')} ]`).join('')
         return [verdict(id, false,
-          `a second D-Bus policy file mentions ${bus === '' ? 'the mosd bus name' : bus}:${detail}. `
-          + 'mosd is local management only, so even a per-member identity exception is forbidden')]
+          `a second D-Bus policy file mentions ${bus === '' ? 'the micad bus name' : bus}:${detail}. `
+          + 'micad is local management only, so even a per-member identity exception is forbidden')]
       }
       return [verdict(id, true,
         `${MOSD_POLICY_PATH} is the ONLY file under /etc/dbus-1/system.d or /usr/share/dbus-1/system.d `
-        + `that mentions ${bus === '' ? 'the mosd bus name' : bus}; no second policy can override the `
+        + `that mentions ${bus === '' ? 'the micad bus name' : bus}; no second policy can override the `
         + `root-only restriction`)]
     },
   },
@@ -430,7 +430,7 @@ function mosPrefixGrants(root: string): string[] {
       if (!regularFileInRoot(root, path)) continue
       for (const tag of policyTags(readOrEmpty(root, path))) {
         const prefix = tag.match(/\bown_prefix="([^"]*)"/)?.[1]
-        if (prefix === 'com.mos' || prefix?.startsWith('com.mos.') === true) {
+        if (prefix === 'com.mica' || prefix?.startsWith('com.mica.') === true) {
           found.push(`${path} [${tag}]`)
         }
       }
@@ -443,8 +443,8 @@ const NAMESPACE_CHECKS: readonly CheckCase[] = [
   {
     id: 'legacy-ext-policy-absent',
     shell: {
-      pass: 'the legacy com.mos.ext prefix policy is absent',
-      fail: 'the legacy com.mos.ext prefix policy still exists',
+      pass: 'the legacy com.mica.ext prefix policy is absent',
+      fail: 'the legacy com.mica.ext prefix policy still exists',
     },
     run: async (ctx): Promise<readonly CheckResult[]> => {
       const present = regularFileInRoot(await packedRoot(ctx), LEGACY_EXT_POLICY_PATH)
@@ -452,16 +452,16 @@ const NAMESPACE_CHECKS: readonly CheckCase[] = [
         'legacy-ext-policy-absent',
         !present,
         present
-          ? `the legacy com.mos.ext prefix policy still exists at ${LEGACY_EXT_POLICY_PATH}`
-          : `the legacy com.mos.ext prefix policy is absent (${LEGACY_EXT_POLICY_PATH})`,
+          ? `the legacy com.mica.ext prefix policy still exists at ${LEGACY_EXT_POLICY_PATH}`
+          : `the legacy com.mica.ext prefix policy is absent (${LEGACY_EXT_POLICY_PATH})`,
       )]
     },
   },
   {
     id: 'mos-namespace-no-prefix-ownership',
     shell: {
-      pass: 'no D-Bus policy grants prefix ownership inside com.mos',
-      fail: 'a D-Bus policy grants prefix ownership inside com.mos',
+      pass: 'no D-Bus policy grants prefix ownership inside com.mica',
+      fail: 'a D-Bus policy grants prefix ownership inside com.mica',
     },
     run: async (ctx): Promise<readonly CheckResult[]> => {
       const grants = mosPrefixGrants(await packedRoot(ctx))
@@ -469,8 +469,8 @@ const NAMESPACE_CHECKS: readonly CheckCase[] = [
         'mos-namespace-no-prefix-ownership',
         grants.length === 0,
         grants.length === 0
-          ? 'no D-Bus policy grants prefix ownership inside com.mos; application names require exact package grants'
-          : `a D-Bus policy grants prefix ownership inside com.mos: ${grants.join(' ')}`,
+          ? 'no D-Bus policy grants prefix ownership inside com.mica; application names require exact package grants'
+          : `a D-Bus policy grants prefix ownership inside com.mica: ${grants.join(' ')}`,
       )]
     },
   },

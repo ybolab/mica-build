@@ -8,8 +8,8 @@
 # byte-identical squashfs and the pack stage fails any build whose factory
 # shadow carries a usable hash, so a baked mos root password is unbuildable by
 # design, not merely discouraged. Dev root access on mos is the transient
-# password set at runtime through mosd (SetTransientRootPassword; cleared on
-# the next boot by mos-shadow-reconcile) plus the serial console, whose root
+# password set at runtime through micad (SetTransientRootPassword; cleared on
+# the next boot by mica-shadow-reconcile) plus the serial console, whose root
 # account stays locked until that password is set. See
 # docs/design/access.md section 4.1.
 
@@ -41,9 +41,9 @@
 #     the lock row for an imported archive), source repository and source
 #     commit of each, read out of the pool index. PLAN-036 section 4's durable
 #     composition record, and the one that says what this image is made of.
-#   mosd-build.txt: the commit mosd and apid in this root were built from,
-#     read out of the mosd archive's Mos-Source-Commit control field. NOT
-#     copied into the image. Not written when mosd is declined; see below.
+#   micad-build.txt: the commit micad and apid in this root were built from,
+#     read out of the micad archive's Mos-Source-Commit control field. NOT
+#     copied into the image. Not written when micad is declined; see below.
 # rootfs/README.md, "Outputs to _out/<board>/", is the table version of this.
 
 # Every layout constant is read from boards/cx3576/board.env.
@@ -94,7 +94,7 @@ WITH_MOSD=${WITH_MOSD:-1}
 case "$WITH_MOSD" in
 0 | 1) ;;
 *)
-    echo "error: WITH_MOSD is '$WITH_MOSD'; it must be exactly 0 or 1. It selects whether the mosd packages are in the resolved set, and anything else here would be read as 'not 1' and silently build an image with no management daemon" >&2
+    echo "error: WITH_MOSD is '$WITH_MOSD'; it must be exactly 0 or 1. It selects whether the micad packages are in the resolved set, and anything else here would be read as 'not 1' and silently build an image with no management daemon" >&2
     exit 1
     ;;
 esac
@@ -120,7 +120,7 @@ WITH_CONTAINERS=${WITH_CONTAINERS:-1}
 case "$WITH_CONTAINERS" in
 0 | 1) ;;
 *)
-    echo "error: WITH_CONTAINERS is '$WITH_CONTAINERS'; it must be exactly 0 or 1. It selects whether mos-podman is in the resolved set, and anything else here would be read as 'not 1' and the engine would silently not ship" >&2
+    echo "error: WITH_CONTAINERS is '$WITH_CONTAINERS'; it must be exactly 0 or 1. It selects whether mica-podman is in the resolved set, and anything else here would be read as 'not 1' and the engine would silently not ship" >&2
     exit 1
     ;;
 esac
@@ -152,7 +152,7 @@ esac
 MOS_ROOTFS_WITHOUT=${MOS_ROOTFS_WITHOUT:-}
 WITHOUT_FEATURES=" ${MOS_ROOTFS_WITHOUT} "
 [ "$WITH_CONTAINERS" = "1" ] || WITHOUT_FEATURES="${WITHOUT_FEATURES}containers "
-[ "$WITH_MOSD" = "1" ] || WITHOUT_FEATURES="${WITHOUT_FEATURES}mosd "
+[ "$WITH_MOSD" = "1" ] || WITHOUT_FEATURES="${WITHOUT_FEATURES}micad "
 # `case` and not a substring test with [[ ]]: this file is bash, but the pattern
 # is the same one the POSIX scripts use and one spelling reads the same in both.
 declined() { case "$WITHOUT_FEATURES" in *" $1 "*) return 0 ;; *) return 1 ;; esac; }
@@ -160,7 +160,7 @@ if [ -n "${MOS_ROOTFS_WITHOUT}" ]; then
     echo "note: MOS_ROOTFS_WITHOUT declines:${MOS_ROOTFS_WITHOUT}"
 fi
 
-# Image profile baked into /usr/lib/mos/profile.conf. mosd reads it on first
+# Image profile baked into /usr/lib/mica/profile.conf. micad reads it on first
 # boot and FAILS CLOSED to prod, so the value has to be exactly "dev" or "prod"
 # in lowercase; the Dockerfile rejects anything else. It does NOT select the
 # access.ssh.enabled seed: both profiles seed SSH OFF and neither image ships
@@ -242,7 +242,7 @@ mkdir -p "$OUT_DIR"
 # produce, and a run that dies in between would leave it looking current --
 # which is worse than its absence, because the smoke runner says out loud when
 # it has no record and cannot say anything at all about a wrong one.
-rm -f "$OUT_DIR/mosd-build.txt"
+rm -f "$OUT_DIR/micad-build.txt"
 
 # Validate the package pool before resolving the OpenSSL inspection container.
 POOL_DIR="$REPO_ROOT/_out/debs/$MOS_ARCH"
@@ -302,7 +302,7 @@ newer=$(find "$POOL_DIR/pool" -maxdepth 1 -type f -name '*.deb' -newer "$POOL_DI
 # dirty archive straight into this pool (build-env/deb/README.md, "Local
 # development"). The waiver is announced here, recorded in the lineage
 # record and in rootfs-packages.txt, written into the image's
-# /usr/share/mos/release-identity.env, and build/src/release-manifest.ts
+# /usr/share/mica/release-identity.env, and build/src/release-manifest.ts
 # refuses such an image in the candidate and stable channels. A name that is
 # not a locked package is refused: there is nothing to waive.
 LOCAL_PACKAGES=$(bash "$REPO_ROOT/build-env/deb/producers.sh" | awk '{ n = split($4, a, ","); for (i = 1; i <= n; i++) printf "%s ", a[i] }')
@@ -337,13 +337,13 @@ echo "pool: $POOL_DIR, $pool_debs archive(s); built here at stamp $tree_stamp, $
 COMPOSE_STAGE="$OUT_DIR/compose"
 PACKAGES_RECORD="$OUT_DIR/rootfs-packages.txt"
 rm -rf "$COMPOSE_STAGE"
-# Removed for the reason mosd-build.txt is: a record left by a previous build
+# Removed for the reason micad-build.txt is: a record left by a previous build
 # would describe the package set of an image this run did not produce, and a
 # run that dies before the record is written would leave it looking current.
 rm -f "$PACKAGES_RECORD"
 
-# THE SOURCE COMMIT'S DATE, for /usr/share/mos/release-identity.env and from
-# there for mosd's system-information surface.
+# THE SOURCE COMMIT'S DATE, for /usr/share/mica/release-identity.env and from
+# there for micad's system-information surface.
 #
 # Every timestamp inside a composed root is pinned: SQUASHFS_TIME above is
 # FILE_MTIME, which build/src/geometry.ts fixes to a constant so two builds of
@@ -369,7 +369,7 @@ commit_of_stamp=${commit_of_stamp%.dirty}
 tree_commit_date=$(git -C "$REPO_ROOT" show -s --format=%cI "${commit_of_stamp}^{commit}" 2>/dev/null || true)
 [ -n "$tree_commit_date" ] || {
     echo "error: git names no commit date for '$commit_of_stamp', the commit in this tree's stamp '$tree_stamp'." >&2
-    echo "       That date is written into /usr/share/mos/release-identity.env and is the only date in a" >&2
+    echo "       That date is written into /usr/share/mica/release-identity.env and is the only date in a" >&2
     echo "       composed image that is not the pinned SOURCE_DATE_EPOCH; composing without it would leave" >&2
     echo "       the system-information surface with no date to report at all." >&2
     exit 1
@@ -382,7 +382,7 @@ echo "identity: source commit $commit_of_stamp committed $tree_commit_date"
 # spellings fold into one decline list are all decided above, in this
 # script, and a second copy of that logic in the resolver would be the
 # second table this repository keeps deleting. `echo` unquoted is what
-# turns " containers mosd " into "containers mosd", which is the spelling
+# turns " containers micad " into "containers micad", which is the spelling
 # its --without takes.
 # shellcheck disable=SC2116,SC2086 # deliberate: collapse the padded list.
 WITHOUT_ARG=$(echo $WITHOUT_FEATURES)
@@ -439,13 +439,13 @@ PRODUCER_DIRS=$(bash "$REPO_ROOT/build-env/deb/producers.sh" |
 META_DIR="${MOS_META_DIR:-$REPO_ROOT/meta}"
 bash "$REPO_ROOT/rootfs/scripts/validate-public-meta.sh" "$META_DIR"
 META_STAGE="$(mktemp -d "$OUT_DIR/meta-public.XXXXXX")"
-mkdir -p "$META_STAGE/usr/share/mos/meta/updates"
+mkdir -p "$META_STAGE/usr/share/mica/meta/updates"
 manifest="$META_DIR/updates/manifest.json"
-install -m 0644 "$manifest" "$META_STAGE/usr/share/mos/meta/updates/manifest.json"
+install -m 0644 "$manifest" "$META_STAGE/usr/share/mica/meta/updates/manifest.json"
 if [ -s "$META_DIR/GENERATED" ]; then
-    install -m 0644 "$META_DIR/GENERATED" "$META_STAGE/usr/share/mos/meta/GENERATED"
+    install -m 0644 "$META_DIR/GENERATED" "$META_STAGE/usr/share/mica/meta/GENERATED"
 else
-    rm -f "$META_STAGE/usr/share/mos/meta/GENERATED"
+    rm -f "$META_STAGE/usr/share/mica/meta/GENERATED"
 fi
 
 mkdir -p "$COMPOSE_STAGE"
@@ -460,7 +460,7 @@ echo "compose: $resolved_n package(s) resolved for $MOS_BOARD/$MOS_PROFILE, decl
 sed 's/^/  /' "$COMPOSE_STAGE/packages.txt"
 
 # The builder is NAMED rather than inherited -- the same BUILDX_BUILDER
-# register as pkgs/mos-deploy/build.sh and pkgs/podman/build.sh, and the same
+# register as pkgs/mica-deploy/build.sh and pkgs/podman/build.sh, and the same
 # selection. BUILDX_BUILDER wins, because a caller who names a builder has made
 # a decision. With nothing named, `default` is the docker driver on every
 # docker installation, and it reaches linux/${MOS_ARCH} exactly when the host
@@ -724,7 +724,7 @@ fi
 echo "installed size: ${total_mb} MB (budget ${SIZE_BUDGET_MB} MB)"
 
 # THE BUILD COMMIT, beside the image it describes, and written only now that
-# the image exists. The mosd and mos-apid binaries in this root came out of the
+# the image exists. The micad and mica-apid binaries in this root came out of the
 # pool, so the record comes out of the ARCHIVE that carried them: pack.sh
 # writes the commit a producer built from into every archive's
 # Mos-Source-Commit control field, and the same field is there whether the
@@ -749,36 +749,36 @@ echo "installed size: ${total_mb} MB (budget ${SIZE_BUDGET_MB} MB)"
 # package. Each of those ships an archive every check upstream accepts, and
 # turns the version rows red only here.
 #
-# The binaries report `<commit12>[-dirty]` (pkgs/mosd/hack/build-deb.sh's
+# The binaries report `<commit12>[-dirty]` (pkgs/micad/hack/build-deb.sh's
 # MOS_BUILD_COMMIT); the archive carries the full commit and marks a dirty
 # tree in its version stamp, so the record is spelled the way the binary
 # spells it.
-if declined mosd; then
-    echo "mosd: declined, so this root carries no mosd or mos-apid and no build commit is recorded for it"
+if declined micad; then
+    echo "micad: declined, so this root carries no micad or mica-apid and no build commit is recorded for it"
 else
     # Out of the lineage record rather than out of the archive again: the
     # record was read from the archive's control file by source-lineage.py
     # before the composition, and is what the release gate re-verifies.
-    read -r mosd_archive mosd_version mosd_repo mosd_commit < <(python3 - "$LINEAGE_STAGE" <<'PY_MOSD'
+    read -r micad_archive micad_version micad_repo micad_commit < <(python3 - "$LINEAGE_STAGE" <<'PY_MOSD'
 import json, sys
-rows = [r for r in json.load(open(sys.argv[1]))['pool']['packages'] if r['package'] == 'mosd']
+rows = [r for r in json.load(open(sys.argv[1]))['pool']['packages'] if r['package'] == 'micad']
 if len(rows) == 1:
     r = rows[0]
     print(r['archive'], r['version'], r['source_repo'], r['source_commit'])
 PY_MOSD
 )
-    [ -n "${mosd_archive:-}" ] && [ -f "$POOL_DIR/$mosd_archive" ] ||
-        { echo "error: the lineage record names no mosd archive in $POOL_DIR, yet mosd was resolved and installed" >&2; exit 1; }
-    mosd_dirty=""
-    case "$mosd_version" in *.dirty-*) mosd_dirty="-dirty" ;; esac
+    [ -n "${micad_archive:-}" ] && [ -f "$POOL_DIR/$micad_archive" ] ||
+        { echo "error: the lineage record names no micad archive in $POOL_DIR, yet micad was resolved and installed" >&2; exit 1; }
+    micad_dirty=""
+    case "$micad_version" in *.dirty-*) micad_dirty="-dirty" ;; esac
     {
-        echo "# The commit the mosd and mos-apid in this root were built from, read by"
-        echo "# rootfs/build.sh out of the mosd archive's Mos-Source-Commit control field."
-        printf 'archive\t%s\n' "$mosd_archive"
-        printf 'source-repo\t%s\n' "$mosd_repo"
-        printf 'commit\t%s\n' "${mosd_commit:0:12}${mosd_dirty}"
-    } >"$OUT_DIR/mosd-build.txt"
-    echo "mosd: build commit ${mosd_commit:0:12}${mosd_dirty} recorded from $mosd_archive ($mosd_repo)"
+        echo "# The commit the micad and mica-apid in this root were built from, read by"
+        echo "# rootfs/build.sh out of the micad archive's Mos-Source-Commit control field."
+        printf 'archive\t%s\n' "$micad_archive"
+        printf 'source-repo\t%s\n' "$micad_repo"
+        printf 'commit\t%s\n' "${micad_commit:0:12}${micad_dirty}"
+    } >"$OUT_DIR/micad-build.txt"
+    echo "micad: build commit ${micad_commit:0:12}${micad_dirty} recorded from $micad_archive ($micad_repo)"
 fi
 
 # The smoke run, and it is part of the build. A wrong-arch, missing-soname or

@@ -8,7 +8,7 @@ cert=$(realpath "${3:?content certificate required}")
 key=$(realpath "${4:?content key required}")
 init=$(realpath "${5:?production init required}")
 board=${6:?board required}
-shutdown=${7:?compiled mos-shutdown required}
+shutdown=${7:?compiled mica-shutdown required}
 case "$board" in x64) compiler=gcc;; virt-arm64) compiler=aarch64-linux-gnu-gcc;; *) exit 1;; esac
 work=$(mktemp -d "$PWD/_out/reset-runtime.XXXXXX")
 printf 'Evidence: %s\n' "$work"
@@ -30,23 +30,23 @@ for tier in configuration application-data full-factory; do
         -v "$out:/w" -v "$root:/root.img:ro" ai-agent/mos-boot-tools-amd64 \
         unsquashfs -no-progress -d /w/tree /root.img > "$out/extract.log" 2>&1
     # mos-build-side: host
-    install -m 0755 tests/file-ab-x64/reset-runtime.sh "$out/tree/usr/lib/mos/reset-runtime"
-    install -m 0644 "$work/reset-fault.so" "$out/tree/usr/lib/mos/reset-fault.so"
-    printf '%s\n' "$tier" > "$out/tree/usr/lib/mos/reset-test-tier"
-    mkdir -p "$out/tree/etc/systemd/system/mosd.service.d"
-    cat > "$out/tree/etc/systemd/system/mosd.service.d/90-reset-acceptance.conf" <<'UNIT'
+    install -m 0755 tests/file-ab-x64/reset-runtime.sh "$out/tree/usr/lib/mica/reset-runtime"
+    install -m 0644 "$work/reset-fault.so" "$out/tree/usr/lib/mica/reset-fault.so"
+    printf '%s\n' "$tier" > "$out/tree/usr/lib/mica/reset-test-tier"
+    mkdir -p "$out/tree/etc/systemd/system/micad.service.d"
+    cat > "$out/tree/etc/systemd/system/micad.service.d/90-reset-acceptance.conf" <<'UNIT'
 [Service]
-Environment=LD_PRELOAD=/usr/lib/mos/reset-fault.so
+Environment=LD_PRELOAD=/usr/lib/mica/reset-fault.so
 StandardOutput=journal+console
 StandardError=journal+console
 UNIT
     cat > "$out/tree/etc/systemd/system/reset-acceptance.service" <<'UNIT'
 [Unit]
 Description=Interrupted reset acceptance
-After=multi-user.target mos-load-extensions.service mos-health.service
+After=multi-user.target mica-load-extensions.service mica-health.service
 [Service]
 Type=exec
-ExecStart=/usr/lib/mos/reset-runtime
+ExecStart=/usr/lib/mica/reset-runtime
 RuntimeMaxSec=240
 [Install]
 WantedBy=multi-user.target

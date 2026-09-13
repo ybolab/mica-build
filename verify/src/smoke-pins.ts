@@ -124,16 +124,16 @@ export function readPin(file: string, key: string): Pin {
   return { recorded, expected: expectedFromRecorded(recorded), file, key }
 }
 
-/** `pkgs/mosd/<crate>/Cargo.toml` -- the four device binaries this repository writes. */
+/** `pkgs/micad/<crate>/Cargo.toml` -- the four device binaries this repository writes. */
 export function cratePath(crate: string): string {
-  return join(REPO_ROOT, 'pkgs', 'mosd', crate, 'Cargo.toml')
+  return join(REPO_ROOT, 'pkgs', 'micad', crate, 'Cargo.toml')
 }
 
 /**
  * The `version` of a Cargo manifest's `[package]` table, and only that one.
  *
  * Why this is not a one-line regex. `version = "..."` appears many times in a
- * manifest and only the first table's is the crate's own: `pkgs/mosd/apid/Cargo.toml`
+ * manifest and only the first table's is the crate's own: `pkgs/micad/apid/Cargo.toml`
  * has a `[dependencies]` section under it, and a workspace member inherits
  * `[workspace.package]` keys. A `/^version = "(.*)"/m` over the whole file finds
  * whichever came first in the byte order, which is the crate's today and a

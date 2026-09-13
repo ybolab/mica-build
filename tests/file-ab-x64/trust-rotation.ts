@@ -44,7 +44,7 @@ try {
   const nextRoot = join(output, 'root-next')
   mkdirSync(nextRoot)
   for (const name of ['rootfs.img', 'rootfs.roothash']) copyFileSync(join(oldRoot, name), join(nextRoot, name))
-  const result = spawnSync('bash', ['pkgs/mos-boot/verity-tool.sh', 'sign', join(nextRoot, 'rootfs.roothash'), newContent.key, newContent.certificate, join(nextRoot, 'rootfs.roothash.p7s')], { timeout: 120000, encoding: 'utf8' })
+  const result = spawnSync('bash', ['pkgs/mica-boot/verity-tool.sh', 'sign', join(nextRoot, 'rootfs.roothash'), newContent.key, newContent.certificate, join(nextRoot, 'rootfs.roothash.p7s')], { timeout: 120000, encoding: 'utf8' })
   if (result.status !== 0) throw new Error(`New content signing failed: ${result.stderr}`)
   const content = JSON.parse(readFileSync(join(oldRoot, 'rootfs.json'), 'utf8')).content
   content.signature = artifactFile(join(nextRoot, 'rootfs.roothash.p7s'))

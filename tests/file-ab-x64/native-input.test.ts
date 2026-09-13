@@ -28,7 +28,7 @@ function fixture(script: string, board: string, kind: string) {
   bytes.writeUInt16LE(board === 'x64' ? 62 : 183, 18); bytes.writeUInt32LE(1, 20); bytes.writeUInt16LE(64, 52)
   bytes.writeBigUInt64LE(64n, 32); bytes.writeUInt16LE(56, 54); bytes.writeUInt16LE(1, 56)
   bytes.writeUInt32LE(1, 64); bytes.writeBigUInt64LE(128n, 96)
-  const init = join(work, 'mos-init'), shutdown = join(work, 'mos-shutdown')
+  const init = join(work, 'mica-init'), shutdown = join(work, 'mica-shutdown')
   writeFileSync(init, bytes, { mode: 0o755 })
   bytes[120] = 7
   writeFileSync(shutdown, bytes, { mode: 0o755 })

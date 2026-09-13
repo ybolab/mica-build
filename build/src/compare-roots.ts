@@ -57,7 +57,7 @@ export interface Entry {
   readonly caps?: string
 }
 
-/** A whole root, keyed by path relative to it, with a leading slash: `/usr/bin/mosd`. */
+/** A whole root, keyed by path relative to it, with a leading slash: `/usr/bin/micad`. */
 export type Tree = ReadonlyMap<string, Entry>
 
 /**
@@ -510,8 +510,8 @@ export function sanctionMatches(s: Sanction, d: Difference): boolean {
  * line number where the two sides are not byte-equal, one `-` row for A and one
  * `+` row for B, in line order, with an absent line rendered as `(no line)`:
  *
- *   24 -mos-mqttd:x:970:970:...
- *   24 +mos-mqtt-broker:x:969:969:...
+ *   24 -mica-mqttd:x:970:970:...
+ *   24 +mica-mqtt-broker:x:969:969:...
  *
  * Why not `diff(1)` or a real alignment: an alignment algorithm is a second
  * thing that can change under this check -- two versions of diff can describe

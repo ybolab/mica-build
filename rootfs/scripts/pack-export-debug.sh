@@ -10,7 +10,7 @@
 # WHAT IS A CANDIDATE, and it is not "every ELF". RFCT-346 measured the root:
 # 1,022 user-space ELF files, of which THIRTEEN carry any `.debug*`, `.symtab`
 # or `.strtab` at all, and every one of the thirteen is built by this
-# repository -- podman, netavark, apid, mosd, crun, mos-mqttd, mos-mqtt-broker,
+# repository -- podman, netavark, apid, micad, crun, mica-mqttd, mica-mqtt-broker,
 # rauc-update, rauc-verify, quadlet, aardvark-dns, catatonit, conmon. Debian
 # ships its own binaries stripped, so the other 1,009 have nothing to take. The
 # scan is written over the whole tree anyway, because a candidate LIST would be

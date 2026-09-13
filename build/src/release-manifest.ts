@@ -144,7 +144,7 @@ function packages(text: string) {
     requireValue(!seen.has(identity), 'duplicate package'); seen.add(identity)
     return { name, version, architecture }
   })
-  requireValue(rows.some(r => r.name.startsWith('mos')), 'empty MOS package inventory')
+  requireValue(rows.some(r => r.name.startsWith('mica')), 'empty MOS package inventory')
   return rows.sort((a, b) => `${a.name}:${a.architecture}`.localeCompare(`${b.name}:${b.architecture}`))
 }
 type NativePackage = {
@@ -427,11 +427,11 @@ function shippedRuntime(path: string, inventory: string, arch: string, root: Ver
     }
     throw new Error('Invalid release: runtime resource symlink cycle')
   }
-  for (const [path, bytes] of [['/usr/share/mos/manifest.tsv', inventory], ['/usr/share/mos/meta/updates/manifest.json', meta]] as const) {
+  for (const [path, bytes] of [['/usr/share/mica/manifest.tsv', inventory], ['/usr/share/mica/meta/updates/manifest.json', meta]] as const) {
     const n = retainedFile(path)
     same(n.sha256, createHash('sha256').update(bytes).digest('hex'), path.includes('/meta/') ? 'public metadata' : 'inventory bytes')
   }
-  const markerPath = '/usr/share/mos/meta/GENERATED'
+  const markerPath = '/usr/share/mica/meta/GENERATED'
   if (marker) same(retainedFile(markerPath).sha256, createHash('sha256').update(marker).digest('hex'), 'public metadata marker')
   else requireValue(!files.has(markerPath), 'runtime unexpected public metadata marker')
   const licenses = shippedPackages.map(p => {

@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1@sha256:ecfaec9ed6d810b56388c508f4121597bfbba70d41a6dfeee4d8cad5f295fc32
 # check=skip=InvalidDefaultArgInFrom
-# The profile producer: the `mos-profile-dev` and `mos-profile-prod` packages.
+# The profile producer: the `mica-profile-dev` and `mica-profile-prod` packages.
 #
 #   bash build-env/deb/build.sh --producer profile --arch all
 #
@@ -32,7 +32,7 @@ ARG MOS_DEB_SOURCE_REPO
 ARG MOS_DEB_SOURCE_COMMIT
 
 # One loop over the two profile values, and not two spelled-out stanzas as
-# pkgs/mosd/deb/mosd/Dockerfile has. There the two packages hold different
+# pkgs/micad/deb/micad/Dockerfile has. There the two packages hold different
 # binaries and different units, so writing them out is writing out a real
 # difference; here the two payloads are ONE payload rendered twice, differing
 # in the bytes of profile.conf and in the doc directory that carries the
@@ -41,7 +41,7 @@ ARG MOS_DEB_SOURCE_COMMIT
 #
 # The path, the mode and the bytes are the ones rootfs/scripts/profile-write.sh
 # writes today from rootfs/stages/10-base.Dockerfile, down to the trailing
-# newline `printf 'MOS_PROFILE=%s\n'` produces: mosd's comparison is
+# newline `printf 'MOS_PROFILE=%s\n'` produces: micad's comparison is
 # case-sensitive and fails closed to `prod`, so a payload that differed from
 # the stage chain's by a byte would disable SSH on a dev image with every gate
 # green.
@@ -55,16 +55,16 @@ ARG MOS_DEB_SOURCE_COMMIT
 # else.
 RUN set -eu; \
     for p in dev prod; do \
-        install -d -m 0755 "/stage/${p}/usr/lib/mos"; \
-        printf 'MOS_PROFILE=%s\n' "${p}" >"/stage/${p}/usr/lib/mos/profile.conf"; \
-        chmod 0444 "/stage/${p}/usr/lib/mos/profile.conf"; \
+        install -d -m 0755 "/stage/${p}/usr/lib/mica"; \
+        printf 'MOS_PROFILE=%s\n' "${p}" >"/stage/${p}/usr/lib/mica/profile.conf"; \
+        chmod 0444 "/stage/${p}/usr/lib/mica/profile.conf"; \
         install -D -m 0644 /in/copyright \
-            "/stage/${p}/usr/share/doc/mos-profile-${p}/copyright"; \
-        pack.sh --root "/stage/${p}" --control "/in/control/mos-profile-${p}.control" \
+            "/stage/${p}/usr/share/doc/mica-profile-${p}/copyright"; \
+        pack.sh --root "/stage/${p}" --control "/in/control/mica-profile-${p}.control" \
             --version "${MOS_DEB_VERSION}" --arch "${MOS_DEB_ARCH}" --out /out; \
     done
 
-# The export stage, the shape pkgs/mosd/deb/mosd/Dockerfile ends in:
+# The export stage, the shape pkgs/micad/deb/micad/Dockerfile ends in:
 # `-o type=local` writes this stage's filesystem into _out/debs/<arch>/pool/
 # and nothing here installs into a root.
 FROM scratch AS out

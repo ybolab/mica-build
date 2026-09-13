@@ -8,7 +8,7 @@ set -eu
 # /var/lib/bluetooth only on a board that HAS Bluetooth: the pairing
 # database is precious state there and does not exist at all on a board
 # with no radio, where demanding its mount unit would fail a correct image.
-precious="/var/lib/mos"
+precious="/var/lib/mica"
 case " ${BOARD_RADIOS} " in *" bluetooth "*) precious="${precious} /var/lib/bluetooth" ;; esac
 for w in ${precious}; do
     unit="$(echo "${w#/}" | tr / -).mount"
@@ -36,8 +36,8 @@ grep -qx 'What=/mnt/data/var' /rootfs/etc/systemd/system/var.mount
 grep -qx 'Where=/var' /rootfs/etc/systemd/system/var.mount
 grep -qx 'Options=bind,private,nosuid,nodev' /rootfs/etc/systemd/system/var.mount
 test -L /rootfs/etc/systemd/system/local-fs.target.wants/var.mount
-test -x /rootfs/usr/lib/mos/mos-seed-var
-test -f /rootfs/etc/systemd/system/mos-seed-var.service
+test -x /rootfs/usr/lib/mica/mica-seed-var
+test -f /rootfs/etc/systemd/system/mica-seed-var.service
 for parent in var-lib var-cache var-log var-tmp var-lib-systemd-timesync \
               var-lib-systemd-network var-lib-systemd-timers var-lib-systemd-linger; do
     test ! -e "/rootfs/etc/systemd/system/$parent.mount" || {

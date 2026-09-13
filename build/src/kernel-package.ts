@@ -155,9 +155,9 @@ export async function packKernel(inputs: KernelInputs, tb: Toolbox): Promise<Ker
       writeFileSync(join(input, 'fit-addresses'), `${fit.addresses.join(' ')}\n`)
     }
     copyFileSync(join(kernelDirectory, 'kernel.release'), join(input, 'kernel.release'))
-    copyFileSync(init, join(input, 'mos-init'))
-    copyFileSync(shutdown, join(input, 'mos-shutdown'))
-    if (canonicalJson(kernelExecutables(join(input, 'mos-init'), join(input, 'mos-shutdown'), arch)) !== canonicalJson(executables)) throw new Error('Native lifecycle inputs changed during packaging')
+    copyFileSync(init, join(input, 'mica-init'))
+    copyFileSync(shutdown, join(input, 'mica-shutdown'))
+    if (canonicalJson(kernelExecutables(join(input, 'mica-init'), join(input, 'mica-shutdown'), arch)) !== canonicalJson(executables)) throw new Error('Native lifecycle inputs changed during packaging')
     packageBoot(fit ? 'fit' : 'kernel', input, boot, bootSigning, efiArch)
     const component: KernelComponent = { schema: 'mos/kernel/v1', id: '', board, arch,
       buildId, release, boot: { format: fit ? 'fit' : 'uki', artifact: artifactFile(join(boot, bootFile)) }, support }

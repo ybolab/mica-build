@@ -49,7 +49,7 @@ new_case() {
     cp "$CONF_SRC" "$CASE/gadget.conf"
 }
 
-# Run it the way mos-gadget.service does: cwd `/`, which is what makes a
+# Run it the way mica-gadget.service does: cwd `/`, which is what makes a
 # relative configfs target resolve somewhere else entirely.
 run_gadget() {
     ( cd / && MOS_GADGET_CONF=$CASE/gadget.conf \
@@ -77,7 +77,7 @@ esac
 # stored string the way get_target() will, from a cwd that is not the gadget
 # directory, and require it to land on the function.
 ( cd / && [ -d "$target" ] ) \
-    || fail "function symlink target '$target' does not resolve to a directory from cwd=/, which is the cwd mos-gadget.service runs with"
+    || fail "function symlink target '$target' does not resolve to a directory from cwd=/, which is the cwd mica-gadget.service runs with"
 [ "$(cd / && cd "$target" && pwd -P)" = "$(cd "$G/functions/acm.usb0" && pwd -P)" ] \
     || fail "function symlink target '$target' resolves somewhere other than $G/functions/acm.usb0"
 

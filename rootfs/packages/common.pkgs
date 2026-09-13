@@ -1,10 +1,10 @@
 # The packages every mos image carries, whatever board it is built for and
 # whatever the build declines. Nothing here is selectable: a root with no
-# mos-system has no state mounts, no seed and reconcile tools and no operator
-# account, and a root with no mos-ca-trust cannot verify a TLS peer.
-mos-system
-mos-deploy
-mos-ca-trust
+# mica-system has no state mounts, no seed and reconcile tools and no operator
+# account, and a root with no mica-ca-trust cannot verify a TLS peer.
+mica-system
+mica-deploy
+mica-ca-trust
 
 # The emergency binary, and it is in `common` rather than a feature set on
 # purpose. Every other manifest family is declinable -- a feature can be left
@@ -13,4 +13,4 @@ mos-ca-trust
 # the image in their hands is the build that declined it. It costs one 830 KB
 # file, it enables nothing, nothing depends on it, and it changes no PATH; the
 # whole of it is /usr/bin/busybox, reached by naming an applet.
-mos-busybox
+mica-busybox

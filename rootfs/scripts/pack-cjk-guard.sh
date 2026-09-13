@@ -5,19 +5,19 @@
 
 set -e
     mos_paths=""
-    for f in /rootfs/usr/lib/mos /rootfs/etc/mos \
+    for f in /rootfs/usr/lib/mica /rootfs/etc/mica \
              /rootfs/usr/lib/udev/rules.d/60-mos-*.rules \
              /rootfs/usr/lib/systemd/system/mos-*.service \
-             /rootfs/usr/lib/systemd/system/mosd.service \
+             /rootfs/usr/lib/systemd/system/micad.service \
              /rootfs/usr/lib/systemd/system/apid.service \
-             /rootfs/usr/share/dbus-1/system.d/com.mos.mosd.conf \
+             /rootfs/usr/share/dbus-1/system.d/com.mica.micad.conf \
              /rootfs/etc/systemd/network/*.network \
              /rootfs/etc/systemd/system/mos-*.service \
              /rootfs/etc/systemd/system/etc-ssh.mount \
              /rootfs/etc/systemd/system/etc-hostname.mount \
              /rootfs/etc/systemd/system/etc-wpa_supplicant.mount \
              /rootfs/etc/systemd/system/etc-hostapd.mount \
-             /rootfs/etc/systemd/system/var-lib-mos.mount \
+             /rootfs/etc/systemd/system/var-lib-mica.mount \
              /rootfs/etc/repart.d /rootfs/etc/fstab \
              /rootfs/etc/fw_env.config; do
         if [ -e "$f" ]; then mos_paths="$mos_paths $f"; fi

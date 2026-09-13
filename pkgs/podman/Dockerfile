@@ -6,7 +6,7 @@
 #
 # Same shape as boards/cx3576/bsp/kernel/Dockerfile: builder stages, then a final
 # scratch stage that `-o` exports. Nothing here installs into a rootfs;
-# rootfs/build.sh stages the output as it stages modules.tar and mosd.
+# rootfs/build.sh stages the output as it stages modules.tar and micad.
 
 # The engine is built here for version control, not size: trixie ships podman
 # 5.4.2, crun 1.21 and netavark 1.14, and building makes the version a

@@ -4,7 +4,7 @@
 # Called from rootfs/compose/90-pack.Dockerfile (pack stage), where the reasoning lives.
 
 set -eu
-[ -d /rootfs/usr/share/factory/var ] || { echo "error: /usr/share/factory/var is not in the packed root; the EPHEMERAL filesystem would be assembled empty and /var would have no dpkg database, no spool and no mosd state directory" >&2; exit 1; }
+[ -d /rootfs/usr/share/factory/var ] || { echo "error: /usr/share/factory/var is not in the packed root; the EPHEMERAL filesystem would be assembled empty and /var would have no dpkg database, no spool and no micad state directory" >&2; exit 1; }
 mkdir -p /out/factory-var
 cp -a /rootfs/usr/share/factory/var/. /out/factory-var/
 n="$(find /out/factory-var | wc -l)"
