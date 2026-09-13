@@ -1,6 +1,7 @@
 """Exercise actual ELF files, filesystem objects and the selector CLI offline."""
 import json
 import os
+import pathlib
 from pathlib import Path
 import shutil
 import struct
@@ -8,6 +9,23 @@ import subprocess
 import sys
 import tempfile
 import unittest
+
+# The shipped policy files the fixtures are seeded with, read out of the
+# archives the lock imports (mica-system and, for the Quadlet mount unit,
+# mica-podman) at their pins: tools/deb-member.py reads a payload member
+# without dpkg. `make os-rootfs-runtime-test` fetches the amd64 pool first;
+# MOS_POOL_DIR overrides its location.
+_REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
+_POOL = pathlib.Path(os.environ.get('MOS_POOL_DIR') or (_REPO_ROOT / '_out/debs'))
+
+
+def shipped(path: str) -> bytes:
+    for pattern in ('mica-system_*_all.deb', 'mica-podman_*_amd64.deb'):
+        for archive in sorted((_POOL / 'amd64/pool').glob(pattern)):
+            r = subprocess.run([sys.executable, str(_REPO_ROOT / 'tools/deb-member.py'), str(archive), path.lstrip('/')], capture_output=True)
+            if r.returncode == 0:
+                return r.stdout
+    raise FileNotFoundError(f'{path} is in none of the imported archives under {_POOL}/amd64/pool; fetch them with `make os-pool`')
 
 SELECTOR = Path(__file__).resolve().parents[2] / 'rootfs/runtime/select.py'
 CAP = struct.pack('<IIIII', 0x02000001, 0x2000, 0, 0, 0).hex()
@@ -294,7 +312,7 @@ class SelectionTest(unittest.TestCase):
         (self.root / 'etc/systemd/system/systemd-tmpfiles-setup.service').unlink()
         self.write('/usr/bin/systemd-tmpfiles', elf(needed=['libfirst.so'], interp='/lib/loader.so'), 0o755)
         self.write('/usr/lib/systemd/system/systemd-tmpfiles-setup.service', b'[Service]\nExecStart=systemd-tmpfiles --create --remove --boot\n')
-        self.write('/etc/tmpfiles.d/mica-var.conf', (repo / 'rootfs/overlay/etc/tmpfiles.d/mica-var.conf').read_bytes())
+        self.write('/etc/tmpfiles.d/mica-var.conf', shipped('/etc/tmpfiles.d/mica-var.conf'))
         declared = self.rules['consumers']['mica-system']['runtime_links']
         declared[:] = [link for link in declared if link['path'] not in paths]
         declared.extend(links)
@@ -989,7 +1007,7 @@ class SelectionTest(unittest.TestCase):
             '/etc/tmpfiles.d/mica-var.conf',
         ]
         for path in anchors:
-            self.write(path, (repo / 'rootfs/overlay' / path[1:]).read_bytes())
+            self.write(path, shipped(path))
         self.write('/usr/libexec/podman/quadlet', elf(), 0o755)
         anchors.append('/usr/libexec/podman/quadlet')
         self.rules['consumers']['mica-system']['roots'].append({'paths': anchors, 'kind': 'resource', 'reason': 'current residual policy resources'})

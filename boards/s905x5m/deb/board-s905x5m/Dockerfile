@@ -3,12 +3,12 @@
 ARG MOS_BUILD_DEB
 FROM ${MOS_BUILD_DEB} AS pack
 COPY --from=packer pack.sh /usr/local/bin/pack.sh
-COPY --from=family copyright /in/copyright
+COPY --from=common copyright /in/copyright
 COPY --from=board board.env /src/boards/s905x5m/board.env
 COPY --from=board hwinit/ /in/hwinit/
 COPY --from=board bsp/init/ /in/init/
 COPY --from=board components/bm201-front-panel/dist/ /in/front-panel/
-COPY --from=overlay etc/fstab.in /src/rootfs/overlay/etc/fstab.in
+COPY --from=common fstab.in /src/boards/common/fstab.in
 COPY render.sh stage.sh /in/
 COPY control/ /in/control/
 ARG MOS_DEB_VERSION

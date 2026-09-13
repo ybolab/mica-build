@@ -2,6 +2,7 @@
 import hashlib
 import json
 import os
+import pathlib
 from pathlib import Path
 import shutil
 import stat
@@ -12,6 +13,23 @@ sys.dont_write_bytecode = True
 import unittest
 
 from selection_test import SelectionTest, elf, loader_cache
+
+# The shipped policy files the fixtures are seeded with, read out of the
+# archives the lock imports (mica-system and, for the Quadlet mount unit,
+# mica-podman) at their pins: tools/deb-member.py reads a payload member
+# without dpkg. `make os-rootfs-runtime-test` fetches the amd64 pool first;
+# MOS_POOL_DIR overrides its location.
+_REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
+_POOL = pathlib.Path(os.environ.get('MOS_POOL_DIR') or (_REPO_ROOT / '_out/debs'))
+
+
+def shipped(path: str) -> bytes:
+    for pattern in ('mica-system_*_all.deb', 'mica-podman_*_amd64.deb'):
+        for archive in sorted((_POOL / 'amd64/pool').glob(pattern)):
+            r = subprocess.run([sys.executable, str(_REPO_ROOT / 'tools/deb-member.py'), str(archive), path.lstrip('/')], capture_output=True)
+            if r.returncode == 0:
+                return r.stdout
+    raise FileNotFoundError(f'{path} is in none of the imported archives under {_POOL}/amd64/pool; fetch them with `make os-pool`')
 
 REPO = Path(__file__).resolve().parents[2]
 COMPOSE = REPO / 'rootfs/runtime/compose.py'
@@ -784,7 +802,7 @@ class CompositionTest(unittest.TestCase):
                    '/etc/ssh/sshd_config.d/05-mos-authorized-keys.conf',
                    '/etc/tmpfiles.d/mica-var.conf']
         for path in anchors:
-            self.f.write(path, (REPO / 'rootfs/overlay' / path[1:]).read_bytes())
+            self.f.write(path, shipped(path))
         self.f.rules['consumers']['mica-system']['roots'].append({'paths': anchors, 'kind': 'resource', 'reason': 'current policy resources'})
         self.f.rules_path.write_text(json.dumps(self.f.rules))
         self.f.capture_ownership()
@@ -793,7 +811,7 @@ class CompositionTest(unittest.TestCase):
         r = self.compose()
         self.assertEqual(r.returncode, 0, r.stderr)
         for path in anchors:
-            self.assertEqual(self.f.out.joinpath(path[1:]).read_bytes(), (REPO / 'rootfs/overlay' / path[1:]).read_bytes())
+            self.assertEqual(self.f.out.joinpath(path[1:]).read_bytes(), shipped(path))
 
     def readline_configuration(self):
         policy = json.loads((REPO / 'rootfs/runtime/consumers.json').read_text())

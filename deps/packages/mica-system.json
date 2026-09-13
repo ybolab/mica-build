@@ -1,0 +1,19 @@
+{
+  "name": "mica-system",
+  "repository": "mica-system",
+  "commit": "4cd6a0064d6820f0b1f1caba2bb9b203daf0fbed",
+  "targets": {
+    "amd64": {
+      "version": "0.1.0+git4cd6a0064d68-1",
+      "architecture": "all",
+      "sha256": "164b3c225feedbd3946703318cbf7972f3a5c1729b13fc8342a9f4957623bcbb",
+      "asset": "mica-system_0.1.0.git4cd6a0064d68-1_all.deb"
+    },
+    "arm64": {
+      "version": "0.1.0+git4cd6a0064d68-1",
+      "architecture": "all",
+      "sha256": "164b3c225feedbd3946703318cbf7972f3a5c1729b13fc8342a9f4957623bcbb",
+      "asset": "mica-system_0.1.0.git4cd6a0064d68-1_all.deb"
+    }
+  }
+}

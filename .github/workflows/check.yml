@@ -112,23 +112,12 @@ jobs:
           $SUDO apt-get install -y --no-install-recommends bash make ca-certificates git binutils file
 
 
-      - name: Native deployment health and boot failure handling
-        run: make os-health-test
 
       - name: Debian runtime cache integrity and offline reuse
         run: make os-debian-test
 
-      - name: Package build preflight and DATA directory initialization
-        run: |
-          set -euo pipefail
-          make os-deb-preflight-test
-          SUDO=""
-          [ "$(id -u)" -eq 0 ] || SUDO="sudo"
-          $SUDO bash tests/mica-data-layout-test.sh
-          $SUDO bash tests/mica-seed-var-test.sh
-
-      - name: The transient /etc/shadow reconciler
-        run: make os-shadow-test
+      - name: Package build preflight
+        run: make os-deb-preflight-test
 
       # Here for this job's own reason: it is sh and a temp directory, and it
       # needs neither bun nor docker nor a board. It is the only gate that

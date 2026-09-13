@@ -8,7 +8,7 @@ COPY --from=board deb/board-virt-arm64/copyright deb/board-virt-arm64/render.sh 
 COPY --from=board deb/board-virt-arm64/control/ /in/control/
 COPY --from=board board.env /src/boards/virt-arm64/board.env
 COPY --from=board overlay/etc/systemd/system/boot.mount.in /src/boards/virt-arm64/overlay/etc/systemd/system/boot.mount.in
-COPY --from=overlay etc/fstab.in /src/rootfs/overlay/etc/fstab.in
+COPY --from=common fstab.in /src/boards/common/fstab.in
 ARG MOS_DEB_VERSION
 ARG MOS_DEB_ARCH
 ARG SOURCE_DATE_EPOCH

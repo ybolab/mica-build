@@ -521,7 +521,7 @@ paths. Each of the eleven is named below with the producer that has to own it.
   openssh-server's postinst leaves behind, and asserts it is gone. `policy-rc.d`
   stops a maintainer script STARTING a service during assembly and does nothing
   about its `[Install]` symlink. The owner is
-  `rootfs/packages-src/system` (`mica-system`), whose own Dockerfile already
+  `mica-system:system` (`mica-system`), whose own Dockerfile already
   records the decision -- "There is deliberately NO
   multi-user.target.wants/ssh.service" -- as an ABSENCE, which cannot survive
   another package's postinst. It needs to be expressed actively.
@@ -537,7 +537,7 @@ paths. Each of the eleven is named below with the producer that has to own it.
   `/usr/lib/systemd/system/...` -- which is the `symlink` record. Losing
   `systemd-networkd-wait-online.service` is the one with behaviour behind it:
   `network-online.target` then completes without waiting for a network. Owner:
-  `rootfs/packages-src/system`.
+  `mica-system:system`.
 - **`/run/crun`, class `removed`.** Build residue: the chain EXERCISES the
   engine during assembly (`rootfs/scripts/podman-exercise.sh` runs `crun`),
   and the composer does not. The composed root is the correct one here. Owner of

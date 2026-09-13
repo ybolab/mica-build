@@ -1,0 +1,19 @@
+{
+  "name": "mica-bluetooth",
+  "repository": "mica-system",
+  "commit": "4cd6a0064d6820f0b1f1caba2bb9b203daf0fbed",
+  "targets": {
+    "amd64": {
+      "version": "0.1.0+git4cd6a0064d68-1",
+      "architecture": "all",
+      "sha256": "ad7d1428ca4f2a66d1832bcec96e2fa87ae3bb9ad766dfbea184e1ae6b666854",
+      "asset": "mica-bluetooth_0.1.0.git4cd6a0064d68-1_all.deb"
+    },
+    "arm64": {
+      "version": "0.1.0+git4cd6a0064d68-1",
+      "architecture": "all",
+      "sha256": "ad7d1428ca4f2a66d1832bcec96e2fa87ae3bb9ad766dfbea184e1ae6b666854",
+      "asset": "mica-bluetooth_0.1.0.git4cd6a0064d68-1_all.deb"
+    }
+  }
+}

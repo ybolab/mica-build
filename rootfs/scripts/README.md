@@ -13,10 +13,11 @@ Two kinds of caller, and every file below names its own in its header:
 - **the finalizer**, `../compose/90-pack.Dockerfile` — the `pack-*` files, the
   package-manager capture and purge, and the shadow-date pin. These close and
   pack the assembled root and are the bulk of this directory.
-- **a package producer** — `ca-certificates-generate.sh`, run by
-  `../packages-src/ca-trust`, and `rauc-assert-no-tls-stack.sh`, run by
+- **a package producer** — `rauc-assert-no-tls-stack.sh`, run by
   `pkgs/rauc/deb/rauc`. A producer runs the repository's own file rather
-  than restating it, so the rule and the payload cannot come apart.
+  than restating it, so the rule and the payload cannot come apart. (The CA
+  generation script moved to `ybolab/mica-system` with the producer that
+  runs it.)
 
 ## Why a bind mount and not a `COPY`
 
