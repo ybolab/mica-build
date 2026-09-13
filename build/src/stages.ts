@@ -25,7 +25,7 @@ import { REPO_ROOT } from './paths.ts'
 export const STAGES_DIR: string = join(REPO_ROOT, 'rootfs', 'compose')
 
 /** The argument every stage but the first declares, and the driver supplies. */
-export const PREV_ARG = 'MOS_STAGE_PREV'
+export const PREV_ARG = 'MICA_STAGE_PREV'
 
 /** What a stage file is, once read. */
 export interface StageFile {
@@ -44,9 +44,9 @@ export interface StageFile {
    * survivable. unsuppliedArgs says which and why.
    */
   readonly emptyDefaultArgs: readonly string[]
-  /** Does it declare `ARG MOS_STAGE_PREV`? */
+  /** Does it declare `ARG MICA_STAGE_PREV`? */
   readonly declaresPrev: boolean
-  /** Does it open a stage `FROM ${MOS_STAGE_PREV}`? */
+  /** Does it open a stage `FROM ${MICA_STAGE_PREV}`? */
   readonly fromsPrev: boolean
   /** The named build targets it defines: `FROM x AS certs` -> `certs`. */
   readonly targets: readonly string[]
@@ -82,8 +82,8 @@ const ARG_LINE = /^\s*ARG\s+([A-Za-z_][A-Za-z0-9_]*)/i
 // still yields the name: an ARG that fell out of ARG_LINE would fall out of
 // declaredArgs too, and then be refused as a stray on the way in.
 const ARG_DEFAULT = /^\s*ARG\s+[A-Za-z_][A-Za-z0-9_]*=(.*)$/i
-// `FROM ${MOS_STAGE_PREV}`, optionally with `AS closed`. The brace form
-// only: `FROM $MOS_STAGE_PREV` also expands, but one spelling in one place is
+// `FROM ${MICA_STAGE_PREV}`, optionally with `AS closed`. The brace form
+// only: `FROM $MICA_STAGE_PREV` also expands, but one spelling in one place is
 // the difference between a check and a guess about which spellings exist.
 const FROM_PREV = new RegExp(`^\\s*FROM\\s+(?:--\\S+\\s+)*\\$\\{${PREV_ARG}\\}(?:\\s|$)`, 'i')
 // `FROM x AS y`, with the flags where docker actually puts them -- BEFORE the
@@ -275,7 +275,7 @@ export function selectStages(
  *
  * Each of these has a failure it exists for, and none of them is a style rule:
  * a duplicate number makes the build order depend on readdir, a missing
- * MOS_STAGE_PREV makes a stage build against whatever FROM was typed instead of
+ * MICA_STAGE_PREV makes a stage build against whatever FROM was typed instead of
  * against its predecessor, and a first stage that declares one would be a stage
  * expecting a predecessor it can never have.
  */
@@ -539,7 +539,7 @@ export function planChain(stages: readonly StageFile[], opts: ChainOptions): Sta
 
 /**
  * Where one stage's OCI layout is written in layout mode: under `layoutDir`,
- * named for the tag the next stage's `FROM ${MOS_STAGE_PREV}` will say, with
+ * named for the tag the next stage's `FROM ${MICA_STAGE_PREV}` will say, with
  * the two characters a directory name cannot carry replaced -- the same
  * spelling build-env/from.sh --contexts= uses for the builder images.
  */

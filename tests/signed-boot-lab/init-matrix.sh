@@ -1,5 +1,5 @@
 #!/bin/sh
-# mos-build-side: container -- PID 1 of the proof initramfs; every command below runs inside the QEMU guest the lab boots.
+# mica-build-side: container -- PID 1 of the proof initramfs; every command below runs inside the QEMU guest the lab boots.
 # PID 1 of the verity proof initramfs. Prints one RESULT line per case and
 # powers the machine off. Never exits: an exit from PID 1 is a kernel panic,
 # which would look like a failed proof rather than a finished one.

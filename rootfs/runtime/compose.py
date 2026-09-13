@@ -33,7 +33,7 @@ def snapshot(root: Path) -> dict:
     rows = {}
     groups = {}
     for path in selector.tree_paths(root):
-        if path == '/mos-build-inputs' or path.startswith('/mos-build-inputs/'):
+        if path == '/mica-build-inputs' or path.startswith('/mica-build-inputs/'):
             continue
         at = root / path.lstrip('/')
         st = at.lstat()
@@ -278,7 +278,7 @@ def compose(args: argparse.Namespace) -> None:
             require(path in {'/usr/share/mica/meta/updates', '/usr/share/mica/meta/updates/manifest.json', '/usr/share/mica/meta/GENERATED'}
                     and path in files, f'undeclared public metadata: {path}')
     for path in files:
-        forbidden = ('/mos-build-inputs', '/mos-compose', '/.debian-extra', '/debootstrap',
+        forbidden = ('/mica-build-inputs', '/mos-compose', '/.debian-extra', '/debootstrap',
                      '/var/lib/dpkg', '/var/lib/apt', '/var/cache/apt', '/var/cache/debconf',
                      '/etc/apt', '/etc/dpkg', '/usr/lib/apt', '/usr/lib/dpkg', '/usr/lib/debug')
         require(not any(path == prefix or path.startswith(prefix + '/') for prefix in forbidden),

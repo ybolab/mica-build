@@ -18,31 +18,31 @@
 # one output, nothing else can run between them, and a stage boundary that
 # nothing can ever be inserted at only costs a reader a hop.
 
-# The link back up the chain. MOS_STAGE_PREV is the local image tag the
+# The link back up the chain. MICA_STAGE_PREV is the local image tag the
 # previous stage was written to; the driver passes it and refuses to build a
 # stage that does not declare it. There is no default, so this file cannot be
 # built standalone against whatever `FROM` happened to be typed.
 
-# MOS_IMAGE_DEBIAN_BOOKWORM is this file's own base, injected from
+# MICA_IMAGE_DEBIAN_BOOKWORM is this file's own base, injected from
 # build-env/images.env by build-env/from.sh exactly as stages/10-base's
 # trixie key is, and declared here because the `pack` FROM below is the only
 # line in the chain that consumes it. It is pinned because the byte layout of
 # the packed image depends on which squashfs-tools and cryptsetup pack it, so
 # the pack tools are a decision rather than a build date. No default, for the
 # reason 10-base gives.
-ARG MOS_STAGE_PREV
-ARG MOS_IMAGE_DEBIAN_BOOKWORM
+ARG MICA_STAGE_PREV
+ARG MICA_IMAGE_DEBIAN_BOOKWORM
 
 # Close the device root: pin the account dates, inventory, log capture, purge,
 # report.
-FROM --platform=$BUILDPLATFORM ${MOS_IMAGE_DEBIAN_BOOKWORM} AS pack-tools
+FROM --platform=$BUILDPLATFORM ${MICA_IMAGE_DEBIAN_BOOKWORM} AS pack-tools
 RUN apt-get update && apt-get install -y --no-install-recommends \
         squashfs-tools cryptsetup-bin libcap2-bin python3 \
         binutils-x86-64-linux-gnu binutils-aarch64-linux-gnu \
     && rm -rf /var/lib/apt/lists/*
 RUN dpkg-query -W -f='${Package}\t${Version}\t${Architecture}\n' | LC_ALL=C sort > /pack-tools.tsv
 
-FROM ${MOS_STAGE_PREV} AS inventoried
+FROM ${MICA_STAGE_PREV} AS inventoried
 
 # The shadow last-change day, pinned for every account.
 
@@ -67,7 +67,7 @@ FROM ${MOS_STAGE_PREV} AS inventoried
 # ships (90-pack's purge notes list it among the setgid binaries that stay).
 RUN --mount=type=bind,source=rootfs/scripts,target=/mos-scripts \
     sh /mos-scripts/account-pin-shadow-dates.sh && \
-    sha256sum /mos-scripts/account-pin-shadow-dates.sh >> /mos-build-inputs/transform-sources.sha256
+    sha256sum /mos-scripts/account-pin-shadow-dates.sh >> /mica-build-inputs/transform-sources.sha256
 
 # Package inventory. Split from the size measurement below because the package
 # manager is removed in between: dpkg-query needs /var/lib/dpkg, and TOTAL_MB
@@ -86,7 +86,7 @@ RUN install -d -m 0755 /usr/share/mica && \
     { printf '#package\tversion\tarchitecture\n'; \
     dpkg-query -W -f='${Package}\t${Version}\t${Architecture}\n' | LC_ALL=C sort; } \
     >/usr/share/mica/manifest.tsv && \
-    cp /usr/share/mica/manifest.tsv /mos-build-inputs/manifest.tsv
+    cp /usr/share/mica/manifest.tsv /mica-build-inputs/manifest.tsv
 
 # Read the configured target without running it or changing its metadata.
 FROM pack-tools AS captured
@@ -97,7 +97,7 @@ RUN --network=none \
     python3 /mos-runtime/compose.py snapshot --root /installed --output /capture/configured.json
 
 FROM inventoried AS closed
-COPY --from=captured /capture/configured.json /mos-build-inputs/configured.json
+COPY --from=captured /capture/configured.json /mica-build-inputs/configured.json
 
 
 
@@ -157,7 +157,7 @@ RUN --mount=type=bind,source=rootfs/scripts,target=/mos-scripts \
 # read-only /usr, on every boot. The unit and its enablement go with the data.
 RUN --mount=type=bind,source=rootfs/scripts,target=/mos-scripts \
     sh /mos-scripts/hwdb-remove.sh && \
-    sha256sum /mos-scripts/hwdb-remove.sh >> /mos-build-inputs/transform-sources.sha256
+    sha256sum /mos-scripts/hwdb-remove.sh >> /mica-build-inputs/transform-sources.sha256
 
 # Reconcile the enablement links with the preset policy this root SHIPS
 # (PLAN-088). Here, in `closed`, and above the purge, for the same reasons the
@@ -180,7 +180,7 @@ RUN --mount=type=bind,source=rootfs/scripts,target=/mos-scripts \
 # removed.
 RUN --mount=type=bind,source=rootfs/scripts,target=/mos-scripts \
     sh /mos-scripts/preset-enforce.sh && \
-    sha256sum /mos-scripts/preset-enforce.sh >> /mos-build-inputs/transform-sources.sha256
+    sha256sum /mos-scripts/preset-enforce.sh >> /mica-build-inputs/transform-sources.sha256
 
 # Remove package management from the packed root. Nothing can install a
 # package on this device: the root is a read-only dm-verity squashfs and
@@ -237,7 +237,7 @@ RUN --mount=type=bind,source=rootfs/scripts,target=/mos-scripts \
 # capability, not packaging residue.
 RUN --mount=type=bind,source=rootfs/scripts,target=/mos-scripts \
     sh /mos-scripts/package-manager-purge.sh && \
-    sha256sum /mos-scripts/package-manager-purge.sh >> /mos-build-inputs/transform-sources.sha256
+    sha256sum /mos-scripts/package-manager-purge.sh >> /mica-build-inputs/transform-sources.sha256
 
 # Build report (moved out of the tree by the pack stage; never ships in the
 # image).
@@ -263,25 +263,25 @@ FROM pack-tools AS pack
 # under `set -u` is a build failure rather than a check that silently reads "no
 # radios" on a board that has them.
 ARG BOARD_RADIOS=""
-# MOS_ARCH and MOS_BOARD are declared here for the same reason, and PLAN-086 S2
-# is what needs them. MOS_ARCH picks which of the two cross binutils below
+# MICA_ARCH and MICA_BOARD are declared here for the same reason, and PLAN-086 S2
+# is what needs them. MICA_ARCH picks which of the two cross binutils below
 # rewrites the board's ELF -- this stage runs on the BUILD platform, so the
-# native objcopy is the wrong one for the tree it is pointed at. MOS_BOARD names
+# native objcopy is the wrong one for the tree it is pointed at. MICA_BOARD names
 # the one directory under /usr/lib/mica/board/ that carries this board's boot
 # blobs; a glob would find it too, and would also find a second one without
 # saying which was meant.
-ARG MOS_ARCH
-ARG MOS_BOARD
+ARG MICA_ARCH
+ARG MICA_BOARD
 # No initramfs-tools-core here since PLAN-074. It was installed for one
 # binary, lsinitramfs, which rootfs/scripts/pack-export-boot.sh used to list
 # the exported initrd and assert veritysetup, the mos-verity script and the
 # absence of busybox in it. There is no initrd on either board now -- x64's
 # kernel assembles the dm-verity root from the command line, as cx3576's always
 # did -- so that script asserts the absence instead and reads nothing.
-# BOTH cross binutils, not the one MOS_ARCH selects. They are 60 MB together
+# BOTH cross binutils, not the one MICA_ARCH selects. They are 60 MB together
 # and this apt layer is then keyed on nothing but the base digest, so an amd64
 # board and an arm64 board share it; installing only the selected one would put
-# MOS_ARCH in the cache key and rebuild this layer every time the board changed.
+# MICA_ARCH in the cache key and rebuild this layer every time the board changed.
 # Transfer via tar so native hardlinks, owners, capabilities and xattrs survive.
 RUN --network=none \
     --mount=type=bind,from=closed,source=/,target=/installed \
@@ -290,7 +290,7 @@ RUN --network=none \
     python3 /mos-runtime/compose.py snapshot --root /installed --output /out/closed.json && \
     bash -o pipefail -c 'tar -C /installed --numeric-owner --xattrs --xattrs-include="*" --one-file-system -cf - . | tar -C /rootfs --same-owner --xattrs --xattrs-include="*" -xf -' && \
     python3 /mos-runtime/compose.py compare --root /rootfs --snapshot /out/closed.json && \
-    mv /rootfs/mos-build-inputs /out/build-inputs && \
+    mv /rootfs/mica-build-inputs /out/build-inputs && \
     cp /pack-tools.tsv /out/build-inputs/pack-tools.tsv
 
 
@@ -397,7 +397,7 @@ RUN --mount=type=bind,source=rootfs/scripts,target=/mos-scripts \
 # Root owns userspace only. Reject boot and support payloads in this tree;
 # independent kernel and firmware producers package them from explicit inputs.
 RUN --mount=type=bind,source=rootfs/scripts,target=/mos-scripts \
-    MOS_BOARD="${MOS_BOARD}" sh /mos-scripts/pack-export-boot.sh
+    MICA_BOARD="${MICA_BOARD}" sh /mos-scripts/pack-export-boot.sh
 
 # THE DEBUG INFORMATION. Thirteen binaries in this root carry `.debug*`,
 # `.symtab` or `.strtab` -- 42.7 MB of it, and every one of the thirteen is
@@ -407,7 +407,7 @@ RUN --mount=type=bind,source=rootfs/scripts,target=/mos-scripts \
 # consumer of separated debug information resolves on. Kernel modules are not
 # touched: their symbol tables are what the module loader relocates against.
 RUN --mount=type=bind,source=rootfs/scripts,target=/mos-scripts \
-    MOS_ARCH="${MOS_ARCH}" sh /mos-scripts/pack-export-debug.sh && \
+    MICA_ARCH="${MICA_ARCH}" sh /mos-scripts/pack-export-debug.sh && \
     sha256sum /mos-scripts/pack-strip-build-residue.sh /mos-scripts/pack-tree-surgery.sh \
       /mos-scripts/pack-shadow-relocate.sh /mos-scripts/pack-export-boot.sh \
       /mos-scripts/pack-export-debug.sh >> /out/build-inputs/transform-sources.sha256
@@ -418,7 +418,7 @@ ARG SQUASHFS_TIME
 RUN --network=none \
     --mount=type=bind,source=rootfs/runtime,target=/mos-runtime \
     python3 /mos-runtime/compose.py compose --root /rootfs --output /runtime \
-      --inputs /out/build-inputs --arch "$MOS_ARCH" --epoch "$SQUASHFS_TIME" \
+      --inputs /out/build-inputs --arch "$MICA_ARCH" --epoch "$SQUASHFS_TIME" \
       --debug /out/debug --report /out/rootfs-report.runtime.json && \
     python3 /mos-runtime/select.py verify --root /runtime --report /out/rootfs-report.runtime.json
 

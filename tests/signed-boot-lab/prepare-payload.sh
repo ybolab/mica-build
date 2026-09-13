@@ -55,9 +55,9 @@ CERT="${REPO_ROOT}/meta/verity/signer.cert.pem"
     exit 1
 }
 
-OPENSSL_IMAGE="$(bash "${REPO_ROOT}/build-env/from.sh" --arch=amd64 --ref LOCAL_MOS_BUILD_OPENSSL)"
-# mos-build-side: container-block -- every openssl below runs in the pinned
-#   localhost/mos-build-openssl, the same image that minted the anchor; what a
+OPENSSL_IMAGE="$(bash "${REPO_ROOT}/build-env/from.sh" --arch=amd64 --ref LOCAL_MICA_BUILD_OPENSSL)"
+# mica-build-side: container-block -- every openssl below runs in the pinned
+#   localhost/mica-build-openssl, the same image that minted the anchor; what a
 #   signature contains is the signing openssl's decision
 run_openssl() {
     docker run --rm --label ai-agent=true --name "ai-agent-signed-boot-lab-openssl-$$" \
@@ -80,7 +80,7 @@ sign "${PAY}/a.roothash" "${KEY}" "${CERT}" "${PAY}/a.roothash.p7s"
 sign "${PAY}/b.roothash" "${KEY}" "${CERT}" "${PAY}/b.roothash.p7s"
 sign "${PAY}/a.roothash" "${LAB_WORK}/unrelated.key.pem" "${LAB_WORK}/unrelated.cert.pem" \
     "${PAY}/a.roothash.wrongkey.p7s"
-# mos-build-side: host
+# mica-build-side: host
 
 # The two damaged forms, made with dd rather than a scripting language so that
 # what changed is readable: the last byte replaced by a value it does not

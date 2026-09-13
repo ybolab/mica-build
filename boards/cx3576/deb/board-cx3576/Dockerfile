@@ -1,8 +1,8 @@
 # syntax=docker/dockerfile:1@sha256:ecfaec9ed6d810b56388c508f4121597bfbba70d41a6dfeee4d8cad5f295fc32
 # check=skip=InvalidDefaultArgInFrom
 # Board hardware and storage policy are independent of kernel/firmware artifacts.
-ARG MOS_BUILD_DEB
-FROM ${MOS_BUILD_DEB} AS pack
+ARG MICA_BUILD_DEB
+FROM ${MICA_BUILD_DEB} AS pack
 COPY --from=packer pack.sh /usr/local/bin/pack.sh
 COPY --from=boarddeb copyright render.sh /in/
 COPY --from=boarddeb control/ /in/control/
@@ -11,12 +11,12 @@ COPY --from=common fstab.in /src/boards/common/fstab.in
 COPY --from=hwinit . /in/hwinit/
 COPY --from=boardinit . /in/board-init/
 COPY --from=boardoverlay . /in/board-overlay/
-ARG MOS_DEB_VERSION
-ARG MOS_DEB_ARCH
+ARG MICA_DEB_VERSION
+ARG MICA_DEB_ARCH
 ARG SOURCE_DATE_EPOCH
 # Provenance, written into the control file by pack.sh; see build-env/deb/README.md.
-ARG MOS_DEB_SOURCE_REPO
-ARG MOS_DEB_SOURCE_COMMIT
+ARG MICA_DEB_SOURCE_REPO
+ARG MICA_DEB_SOURCE_COMMIT
 RUN set -eu; \
     bash /in/render.sh /src /render; \
     . /src/boards/cx3576/board.env; \
@@ -121,6 +121,6 @@ RUN set -eu; \
     \
     install -D -m 0644 /in/copyright "${ROOT}/usr/share/doc/${PKG}/copyright"; \
     pack.sh --root "${ROOT}" --control "/in/control/${PKG}.control" \
-        --version "${MOS_DEB_VERSION}" --arch "${MOS_DEB_ARCH}" --out /out
+        --version "${MICA_DEB_VERSION}" --arch "${MICA_DEB_ARCH}" --out /out
 FROM scratch AS out
 COPY --from=pack /out/ /

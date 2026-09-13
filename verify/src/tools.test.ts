@@ -42,18 +42,18 @@ describe('the route is chosen once, and a value that is neither is refused', () 
     expect(chooseRoute(undefined, ['sgdisk'])).toBe('container')
   })
 
-  test('MOS_VERIFY_TOOLS=host is the opt-out, and it is honoured when the tools are there', () => {
+  test('MICA_VERIFY_TOOLS=host is the opt-out, and it is honoured when the tools are there', () => {
     // Both routes stay reachable on one machine -- a seam with one reachable
     // route is a seam nobody is checking -- but the host one has to be asked
     // for by name now.
     expect(chooseRoute('host', [])).toBe('host')
   })
 
-  test('MOS_VERIFY_TOOLS=container is honoured even with every tool present', () => {
+  test('MICA_VERIFY_TOOLS=container is honoured even with every tool present', () => {
     expect(chooseRoute('container', [])).toBe('container')
   })
 
-  test('MOS_VERIFY_TOOLS=host with tools missing is refused, naming them', () => {
+  test('MICA_VERIFY_TOOLS=host with tools missing is refused, naming them', () => {
     expect(() => chooseRoute('host', ['sgdisk', 'mdir'])).toThrow(/no sgdisk, mdir/)
     expect(() => chooseRoute('host', ['sgdisk'])).toThrow(ToolOutputError)
   })
@@ -72,7 +72,7 @@ describe('the announce line says WHY, because it is the only thing that says whi
   })
 
   test('a forced container on a tool-ful host names the variable that forced it', () => {
-    expect(routeReason('container', [])).toBe('MOS_VERIFY_TOOLS=container')
+    expect(routeReason('container', [])).toBe('MICA_VERIFY_TOOLS=container')
   })
 
   test('the DEFAULT container on a tool-ful host says it is the contract, not a shortage', () => {

@@ -211,11 +211,11 @@ export function parseArgs(argv: readonly string[]): Options {
  *
  * src/toolbox.ts reads the same variable for the same reason: on the pinned-bun
  * route the host's client is bind-mounted at its own path and named in
- * MOS_BUILD_DOCKER, and a bare `docker` there is a different question ("is
+ * MICA_BUILD_DOCKER, and a bare `docker` there is a different question ("is
  * /usr/bin on this image's PATH?") from the one the caller asked.
  */
 export function dockerBin(): string {
-  return process.env.MOS_BUILD_DOCKER || 'docker'
+  return process.env.MICA_BUILD_DOCKER || 'docker'
 }
 
 /**

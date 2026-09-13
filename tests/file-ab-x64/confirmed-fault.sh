@@ -1,5 +1,5 @@
 #!/bin/bash
-# mos-build-side: container -- a corrupt confirmed deployment must not loop forever.
+# mica-build-side: container -- a corrupt confirmed deployment must not loop forever.
 set -euo pipefail
 cd /w
 board=${1:?board required}

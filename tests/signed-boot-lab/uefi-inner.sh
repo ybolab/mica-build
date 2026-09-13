@@ -1,5 +1,5 @@
 #!/bin/bash
-# mos-build-side: container -- every command below runs inside the lab image;
+# mica-build-side: container -- every command below runs inside the lab image;
 #   ukify, sbsign, mkfs.vfat, mcopy, sgdisk and qemu are that image's.
 #
 # Inside the lab container: build one signed UKI, two Type #1 entries that

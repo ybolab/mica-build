@@ -71,7 +71,7 @@ run_pack_case() {
     sed -e "s|/runtime|$runtime|" -e "s|/out|$out|" \
         "$ROOT/rootfs/scripts/pack-squashfs.sh" > "$script"
     chmod 0755 "$script"
-    if SQUASHFS_TIME=1577836800 MOS_PACK_ARGS="$WORK/$label.args" \
+    if SQUASHFS_TIME=1577836800 MICA_PACK_ARGS="$WORK/$label.args" \
         PATH="$WORK/bin:$PATH" "$script" > "$WORK/$label.log" 2>&1; then
         if [ "$expected" = refuse ]; then
             fail "pack-squashfs accepted $label"
@@ -91,7 +91,7 @@ import re
 import sys
 
 text = open(sys.argv[1], encoding='utf-8').read()
-assert 'case "${MOS_ROOTFS_NO_CACHE-0}" in' in text
+assert 'case "${MICA_ROOTFS_NO_CACHE-0}" in' in text
 assert re.search(r'\n0\)\s*;;\s*\n1\) ROOTFS_CACHE_ARGS=\(--no-cache\)\s*;;', text)
 assert "it must be exactly 0 or 1" in text
 call = re.search(r'bash "\$REPO_ROOT/build/run\.sh" --build-rootfs \\\n(?P<args>.*?)2>&1 \| tee "\$log"', text, re.S)
@@ -118,7 +118,7 @@ PY
 }
 
 mkdir -p "$WORK/bin"
-printf '%s\n' '#!/bin/sh' 'printf "%s\\n" "$@" > "$MOS_PACK_ARGS"' 'touch "$2"' \
+printf '%s\n' '#!/bin/sh' 'printf "%s\\n" "$@" > "$MICA_PACK_ARGS"' 'touch "$2"' \
     > "$WORK/bin/mksquashfs"
 chmod 0755 "$WORK/bin/mksquashfs"
 
@@ -134,11 +134,11 @@ if ! check_no_cache_contract "$ROOT/rootfs/build.sh"; then
     fail 'rootfs/build.sh lacks the validated stages --no-cache bridge'
 fi
 for invalid in '' 2 true; do
-    if MOS_BOARD=x64 MOS_ROOTFS_NO_CACHE="$invalid" bash "$ROOT/rootfs/build.sh" \
+    if MICA_BOARD=x64 MICA_ROOTFS_NO_CACHE="$invalid" bash "$ROOT/rootfs/build.sh" \
         > "$WORK/no-cache-invalid.log" 2>&1; then
-        fail "rootfs/build.sh accepted MOS_ROOTFS_NO_CACHE='$invalid'"
+        fail "rootfs/build.sh accepted MICA_ROOTFS_NO_CACHE='$invalid'"
     elif ! grep -Fq 'it must be exactly 0 or 1' "$WORK/no-cache-invalid.log"; then
-        fail "rootfs/build.sh gave no bounded refusal for MOS_ROOTFS_NO_CACHE='$invalid'"
+        fail "rootfs/build.sh gave no bounded refusal for MICA_ROOTFS_NO_CACHE='$invalid'"
     fi
 done
 cp "$ROOT/rootfs/build.sh" "$WORK/build-no-bridge.sh"

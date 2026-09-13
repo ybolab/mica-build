@@ -154,7 +154,7 @@ in_substrate() {
         -e GIT_CONFIG_COUNT=1 \
         -e GIT_CONFIG_KEY_0=safe.directory \
         -e "GIT_CONFIG_VALUE_0=${CLONE}" \
-        -e "MOS_BARE_HOST_CLONE=${CLONE}" \
+        -e "MICA_BARE_HOST_CLONE=${CLONE}" \
         --entrypoint /bin/sh \
         "${CLI_IMAGE}" -c "$1"
 }

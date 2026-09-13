@@ -1,5 +1,5 @@
 #!/bin/bash
-# mos-build-side: container -- use the packaged policy on a privileged offline loop disk.
+# mica-build-side: container -- use the packaged policy on a privileged offline loop disk.
 set -euo pipefail
 cd /w
 unsquashfs -no-progress -d root /rootfs.img etc/repart.d usr/lib/mica/mica-grow-data >/dev/null

@@ -149,7 +149,7 @@ export function versionTokens(line: string): string[] {
  * The commit half of the version contract.
  *
  * The micad archive carries the commit its producer built from in its
- * `Mos-Source-Commit` control field (`build-env/deb/pack.sh`), `rootfs/build.sh`
+ * `Mica-Source-Commit` control field (`build-env/deb/pack.sh`), `rootfs/build.sh`
  * reads it into `_out/<board>/micad-build.txt` beside the factory root,
  * `readMosdBuildFact` reads it back and `judge` compares the two; see
  * `BuildCommitFact`. The printed-only
@@ -196,14 +196,14 @@ export function firstLine(stdout: string): string {
  * reported sha against HEAD at run time passes on any freshly built tree and
  * asserts only that somebody had just rebuilt, never that the embedding works.
  * The micad archive a composed root installs carries the commit its producer
- * built from in its `Mos-Source-Commit` control field, `rootfs/build.sh` reads
+ * built from in its `Mica-Source-Commit` control field, `rootfs/build.sh` reads
  * it into `_out/<board>/micad-build.txt` beside the factory root, and this is
  * what the runner reads back.
  *
  * WHAT THAT COMPARISON IS AND IS NOT. The two sides are the string compiled
  * INTO the binary in the packed root, read back by executing it, and the string
  * that producer run wrote to disk -- and both descend from one
- * `MOS_BUILD_COMMIT` in one invocation. It therefore does not check that the
+ * `MICA_BUILD_COMMIT` in one invocation. It therefore does not check that the
  * commit is right; no reader of an image could, which is why HEAD is refused
  * above. It closes the distance between "the producer was told to embed X" and
  * "the binary in the image reports X" -- a compile cargo did not re-run for a
@@ -429,7 +429,7 @@ export function judge(
       message:
         `exit 0 and the pinned version, but its --version line ${JSON.stringify(line)} does not report `
         + `the commit ${recorded} that ${build!.source} records this build embedding. Either the commit `
-        + `never reached the compiler -- MOS_BUILD_COMMIT not passed in, in which case the binary says `
+        + `never reached the compiler -- MICA_BUILD_COMMIT not passed in, in which case the binary says `
         + `"unknown" -- or this artifact is not from the build that record describes. A "-dirty" suffix `
         + `on one side and not the other lands here too, and deliberately: a binary built from a `
         + `modified worktree is not the commit it names.`,
@@ -664,7 +664,7 @@ export function readFactoryRoot(
       `${board}: ${existsSync(record) ? archive : record} does not exist.\n`
       + `       The smoke run executes the self-built binaries INSIDE the packed root, and that root\n`
       + `       is exported by rootfs/compose/90-pack.Dockerfile's \`factory-root\` target. Build it\n`
-      + `       with: MOS_BOARD=${board} bash rootfs/build.sh\n`
+      + `       with: MICA_BOARD=${board} bash rootfs/build.sh\n`
       + `       This refuses rather than skipping: a skip reports the same green as a pass, and an\n`
       + `       image that ships its binaries unexecuted is exactly what this check exists to end.`,
     )

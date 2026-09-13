@@ -20,7 +20,7 @@ readiness deadline stays at 900 s and is not trimmed to fit these numbers.
 
 ### Both boards, measured the same way
 
-Since PLAN-085 the harness boots either UEFI board, selected by `MOS_BOARD`.
+Since PLAN-085 the harness boots either UEFI board, selected by `MICA_BOARD`.
 Wall clock from the `docker run` to the `APID_LISTENING` line, fresh disk,
 5 s polling, 2026-09-06:
 
@@ -144,7 +144,7 @@ Its header states what is out of scope and why; the full black-box suite covers
 the remaining runtime contracts, which are most of this file's pins.
 
 It runs on a host bun when there is one and in the bun pinned as `IMAGE_BUN_1`
-otherwise, and says which. `MOS_APID_CONTAINER=1` forces the pinned container.
+otherwise, and says which. `MICA_APID_CONTAINER=1` forces the pinned container.
 
 bun is not required on the host — run it in a container, mounting the
 **repository** (a `/tmp` mount does not propagate to the docker daemon here and

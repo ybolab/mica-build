@@ -1,5 +1,5 @@
 #!/bin/bash
-# mos-build-side: container -- bounded x64 kernel-ABI fixture, never a product image.
+# mica-build-side: container -- bounded x64 kernel-ABI fixture, never a product image.
 # /w is task-private; /src is the reviewed checkout. Reference tools are kept here.
 set -euo pipefail
 mode=${1:?transition, unsigned-guard, signed, or corrupt-data required}

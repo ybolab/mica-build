@@ -7,12 +7,12 @@
 # the vendor-source edits.
 
 # Digest-pinned from build-env/images.env via build-env/from.sh. Ubuntu rather
-# than mos-build-c: this cross-compiles a vendor tree against the toolchain
-# versions that tree was tested with, and mos-build-c would be a BSP rebuilt
+# than mica-build-c: this cross-compiles a vendor tree against the toolchain
+# versions that tree was tested with, and mica-build-c would be a BSP rebuilt
 # under a toolchain nobody has booted on the hardware. No default, so a build
 # without the value is refused rather than built against an image nobody chose.
-ARG MOS_IMAGE_UBUNTU_2404
-FROM --platform=$BUILDPLATFORM ${MOS_IMAGE_UBUNTU_2404} AS build
+ARG MICA_IMAGE_UBUNTU_2404
+FROM --platform=$BUILDPLATFORM ${MICA_IMAGE_UBUNTU_2404} AS build
 
 COPY scripts/ /bsp/scripts/
 
@@ -96,7 +96,7 @@ RUN bash /bsp/kernel/configure.sh /ksrc /mos-required.fragment
 # reads a clock, and every artefact these values stabilise is produced below.
 ENV KBUILD_BUILD_TIMESTAMP="@1577836800" \
     KBUILD_BUILD_USER=mos \
-    KBUILD_BUILD_HOST=mos-build \
+    KBUILD_BUILD_HOST=mica-build \
     SOURCE_DATE_EPOCH=1577836800
 
 ARG KERNEL_EXPECT=6.1.115

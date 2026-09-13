@@ -14,7 +14,7 @@ stamp=$(printf '%s\n%s\n%s\n' "$bun" "$cli" "$(sha256sum verify/Dockerfile)" | s
 image="ai-agent/mos-acceptance-bun:$stamp"
 if ! docker image inspect "$image" >/dev/null 2>&1; then
     docker build --label ai-agent=true -t "$image" \
-        --build-arg "MOS_BUN_IMAGE=$bun" --build-arg "MOS_DOCKER_CLI_IMAGE=$cli" \
+        --build-arg "MICA_BUN_IMAGE=$bun" --build-arg "MICA_DOCKER_CLI_IMAGE=$cli" \
         -f verify/Dockerfile verify
 fi
 host_path() {

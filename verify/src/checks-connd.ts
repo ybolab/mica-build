@@ -18,7 +18,7 @@
 // oracle records it: the sweep marker was read with a regex over
 // `file_name.contains("...")`, network.rs was refactored to an anchored
 // `is_mos_managed()`, the regex stopped matching and the marker became "". The
-// collision test `case "${n}" in *"${MOS_SWEEP}"*)` then became `**` and matched
+// collision test `case "${n}" in *"${MICA_SWEEP}"*)` then became `**` and matched
 // every filename, and the nineteen assertions fell back through
 // `${STA_UNIT:-wpa_supplicant@.service}` and passed against the verifier's own
 // restatement of a contract it had failed to read.
@@ -53,12 +53,12 @@ import { skipped, verdict } from './verdict.ts'
 /**
  * Where the reconcilers are read from.
  *
- * `MOS_VERIFY_RECONCILER_DIR` exists so a test can point this at a MUTATED copy
+ * `MICA_VERIFY_RECONCILER_DIR` exists so a test can point this at a MUTATED copy
  * and watch the read fail -- without it the rot recorded above could not be
  * driven, only waited for. The oracle honours the same variable and
  * `the image fixture contract` is its one caller.
  */
-export const RECONCILER_DIR: string = process.env['MOS_VERIFY_RECONCILER_DIR']
+export const RECONCILER_DIR: string = process.env['MICA_VERIFY_RECONCILER_DIR']
   ?? join(REPO_ROOT, '_out', 'src', 'micad', 'micad', 'src', 'reconciler')
 
 export interface ConndContract {

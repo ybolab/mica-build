@@ -65,7 +65,7 @@ describe('the shapes a real board.env contains', () => {
   })
 
   test('${NAME} resolves against a key declared above it', () => {
-    expect(valueOf('MOS_VAR_MIB=512\nEPHEMERAL_SIZE_MIB="${MOS_VAR_MIB}"\n', 'EPHEMERAL_SIZE_MIB')).toBe('512')
+    expect(valueOf('MICA_VAR_MIB=512\nEPHEMERAL_SIZE_MIB="${MICA_VAR_MIB}"\n', 'EPHEMERAL_SIZE_MIB')).toBe('512')
     expect(valueOf('A=1\nB=$A\n', 'B')).toBe('1')
   })
 
@@ -147,12 +147,12 @@ describe('what it refuses, and what it must still accept', () => {
   })
 
   test('the process environment is never consulted', () => {
-    process.env['MOS_BOARD_ENV_LEAK_PROBE'] = 'leaked'
+    process.env['MICA_BOARD_ENV_LEAK_PROBE'] = 'leaked'
     try {
-      const err = refuses('A=${MOS_BOARD_ENV_LEAK_PROBE}\n', 'has not defined it above')
+      const err = refuses('A=${MICA_BOARD_ENV_LEAK_PROBE}\n', 'has not defined it above')
       expect(err.message).toContain('the process environment is not consulted')
     } finally {
-      delete process.env['MOS_BOARD_ENV_LEAK_PROBE']
+      delete process.env['MICA_BOARD_ENV_LEAK_PROBE']
     }
   })
 

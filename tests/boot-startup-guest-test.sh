@@ -1,5 +1,5 @@
 #!/bin/bash
-# mos-build-side: container -- disposable TCG guest, regular input files only.
+# mica-build-side: container -- disposable TCG guest, regular input files only.
 set -euo pipefail
 mode=${1:?transition, unsigned-guard, signed, or corrupt-data required}
 case "$mode" in transition|unsigned-guard|untrusted|signed|corrupt-data) ;; *) exit 2 ;; esac

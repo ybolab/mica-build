@@ -10,10 +10,10 @@
 # The three paths below are overridable ONLY so that
 # tests/gadget-configfs-test.sh can drive this script; on a device none of the
 # variables is set and all three are the literal paths they were before.
-# mica-data-layout takes MOS_DATA_ROOT for the same reason.
-CONF=${MOS_GADGET_CONF:-/etc/mica/gadget.conf}
-CONFIGFS=${MOS_GADGET_CONFIGFS:-/sys/kernel/config}
-UDC_DIR=${MOS_GADGET_UDC_DIR:-/sys/class/udc}
+# mica-data-layout takes MICA_DATA_ROOT for the same reason.
+CONF=${MICA_GADGET_CONF:-/etc/mica/gadget.conf}
+CONFIGFS=${MICA_GADGET_CONFIGFS:-/sys/kernel/config}
+UDC_DIR=${MICA_GADGET_UDC_DIR:-/sys/class/udc}
 [ -r "$CONF" ] || exit 0
 conf_get() { sed -n "s/^$1=//p" "$CONF" | head -n1; }
 modprobe -q libcomposite 2>/dev/null || true

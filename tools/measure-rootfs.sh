@@ -51,7 +51,7 @@ done
 OUT_DIR="${REPO_ROOT}/_out/${BOARD}"
 OCI="${OUT_DIR}/factory-root.oci"
 [ -f "${OCI}" ] ||
-    { echo "error: ${OCI} does not exist, so there is no packed root to measure. Build it with 'MOS_BOARD=${BOARD} bash rootfs/build.sh'." >&2; exit 1; }
+    { echo "error: ${OCI} does not exist, so there is no packed root to measure. Build it with 'MICA_BOARD=${BOARD} bash rootfs/build.sh'." >&2; exit 1; }
 
 WORK="${OUT_DIR}/measure-root"
 rm -rf "${WORK}"
@@ -90,9 +90,9 @@ entries="$(find "${WORK}" -mindepth 1 | wc -l)"
 echo "== identity =="
 printf 'board\t%s\n' "${BOARD}"
 printf 'tree-stamp\t%s\n' "$(bash "${REPO_ROOT}/build-env/deb/version.sh")"
-arch="$(grep -m1 '^MOS_ARCH=' "${REPO_ROOT}/boards/${BOARD}/board.env" | cut -d= -f2 | tr -d '"' || true)"
+arch="$(grep -m1 '^MICA_ARCH=' "${REPO_ROOT}/boards/${BOARD}/board.env" | cut -d= -f2 | tr -d '"' || true)"
 [ -n "${arch}" ] ||
-    { echo "error: boards/${BOARD}/board.env declares no MOS_ARCH, so the pool this root was composed from cannot be named." >&2; exit 1; }
+    { echo "error: boards/${BOARD}/board.env declares no MICA_ARCH, so the pool this root was composed from cannot be named." >&2; exit 1; }
 printf 'arch\t%s\n' "${arch}"
 pool_manifest="${REPO_ROOT}/_out/debs/${arch}/manifest.txt"
 if [ -f "${pool_manifest}" ]; then

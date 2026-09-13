@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Build the squashfs + dm-verity arm64 rootfs slot image for cx3576 (A/B layout).
-# Usage: [BOARD_DIR=...] [WITH_MOSD=0|1] [MOS_ROOTFS_NO_CACHE=0|1]
-#        [WITH_CONTAINERS=0|1] [MOS_PROFILE=dev|prod]
-#        [MOS_ROOTFS_WITHOUT="wifi bluetooth mqtt ..."] bash rootfs/build.sh
+# Usage: [BOARD_DIR=...] [WITH_MOSD=0|1] [MICA_ROOTFS_NO_CACHE=0|1]
+#        [WITH_CONTAINERS=0|1] [MICA_PROFILE=dev|prod]
+#        [MICA_ROOTFS_WITHOUT="wifi bluetooth mqtt ..."] bash rootfs/build.sh
 
 # There is deliberately no ROOT_PASSWORD here. A mos rootfs is a signed,
 # byte-identical squashfs and the pack stage fails any build whose factory
@@ -42,7 +42,7 @@
 #     commit of each, read out of the pool index. PLAN-036 section 4's durable
 #     composition record, and the one that says what this image is made of.
 #   micad-build.txt: the commit micad and apid in this root were built from,
-#     read out of the micad archive's Mos-Source-Commit control field. NOT
+#     read out of the micad archive's Mica-Source-Commit control field. NOT
 #     copied into the image. Not written when micad is declined; see below.
 # rootfs/README.md, "Outputs to _out/<board>/", is the table version of this.
 
@@ -51,14 +51,14 @@ set -euo pipefail
 
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 REPO_ROOT=$(cd "$SCRIPT_DIR/.." && pwd)
-# MOS_BOARD selects the layout, the output directory and the architecture.
+# MICA_BOARD selects the layout, the output directory and the architecture.
 # cx3576 is the default and its path is unchanged; x64 and virt-arm64 are the
 # QEMU targets -- x64 so that the two things an arm64 build could not prove (a
 # container actually starting, and containers.conf's values taking effect) have
 # somewhere to be proven before hardware, and virt-arm64 so that the proving can
 # happen on the ARCHITECTURE THE DEVICE RUNS rather than beside it.
-MOS_BOARD=${MOS_BOARD:-cx3576}
-LAYOUT_ENV="$REPO_ROOT/boards/${MOS_BOARD}/board.env"
+MICA_BOARD=${MICA_BOARD:-cx3576}
+LAYOUT_ENV="$REPO_ROOT/boards/${MICA_BOARD}/board.env"
 
 # THE BOARD IS ITS DEFINITION FILE, and the refusal says so.
 #
@@ -68,7 +68,7 @@ LAYOUT_ENV="$REPO_ROOT/boards/${MOS_BOARD}/board.env"
 # against those -- verify/src/paths.ts discovers boards by listing boards/*/
 # for exactly this reason, because a literal is what a new board gets left out
 # of. And the architecture it assigned was a SECOND STATEMENT of a fact
-# boards/<board>/board.env already makes: the file sourced below sets MOS_ARCH
+# boards/<board>/board.env already makes: the file sourced below sets MICA_ARCH
 # itself, to the same value, so the two agreed only because nobody had changed
 # one of them.
 #
@@ -81,12 +81,12 @@ if [ ! -f "$LAYOUT_ENV" ]; then
     known=$(cd "$REPO_ROOT/boards" && for d in */; do
         [ -f "${d}board.env" ] && printf '%s ' "${d%/}"
     done)
-    echo "error: MOS_BOARD is '$MOS_BOARD', and $LAYOUT_ENV does not exist." >&2
+    echo "error: MICA_BOARD is '$MICA_BOARD', and $LAYOUT_ENV does not exist." >&2
     echo "       A board IS its board.env; boards with one here: ${known:-(none)}" >&2
     exit 1
 fi
-BOARD_DIR=${BOARD_DIR:-"$REPO_ROOT/boards/${MOS_BOARD}/bsp"}
-OUT_DIR="$REPO_ROOT/_out/${MOS_BOARD}"
+BOARD_DIR=${BOARD_DIR:-"$REPO_ROOT/boards/${MICA_BOARD}/bsp"}
+OUT_DIR="$REPO_ROOT/_out/${MICA_BOARD}"
 # Installed-size budget. A per-board fact for the same reason
 # BOARD_CMDLINE_ARGS is: it protects a rootfs slot, and the slots differ.
 SIZE_BUDGET_MB="${SIZE_BUDGET_MB_OVERRIDE:-}"
@@ -130,18 +130,18 @@ esac
 # this explicit opt-in only bridges the rootfs entry point to that existing
 # behavior and keeps normal developer builds cached by default.
 ROOTFS_CACHE_ARGS=()
-case "${MOS_ROOTFS_NO_CACHE-0}" in
+case "${MICA_ROOTFS_NO_CACHE-0}" in
 0) ;;
 1) ROOTFS_CACHE_ARGS=(--no-cache) ;;
 *)
-    echo "error: MOS_ROOTFS_NO_CACHE is '${MOS_ROOTFS_NO_CACHE}'; it must be exactly 0 or 1" >&2
+    echo "error: MICA_ROOTFS_NO_CACHE is '${MICA_ROOTFS_NO_CACHE}'; it must be exactly 0 or 1" >&2
     exit 1
     ;;
 esac
 # The declined features, as one list. WITH_CONTAINERS and WITH_MOSD are the
 # two historical spellings and they fold into it here, so there is one answer
 # to "is this feature in the image" and every consumer below asks the same
-# question. MOS_ROOTFS_WITHOUT is the general form -- a space-separated list of
+# question. MICA_ROOTFS_WITHOUT is the general form -- a space-separated list of
 # feature names -- and it is what makes the three features with no WITH_*
 # history (wifi, bluetooth, mqtt) reachable from the shipping path at all.
 
@@ -149,15 +149,15 @@ esac
 # holds the list of feature names (it reads rootfs/packages/) and refuses an
 # unknown one by name, with the features that do exist. A second copy of that
 # list in this file is the second table this repository keeps deleting.
-MOS_ROOTFS_WITHOUT=${MOS_ROOTFS_WITHOUT:-}
-WITHOUT_FEATURES=" ${MOS_ROOTFS_WITHOUT} "
+MICA_ROOTFS_WITHOUT=${MICA_ROOTFS_WITHOUT:-}
+WITHOUT_FEATURES=" ${MICA_ROOTFS_WITHOUT} "
 [ "$WITH_CONTAINERS" = "1" ] || WITHOUT_FEATURES="${WITHOUT_FEATURES}containers "
 [ "$WITH_MOSD" = "1" ] || WITHOUT_FEATURES="${WITHOUT_FEATURES}micad "
 # `case` and not a substring test with [[ ]]: this file is bash, but the pattern
 # is the same one the POSIX scripts use and one spelling reads the same in both.
 declined() { case "$WITHOUT_FEATURES" in *" $1 "*) return 0 ;; *) return 1 ;; esac; }
-if [ -n "${MOS_ROOTFS_WITHOUT}" ]; then
-    echo "note: MOS_ROOTFS_WITHOUT declines:${MOS_ROOTFS_WITHOUT}"
+if [ -n "${MICA_ROOTFS_WITHOUT}" ]; then
+    echo "note: MICA_ROOTFS_WITHOUT declines:${MICA_ROOTFS_WITHOUT}"
 fi
 
 # Image profile baked into /usr/lib/mica/profile.conf. micad reads it on first
@@ -165,7 +165,7 @@ fi
 # in lowercase; the Dockerfile rejects anything else. It does NOT select the
 # access.ssh.enabled seed: both profiles seed SSH OFF and neither image ships
 # ssh.service enabled, so the profile currently changes nothing that is seeded.
-MOS_PROFILE=${MOS_PROFILE:-dev}
+MICA_PROFILE=${MICA_PROFILE:-dev}
 
 # HOW THE ROOT IS ASSEMBLED, and there is one answer.
 #
@@ -183,7 +183,7 @@ MOS_PROFILE=${MOS_PROFILE:-dev}
 # order to defend -- it is one transaction and one finalizer.
 
 # Existence was already refused, by name and with the board list, right after
-# MOS_BOARD was read -- a second check here would be a second message for one
+# MICA_BOARD was read -- a second check here would be a second message for one
 # condition, and the earlier one is the better message.
 # shellcheck source=../boards/cx3576/board.env
 . "$LAYOUT_ENV"
@@ -195,11 +195,11 @@ MOS_PROFILE=${MOS_PROFILE:-dev}
 # not make it has to say so here rather than be assigned one. Everything
 # downstream -- the package pool it composes from, the docker platform it
 # builds for, the emulation it may need -- follows from this line.
-if [ -z "${MOS_ARCH:-}" ]; then
-    echo "error: $LAYOUT_ENV sets no MOS_ARCH. The architecture is a board fact and is deliberately not derived from the board name -- 'virt-arm64' and 'cx3576' are both arm64 and 'x64' is amd64, so a name-based guess would be a guess. Without it this build would choose a package pool and a docker platform for a board that has not said which it is" >&2
+if [ -z "${MICA_ARCH:-}" ]; then
+    echo "error: $LAYOUT_ENV sets no MICA_ARCH. The architecture is a board fact and is deliberately not derived from the board name -- 'virt-arm64' and 'cx3576' are both arm64 and 'x64' is amd64, so a name-based guess would be a guess. Without it this build would choose a package pool and a docker platform for a board that has not said which it is" >&2
     exit 1
 fi
-DOCKER_PLATFORM="linux/${MOS_ARCH}"
+DOCKER_PLATFORM="linux/${MICA_ARCH}"
 
 # Board console facts. These describe a board's serial console, not its
 # partition layout, so each boards/<board>/board.env carries its own
@@ -245,7 +245,7 @@ mkdir -p "$OUT_DIR"
 rm -f "$OUT_DIR/micad-build.txt"
 
 # Validate the package pool before resolving the OpenSSL inspection container.
-POOL_DIR="$REPO_ROOT/_out/debs/$MOS_ARCH"
+POOL_DIR="$REPO_ROOT/_out/debs/$MICA_ARCH"
 pool_refusal() {
     echo "error: $1" >&2
     echo "       The rootfs composer installs from _out/debs/<arch>; it does not build a package." >&2
@@ -253,7 +253,7 @@ pool_refusal() {
     exit 1
 }
 [ -d "$POOL_DIR" ] ||
-    pool_refusal "$POOL_DIR does not exist, so there is no $MOS_ARCH package pool to compose from."
+    pool_refusal "$POOL_DIR does not exist, so there is no $MICA_ARCH package pool to compose from."
 for f in Packages SHA256SUMS manifest.txt; do
     [ -s "$POOL_DIR/$f" ] ||
         pool_refusal "$POOL_DIR/$f is missing or empty, so the pool carries no usable index. APT takes an empty Packages file without complaint, so this would install none of this repository's own packages and report success."
@@ -288,7 +288,7 @@ newer=$(find "$POOL_DIR/pool" -maxdepth 1 -type f -name '*.deb' -newer "$POOL_DI
 #                build-env/deb/version.sh prints for this tree;
 #   imported     named by a pin in deps/packages/, and then it must be the
 #                locked version and sha256, from the locked source repository
-#                and commit (its Mos-Source-* control fields);
+#                and commit (its Mica-Source-* control fields);
 #
 # and anything else -- an archive no producer emits and the lock does not
 # name, a locked archive at another digest, a built-here archive at another
@@ -297,7 +297,7 @@ newer=$(find "$POOL_DIR/pool" -maxdepth 1 -type f -name '*.deb' -newer "$POOL_DI
 # release gate re-verifies; this script hands it the inputs and repeats
 # nothing.
 #
-# MOS_POOL_UNLOCKED="<pkg> ..." waives the digest check for named IMPORTED
+# MICA_POOL_UNLOCKED="<pkg> ..." waives the digest check for named IMPORTED
 # packages -- the local development loop, where a package repository builds a
 # dirty archive straight into this pool (build-env/deb/README.md, "Local
 # development"). The waiver is announced here, recorded in the lineage
@@ -311,20 +311,20 @@ LOCAL_PACKAGES=$(bash "$REPO_ROOT/build-env/deb/producers.sh" | awk '{ n = split
 LOCK_DIR="$REPO_ROOT/deps/packages"
 [ -d "$LOCK_DIR" ] ||
     pool_refusal "$LOCK_DIR does not exist. It holds the package pins -- every archive the assembly imports rather than builds -- and the composer reads it even when it is empty."
-MOS_POOL_UNLOCKED=${MOS_POOL_UNLOCKED:-}
-if [ -n "$MOS_POOL_UNLOCKED" ]; then
-    echo "note: MOS_POOL_UNLOCKED waives the lock digest check for:$(printf ' %s' $MOS_POOL_UNLOCKED)"
+MICA_POOL_UNLOCKED=${MICA_POOL_UNLOCKED:-}
+if [ -n "$MICA_POOL_UNLOCKED" ]; then
+    echo "note: MICA_POOL_UNLOCKED waives the lock digest check for:$(printf ' %s' $MICA_POOL_UNLOCKED)"
     echo "      this root is a development root; the release gate refuses it outside the development channel"
 fi
 LINEAGE_STAGE="$OUT_DIR/source-lineage.json"
 tree_version=$(python3 "$REPO_ROOT/rootfs/runtime/source-lineage.py" \
-    --composition-source "$REPO_ROOT" --pool "$POOL_DIR" --arch "$MOS_ARCH" \
-    --epoch "$SQUASHFS_TIME" --lock "$LOCK_DIR" --unlocked "$MOS_POOL_UNLOCKED" \
+    --composition-source "$REPO_ROOT" --pool "$POOL_DIR" --arch "$MICA_ARCH" \
+    --epoch "$SQUASHFS_TIME" --lock "$LOCK_DIR" --unlocked "$MICA_POOL_UNLOCKED" \
     --local-packages "$LOCAL_PACKAGES" --output "$LINEAGE_STAGE") ||
-    pool_refusal "the $MOS_ARCH pool did not pass the two-class rule (see the refusal above)."
+    pool_refusal "the $MICA_ARCH pool did not pass the two-class rule (see the refusal above)."
 tree_stamp=${tree_version##*+}
 locked_n=$(python3 -c 'import json,sys; r=json.load(open(sys.argv[1])); print(len(r["lock"]))' "$LINEAGE_STAGE")
-echo "pool: $POOL_DIR, $pool_debs archive(s); built here at stamp $tree_stamp, $locked_n imported by the lock${MOS_POOL_UNLOCKED:+, unlocked:$(printf ' %s' $MOS_POOL_UNLOCKED)}"
+echo "pool: $POOL_DIR, $pool_debs archive(s); built here at stamp $tree_stamp, $locked_n imported by the lock${MICA_POOL_UNLOCKED:+, unlocked:$(printf ' %s' $MICA_POOL_UNLOCKED)}"
 
 # --- the composition's inputs: the package pool, the resolution, the context ---
 #
@@ -387,11 +387,11 @@ echo "identity: source commit $commit_of_stamp committed $tree_commit_date"
 # shellcheck disable=SC2116,SC2086 # deliberate: collapse the padded list.
 WITHOUT_ARG=$(echo $WITHOUT_FEATURES)
 RESOLVED=$(bash "$REPO_ROOT/rootfs/packages/resolve.sh" \
-    --board "$MOS_BOARD" \
-    --profile "$MOS_PROFILE" \
+    --board "$MICA_BOARD" \
+    --profile "$MICA_PROFILE" \
     --radios "$BOARD_RADIOS" \
     --without "$WITHOUT_ARG" \
-    --components "${MOS_ROOTFS_COMPONENTS:-}")
+    --components "${MICA_ROOTFS_COMPONENTS:-}")
 resolved_n=$(printf '%s\n' "$RESOLVED" | { grep -c . || true; })
 [ "$resolved_n" -gt 0 ] ||
     { echo "error: rootfs/packages/resolve.sh printed no package and exited 0" >&2; exit 1; }
@@ -410,13 +410,13 @@ for p in $RESOLVED; do
         missing_pkgs="$missing_pkgs $p"
 done
 if [ -n "$missing_pkgs" ]; then
-    echo "error: the resolution names package(s) the $MOS_ARCH pool does not contain:$missing_pkgs" >&2
+    echo "error: the resolution names package(s) the $MICA_ARCH pool does not contain:$missing_pkgs" >&2
     for p in $missing_pkgs; do
         producer=$(bash "$REPO_ROOT/build-env/deb/producers.sh" |
             awk -v pkg="$p" '{ n = split($4, a, ","); for (i = 1; i <= n; i++) if (a[i] == pkg) print $1 }')
         if [ -n "$producer" ]; then
             echo "       $p is emitted by the '$producer' producer: make os-deb-$producer" >&2
-        elif bash "$REPO_ROOT/build-env/deb/lock.sh" --rows --arch "$MOS_ARCH" | cut -f1 | grep -cx -- "$p" >/dev/null; then
+        elif bash "$REPO_ROOT/build-env/deb/lock.sh" --rows --arch "$MICA_ARCH" | cut -f1 | grep -cx -- "$p" >/dev/null; then
             echo "       $p is imported by deps/packages/$p.json: make os-pool fetches it" >&2
         else
             echo "       $p is emitted by NO producer in this repository and imported by no pin, which rootfs/packages/resolve.sh should already have refused" >&2
@@ -436,7 +436,7 @@ PRODUCER_DIRS=$(bash "$REPO_ROOT/build-env/deb/producers.sh" |
     { echo "error: build-env/deb/producers.sh named no package, so every row of the composition record would carry '(no producer declares it)' for its source" >&2; exit 1; }
 
 # Only the unchanged validated public set enters the composition.
-META_DIR="${MOS_META_DIR:-$REPO_ROOT/meta}"
+META_DIR="${MICA_META_DIR:-$REPO_ROOT/meta}"
 bash "$REPO_ROOT/rootfs/scripts/validate-public-meta.sh" "$META_DIR"
 META_STAGE="$(mktemp -d "$OUT_DIR/meta-public.XXXXXX")"
 mkdir -p "$META_STAGE/usr/share/mica/meta/updates"
@@ -456,20 +456,20 @@ printf '%s\n' "$RESOLVED" > "$COMPOSE_STAGE/packages.txt"
 # these files have to end up IN the image.
 mkdir -p "$COMPOSE_STAGE/meta-public"
 cp -a "$META_STAGE/." "$COMPOSE_STAGE/meta-public/"
-echo "compose: $resolved_n package(s) resolved for $MOS_BOARD/$MOS_PROFILE, declined:${MOS_ROOTFS_WITHOUT:- (none)}"
+echo "compose: $resolved_n package(s) resolved for $MICA_BOARD/$MICA_PROFILE, declined:${MICA_ROOTFS_WITHOUT:- (none)}"
 sed 's/^/  /' "$COMPOSE_STAGE/packages.txt"
 
 # The builder is NAMED rather than inherited -- the same BUILDX_BUILDER
 # register as mica-deploy:build.sh and mica-podman:build.sh, and the same
 # selection. BUILDX_BUILDER wins, because a caller who names a builder has made
 # a decision. With nothing named, `default` is the docker driver on every
-# docker installation, and it reaches linux/${MOS_ARCH} exactly when the host
-# has binfmt registered for it. When it does not, the `mos-${MOS_ARCH}`
+# docker installation, and it reaches linux/${MICA_ARCH} exactly when the host
+# has binfmt registered for it. When it does not, the `mos-${MICA_ARCH}`
 # docker-container builder is used, whose buildkit image bundles the
 # emulators and needs no host registration.
 #
 # What changed, and why it used to refuse here. The finalizer opens `FROM
-# ${MOS_STAGE_PREV}` -- the composition's image; on the docker driver that is a
+# ${MICA_STAGE_PREV}` -- the composition's image; on the docker driver that is a
 # tag in the image store, which a docker-container builder cannot read
 # (measured: "pull access denied", about an image that is right there). So for a
 # while a cross build needed host binfmt and this script said so with the
@@ -491,7 +491,7 @@ else
     if printf '%s\n' "${default_platforms}" | grep -c "${DOCKER_PLATFORM}" >/dev/null; then
         BUILDER=default
     else
-        BUILDER="mos-${MOS_ARCH}"
+        BUILDER="mos-${MICA_ARCH}"
         echo "note: the 'default' builder cannot reach ${DOCKER_PLATFORM} on this host; using the docker-container builder '${BUILDER}', which bundles its own emulator, and passing the composition to the finalizer by OCI layout"
         docker buildx inspect "${BUILDER}" >/dev/null 2>&1 ||
             docker buildx create --name "${BUILDER}" --driver docker-container >/dev/null
@@ -508,8 +508,8 @@ trap 'rm -f "$log"' EXIT
 # manifest -- the check mica-podman:build.sh needs is about localhost tags, which
 # carry exactly one architecture, and this file uses none.
 mapfile -t FROM_ARGS < <("$REPO_ROOT/build-env/from.sh" \
-    MOS_IMAGE_BUN=IMAGE_BUN_1 \
-    MOS_IMAGE_DEBIAN_BOOKWORM=IMAGE_DEBIAN_BOOKWORM)
+    MICA_IMAGE_BUN=IMAGE_BUN_1 \
+    MICA_IMAGE_DEBIAN_BOOKWORM=IMAGE_DEBIAN_BOOKWORM)
 # mapfile cannot fail, so its status says nothing about the process inside the
 # substitution; an empty array is what a refusal looks like from here, and it
 # would reach docker as a build with no --build-arg at all.
@@ -544,28 +544,28 @@ done
 # No --without either, and that is not an omission: the decline list reaches the
 # image through the RESOLUTION, which names fewer packages. resolve.sh refuses a
 # feature name nothing matches, with the features that exist -- so
-# `MOS_ROOTFS_WITHOUT=contaners` is still a refusal and not a full image
+# `MICA_ROOTFS_WITHOUT=contaners` is still a refusal and not a full image
 # reported as a reduced one.
 DRIVER_ARGS=(
-    --board "$MOS_BOARD"
+    --board "$MICA_BOARD"
     --platform "$DOCKER_PLATFORM"
     --context "$REPO_ROOT"
     --dest "$OUT_DIR"
     ${BUILDER_ARGS[@]+"${BUILDER_ARGS[@]}"}
     "${DRIVER_FROM_ARGS[@]}"
-    --arg MOS_ARCH="$MOS_ARCH"
+    --arg MICA_ARCH="$MICA_ARCH"
     --arg BOARD_RADIOS="$BOARD_RADIOS"
-    --arg MOS_BOARD="$MOS_BOARD"
-    --arg MOS_PROFILE="$MOS_PROFILE"
-    --arg MOS_RELEASE_VERSION="$tree_version"
-    --arg MOS_RELEASE_COMMIT_DATE="$tree_commit_date"
-    --arg MOS_RELEASE_UNLOCKED="$MOS_POOL_UNLOCKED"
+    --arg MICA_BOARD="$MICA_BOARD"
+    --arg MICA_PROFILE="$MICA_PROFILE"
+    --arg MICA_RELEASE_VERSION="$tree_version"
+    --arg MICA_RELEASE_COMMIT_DATE="$tree_commit_date"
+    --arg MICA_RELEASE_UNLOCKED="$MICA_POOL_UNLOCKED"
     --arg VERITY_SALT="$VERITY_SALT"
     --arg SQUASHFS_TIME="$SQUASHFS_TIME"
     --arg SOURCE_DATE_EPOCH="$SQUASHFS_TIME"
     --source-date-epoch "$SQUASHFS_TIME"
     --stages-dir "$REPO_ROOT/rootfs/compose"
-    --arg COMPOSE_DIR="_out/$MOS_BOARD/compose"
+    --arg COMPOSE_DIR="_out/$MICA_BOARD/compose"
 )
 
 # TWO DOCKERFILES, not one build. build/run.sh --build-rootfs sequences the
@@ -587,8 +587,8 @@ DRIVER_ARGS=(
 # a wrong answer where no file at all would have been an honest miss.
 rm -rf "$OUT_DIR/boot" "$OUT_DIR/debug"
 
-echo "rootfs: composing $MOS_BOARD"
-bash "$REPO_ROOT/rootfs/debian/docker.sh" cache --arch "$MOS_ARCH" \
+echo "rootfs: composing $MICA_BOARD"
+bash "$REPO_ROOT/rootfs/debian/docker.sh" cache --arch "$MICA_ARCH" \
     --packages "$COMPOSE_STAGE/packages.txt"
 if ! bash "$REPO_ROOT/build/run.sh" --build-rootfs \
         ${ROOTFS_CACHE_ARGS[@]+"${ROOTFS_CACHE_ARGS[@]}"} \
@@ -596,8 +596,8 @@ if ! bash "$REPO_ROOT/build/run.sh" --build-rootfs \
     if grep -qi 'exec format error' "$log"; then
         echo >&2
         echo "hint: the builder '${BUILDER}' could not execute ${DOCKER_PLATFORM}. On the default builder that means" >&2
-        echo "      ${MOS_ARCH} emulation is not registered on this host (docker run --privileged --rm" >&2
-        echo "      tonistiigi/binfmt --install ${MOS_ARCH}); on a docker-container builder, that a stage's" >&2
+        echo "      ${MICA_ARCH} emulation is not registered on this host (docker run --privileged --rm" >&2
+        echo "      tonistiigi/binfmt --install ${MICA_ARCH}); on a docker-container builder, that a stage's" >&2
         echo "      base was resolved at the wrong architecture -- docs/design/build-harness.md section 5.1." >&2
     fi
     exit 1
@@ -623,16 +623,16 @@ fi
 # always lived; inside the image it would be a second copy of facts dpkg's own
 # database already carries at the point the finalizer purges it.
 {
-    echo "# The local packages composed into the $MOS_BOARD root, one per line."
+    echo "# The local packages composed into the $MICA_BOARD root, one per line."
     echo "# Read out of $POOL_DIR/manifest.txt (which build-env/deb/repo.sh"
     echo "# generated from the archives themselves) and out of"
     echo "# build-env/deb/producers.sh; never from a list kept by hand."
     echo "#"
-    printf '#board\t%s\n' "$MOS_BOARD"
-    printf '#profile\t%s\n' "$MOS_PROFILE"
-    printf '#declined\t%s\n' "${MOS_ROOTFS_WITHOUT:-(none)}"
-    printf '#pool\t_out/debs/%s, built here at stamp %s, %s imported by deps/packages/\n' "$MOS_ARCH" "$tree_stamp" "$locked_n"
-    printf '#unlocked\t%s\n' "${MOS_POOL_UNLOCKED:-(none)}"
+    printf '#board\t%s\n' "$MICA_BOARD"
+    printf '#profile\t%s\n' "$MICA_PROFILE"
+    printf '#declined\t%s\n' "${MICA_ROOTFS_WITHOUT:-(none)}"
+    printf '#pool\t_out/debs/%s, built here at stamp %s, %s imported by deps/packages/\n' "$MICA_ARCH" "$tree_stamp" "$locked_n"
+    printf '#unlocked\t%s\n' "${MICA_POOL_UNLOCKED:-(none)}"
     printf '#package\tversion\tarchitecture\tsha256\tsource\tsource-repo\tsource-commit\n'
     for p in $RESOLVED; do
         awk -F'\t' -v pkg="$p" -v prods="$PRODUCER_DIRS" '
@@ -727,7 +727,7 @@ echo "installed size: ${total_mb} MB (budget ${SIZE_BUDGET_MB} MB)"
 # the image exists. The micad and mica-apid binaries in this root came out of the
 # pool, so the record comes out of the ARCHIVE that carried them: pack.sh
 # writes the commit a producer built from into every archive's
-# Mos-Source-Commit control field, and the same field is there whether the
+# Mica-Source-Commit control field, and the same field is there whether the
 # archive was built here or fetched from the registry under the lock.
 #
 # WHAT THE SMOKE RUN THEN ASSERTS, said plainly because it is easy to over-read.
@@ -750,7 +750,7 @@ echo "installed size: ${total_mb} MB (budget ${SIZE_BUDGET_MB} MB)"
 # turns the version rows red only here.
 #
 # The binaries report `<commit12>[-dirty]` (micad:hack/build-deb.sh's
-# MOS_BUILD_COMMIT); the archive carries the full commit and marks a dirty
+# MICA_BUILD_COMMIT); the archive carries the full commit and marks a dirty
 # tree in its version stamp, so the record is spelled the way the binary
 # spells it.
 if declined micad; then
@@ -773,7 +773,7 @@ PY_MOSD
     case "$micad_version" in *.dirty-*) micad_dirty="-dirty" ;; esac
     {
         echo "# The commit the micad and mica-apid in this root were built from, read by"
-        echo "# rootfs/build.sh out of the micad archive's Mos-Source-Commit control field."
+        echo "# rootfs/build.sh out of the micad archive's Mica-Source-Commit control field."
         printf 'archive\t%s\n' "$micad_archive"
         printf 'source-repo\t%s\n' "$micad_repo"
         printf 'commit\t%s\n' "${micad_commit:0:12}${micad_dirty}"
@@ -805,4 +805,4 @@ fi
 # says which executor it used.
 echo
 echo "=== smoke: executing the self-built binaries inside the root just packed ==="
-MOS_BOARD="$MOS_BOARD" bash "$REPO_ROOT/verify/run.sh" --smoke --board "$MOS_BOARD" --builder "${BUILDER}"
+MICA_BOARD="$MICA_BOARD" bash "$REPO_ROOT/verify/run.sh" --smoke --board "$MICA_BOARD" --builder "${BUILDER}"

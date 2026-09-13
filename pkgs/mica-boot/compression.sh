@@ -1,5 +1,5 @@
 #!/bin/bash
-# mos-build-side: container -- bound both expanded and transported payload bytes.
+# mica-build-side: container -- bound both expanded and transported payload bytes.
 set -euo pipefail
 
 validate_payload() (

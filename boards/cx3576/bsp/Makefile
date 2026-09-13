@@ -18,8 +18,8 @@
 BSP_OUT ?= ../../../_out/boards/cx3576
 
 # The complete factory image is assembled from independently signed components.
-MOS_OUT ?= ../../../_out/cx3576/image
-MOS_IMAGE ?= $(lastword $(sort $(wildcard $(MOS_OUT)/mos-cx3576-*.img)))
+MICA_OUT ?= ../../../_out/cx3576/image
+MICA_IMAGE ?= $(lastword $(sort $(wildcard $(MICA_OUT)/mos-cx3576-*.img)))
 
 TOOLS_DIR ?= tools
 THIRD_DIR ?= third
@@ -45,14 +45,14 @@ SHA256 := $(shell command -v sha256sum >/dev/null 2>&1 && echo sha256sum || echo
 # from.sh printed. The one cost is that the value is computed per target, which
 # is a file read.
 FROM_SH := ../../../build-env/from.sh
-UBUNTU_ARG := MOS_IMAGE_UBUNTU_2404=IMAGE_UBUNTU_2404
+UBUNTU_ARG := MICA_IMAGE_UBUNTU_2404=IMAGE_UBUNTU_2404
 
 # Distribute the same public certificate bundle to every builder. Kernel builds
 # never mint keys; development material is generated explicitly before building.
 VERITY_TRUST_CERT ?= ../../../meta/verity/signer.cert.pem
 FIT_TRUST_CERT ?=
 VERITY_TOOL := ../../../pkgs/mica-boot/verity-tool.sh
-ALPINE_ARG := MOS_IMAGE_ALPINE_3_24_1=IMAGE_ALPINE_3_24_1
+ALPINE_ARG := MICA_IMAGE_ALPINE_3_24_1=IMAGE_ALPINE_3_24_1
 
 all: kernel uboot-mos
 
@@ -97,18 +97,18 @@ source-check:
 
 # Full-system installation only. The board remains in Loader mode on any failure.
 flash-mos:
-	@test -n "$(MOS_IMAGE)" || { echo 'error: no timestamped cx3576 image found; set MOS_IMAGE explicitly' >&2; exit 1; }
-	bash scripts/verify-flash.sh --check "$(MOS_IMAGE)"
-	$(RKDEVELOPTOOL) wl 0 "$(MOS_IMAGE)"
-	RKDEVELOPTOOL='$(RKDEVELOPTOOL)' bash scripts/verify-flash.sh "$(MOS_IMAGE)"
+	@test -n "$(MICA_IMAGE)" || { echo 'error: no timestamped cx3576 image found; set MICA_IMAGE explicitly' >&2; exit 1; }
+	bash scripts/verify-flash.sh --check "$(MICA_IMAGE)"
+	$(RKDEVELOPTOOL) wl 0 "$(MICA_IMAGE)"
+	RKDEVELOPTOOL='$(RKDEVELOPTOOL)' bash scripts/verify-flash.sh "$(MICA_IMAGE)"
 	$(RKDEVELOPTOOL) rd
 
 flash-maskrom:
-	@test -n "$(MOS_IMAGE)" || { echo 'error: no timestamped cx3576 image found; set MOS_IMAGE explicitly' >&2; exit 1; }
-	bash scripts/verify-flash.sh --check "$(MOS_IMAGE)"
+	@test -n "$(MICA_IMAGE)" || { echo 'error: no timestamped cx3576 image found; set MICA_IMAGE explicitly' >&2; exit 1; }
+	bash scripts/verify-flash.sh --check "$(MICA_IMAGE)"
 	$(SHA256) -c uboot/MiniLoaderAll.bin.sha256
 	$(RKDEVELOPTOOL) db $(VENDOR_MINILOADER)
-	$(MAKE) flash-mos MOS_IMAGE="$(MOS_IMAGE)" RKDEVELOPTOOL="$(RKDEVELOPTOOL)"
+	$(MAKE) flash-mos MICA_IMAGE="$(MICA_IMAGE)" RKDEVELOPTOOL="$(RKDEVELOPTOOL)"
 
 clean:
 	rm -rf $(BSP_OUT)

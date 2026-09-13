@@ -8,8 +8,8 @@
 # organisation: releases per repository, assets with their digests, bytes
 # served for `Accept: application/octet-stream`, 401 without the token. The
 # archives are written in Python, no dpkg on the host. registry.sh's
-# MOS_REGISTRY_ENV and MOS_LOCK_DIR point the scripts at the stub and at a
-# scratch pin directory, MOS_POOL_DIR at a scratch pool. No docker, no network, no gh.
+# MICA_REGISTRY_ENV and MICA_LOCK_DIR point the scripts at the stub and at a
+# scratch pin directory, MICA_POOL_DIR at a scratch pool. No docker, no network, no gh.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -52,7 +52,7 @@ build_deb() { # name version arch repo commit -> path (asset name: + mapped to .
     python3 - "${REG}/assets/${asset}" "$1" "$2" "$3" "$4" "$5" <<'DEB'
 import io, sys, tarfile
 path, name, version, arch, repo, commit = sys.argv[1:]
-control = f'Package: {name}\nVersion: {version}\nArchitecture: {arch}\nMaintainer: Fixture <fixture@example.invalid>\nDescription: fixture\nMos-Source-Repo: {repo}\nMos-Source-Commit: {commit}\n'.encode()
+control = f'Package: {name}\nVersion: {version}\nArchitecture: {arch}\nMaintainer: Fixture <fixture@example.invalid>\nDescription: fixture\nMica-Source-Repo: {repo}\nMica-Source-Commit: {commit}\n'.encode()
 def tar_of(entries):
     buffer = io.BytesIO()
     with tarfile.open(fileobj=buffer, mode='w:gz') as tar:
@@ -139,16 +139,16 @@ PY
 releases mica-fixture "${OTHER_TAG}:$(basename "${A2}")" "${TAG}:$(basename "${A1}"),$(basename "${ALL}")"
 
 cat >"${WORK}/registry.env" <<ENV
-MOS_RELEASE_API=http://127.0.0.1:${PORT}
-MOS_RELEASE_UPLOAD=http://127.0.0.1:${PORT}
-MOS_RELEASE_OWNER=ybolab
-MOS_RELEASE_TOKEN_VAR=MOS_POOL_TEST_TOKEN
-MOS_SOURCE_URL=file://${WORK}/src
+MICA_RELEASE_API=http://127.0.0.1:${PORT}
+MICA_RELEASE_UPLOAD=http://127.0.0.1:${PORT}
+MICA_RELEASE_OWNER=ybolab
+MICA_RELEASE_TOKEN_VAR=MICA_POOL_TEST_TOKEN
+MICA_SOURCE_URL=file://${WORK}/src
 ENV
 LOCK="${WORK}/pins"
 mkdir -p "${LOCK}"
 POOL="${WORK}/pool"
-export MOS_REGISTRY_ENV="${WORK}/registry.env" MOS_LOCK_DIR="${LOCK}" MOS_POOL_DIR="${POOL}" MOS_RELEASE_NO_GH=1
+export MICA_REGISTRY_ENV="${WORK}/registry.env" MICA_LOCK_DIR="${LOCK}" MICA_POOL_DIR="${POOL}" MICA_RELEASE_NO_GH=1
 # A pin file, written the way lock.sh writes one: name, repository, commit, and
 # one target per pool the archive serves.
 pin() { # package version arch sha256 repo commit
@@ -160,7 +160,7 @@ targets = {pool: {'version': version, 'architecture': arch, 'sha256': sha, 'asse
 open(path, 'w').write(json.dumps({'name': name, 'repository': repo, 'commit': commit, 'targets': targets}, indent=2, sort_keys=True) + '\n')
 PY
 }
-export MOS_POOL_TEST_TOKEN=fixture-token
+export MICA_POOL_TEST_TOKEN=fixture-token
 FETCH="bash ${REPO_ROOT}/build-env/deb/fetch.sh"
 LOCKSH="bash ${REPO_ROOT}/build-env/deb/lock.sh"
 OUT="${WORK}/out.txt"
@@ -182,14 +182,14 @@ if ! ${LOCKSH} --bump mica-absent >"${OUT}" 2>&1 && says "${OUT}" "does not exis
     pass "L5 an unknown repository is refused by name"
 else fail "L5 unknown component: $(cat "${OUT}")"; fi
 releases mica-fixture "${TAG}:$(basename "${A1}"),$(basename "${ALL}"),$(basename "${LIAR}")"
-if ! ${LOCKSH} --bump mica-fixture --tag "${TAG}" >"${OUT}" 2>&1 && says "${OUT}" "says Mos-Source-Repo: mica-other"; then
+if ! ${LOCKSH} --bump mica-fixture --tag "${TAG}" >"${OUT}" 2>&1 && says "${OUT}" "says Mica-Source-Repo: mica-other"; then
     pass "L6 an asset attributing itself to another repository is refused"
 else fail "L6 liar asset: $(cat "${OUT}")"; fi
 releases mica-fixture "${OTHER_TAG}:$(basename "${A2}")" "${TAG}:$(basename "${A1}"),$(basename "${ALL}")"
 if ! ${LOCKSH} --bump mica-fixture --tag v1.0 >"${OUT}" 2>&1 && says "${OUT}" "is not build-<commit12>"; then
     pass "L7 a tag that is not a per-commit build release is refused"
 else fail "L7 tag shape: $(cat "${OUT}")"; fi
-if ! MOS_POOL_TEST_TOKEN= ${LOCKSH} --bump mica-fixture >"${OUT}" 2>&1 && says "${OUT}" "MOS_POOL_TEST_TOKEN is unset" && ! says "${OUT}" "fixture-token"; then
+if ! MICA_POOL_TEST_TOKEN= ${LOCKSH} --bump mica-fixture >"${OUT}" 2>&1 && says "${OUT}" "MICA_POOL_TEST_TOKEN is unset" && ! says "${OUT}" "fixture-token"; then
     pass "L8 an empty token variable is refused by the variable's name, never its value"
 else fail "L8 token: $(cat "${OUT}")"; fi
 ROWS="$(${LOCKSH} --rows --arch amd64 | cut -f1 | tr '\n' ' ')"
@@ -211,10 +211,10 @@ else fail "F2 fetch: $(cat "${OUT}")"; fi
 if ${FETCH} --arch amd64 >"${OUT}" 2>&1 && says "${OUT}" "0 archive(s) fetched, 2 already present"; then
     pass "F3 a second fetch downloads nothing"
 else fail "F3 refetch: $(cat "${OUT}")"; fi
-if ! MOS_POOL_TEST_TOKEN= ${FETCH} --arch arm64 >"${OUT}" 2>&1 && says "${OUT}" "MOS_POOL_TEST_TOKEN is unset"; then
+if ! MICA_POOL_TEST_TOKEN= ${FETCH} --arch arm64 >"${OUT}" 2>&1 && says "${OUT}" "MICA_POOL_TEST_TOKEN is unset"; then
     pass "F4 a missing token is refused by the variable's name (the lock has an all row for arm64)"
 else fail "F4 token: $(cat "${OUT}")"; fi
-if ! MOS_POOL_TEST_TOKEN=wrong-token ${FETCH} --arch amd64 --check >"${OUT}" 2>&1 && says "${OUT}" "answered 401 for ybolab/mica-fixture; MOS_POOL_TEST_TOKEN does not grant"; then
+if ! MICA_POOL_TEST_TOKEN=wrong-token ${FETCH} --arch amd64 --check >"${OUT}" 2>&1 && says "${OUT}" "answered 401 for ybolab/mica-fixture; MICA_POOL_TEST_TOKEN does not grant"; then
     pass "F5 a 401 names the token variable"
 else fail "F5 401: $(cat "${OUT}")"; fi
 

@@ -26,7 +26,7 @@ Executes every self-built artifact inside that board's factory root and requires
 the version it reports to equal the version pinned in this repository.
 
   --board NAME   which board's _out/<board>/factory-root.oci to smoke.
-                 Defaults to MOS_BOARD, then to x64.
+                 Defaults to MICA_BOARD, then to x64.
   --builder NAME the buildx builder to execute inside when this host's daemon
                  cannot execute the image's platform. Defaults to mos-<arch>
                  when such a builder exists; with neither, the run refuses.
@@ -112,10 +112,10 @@ async function main(): Promise<number> {
     return 0
   }
 
-  // x64 last, not first: MOS_BOARD is how every other build entry point is told
+  // x64 last, not first: MICA_BOARD is how every other build entry point is told
   // which board it is working on, and a default that ignored it would smoke one
   // board while the caller's whole session was about the other.
-  const board = opts.board ?? process.env['MOS_BOARD'] ?? 'x64'
+  const board = opts.board ?? process.env['MICA_BOARD'] ?? 'x64'
   const known = shippedBoards()
   if (!known.includes(board)) {
     console.error(`error: '${board}' is not a board in boards/. This tree ships: ${known.join(', ')}.`)

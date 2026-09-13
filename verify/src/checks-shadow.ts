@@ -627,16 +627,16 @@ export const SHADOW_CHECKS: readonly CheckCase[] = [
   {
     // The two environment overrides that let tests/shadow-reconcile-test.sh
     // drive the REAL script against fixtures. They are safe only while nothing
-    // in the image sets them: a stray drop-in pointing MOS_SHADOW_PASSWD or
-    // MOS_SHADOW_FACTORY elsewhere would silently reconcile root's credentials
+    // in the image sets them: a stray drop-in pointing MICA_SHADOW_PASSWD or
+    // MICA_SHADOW_FACTORY elsewhere would silently reconcile root's credentials
     // against the wrong files, and every other check here would still pass.
     //
     // Checked in the shipped unit AND in both drop-in directories, since a
     // drop-in overrides the unit invisibly.
     id: 'shadow-reconcile-no-test-override',
     shell: {
-      pass: 'names MOS_SHADOW_PASSWD or MOS_SHADOW_FACTORY',
-      fail: 'MOS_SHADOW_PASSWD/MOS_SHADOW_FACTORY override by:',
+      pass: 'names MICA_SHADOW_PASSWD or MICA_SHADOW_FACTORY',
+      fail: 'MICA_SHADOW_PASSWD/MICA_SHADOW_FACTORY override by:',
     },
     run: async (ctx): Promise<readonly CheckResult[]> => {
       const root = await packedRoot(ctx)
@@ -646,14 +646,14 @@ export const SHADOW_CHECKS: readonly CheckCase[] = [
         ...dropIns(root, '/usr/lib/systemd/system/mica-shadow-reconcile.service.d'),
       ]
       const hits = candidates.filter(p => entry(root, p)?.isFile() === true
-        && lines(root, p).some(l => /^[ \t]*Environment(File)?=.*(MOS_SHADOW_PASSWD|MOS_SHADOW_FACTORY)/.test(l)))
+        && lines(root, p).some(l => /^[ \t]*Environment(File)?=.*(MICA_SHADOW_PASSWD|MICA_SHADOW_FACTORY)/.test(l)))
       return [verdict(
         'shadow-reconcile-no-test-override',
         hits.length === 0,
         hits.length === 0
           ? 'no Environment=/EnvironmentFile= in mica-shadow-reconcile.service or its drop-in dirs names '
-            + 'MOS_SHADOW_PASSWD or MOS_SHADOW_FACTORY (the test-harness overrides stay inert in the image)'
-          : `mica-shadow-reconcile.service is given a MOS_SHADOW_PASSWD/MOS_SHADOW_FACTORY override by:`
+            + 'MICA_SHADOW_PASSWD or MICA_SHADOW_FACTORY (the test-harness overrides stay inert in the image)'
+          : `mica-shadow-reconcile.service is given a MICA_SHADOW_PASSWD/MICA_SHADOW_FACTORY override by:`
             + `${hits.map(p => ` ${p}`).join('')}. Those exist so the offline test harness can run the `
             + `real script; in the image they redirect where root's credentials are reconciled from and to`,
       )]

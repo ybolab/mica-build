@@ -16,8 +16,8 @@ case "$output" in
 /root/*) host_output="/srv/station/root/${output#/root/}";;
 *) host_output=$output;;
 esac
-image=$(bash "$repo/build-env/from.sh" --arch=amd64 --ref LOCAL_MOS_BUILD_OPENSSL)
-# mos-build-side: container-block -- key generation uses the pinned OpenSSL image.
+image=$(bash "$repo/build-env/from.sh" --arch=amd64 --ref LOCAL_MICA_BUILD_OPENSSL)
+# mica-build-side: container-block -- key generation uses the pinned OpenSSL image.
 docker run --rm --label ai-agent=true --network traefik \
     --user "$(id -u):$(id -g)" -v "$host_output:/keys" --entrypoint /bin/bash "$image" -ceu '
     set -o pipefail
@@ -33,6 +33,6 @@ docker run --rm --label ai-agent=true --network traefik \
     printf "DEVELOPMENT-GRADE\nDOMAINS=boot verity updates\n" > /keys/GENERATED
     chmod 0644 /keys/boot/*.cert.pem /keys/verity/*.cert.pem /keys/updates/public.key /keys/GENERATED
 '
-# mos-build-side: host
+# mica-build-side: host
 install -m 0644 "$repo/meta.example/updates/manifest.json" "$output/updates/manifest.json"
 echo "Development boot, content and metadata signing inputs created at $output"

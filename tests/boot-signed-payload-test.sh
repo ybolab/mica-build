@@ -1,5 +1,5 @@
 #!/bin/bash
-# mos-build-side: container -- actual signed payload bytes; fixture signing only.
+# mica-build-side: container -- actual signed payload bytes; fixture signing only.
 set -euo pipefail
 mode=${1:?uki or fit}
 if [ "$mode" = uki ]; then

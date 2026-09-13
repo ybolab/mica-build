@@ -24,7 +24,7 @@ built from that board's real factory root, and requires the smoke run to go red
 naming the right cause.
 
   --board NAME   which board's _out/<board>/factory-root.oci to break.
-                 Defaults to MOS_BOARD, then to x64.
+                 Defaults to MICA_BOARD, then to x64.
   --help         this.
 
 Needs docker. It refuses rather than skipping when the image is absent and when
@@ -67,7 +67,7 @@ async function main(): Promise<number> {
     return 0
   }
 
-  const board = opts.board ?? process.env['MOS_BOARD'] ?? 'x64'
+  const board = opts.board ?? process.env['MICA_BOARD'] ?? 'x64'
   const known = shippedBoards()
   if (!known.includes(board)) {
     console.error(`error: '${board}' is not a board in boards/. This tree ships: ${known.join(', ')}.`)

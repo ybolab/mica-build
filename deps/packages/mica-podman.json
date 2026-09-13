@@ -1,19 +1,19 @@
 {
   "name": "mica-podman",
   "repository": "mica-podman",
-  "commit": "3e8375d5c1dd144b432b344edf378612bdeae60b",
+  "commit": "4c84b4b13e0327a6591a0e9d268f3804a933ad8d",
   "targets": {
     "amd64": {
-      "version": "5.8.6+git3e8375d5c1dd-1",
+      "version": "5.8.6+git4c84b4b13e03-1",
       "architecture": "amd64",
-      "sha256": "225f2f5ba05134a94a0524695607e258b225c04ef2825c6ac7a4053806a239e4",
-      "asset": "mica-podman_5.8.6.git3e8375d5c1dd-1_amd64.deb"
+      "sha256": "472aa2a14c018020ac3ad2f790f2b3ea6683fe7b91dbf9e5562e4ba18078451c",
+      "asset": "mica-podman_5.8.6.git4c84b4b13e03-1_amd64.deb"
     },
     "arm64": {
-      "version": "5.8.6+git3e8375d5c1dd-1",
+      "version": "5.8.6+git4c84b4b13e03-1",
       "architecture": "arm64",
-      "sha256": "32fb694460f8d1ef32ca9e41b7d9b652b0f5eb33e0c1e1aaeb9988050ea923c9",
-      "asset": "mica-podman_5.8.6.git3e8375d5c1dd-1_arm64.deb"
+      "sha256": "528dee59a69b6f0a1f2de2516c671c6f2a8f28deac6cda131ccca8f5f39eb72f",
+      "asset": "mica-podman_5.8.6.git4c84b4b13e03-1_arm64.deb"
     }
   }
 }

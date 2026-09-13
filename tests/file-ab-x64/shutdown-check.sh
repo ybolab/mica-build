@@ -15,11 +15,11 @@ if path.stat().st_size > 64 * 1024 * 1024:
     raise SystemExit('Excessive shutdown log')
 lines = path.read_text(errors='replace').splitlines()
 patterns = [
-    rf'MOS_SHUTDOWN stage=entered action={action} source=exitrd deployment=[0-9a-f]{{64}}',
-    r'MOS_SHUTDOWN stage=quiesced detail="users=0"',
-    r'MOS_SHUTDOWN stage=empty-observation detail="mounts=0 mappings=0 loops=0 backings=0"',
-    r'MOS_SHUTDOWN stage=storage-released detail="observations=2 mounts=0 mappings=0 loops=0 backings=0"',
-    rf'MOS_SHUTDOWN stage=action-requested action={action}',
+    rf'MICA_SHUTDOWN stage=entered action={action} source=exitrd deployment=[0-9a-f]{{64}}',
+    r'MICA_SHUTDOWN stage=quiesced detail="users=0"',
+    r'MICA_SHUTDOWN stage=empty-observation detail="mounts=0 mappings=0 loops=0 backings=0"',
+    r'MICA_SHUTDOWN stage=storage-released detail="observations=2 mounts=0 mappings=0 loops=0 backings=0"',
+    rf'MICA_SHUTDOWN stage=action-requested action={action}',
 ]
 positions = []
 for pattern in patterns:
@@ -30,7 +30,7 @@ for pattern in patterns:
 if positions != sorted(positions):
     raise SystemExit('Native shutdown evidence is out of order')
 for line in lines:
-    if re.match(r'MOS_SHUTDOWN stage=(failed|storage-not-released)\b', line) or any(
+    if re.match(r'MICA_SHUTDOWN stage=(failed|storage-not-released)\b', line) or any(
         marker in line for marker in ('Unable to finalize remaining', 'Failed to execute shutdown binary', 'Failed to switch root to')
     ):
         raise SystemExit(f'Shutdown failure evidence: {line}')

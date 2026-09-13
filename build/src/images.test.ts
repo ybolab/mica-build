@@ -57,18 +57,18 @@ describe('every failure names the key', () => {
   })
 
   test('a LOCAL_ key that has not been built is refused by the store, not by the shape', async () => {
-    // localhost/mos-build-* exist only after `make build-env`. Whether this
+    // localhost/mica-build-* exist only after `make build-env`. Whether this
     // host has them is not the assertion -- the assertion is that the answer is
     // either a reference or a sentence, never an empty string.
     let ref = ''
     let message = ''
     try {
-      ref = await resolveImage('LOCAL_MOS_BUILD_BASE')
+      ref = await resolveImage('LOCAL_MICA_BUILD_BASE')
     } catch (e) {
       message = (e as Error).message
     }
-    if (message !== '') expect(message).toContain('LOCAL_MOS_BUILD_BASE')
-    else expect(ref).toContain('localhost/mos-build-base')
+    if (message !== '') expect(message).toContain('LOCAL_MICA_BUILD_BASE')
+    else expect(ref).toContain('localhost/mica-build-base')
   })
 
   test('a resolver that is not there says so about the PATH, with the key still in hand', async () => {

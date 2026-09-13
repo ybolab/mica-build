@@ -85,7 +85,7 @@ for relative in updates/manifest.json GENERATED; do
     fi
 done
 
-docker_cli=${MOS_BUILD_DOCKER:-docker}
+docker_cli=${MICA_BUILD_DOCKER:-docker}
 command -v "$docker_cli" >/dev/null || {
     echo "error: public metadata validation requires the configured Docker CLI: $docker_cli" >&2
     exit 1

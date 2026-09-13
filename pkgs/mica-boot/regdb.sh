@@ -1,6 +1,6 @@
 #!/bin/sh
 # Publish the upstream database only when the target kernel trusts its signature.
-# mos-build-side: container -- OpenSSL runs in the pinned FIT packaging image.
+# mica-build-side: container -- OpenSSL runs in the pinned FIT packaging image.
 set -eu
 trust=${1:?target kernel regulatory certificate bundle required}
 output=${2:?firmware output directory required}

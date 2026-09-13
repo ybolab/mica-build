@@ -15,7 +15,7 @@ refuses a test selection that runs zero tests.
 | `--build-rootfs` | `src/stages-cli.ts` | Ordered root composition stages |
 | `--compare-roots` | `src/compare-roots-cli.ts` | Explain two root filesystem outputs |
 
-`MOS_BUILD_BUN` selects an explicit Bun executable. `MOS_BUILD_CONTAINER=1`
+`MICA_BUILD_BUN` selects an explicit Bun executable. `MICA_BUILD_CONTAINER=1`
 selects the digest-pinned Bun/Docker CLI image. Selecting both is refused.
 Without either override, an available host Bun is used; otherwise the wrapper
 uses its pinned container. Compiler and filesystem-tool ownership remains with

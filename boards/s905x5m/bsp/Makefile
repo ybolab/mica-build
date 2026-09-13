@@ -2,8 +2,8 @@
 
 BSP_OUT ?= ../../../_out/boards/s905x5m
 FROM_SH := ../../../build-env/from.sh
-UBUNTU_ARG := MOS_IMAGE_UBUNTU_2404=IMAGE_UBUNTU_2404
-DEBIAN_ARG := MOS_IMAGE_DEBIAN_TRIXIE=IMAGE_DEBIAN_TRIXIE
+UBUNTU_ARG := MICA_IMAGE_UBUNTU_2404=IMAGE_UBUNTU_2404
+DEBIAN_ARG := MICA_IMAGE_DEBIAN_TRIXIE=IMAGE_DEBIAN_TRIXIE
 UBOOT_ARTIFACTS := $(BSP_OUT)/uboot/u-boot.bin.signed \
 	$(BSP_OUT)/uboot/u-boot.bin.sd.bin.signed \
 	$(BSP_OUT)/uboot/DDR.USB
@@ -43,7 +43,7 @@ fit-tools:
 	@test -x "$(BSP_OUT)/uboot/tools/fit_check_sign"
 	$(MAKE) -C ../../.. os-boot-tools
 	docker build --label ai-agent=true -t ai-agent/mos-fit-tools-amd64 \
-	  --build-arg MOS_BOOT_TOOLS=ai-agent/mos-boot-tools-amd64 \
+	  --build-arg MICA_BOOT_TOOLS=ai-agent/mos-boot-tools-amd64 \
 	  --build-context fit-tools=$(BSP_OUT)/uboot/tools \
 	  -f ../../../pkgs/mica-boot/Dockerfile.fit ../../../pkgs/mica-boot
 

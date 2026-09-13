@@ -29,7 +29,7 @@ p.write_text(source.replace(marker, marker+'''
     }
 '''))
 PY
-image=$(bash build-env/from.sh --arch=amd64 --ref LOCAL_MOS_BUILD_RUST)
+image=$(bash build-env/from.sh --arch=amd64 --ref LOCAL_MICA_BUILD_RUST)
 timeout -k 20 1200 docker run --rm --label ai-agent=true --network traefik \
     -v "$out:/w" -v "$PWD/_out/cargo/registry:/usr/local/cargo/registry" \
     -v "$PWD/_out/cargo/git:/usr/local/cargo/git" -w /w/source \

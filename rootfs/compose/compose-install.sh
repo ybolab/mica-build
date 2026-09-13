@@ -2,11 +2,11 @@
 # Add the locked upstream dependencies and selected local packages with dpkg.
 set -eu
 fail() { echo "error: $*" >&2; exit 1; }
-for v in MOS_ARCH MOS_BOARD MOS_PROFILE MOS_RELEASE_VERSION MOS_RELEASE_COMMIT_DATE SOURCE_DATE_EPOCH; do
+for v in MICA_ARCH MICA_BOARD MICA_PROFILE MICA_RELEASE_VERSION MICA_RELEASE_COMMIT_DATE SOURCE_DATE_EPOCH; do
     eval "value=\${${v}:-}"
     [ -n "$value" ] || fail "$v is empty or unset"
 done
-POOL="/mos-debs/${MOS_ARCH}"
+POOL="/mos-debs/${MICA_ARCH}"
 LIST=/mos-compose/packages.txt
 for f in Packages SHA256SUMS manifest.txt; do
     [ -s "$POOL/$f" ] || fail "$POOL/$f is missing or empty; build the pool with make os-pool"
@@ -151,14 +151,14 @@ echo "compose: $(echo ${META_INSTALLED} | wc -w) public-set file(s) installed fr
 #
 # HERE, on the composition path, and from build arguments only: no wall clock,
 # no git, nothing read back out of the image. rootfs/build.sh passes
-# MOS_BOARD and MOS_PROFILE -- the same two values it hands the resolver -- and
-# MOS_RELEASE_VERSION, which is `bash build-env/deb/version.sh`'s answer for
+# MICA_BOARD and MICA_PROFILE -- the same two values it hands the resolver -- and
+# MICA_RELEASE_VERSION, which is `bash build-env/deb/version.sh`'s answer for
 # this tree, the same string it has already required the POOL to have been
 # built at. So the identity moves with the pool the packages came out of, and
 # the finalizer's /usr/share/mica/manifest.tsv, taken from the same dpkg
 # database a few steps later, carries that version on every first-party row.
 #
-# MOS_RELEASE_COMMIT_DATE arrives the same way, and it is what micad reports as
+# MICA_RELEASE_COMMIT_DATE arrives the same way, and it is what micad reports as
 # `system.commitDate`. It is the date of the commit INSIDE the version above --
 # build.sh reads it out of the stamp it has already checked the pool against,
 # so the two cannot come to name different commits -- and it is the one date in
@@ -178,30 +178,30 @@ echo "compose: $(echo ${META_INSTALLED} | wc -w) public-set file(s) installed fr
 identity_version_owner=""
 for p in ${WANT}; do
     v="$(dpkg-query -W -f='${Version}' "${p}" 2>/dev/null || true)"
-    [ "${v}" = "${MOS_RELEASE_VERSION}" ] || continue
+    [ "${v}" = "${MICA_RELEASE_VERSION}" ] || continue
     identity_version_owner="${p}"
     break
 done
 [ -n "${identity_version_owner}" ] ||
-    fail "MOS_RELEASE_VERSION is '${MOS_RELEASE_VERSION}' and no package installed into this root carries that version. It is meant to be the version build-env/deb/version.sh printed for the tree the pool was built from, so a value no first-party package here shares means the identity file would state a release this image is not"
+    fail "MICA_RELEASE_VERSION is '${MICA_RELEASE_VERSION}' and no package installed into this root carries that version. It is meant to be the version build-env/deb/version.sh printed for the tree the pool was built from, so a value no first-party package here shares means the identity file would state a release this image is not"
 
 install -d -m 0755 /usr/share/mica
 {
     printf '# Immutable root build identity for diagnostics. Written by\n'
     printf '# rootfs/compose/compose-install.sh from the arguments of the build\n'
     printf '# that composed this image; the root is read-only, so nothing edits it.\n'
-    printf 'BOARD=%s\n' "${MOS_BOARD}"
-    printf 'PROFILE=%s\n' "${MOS_PROFILE}"
-    printf 'VERSION=%s\n' "${MOS_RELEASE_VERSION}"
-    printf 'COMMIT_DATE=%s\n' "${MOS_RELEASE_COMMIT_DATE}"
+    printf 'BOARD=%s\n' "${MICA_BOARD}"
+    printf 'PROFILE=%s\n' "${MICA_PROFILE}"
+    printf 'VERSION=%s\n' "${MICA_RELEASE_VERSION}"
+    printf 'COMMIT_DATE=%s\n' "${MICA_RELEASE_COMMIT_DATE}"
     # The development waiver, if any: locked packages whose digest check
-    # rootfs/build.sh skipped under MOS_POOL_UNLOCKED. Written only when set,
+    # rootfs/build.sh skipped under MICA_POOL_UNLOCKED. Written only when set,
     # so an image with the line is unmistakably not a release, and
     # build/src/release-manifest.ts refuses it outside the development channel.
-    [ -z "${MOS_RELEASE_UNLOCKED:-}" ] || printf 'UNLOCKED=%s\n' "${MOS_RELEASE_UNLOCKED}"
+    [ -z "${MICA_RELEASE_UNLOCKED:-}" ] || printf 'UNLOCKED=%s\n' "${MICA_RELEASE_UNLOCKED}"
 } >/usr/share/mica/release-identity.env
 chmod 0644 /usr/share/mica/release-identity.env
-echo "compose: release identity ${MOS_BOARD}/${MOS_PROFILE} at ${MOS_RELEASE_VERSION}, source committed ${MOS_RELEASE_COMMIT_DATE} (the version ${identity_version_owner} carries)${MOS_RELEASE_UNLOCKED:+; UNLOCKED=${MOS_RELEASE_UNLOCKED}}"
+echo "compose: release identity ${MICA_BOARD}/${MICA_PROFILE} at ${MICA_RELEASE_VERSION}, source committed ${MICA_RELEASE_COMMIT_DATE} (the version ${identity_version_owner} carries)${MICA_RELEASE_UNLOCKED:+; UNLOCKED=${MICA_RELEASE_UNLOCKED}}"
 
 # NO INITRAMFS, asserted where the kernel and the root it must mount are
 # finally in one tree together.

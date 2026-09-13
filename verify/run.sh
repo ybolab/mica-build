@@ -82,12 +82,12 @@ plus the docker client pinned as IMAGE_DOCKER_CLI_28, built here on demand --
 see verify/Dockerfile.
 
 environment:
-  MOS_VERIFY_BUN         the bun binary to use, instead of searching PATH and ~/.bun
-  MOS_VERIFY_CONTAINER=1 use the pinned container even where a host bun exists,
+  MICA_VERIFY_BUN         the bun binary to use, instead of searching PATH and ~/.bun
+  MICA_VERIFY_CONTAINER=1 use the pinned container even where a host bun exists,
                          which is how the two routes are compared on one host
-  MOS_VERIFY_TOOLS       host|container -- where --verify's image tools come from,
+  MICA_VERIFY_TOOLS       host|container -- where --verify's image tools come from,
                          instead of choosing by what this host has
-  MOS_BOARD              which board --verify's image is, instead of --board
+  MICA_BOARD              which board --verify's image is, instead of --board
 USAGE
 }
 
@@ -177,20 +177,20 @@ fi
 # container. The choice is made once, here, and announced.
 ROUTE=host
 WHY=""
-BUN="${MOS_VERIFY_BUN:-}"
+BUN="${MICA_VERIFY_BUN:-}"
 
 # An explicit binary and an explicit container are contradictory instructions.
 # Honouring one silently would run a bun other than the one that was asked for,
 # and the whole point of pinning is that which bun ran is never a guess.
-if [ -n "${BUN}" ] && [ "${MOS_VERIFY_CONTAINER:-0}" = 1 ]; then
-    echo "error: MOS_VERIFY_BUN names a binary and MOS_VERIFY_CONTAINER asks for the pinned" >&2
+if [ -n "${BUN}" ] && [ "${MICA_VERIFY_CONTAINER:-0}" = 1 ]; then
+    echo "error: MICA_VERIFY_BUN names a binary and MICA_VERIFY_CONTAINER asks for the pinned" >&2
     echo "       container. Those are two different buns; set one or the other, not both." >&2
     exit 1
 fi
 
-if [ "${MOS_VERIFY_CONTAINER:-0}" = 1 ]; then
+if [ "${MICA_VERIFY_CONTAINER:-0}" = 1 ]; then
     ROUTE=container
-    WHY="MOS_VERIFY_CONTAINER=1"
+    WHY="MICA_VERIFY_CONTAINER=1"
 elif [ -z "${BUN}" ]; then
     if command -v bun >/dev/null 2>&1; then
         BUN="$(command -v bun)"
@@ -214,7 +214,7 @@ fi
 # the client out of IMAGE_DOCKER_CLI_28.
 #
 # Built here and not by `make build-env`. That target builds the four
-# mos-build-* compiler images and nothing runs it before running the verifier;
+# mica-build-* compiler images and nothing runs it before running the verifier;
 # an image produced there would be absent at exactly the moment it is needed.
 # One layer, so it costs a second after the two bases are local.
 #
@@ -264,7 +264,7 @@ if [ "${ROUTE}" = host ]; then
 else
     command -v docker >/dev/null 2>&1 || {
         echo "error: no bun on this host, and no docker to run the pinned one in." >&2
-        echo "       verify needs one of the two. Either install bun, or set MOS_VERIFY_BUN to a" >&2
+        echo "       verify needs one of the two. Either install bun, or set MICA_VERIFY_BUN to a" >&2
         echo "       bun binary, or install docker -- the bun this tree runs is recorded as" >&2
         echo "       IMAGE_BUN_1 in build-env/images.env and needs a container runtime to be it." >&2
         exit 1
@@ -330,8 +330,8 @@ else
         if ! docker image inspect "${VERIFY_IMAGE}" >/dev/null 2>&1; then
             echo "verify: building ${VERIFY_IMAGE} (pinned bun + pinned docker client and buildx)"
             docker build -q \
-                --build-arg "MOS_BUN_IMAGE=${BUN_IMAGE}" \
-                --build-arg "MOS_DOCKER_CLI_IMAGE=${CLI_IMAGE}" \
+                --build-arg "MICA_BUN_IMAGE=${BUN_IMAGE}" \
+                --build-arg "MICA_DOCKER_CLI_IMAGE=${CLI_IMAGE}" \
                 -t "${VERIFY_IMAGE}" -f "${HERE}/Dockerfile" "${HERE}" >/dev/null || {
                 echo "error: could not build ${VERIFY_IMAGE} from verify/Dockerfile." >&2
                 echo "       It is two pinned FROMs and two COPYs; nothing is installed and nothing is" >&2

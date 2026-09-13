@@ -34,7 +34,7 @@ BSP_OUT ?= ../../../_out/boards/virt-arm64
 # and leaves the variable empty on failure. Inside a recipe the `&&`
 # short-circuits and make stops with from.sh's own message.
 FROM_SH := ../../../build-env/from.sh
-UBUNTU_ARG := MOS_IMAGE_UBUNTU_2404=IMAGE_UBUNTU_2404
+UBUNTU_ARG := MICA_IMAGE_UBUNTU_2404=IMAGE_UBUNTU_2404
 
 # Distribute the same public certificate bundle to every builder. Kernel builds
 # never mint keys; development material is generated explicitly before building.

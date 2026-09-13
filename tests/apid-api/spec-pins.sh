@@ -30,9 +30,9 @@ bash "${REPO_ROOT}/tools/micad-pool.sh" --openapi
 BUN=""
 ROUTE=host
 WHY=""
-if [ "${MOS_APID_CONTAINER:-0}" = 1 ]; then
+if [ "${MICA_APID_CONTAINER:-0}" = 1 ]; then
     ROUTE=container
-    WHY="MOS_APID_CONTAINER=1"
+    WHY="MICA_APID_CONTAINER=1"
 elif command -v bun >/dev/null 2>&1; then
     BUN="$(command -v bun)"
 elif [ -x "${HOME:-/root}/.bun/bin/bun" ]; then
@@ -51,7 +51,7 @@ if [ "${ROUTE}" = container ]; then
     }
     # One resolver, the tree's own: from.sh validates that the key exists and is
     # a digest rather than a tag, and says so naming the key and the file.
-    BUN_IMAGE="${MOS_APID_BUN_IMAGE:-$(bash "${REPO_ROOT}/build-env/from.sh" --ref IMAGE_BUN_1)}"
+    BUN_IMAGE="${MICA_APID_BUN_IMAGE:-$(bash "${REPO_ROOT}/build-env/from.sh" --ref IMAGE_BUN_1)}"
     if ! docker image inspect "${BUN_IMAGE}" >/dev/null 2>&1; then
         echo "apid-api spec-pins: ${BUN_IMAGE} is not in the local image store; pulling it"
         docker pull -q "${BUN_IMAGE}" >/dev/null 2>&1 || {

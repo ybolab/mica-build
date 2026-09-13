@@ -49,8 +49,8 @@
 # can drive this script; on a device none of the variables is set and all three
 # are the literal paths they were before. mica-data-layout and hwinit-gadget take
 # their own for the same reason.
-CONF=${MOS_MAC_CONF:-/etc/mica/mac.conf}
-SYSFS=${MOS_MAC_SYSFS:-/sys}
+CONF=${MICA_MAC_CONF:-/etc/mica/mac.conf}
+SYSFS=${MICA_MAC_SYSFS:-/sys}
 [ -r "$CONF" ] || exit 0
 seed_path=$(sed -n 's/^seed=//p' "$CONF" | head -n1)
 [ -n "$seed_path" ] && [ -r "$seed_path" ] || exit 0

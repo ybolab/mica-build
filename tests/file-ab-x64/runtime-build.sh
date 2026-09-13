@@ -13,11 +13,11 @@ case "$board" in x64|virt-arm64) ;; *) echo 'unsupported acceptance board' >&2; 
 scratch=$(mktemp -d "$PWD/_out/file-runtime.XXXXXX")
 evidence="$scratch/boot"
 mkdir "$scratch/tree"
-# mos-build-side: container-block -- extract the production root using its pinned tools.
+# mica-build-side: container-block -- extract the production root using its pinned tools.
 docker run --rm --label ai-agent=true --network traefik -v "$scratch:/w" \
     -v "$root_image:/root.img:ro" ai-agent/mos-boot-tools-amd64 \
     unsquashfs -f -d /w/tree /root.img >/dev/null
-# mos-build-side: host
+# mica-build-side: host
 install -m 0755 tests/file-ab-x64/runtime.sh "$scratch/tree/usr/lib/mica/test-file-runtime"
 install -m 0644 tests/file-ab-x64/runtime.service "$scratch/tree/etc/systemd/system/test-file-runtime.service"
 ln -s /etc/systemd/system/test-file-runtime.service "$scratch/tree/etc/systemd/system/multi-user.target.wants/test-file-runtime.service"

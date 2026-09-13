@@ -12,7 +12,7 @@ is the step, which is the only place it can run on cx3576.
 
 It needs a matched pair — `factory-root.oci` and `rootfs-verity.img` from one
 build — and it says so and exits non-zero when it has neither, rather than
-skipping. `MOS_BOARD` selects the board; `x64` is the default.
+skipping. `MICA_BOARD` selects the board; `x64` is the default.
 
 ## What it is
 
@@ -65,8 +65,8 @@ comparison of type, major and minor, enumerated with `stat` because
 ## Running it
 
 ```sh
-MOS_BOARD=x64 bash rootfs/build.sh     # produces _out/x64/{rootfs-verity.img,factory-root.oci}
-make os-factory-root-gate                    # MOS_BOARD selects the board; x64 by default
+MICA_BOARD=x64 bash rootfs/build.sh     # produces _out/x64/{rootfs-verity.img,factory-root.oci}
+make os-factory-root-gate                    # MICA_BOARD selects the board; x64 by default
 bash tests/factory-root-gate/gate.sh _out/x64   # the same thing, said longhand
 ```
 

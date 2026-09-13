@@ -23,11 +23,11 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 # the one with a KVM-capable host; virt-arm64 is the same suite on the
 # architecture the device runs. Any UEFI board works: nothing below knows a
 # board name.
-MOS_BOARD="${MOS_BOARD:-x64}"
-export MOS_BOARD
-BOARD_ENV="${REPO_ROOT}/boards/${MOS_BOARD}/board.env"
+MICA_BOARD="${MICA_BOARD:-x64}"
+export MICA_BOARD
+BOARD_ENV="${REPO_ROOT}/boards/${MICA_BOARD}/board.env"
 if [ ! -f "${BOARD_ENV}" ]; then
-    echo "FAIL: MOS_BOARD is '${MOS_BOARD}' and ${BOARD_ENV} does not exist; a board IS its board.env" >&2
+    echo "FAIL: MICA_BOARD is '${MICA_BOARD}' and ${BOARD_ENV} does not exist; a board IS its board.env" >&2
     exit 1
 fi
 
@@ -38,9 +38,9 @@ fi
 # shellcheck source=/dev/null  # a data file of assignments, resolved at runtime
 . "${BOARD_ENV}"
 
-OUT_DIR="${REPO_ROOT}/_out/${MOS_BOARD}"
-IMG="${MOS_QEMU_IMAGE:?explicit complete factory image required}"
-BOOT_CERT="${MOS_QEMU_BOOT_CERT:?explicit public boot certificate required}"
+OUT_DIR="${REPO_ROOT}/_out/${MICA_BOARD}"
+IMG="${MICA_QEMU_IMAGE:?explicit complete factory image required}"
+BOOT_CERT="${MICA_QEMU_BOOT_CERT:?explicit public boot certificate required}"
 IMG="$(readlink -f "$IMG")"
 BOOT_CERT="$(readlink -f "$BOOT_CERT")"
 RUN_DIR="${OUT_DIR}/.qemu"
@@ -72,8 +72,8 @@ OUT_REAL="$(readlink -f "${REPO_ROOT}/_out")"
 
 # Ports: the same names src/qemu.ts reads, so a caller sets them once and
 # the two halves cannot disagree about which port was opened.
-HTTPS_PORT="${MOS_QEMU_HTTPS_PORT:-18443}"
-HTTP_PORT="${MOS_QEMU_HTTP_PORT:-18080}"
+HTTPS_PORT="${MICA_QEMU_HTTPS_PORT:-18443}"
+HTTP_PORT="${MICA_QEMU_HTTP_PORT:-18080}"
 
 # A TCG boot with no /dev/kvm on a quiet machine reaches APID_LISTENING in
 # 60-66s on x64 and both readiness signals in 65-72s. That measures the daemon
@@ -103,10 +103,10 @@ HTTP_PORT="${MOS_QEMU_HTTP_PORT:-18080}"
 # stall unless the waiting loop says what it is doing. Hence a generous
 # deadline, an override, and progress lines carrying the elapsed time and the
 # last thing the console said.
-READY_TIMEOUT="${MOS_APID_READY_TIMEOUT:-900}"
-CONTAINER_TIMEOUT="${MOS_APID_CONTAINER_TIMEOUT:-240}"
-POLL_INTERVAL="${MOS_APID_POLL_INTERVAL:-5}"
-PROGRESS_INTERVAL="${MOS_APID_PROGRESS_INTERVAL:-15}"
+READY_TIMEOUT="${MICA_APID_READY_TIMEOUT:-900}"
+CONTAINER_TIMEOUT="${MICA_APID_CONTAINER_TIMEOUT:-240}"
+POLL_INTERVAL="${MICA_APID_POLL_INTERVAL:-5}"
+PROGRESS_INTERVAL="${MICA_APID_PROGRESS_INTERVAL:-15}"
 
 # The QEMU-side backstops. RUN_SECONDS is when src/qemu.ts presses the
 # virtual power button; TIMEOUT is when it gives up on the container entirely,
@@ -114,19 +114,19 @@ PROGRESS_INTERVAL="${MOS_APID_PROGRESS_INTERVAL:-15}"
 # allows a guest which ignores ACPI. Both are generous because the normal end of a run
 # is this script tearing the container down after the suite, not a backstop
 # firing -- and a backstop firing mid-suite looks exactly like apid dying.
-RUN_SECONDS="${MOS_QEMU_RUN_SECONDS:-2400}"
-QEMU_TIMEOUT="${MOS_QEMU_TIMEOUT:-2700}"
+RUN_SECONDS="${MICA_QEMU_RUN_SECONDS:-2400}"
+QEMU_TIMEOUT="${MICA_QEMU_TIMEOUT:-2700}"
 
 # An empty selection runs the entire registry in src/main.ts. Keep no second
 # phase list here: adding a phase must include it in the default QEMU run.
-# Explicit MOS_APID_PHASES remains available for focused debugging.
-PHASES="${MOS_APID_PHASES:-}"
+# Explicit MICA_APID_PHASES remains available for focused debugging.
+PHASES="${MICA_APID_PHASES:-}"
 # The bun image is pinned by digest, not by tag. `oven/bun:1` is a
 # major-version tag upstream repoints onto every 1.x release, and this harness
 # is what decides whether apid's API is judged conformant, so the default is the
-# digest build-env/images.env records. MOS_APID_BUN_IMAGE overrides it.
-BUN_IMAGE="${MOS_APID_BUN_IMAGE:-$(bash "${REPO_ROOT}/build-env/from.sh" --ref IMAGE_BUN_1)}"
-KEEP_DISK="${MOS_APID_KEEP_DISK:-0}"
+# digest build-env/images.env records. MICA_APID_BUN_IMAGE overrides it.
+BUN_IMAGE="${MICA_APID_BUN_IMAGE:-$(bash "${REPO_ROOT}/build-env/from.sh" --ref IMAGE_BUN_1)}"
+KEEP_DISK="${MICA_APID_KEEP_DISK:-0}"
 
 # The daemon socket is MOUNTED into the container the boot engine runs in, so it
 # has to be a socket on this host. A DOCKER_HOST naming a TCP daemon is a
@@ -258,8 +258,8 @@ build_port_image() {
     docker image inspect "${PORT_IMAGE}" >/dev/null 2>&1 && return 0
     note "building ${PORT_IMAGE} (the pinned bun plus the pinned docker client)"
     docker build -q --label ai-agent=true \
-        --build-arg "MOS_BUN_IMAGE=${BUN_IMAGE}" \
-        --build-arg "MOS_DOCKER_CLI_IMAGE=${PORT_CLI_IMAGE}" \
+        --build-arg "MICA_BUN_IMAGE=${BUN_IMAGE}" \
+        --build-arg "MICA_DOCKER_CLI_IMAGE=${PORT_CLI_IMAGE}" \
         -t "${PORT_IMAGE}" -f "${REPO_ROOT}/verify/Dockerfile" "${REPO_ROOT}/verify" >/dev/null
 }
 
@@ -272,16 +272,16 @@ qemu_port() {
     local kv
     envargs=()
     for kv in "${QEMU_ENV[@]}"; do envargs+=(-e "${kv}"); done
-    # MOS_BOARD, EXPLICITLY. It is exported at the top of this script so that
+    # MICA_BOARD, EXPLICITLY. It is exported at the top of this script so that
     # src/qemu.ts "reads the same value rather than defaulting independently",
     # and that only holds for a process in this shell's environment -- the
     # engine runs in a CONTAINER, which inherits nothing. Without this the
     # engine took its own `?? "x64"` default and refused with
     # "_out/x64/x64-mos-latest.img not found" on a run that had already passed
     # its "image present" precondition against the board actually asked for.
-    envargs+=(-e "MOS_BOARD=${MOS_BOARD}")
+    envargs+=(-e "MICA_BOARD=${MICA_BOARD}")
     if [ "${1:-}" = "--reuse" ]; then
-        envargs+=(-e MOS_QEMU_REUSE_DISK=1)
+        envargs+=(-e MICA_QEMU_REUSE_DISK=1)
         shift
     fi
     # /dev/kvm as THIS process sees it, passed through so that src/qemu.ts's own
@@ -431,7 +431,7 @@ CONSOLE1="${ART_DIR}/console-boot1.log"
 # dangling link, because the symlink's target does not exist in that container.
 # Where _out is a real directory the second bind is the same directory twice
 # and costs nothing.
-ART_IN_CONTAINER="/w/_out/${MOS_BOARD}/apid-api"
+ART_IN_CONTAINER="/w/_out/${MICA_BOARD}/apid-api"
 
 SMOKE_IN_GUEST=/state/m7-net-smoke.sh
 
@@ -439,10 +439,10 @@ if [ "${DRY_RUN}" -eq 1 ]; then
     note "--dry-run: nothing will be booted"
     note "would prepare  ${RUN_DIR}/disk.img from ${IMG##*/} (src/qemu.ts --prepare-only, in ${PORT_IMAGE})"
     note "would boot     src/qemu.ts --capture ${CONSOLE1}"
-    note "               MOS_QEMU_FORWARD=1 MOS_QEMU_NETWORK=${NET}"
-    note "               MOS_QEMU_IMAGE=${IMG} MOS_QEMU_BOOT_CERT=${BOOT_CERT}"
+    note "               MICA_QEMU_FORWARD=1 MICA_QEMU_NETWORK=${NET}"
+    note "               MICA_QEMU_IMAGE=${IMG} MICA_QEMU_BOOT_CERT=${BOOT_CERT}"
     note "would seed     tests/apid-api/guest/m7-net-smoke.sh -> DATA:${SMOKE_IN_GUEST} (phase 05c)"
-    note "               MOS_QEMU_RUN_SECONDS=${RUN_SECONDS} MOS_QEMU_TIMEOUT=${QEMU_TIMEOUT}"
+    note "               MICA_QEMU_RUN_SECONDS=${RUN_SECONDS} MICA_QEMU_TIMEOUT=${QEMU_TIMEOUT}"
     note "would find     the container binding ${RUN_DIR_REAL} and read its address on ${NET}"
     note "would wait     up to ${READY_TIMEOUT}s for APID_LISTENING on the console AND for"
     note "               https://<guest>:${HTTPS_PORT}/healthz to answer 200 from inside ${BUN_IMAGE}"
@@ -459,17 +459,17 @@ trap 'teardown' EXIT
 
 # Prepare a disposable disk and seed services through the persistent unit path.
 QEMU_ENV=(
-    MOS_QEMU_IMAGE="$IMG"
-    MOS_QEMU_BOOT_CERT="$BOOT_CERT"
-    MOS_QEMU_FORWARD=1
-    MOS_QEMU_NETWORK="${NET}"
-    MOS_QEMU_HTTPS_PORT="${HTTPS_PORT}"
-    MOS_QEMU_HTTP_PORT="${HTTP_PORT}"
-    MOS_QEMU_RUN_SECONDS="${RUN_SECONDS}"
-    MOS_QEMU_TIMEOUT="${QEMU_TIMEOUT}"
+    MICA_QEMU_IMAGE="$IMG"
+    MICA_QEMU_BOOT_CERT="$BOOT_CERT"
+    MICA_QEMU_FORWARD=1
+    MICA_QEMU_NETWORK="${NET}"
+    MICA_QEMU_HTTPS_PORT="${HTTPS_PORT}"
+    MICA_QEMU_HTTP_PORT="${HTTP_PORT}"
+    MICA_QEMU_RUN_SECONDS="${RUN_SECONDS}"
+    MICA_QEMU_TIMEOUT="${QEMU_TIMEOUT}"
 )
-if [ "${MOS_QEMU_SSH_PORT+x}" = x ]; then
-    QEMU_ENV+=("MOS_QEMU_SSH_PORT=${MOS_QEMU_SSH_PORT}")
+if [ "${MICA_QEMU_SSH_PORT+x}" = x ]; then
+    QEMU_ENV+=("MICA_QEMU_SSH_PORT=${MICA_QEMU_SSH_PORT}")
 fi
 
 if ! bash "$REPO_ROOT/tests/signed-boot-lab/images.sh" --lifecycle > "$ART_DIR/qemu-image.log" 2>&1; then

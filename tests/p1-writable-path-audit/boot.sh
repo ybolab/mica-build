@@ -24,7 +24,7 @@ REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 S="${P1_WORK:-$REPO/.tmp/p1-writable-path-audit}"
 mkdir -p "$S"
 H="$REPO/tests/p1-writable-path-audit"
-export MOS_BOARD=x64
+export MICA_BOARD=x64
 LABEL="${1:?label}"
 MODE="${2:?mode}"
 SSH_PORT="${SSH_PORT:-18022}"
@@ -72,7 +72,7 @@ APPEND="systemd.ssh_listen=${SSH_PORT_GUEST:-22}"
 APPEND="$APPEND systemd.set_credential_binary=ssh.ephemeral-authorized_keys-all:${PUBB64}"
 APPEND="$APPEND systemd.set_credential_binary=tmpfiles.extra:${TMPB64}"
 
-RUN_DIR_REAL="$(readlink -f "$REPO/_out/$MOS_BOARD/.qemu")"
+RUN_DIR_REAL="$(readlink -f "$REPO/_out/$MICA_BOARD/.qemu")"
 
 # THE KEY GOES SOMEWHERE micad DOES NOT MANAGE.
 #
@@ -102,14 +102,14 @@ fi
 docker run --rm --label ai-agent=true \
     -v "$REPO:$REPO" -v /var/run/docker.sock:/var/run/docker.sock \
     -w "$REPO/tests/apid-api" \
-    -e "MOS_BOARD=$MOS_BOARD" \
-    -e MOS_QEMU_REUSE_DISK=1 \
-    -e "MOS_QEMU_RUN_SECONDS=$RUN_SECONDS" \
-    -e "MOS_QEMU_TIMEOUT=$QEMU_TIMEOUT" \
-    -e "MOS_QEMU_APPEND=$APPEND" \
-    -e MOS_QEMU_FORWARD=1 \
-    -e "MOS_QEMU_NETWORK=$NET" \
-    -e "MOS_QEMU_SSH_PORT=$SSH_PORT" \
+    -e "MICA_BOARD=$MICA_BOARD" \
+    -e MICA_QEMU_REUSE_DISK=1 \
+    -e "MICA_QEMU_RUN_SECONDS=$RUN_SECONDS" \
+    -e "MICA_QEMU_TIMEOUT=$QEMU_TIMEOUT" \
+    -e "MICA_QEMU_APPEND=$APPEND" \
+    -e MICA_QEMU_FORWARD=1 \
+    -e "MICA_QEMU_NETWORK=$NET" \
+    -e "MICA_QEMU_SSH_PORT=$SSH_PORT" \
     "$PORT_IMAGE" bun run src/qemu.ts --capture "$S/console-$LABEL.txt" \
     >"$S/qemu-$LABEL.log" 2>&1 &
 QEMU_PID=$!

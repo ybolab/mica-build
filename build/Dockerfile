@@ -3,15 +3,15 @@
 # Build acceptance needs real file capabilities and the RockUSB test transport.
 # Base and CLI digests are resolved by build-env/from.sh. Debian packages use
 # the base's archive; record the resolved versions for inspection.
-ARG MOS_DOCKER_CLI_IMAGE=invalid-must-be-passed
-ARG MOS_BUN_IMAGE=invalid-must-be-passed
-FROM ${MOS_DOCKER_CLI_IMAGE} AS cli
-FROM ${MOS_BUN_IMAGE}
+ARG MICA_DOCKER_CLI_IMAGE=invalid-must-be-passed
+ARG MICA_BUN_IMAGE=invalid-must-be-passed
+FROM ${MICA_DOCKER_CLI_IMAGE} AS cli
+FROM ${MICA_BUN_IMAGE}
 COPY --from=cli /usr/local/bin/docker /usr/local/bin/docker
 COPY --from=cli /usr/local/libexec/docker/cli-plugins/docker-buildx /usr/local/libexec/docker/cli-plugins/docker-buildx
 RUN apt-get update && apt-get install -y --no-install-recommends python3 libcap2-bin && \
     mkdir -p /etc/mica-build && \
-    dpkg-query -W python3 libcap2-bin libcap2 > /etc/mos-build/build-tools.tsv && \
+    dpkg-query -W python3 libcap2-bin libcap2 > /etc/mica-build/build-tools.tsv && \
     rm -rf /var/lib/apt/lists/* && \
     command -v getcap && command -v setcap && python3 --version && \
     docker --version && docker buildx version && bun --version

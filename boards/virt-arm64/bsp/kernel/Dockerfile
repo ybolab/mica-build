@@ -15,7 +15,7 @@
 # identical result; nothing in this stage needs to RUN an aarch64 binary.
 
 # The builder image, injected from build-env/images.env by build-env/from.sh,
-# which boards/virt-arm64/bsp/Makefile calls. Ubuntu 24.04 and not mos-build-c,
+# which boards/virt-arm64/bsp/Makefile calls. Ubuntu 24.04 and not mica-build-c,
 # the choice both other boards make and for the same structural reason: a BSP
 # builder is pinned by digest and depends on nothing this repository has to
 # build first, so `make virt-arm64-kernel` works on a fresh checkout without a
@@ -23,8 +23,8 @@
 # one builder is also what makes a diff of the three Dockerfiles mean something.
 # There is no default: without a value docker refuses before any stage runs,
 # where a default would build green against an image nobody chose.
-ARG MOS_IMAGE_UBUNTU_2404
-FROM --platform=$BUILDPLATFORM ${MOS_IMAGE_UBUNTU_2404} AS toolchain
+ARG MICA_IMAGE_UBUNTU_2404
+FROM --platform=$BUILDPLATFORM ${MICA_IMAGE_UBUNTU_2404} AS toolchain
 
 ARG DEBIAN_FRONTEND=noninteractive
 # The cross compiler is the difference from the x64 builder. No device-tree
@@ -231,7 +231,7 @@ FROM gate AS build
 # boards are byte-reproducible now and may be compared by sha256.
 ENV KBUILD_BUILD_TIMESTAMP="@1577836800" \
     KBUILD_BUILD_USER=mos \
-    KBUILD_BUILD_HOST=mos-build
+    KBUILD_BUILD_HOST=mica-build
 
 RUN set -eu; cd /ksrc; \
     make -j"$(nproc)" Image modules; \

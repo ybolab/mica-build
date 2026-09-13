@@ -55,7 +55,7 @@ board is already in and by which image is being written, not by preference.
 **Which image.** `make flash` and `make flash-maskrom` write
 `_out/boards/cx3576/disk.img`, the Alpine demo image this directory builds.
 `make flash-mos` writes `_out/cx3576/cx3576-mos-latest.img`, the A/B product
-image `make os-image-cx3576` builds at the top level; `MOS_IMAGE=<file>`
+image `make os-image-cx3576` builds at the top level; `MICA_IMAGE=<file>`
 selects another build. That target is here rather than at the top level
 because this Makefile is the only place in the tree that knows how to talk to
 the board.

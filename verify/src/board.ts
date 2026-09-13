@@ -10,7 +10,7 @@ export function loadBoard(path: string) {
  const partitions = layout.partitions.map(p => ({ ...p, partnum: p.number, role: get(`${p.name}_ROLE`), get: (suffix: string) => get(`${p.name}_${suffix}`) }))
  return { path, name: layout.board, env, layout, get, declared: (key: string) => env.values.has(key), partitions,
   partition: (name: string) => partitions.find(p => p.name === name),
-  arch: get('MOS_ARCH'), bootloader: layout.backend, radios: list('BOARD_RADIOS'), hwinitConfs: list('BOARD_HWINIT_CONFS'),
+  arch: get('MICA_ARCH'), bootloader: layout.backend, radios: list('BOARD_RADIOS'), hwinitConfs: list('BOARD_HWINIT_CONFS'),
   firmwareFiles: list('BOARD_FIRMWARE_FILES'), hasStatusLed: get('BOARD_HAS_STATUS_LED'), hasDisplay: get('BOARD_HAS_DISPLAY'),
   releaseTarget: get('BOARD_RELEASE_TARGET'), dramUsableBase: get('BOARD_DRAM_USABLE_BASE'), cmdlineArgs: get('BOARD_CMDLINE_ARGS') }
 }

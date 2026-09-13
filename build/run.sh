@@ -18,13 +18,13 @@ case "${1:-}" in
 --compare-roots) MODE=compare-roots; shift;;
 --*) echo "error: unknown build mode: $1" >&2; exit 2;;
 esac
-BUN=${MOS_BUILD_BUN:-}
-DOCKER=${MOS_BUILD_DOCKER:-docker}
+BUN=${MICA_BUILD_BUN:-}
+DOCKER=${MICA_BUILD_DOCKER:-docker}
 command -v "$DOCKER" >/dev/null
-if [ -n "$BUN" ] && [ "${MOS_BUILD_CONTAINER:-0}" = 1 ]; then
-    echo 'error: select MOS_BUILD_BUN or MOS_BUILD_CONTAINER' >&2; exit 2
+if [ -n "$BUN" ] && [ "${MICA_BUILD_CONTAINER:-0}" = 1 ]; then
+    echo 'error: select MICA_BUILD_BUN or MICA_BUILD_CONTAINER' >&2; exit 2
 fi
-if [ -z "$BUN" ] && [ "${MOS_BUILD_CONTAINER:-0}" != 1 ]; then
+if [ -z "$BUN" ] && [ "${MICA_BUILD_CONTAINER:-0}" != 1 ]; then
     BUN=$(command -v bun || true)
     if [ -z "$BUN" ] && [ -x "$HOME/.bun/bin/bun" ]; then BUN="$HOME/.bun/bin/bun"; fi
 fi
@@ -36,10 +36,10 @@ else
     bun_image=$(bash "$REPO_ROOT/build-env/from.sh" --ref IMAGE_BUN_1)
     cli_image=$(bash "$REPO_ROOT/build-env/from.sh" --ref IMAGE_DOCKER_CLI_28)
     stamp=$(printf '%s\n%s\n%s\n' "$bun_image" "$cli_image" "$(sha256sum "$HERE/Dockerfile")" | sha256sum | cut -c1-16)
-    tools_image="ai-agent/mos-build-bun:$stamp"
+    tools_image="ai-agent/mica-build-bun:$stamp"
     if ! "$DOCKER" image inspect "$tools_image" >/dev/null 2>&1; then
         "$DOCKER" build --label ai-agent=true -t "$tools_image" \
-            --build-arg "MOS_BUN_IMAGE=$bun_image" --build-arg "MOS_DOCKER_CLI_IMAGE=$cli_image" \
+            --build-arg "MICA_BUN_IMAGE=$bun_image" --build-arg "MICA_DOCKER_CLI_IMAGE=$cli_image" \
             -f "$HERE/Dockerfile" "$HERE"
     fi
     case "$REPO_ROOT" in
@@ -50,7 +50,7 @@ else
     run_bun() {
         "$DOCKER" run --rm --label ai-agent=true --network traefik \
             -v "$host_project:$host_project" -v /var/run/docker.sock:/var/run/docker.sock \
-            -w "$host_project/build" -e MOS_BUILD_DOCKER=docker "$tools_image" bun "$@"
+            -w "$host_project/build" -e MICA_BUILD_DOCKER=docker "$tools_image" bun "$@"
     }
     echo "build: in $bun_image (pinned container)"
 fi

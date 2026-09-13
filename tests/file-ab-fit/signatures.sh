@@ -1,5 +1,5 @@
 #!/bin/bash
-# mos-build-side: container -- authenticate against the actual shipped control FDT.
+# mica-build-side: container -- authenticate against the actual shipped control FDT.
 set -euo pipefail
 cd /w
 if [ -f /firmware/u-boot.bin.signed ]; then

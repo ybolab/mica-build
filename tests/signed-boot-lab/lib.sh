@@ -18,7 +18,7 @@ REPO_ROOT="$(cd "${LAB_DIR}/../.." && pwd)"
 # Scratch. Under _out/ because that is the directory this repository's builds
 # write to and `make clean` removes; overridable for a run that wants its
 # artefacts kept aside.
-LAB_WORK="${MOS_LAB_WORK:-${REPO_ROOT}/_out/signed-boot-lab}"
+LAB_WORK="${MICA_LAB_WORK:-${REPO_ROOT}/_out/signed-boot-lab}"
 
 # The three images this lab builds, by name. tests/signed-boot-lab/images.sh
 # builds them; every entry script refuses rather than pulling, because

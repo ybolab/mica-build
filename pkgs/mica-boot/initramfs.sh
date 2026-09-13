@@ -1,5 +1,5 @@
 #!/bin/bash
-# mos-build-side: container -- assemble static startup and retained shutdown.
+# mica-build-side: container -- assemble static startup and retained shutdown.
 set -euo pipefail
 DEST="$1"
 EFI_ARCH=${2:?EFI architecture required}

@@ -163,7 +163,7 @@ STABILITY_SECONDS=180
 # --- options ----------------------------------------------------------------
 OUT=""
 STAGE=""
-TOKEN="${MOS_BENCH_TOKEN:-}"
+TOKEN="${MICA_BENCH_TOKEN:-}"
 DRY_RUN=0
 DATE_OVERRIDE=""
 API_BASE=""
@@ -200,7 +200,7 @@ USAGE
 options:
   --out DIR       run directory (default: the first writable of /srv/bench,
                   /tmp/mos-bench)
-  --token TOK     apid bearer token; or set MOS_BENCH_TOKEN
+  --token TOK     apid bearer token; or set MICA_BENCH_TOKEN
   --api URL       confirmed apid base URL; never inferred by this collector
   --identity FILE public exact-image/target binding (required for a bench stage)
   --date YYYY-MM-DD  the date written into pass/fail rows, when the device's
@@ -777,7 +777,7 @@ api_get() {
         printf '# curl absent\n' >"$EV/$name.txt"; return 127
     fi
     if [ -z "$TOKEN" ]; then
-        printf '# not collected: no API token (--token / MOS_BENCH_TOKEN)\n' >"$EV/$name.txt"
+        printf '# not collected: no API token (--token / MICA_BENCH_TOKEN)\n' >"$EV/$name.txt"
         return 3
     fi
     if [ -z "$API_BASE" ]; then
@@ -910,7 +910,7 @@ stage_install() {
     measure BIND-IMAGE "source=$SOURCE_COMMIT tree=$SOURCE_TREE image=$IMAGE_NAME sha256=$IMAGE_SHA256 verification=$VERIFICATION_RECORD profile=$PROFILE board=$BOARD_REVISION radio=$RADIO_SKU system=$SYSTEM_BLOCK"
 
     operator_detail I1 \
-        "identify the authorized RockUSB unit and host; verify IMAGE_SHA256 and VERIFICATION_RECORD, flash IMAGE_NAME with an explicit MOS_IMAGE, then compare the full $SYSTEM_BLOCK readback" \
+        "identify the authorized RockUSB unit and host; verify IMAGE_SHA256 and VERIFICATION_RECORD, flash IMAGE_NAME with an explicit MICA_IMAGE, then compare the full $SYSTEM_BLOCK readback" \
         "the source/tree, signed release and component records, image SHA-256, profile, board/radio revision, exact target and full readback all agree with exact-image.env"
     operator_detail B1 \
         "erase the identified development unit, install the bound complete image and retain uninterrupted serial through first required-health confirmation" \

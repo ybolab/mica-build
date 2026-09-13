@@ -12,7 +12,7 @@ import { packBootFirmware, packKernel } from '../../build/src/kernel-package.ts'
 import { Toolbox } from '../../build/src/toolbox.ts'
 
 const [workArg, baselineArg, initArg, oldCertArg, oldKeyArg, shutdownArg] = Bun.argv.slice(2)
-if (!workArg || !baselineArg || !initArg || !oldCertArg || !oldKeyArg || !shutdownArg) throw new Error('Usage: trust-rotation.ts KERNEL_WORK BASELINE MOS_INIT CONTENT_CERT CONTENT_KEY MOS_SHUTDOWN')
+if (!workArg || !baselineArg || !initArg || !oldCertArg || !oldKeyArg || !shutdownArg) throw new Error('Usage: trust-rotation.ts KERNEL_WORK BASELINE MICA_INIT CONTENT_CERT CONTENT_KEY MICA_SHUTDOWN')
 const work = resolve(workArg)
 const baseline = resolve(baselineArg)
 const output = join(work, 'boot')

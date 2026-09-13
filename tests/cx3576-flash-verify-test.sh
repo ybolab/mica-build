@@ -43,7 +43,7 @@ with path.open('wb') as f:
 PY
 run() {
     : > "$RK_LOG"
-    make -s -C boards/cx3576/bsp flash-mos RKDEVELOPTOOL="$work/rkdeveloptool" MOS_IMAGE="$1" > "$work/output" 2>&1
+    make -s -C boards/cx3576/bsp flash-mos RKDEVELOPTOOL="$work/rkdeveloptool" MICA_IMAGE="$1" > "$work/output" 2>&1
 }
 run "$work/image.img" || { cat "$work/output"; exit 1; }
 [ "$(awk '{print $1}' "$RK_LOG" | tr '\n' ' ')" = 'wl rl rl rd ' ]

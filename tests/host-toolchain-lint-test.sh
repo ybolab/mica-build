@@ -75,7 +75,7 @@ expect() { # what dir green|red needle
 
 # Every green fixture needs one container declaration, because the lint refuses
 # a run that found none -- see case 12, which is that control driven directly.
-DECL='# mos-build-side: container -- fixture: pretend this runs in an image'
+DECL='# mica-build-side: container -- fixture: pretend this runs in an image'
 
 # ---------------------------------------------------------------------------
 # 1. The real tree. The control for everything below: if this is not green, the
@@ -116,12 +116,12 @@ d="$(new_fixture)"
 cat >"${d}/blocked.sh" <<'EOF'
 #!/bin/sh
 echo host side
-# mos-build-side: container-block -- fixture: the lines below are a container's
+# mica-build-side: container-block -- fixture: the lines below are a container's
 docker run --rm alpine sh -c '
     mkfs.ext4 -F /w/disk.img
     sgdisk --clear /w/disk.img
 '
-# mos-build-side: host
+# mica-build-side: host
 echo host side again
 EOF
 track "${d}"
@@ -151,7 +151,7 @@ expect "removing that declaration turns the same file red" "${d}" red 'pack.sh:2
 d="$(new_fixture)"
 cat >"${d}/unclosed.sh" <<'EOF'
 #!/bin/sh
-# mos-build-side: container-block -- fixture: opened and never closed
+# mica-build-side: container-block -- fixture: opened and never closed
 docker run --rm alpine true
 mkfs.ext4 -F disk.img
 EOF
@@ -163,20 +163,20 @@ expect "an unclosed container block is a failure, not a silent skip" "${d}" red 
 # ---------------------------------------------------------------------------
 d="$(new_fixture)"
 printf '%s\n' "${DECL}" 'mksquashfs /a /b' >"${d}/declared.sh"
-printf '%s\n' '#!/bin/sh' '# mos-build-side: host' 'true' >"${d}/stray.sh"
+printf '%s\n' '#!/bin/sh' '# mica-build-side: host' 'true' >"${d}/stray.sh"
 track "${d}"
 expect "a host marker closing nothing is a failure" "${d}" red 'never opened'
 
 # ---------------------------------------------------------------------------
-# 9. A marker with no reason. `# mos-build-side: container` on its own is a
+# 9. A marker with no reason. `# mica-build-side: container` on its own is a
 #    rubber stamp, and silently treating it as "not a marker" would leave the
 #    author believing the file was declared.
 # ---------------------------------------------------------------------------
 d="$(new_fixture)"
 printf '%s\n' "${DECL}" 'mksquashfs /a /b' >"${d}/declared.sh"
-printf '%s\n' '#!/bin/sh' '# mos-build-side: container' 'mkfs.ext4 -F disk.img' >"${d}/stamped.sh"
+printf '%s\n' '#!/bin/sh' '# mica-build-side: container' 'mkfs.ext4 -F disk.img' >"${d}/stamped.sh"
 track "${d}"
-expect "a marker with no reason is refused by name" "${d}" red 'malformed `mos-build-side:` marker'
+expect "a marker with no reason is refused by name" "${d}" red 'malformed `mica-build-side:` marker'
 
 # ---------------------------------------------------------------------------
 # 10. A whole-file declaration after code. It would otherwise read as covering

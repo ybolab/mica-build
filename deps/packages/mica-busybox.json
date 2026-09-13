@@ -1,19 +1,19 @@
 {
   "name": "mica-busybox",
   "repository": "mica-system",
-  "commit": "4cd6a0064d6820f0b1f1caba2bb9b203daf0fbed",
+  "commit": "6a714846d4431c8b373868afa094d5dd33914541",
   "targets": {
     "amd64": {
-      "version": "0.1.0+git4cd6a0064d68-1",
+      "version": "0.1.0+git6a714846d443-1",
       "architecture": "amd64",
-      "sha256": "3d676dd234e540a645574fe4c05c5aa88175b586de7bab2fce00a37efd044216",
-      "asset": "mica-busybox_0.1.0.git4cd6a0064d68-1_amd64.deb"
+      "sha256": "3f3e36d010b65a21ba60cc752bf3b7e05fc793927180e0ffd64e494c39dcf83a",
+      "asset": "mica-busybox_0.1.0.git6a714846d443-1_amd64.deb"
     },
     "arm64": {
-      "version": "0.1.0+git4cd6a0064d68-1",
+      "version": "0.1.0+git6a714846d443-1",
       "architecture": "arm64",
-      "sha256": "c347372caa2096c43e3346d804e8c859ffcea4b96f9de6e8e6bc6f6d637e7926",
-      "asset": "mica-busybox_0.1.0.git4cd6a0064d68-1_arm64.deb"
+      "sha256": "4e975b7af63143ac0d3810defe8662aaf12e4d4eb6536719060093380dc82da6",
+      "asset": "mica-busybox_0.1.0.git6a714846d443-1_arm64.deb"
     }
   }
 }

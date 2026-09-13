@@ -42,21 +42,21 @@ BOARDS := cx3576 s905x5m virt-arm64 x64
 # build.
 
 help:
-	@echo "  os-image            assemble two signed deployments (MOS_BOARD, MOS_IMAGE_RECORDS, MOS_METADATA_PUBLIC_KEYS, MOS_FIRMWARE_PACKAGE, MOS_IMAGE_OUT)"
+	@echo "  os-image            assemble two signed deployments (MICA_BOARD, MICA_IMAGE_RECORDS, MICA_METADATA_PUBLIC_KEYS, MICA_FIRMWARE_PACKAGE, MICA_IMAGE_OUT)"
 	@echo "  os-rootfs-x64 / os-rootfs-virt-arm64 / os-rootfs-cx3576 compose independent roots"
-	@echo "  os-keys-init        detect or create development keys in meta (MOS_SIGNING_OUTPUT overrides)"
-	@echo "  os-devkeys          create explicit development inputs (MOS_SIGNING_OUTPUT, default meta; refuses existing output)"
+	@echo "  os-keys-init        detect or create development keys in meta (MICA_SIGNING_OUTPUT overrides)"
+	@echo "  os-devkeys          create explicit development inputs (MICA_SIGNING_OUTPUT, default meta; refuses existing output)"
 	@echo "  os-layout-lint      check the current three-partition contracts"
 	@echo "  os-fit-records-test verify bounded native FIT record parsing"
 	@echo "  s905x5m-<t>         build the s905x5m BSP (kernel|uboot|userland|uboot-package)"
 	@echo "mos build targets:"
-	@echo "  os-debian-cache     cache the fixed Debian runtime base (MOS_ARCH=amd64|arm64)"
+	@echo "  os-debian-cache     cache the fixed Debian runtime base (MICA_ARCH=amd64|arm64)"
 	@echo "  os-debian-verify    verify the runtime cache without network access"
-	@echo "  os-debian-install   install the cached base with dpkg (MOS_ROOT=<empty directory>)"
+	@echo "  os-debian-install   install the cached base with dpkg (MICA_ROOT=<empty directory>)"
 	@echo "  os-debian-test      test the Debian runtime cache boundary"
 	@echo "image (signed component files on SYSTEM with unified DATA):"
 	@echo "  os-boot-tools      build the pinned signed UKI/systemd-boot packager"
-	@echo "  os-components      build independent components (MOS_COMPONENT_ARGS='root|kernel|firmware|deployment|image|archive ...')"
+	@echo "  os-components      build independent components (MICA_COMPONENT_ARGS='root|kernel|firmware|deployment|image|archive ...')"
 	@echo "  os-rootfs-cx3576 compose the independent signed rootfs input"
 	@echo "  os-verify verify the assembled mos image against the mos image contract (docker)"
 	@echo "  os-smoke-test       execute every self-built binary inside the factory root, assert its pin (docker)"
@@ -71,7 +71,7 @@ help:
 	@echo "  os-verify-test      run the verify bun+TypeScript suite (typecheck + bun test)"
 	@echo "  os-build-test       run the build bun+TypeScript suite: board geometry and the toolset wrappers (docker)"
 	@echo "  os-netavark-kernel-test  assert every board kernel config carries the symbols netavark programs rules against"
-	@echo "  build-env           build the pinned builder images localhost/mos-build-{base,c,deb,go,openssl,rust,rust-check}:<arch>"
+	@echo "  build-env           build the pinned builder images localhost/mica-build-{base,c,deb,go,openssl,rust,rust-check}:<arch>"
 	@echo "  os-deb-<producer>   build one producer's Debian packages for the architectures it declares; \`bash build-env/deb/producers.sh\` lists them (docker)"
 	@echo "  os-deb-preflight    list every missing package-build input at once, and check every lock row is reachable, before os-pool starts a container"
 	@echo "  os-deb-preflight-test   drive that pre-flight red and green, and mutate each half of its hook count contract"
@@ -106,9 +106,9 @@ s905x5m-%:
 # it reads them out of the pinned IMAGE_ALPINE_3_21. Verify the other board
 # with --board.
 os-verify:
-	@test -n "$(MOS_BOARD)" -a -n "$(MOS_VERIFY_IMAGE)" -a -n "$(MOS_METADATA_PUBLIC_KEY_FILES)"
+	@test -n "$(MICA_BOARD)" -a -n "$(MICA_VERIFY_IMAGE)" -a -n "$(MICA_METADATA_PUBLIC_KEY_FILES)"
 	bash tools/micad-pool.sh --source
-	bash verify/run.sh --verify --board "$(MOS_BOARD)" --image "$(MOS_VERIFY_IMAGE)" $(foreach key,$(MOS_METADATA_PUBLIC_KEY_FILES),--public-key "$(key)")
+	bash verify/run.sh --verify --board "$(MICA_BOARD)" --image "$(MICA_VERIFY_IMAGE)" $(foreach key,$(MICA_METADATA_PUBLIC_KEY_FILES),--public-key "$(key)")
 
 # Every self-built binary EXECUTED inside the root that ships it, with the
 # version it reports required to equal the version this repository pinned.
@@ -123,7 +123,7 @@ os-verify:
 # binaries built for the BOARD, so the host must be able to run that platform --
 # which on cx3576 means binfmt_misc. It refuses rather than skipping when the
 # image is absent, and refuses before concluding anything when the host cannot
-# execute it. MOS_BOARD selects the board; x64 is the default.
+# execute it. MICA_BOARD selects the board; x64 is the default.
 os-smoke-test:
 	bash verify/run.sh --smoke
 
@@ -153,9 +153,9 @@ os-smoke-negative-test:
 # It compares the two trees four ways and then BREAKS each comparison in turn
 # and requires each to go red. Needs docker (neither side is readable on the
 # build host -- no unsquashfs, no getcap) and a built rootfs, like
-# os-verify. MOS_BOARD selects the board; x64 is the default.
+# os-verify. MICA_BOARD selects the board; x64 is the default.
 os-factory-root-gate:
-	bash tests/factory-root-gate/gate.sh _out/$(or $(MOS_BOARD),x64)
+	bash tests/factory-root-gate/gate.sh _out/$(or $(MICA_BOARD),x64)
 # Drives the real boards/cx3576/hwinit/hwinit-gadget against a fake configfs in
 # a temp dir, from cwd `/` -- the cwd its Type=oneshot service actually has.
 # What it asserts is the property configfs applies and an ordinary filesystem
@@ -188,7 +188,7 @@ os-mac-test:
 # Needs privileged docker, so it is a dedicated target rather than part of
 # os-verify; it fails loudly when it cannot run rather than skipping.
 os-repart-test:
-	bash tests/repart-loader-test.sh "$(MOS_BOARD)" "$(MOS_VERIFY_IMAGE)" "$(MOS_VERIFY_ROOT_IMAGE)"
+	bash tests/repart-loader-test.sh "$(MICA_BOARD)" "$(MICA_VERIFY_IMAGE)" "$(MICA_VERIFY_ROOT_IMAGE)"
 # The cx3576 flash read-back, driven against a stub rkdeveloptool: the argv the
 # BSP's flash targets build, the sector arithmetic they derive from
 # boards/cx3576/board.env, and the failure this suite exists for -- a write that
@@ -308,7 +308,7 @@ os-deb-preflight:
 # composer takes the locked archive and refuses a locally built one at another
 # digest, so building it here would only overwrite what os-pool fetched.
 # `make os-deb-<producer>` still builds it on request, for the local
-# development loop under MOS_POOL_UNLOCKED (build-env/deb/README.md).
+# development loop under MICA_POOL_UNLOCKED (build-env/deb/README.md).
 os-debs: os-deb-preflight
 	@set -e; \
 	rows="$$(bash build-env/deb/producers.sh)"; \
@@ -405,7 +405,7 @@ os-shell-pipefail-lint:
 #
 # It scans every tracked shell script, Makefile and workflow for a producer
 # binary in command position. A file or a block that runs INSIDE an image says
-# so at the site with `# mos-build-side: container -- <why>`, and the
+# so at the site with `# mica-build-side: container -- <why>`, and the
 # invocations that cannot move yet are registered in
 # tests/host-toolchain-exemptions with their reasons -- where an entry matching
 # NOTHING is itself a failure, so a waiver cannot outlive what it waived.
@@ -502,19 +502,19 @@ os-netavark-kernel-test:
 # DIGEST in build-env/images.env rather than by a tag upstream repoints
 # whenever it rebuilds.
 #
-# mos-build-base carries only the language-independent floor -- ca-certificates,
+# mica-build-base carries only the language-independent floor -- ca-certificates,
 # git, file, binutils, xz -- and ASSERTS that floor from inside itself, so an apt
 # archive that moved backwards fails the build rather than the component two
-# images above it. mos-build-{c,deb,go,rust} are FROM it and each keeps its OWN
+# images above it. mica-build-{c,deb,go,rust} are FROM it and each keeps its OWN
 # apt list: one shared list is one cache key for unrelated compilers.
-# mos-build-rust-check is the one image FROM a sibling rather than the base --
-# mos-build-rust plus the tools the Rust gate runs -- and build-env/build.sh
+# mica-build-rust-check is the one image FROM a sibling rather than the base --
+# mica-build-rust plus the tools the Rust gate runs -- and build-env/build.sh
 # orders the rows so that parent is built first.
 #
-# WHAT EACH ONE ASSERTS, AND WHY THE TWO KINDS DIFFER. mos-build-c's gcc comes
+# WHAT EACH ONE ASSERTS, AND WHY THE TWO KINDS DIFFER. mica-build-c's gcc comes
 # from apt against live deb.debian.org, which no digest here pins, so it asserts
 # version FLOORS -- an exact match would go red on the next trixie point release.
-# mos-build-go and mos-build-rust install tarballs pinned by sha256, so they
+# mica-build-go and mica-build-rust install tarballs pinned by sha256, so they
 # assert EXACT versions: there the version is a fact the tree owns.
 #
 # deb asserts its dpkg tools by running `--version` against floors, and
@@ -525,10 +525,10 @@ os-netavark-kernel-test:
 # base, c, go and rust assert by USE as well as by number: each compiles and
 # links a program and reads the architecture back out of the ELF, because a
 # version string answers on an image with no libc headers, no linker and no std
-# for its target. mos-build-go and mos-build-rust also link for the OTHER
+# for its target. mica-build-go and mica-build-rust also link for the OTHER
 # architecture, which is what the device builds actually need.
 #
-# Needs docker. MOS_BUILD_PLATFORM=linux/<arch> cross-builds it; the default is
+# Needs docker. MICA_BUILD_PLATFORM=linux/<arch> cross-builds it; the default is
 # the host. It fails loudly when a pin is missing, unresolved or written as a
 # tag rather than skipping.
 build-env:
@@ -598,7 +598,7 @@ os-apid-api-test:
 # needs no boot; the full black-box suite remains the runtime check.
 #
 # Needs bun OR docker: it runs on a host bun when there is one and in the bun
-# pinned as IMAGE_BUN_1 otherwise, and says which. MOS_APID_CONTAINER=1 forces
+# pinned as IMAGE_BUN_1 otherwise, and says which. MICA_APID_CONTAINER=1 forces
 # the pinned container.
 os-apid-api-spec-pins:
 	bash tests/apid-api/spec-pins.sh
@@ -608,40 +608,40 @@ os-boot-tools:
 
 # Explicit component inputs and signing material are supplied as CLI arguments.
 os-components:
-	bash build/run.sh --components $(MOS_COMPONENT_ARGS)
+	bash build/run.sh --components $(MICA_COMPONENT_ARGS)
 
 os-debian-cache:
-	bash rootfs/debian/docker.sh cache --arch '$(MOS_ARCH)' $(if $(MOS_DEBIAN_PACKAGES),--packages '$(MOS_DEBIAN_PACKAGES)')
+	bash rootfs/debian/docker.sh cache --arch '$(MICA_ARCH)' $(if $(MICA_DEBIAN_PACKAGES),--packages '$(MICA_DEBIAN_PACKAGES)')
 
 os-debian-verify:
-	bash rootfs/debian/docker.sh verify --arch '$(MOS_ARCH)' $(if $(MOS_DEBIAN_PACKAGES),--packages '$(MOS_DEBIAN_PACKAGES)')
+	bash rootfs/debian/docker.sh verify --arch '$(MICA_ARCH)' $(if $(MICA_DEBIAN_PACKAGES),--packages '$(MICA_DEBIAN_PACKAGES)')
 
 os-debian-install:
-	bash rootfs/debian/docker.sh install --arch '$(MOS_ARCH)' --root '$(MOS_ROOT)' $(if $(MOS_DEBIAN_PACKAGES),--packages '$(MOS_DEBIAN_PACKAGES)')
+	bash rootfs/debian/docker.sh install --arch '$(MICA_ARCH)' --root '$(MICA_ROOT)' $(if $(MICA_DEBIAN_PACKAGES),--packages '$(MICA_DEBIAN_PACKAGES)')
 
 os-debian-test:
 	bash rootfs/debian/tests/debian-base-test.sh
 	bash rootfs/debian/tests/debian-lock-test.sh
 
 # Factory assembly consumes already-built and signed components.
-MOS_SIGNING_OUTPUT ?= meta
+MICA_SIGNING_OUTPUT ?= meta
 .PHONY: os-keys-init
 os-keys-init:
-	bash pkgs/mica-boot/init-keys.sh --out "$(MOS_SIGNING_OUTPUT)"
+	bash pkgs/mica-boot/init-keys.sh --out "$(MICA_SIGNING_OUTPUT)"
 
 os-devkeys:
-	bash pkgs/mica-boot/dev-keys.sh --out "$(MOS_SIGNING_OUTPUT)"
+	bash pkgs/mica-boot/dev-keys.sh --out "$(MICA_SIGNING_OUTPUT)"
 
 os-rootfs-x64:
-	MOS_BOARD=x64 bash rootfs/build.sh
+	MICA_BOARD=x64 bash rootfs/build.sh
 
 os-rootfs-virt-arm64:
-	MOS_BOARD=virt-arm64 bash rootfs/build.sh
+	MICA_BOARD=virt-arm64 bash rootfs/build.sh
 
 os-image:
-	@test -n "$(MOS_BOARD)" -a -n "$(MOS_IMAGE_RECORDS)" -a -n "$(MOS_METADATA_PUBLIC_KEYS)" -a -n "$(MOS_FIRMWARE_PACKAGE)" -a -n "$(MOS_IMAGE_OUT)"
-	bash build/run.sh --components image --board "$(MOS_BOARD)" --records "$(MOS_IMAGE_RECORDS)" \
-	  --firmware "$(MOS_FIRMWARE_PACKAGE)" --out "$(MOS_IMAGE_OUT)" $(foreach key,$(MOS_METADATA_PUBLIC_KEYS),--public-key "$(key)")
+	@test -n "$(MICA_BOARD)" -a -n "$(MICA_IMAGE_RECORDS)" -a -n "$(MICA_METADATA_PUBLIC_KEYS)" -a -n "$(MICA_FIRMWARE_PACKAGE)" -a -n "$(MICA_IMAGE_OUT)"
+	bash build/run.sh --components image --board "$(MICA_BOARD)" --records "$(MICA_IMAGE_RECORDS)" \
+	  --firmware "$(MICA_FIRMWARE_PACKAGE)" --out "$(MICA_IMAGE_OUT)" $(foreach key,$(MICA_METADATA_PUBLIC_KEYS),--public-key "$(key)")
 
 os-layout-lint:
 	bash build/run.sh src/file-layout.test.ts
@@ -656,24 +656,24 @@ os-trust-domain-test:
 # Current independent-artifact release directory, SBOM and publication gate.
 .PHONY: os-release os-release-gate os-release-verify-test
 os-release:
-	bash build/run.sh --release assemble $(MOS_RELEASE_ARGS)
+	bash build/run.sh --release assemble $(MICA_RELEASE_ARGS)
 
 os-release-gate:
-	bash build/run.sh --release gate $(MOS_RELEASE_ARGS)
+	bash build/run.sh --release gate $(MICA_RELEASE_ARGS)
 
 os-release-verify-test:
 	bash tests/release-verify-test.sh
 
 .PHONY: os-rootfs-s905x5m os-image-s905x5m-sd os-verify-s905x5m-sd os-s905x5m-hwinit-test
 os-rootfs-s905x5m:
-	MOS_BOARD=s905x5m bash rootfs/build.sh
+	MICA_BOARD=s905x5m bash rootfs/build.sh
 
 # The SD system image requires the paired MOS firmware in eMMC boot0.
 os-image-s905x5m-sd:
-	$(MAKE) os-image MOS_BOARD=s905x5m
+	$(MAKE) os-image MICA_BOARD=s905x5m
 
 os-verify-s905x5m-sd:
-	$(MAKE) os-verify MOS_BOARD=s905x5m
+	$(MAKE) os-verify MICA_BOARD=s905x5m
 
 os-s905x5m-hwinit-test:
 	bash tests/s905x5m-wireless.sh

@@ -36,7 +36,7 @@ import { resolveImage } from './images.ts'
 //   - src/toolsets.ts: "which package provided mkfs.vfat or mksquashfs is
 //     exactly the kind of thing that decides bytes".
 //
-// So `MOS_BUILD_TOOLBOX=host` and `route: 'host'` are REFUSALS now rather than
+// So `MICA_BUILD_TOOLBOX=host` and `route: 'host'` are REFUSALS now rather than
 // instructions, and they name the policy. A route that is ignored teaches
 // nothing; a route that refuses says where the rule is written.
 //
@@ -160,7 +160,7 @@ export interface RunOptions {
 
 /** The docker client. run.sh passes the one it checked; a bare `docker` otherwise. */
 function dockerBin(): string {
-  return process.env.MOS_BUILD_DOCKER || 'docker'
+  return process.env.MICA_BUILD_DOCKER || 'docker'
 }
 
 export class Toolbox {
@@ -197,17 +197,17 @@ export class Toolbox {
    */
   static async open(toolset: Toolset, options: OpenOptions = {}): Promise<Toolbox> {
     // Two ways to ask for the host, one refusal. Neither is ignored: a caller
-    // who set MOS_BUILD_TOOLBOX=host meant something by it, and being quietly
+    // who set MICA_BUILD_TOOLBOX=host meant something by it, and being quietly
     // overridden would leave them believing the host tools ran.
     if (options.route === 'host') refuseHostRoute(toolset, 'the caller asked for it')
-    if (forcedRoute() === 'host') refuseHostRoute(toolset, 'MOS_BUILD_TOOLBOX=host asked for it')
+    if (forcedRoute() === 'host') refuseHostRoute(toolset, 'MICA_BUILD_TOOLBOX=host asked for it')
 
     const route: RouteKind = 'container'
     const why = 'every tool here writes bytes that ship'
 
     const image = await resolveImage(toolset.imageKey)
     const docker = dockerBin()
-    const container = `mos-build-${toolset.key}-${randomUUID().slice(0, 8)}`
+    const container = `mica-build-${toolset.key}-${randomUUID().slice(0, 8)}`
 
     const mountArgs: string[] = []
     if (options.readOnlyMounts?.length) {
@@ -403,10 +403,10 @@ export class Toolbox {
 }
 
 function forcedRoute(): RouteKind | undefined {
-  const v = process.env.MOS_BUILD_TOOLBOX
+  const v = process.env.MICA_BUILD_TOOLBOX
   if (v === undefined || v === '') return undefined
   if (v === 'host' || v === 'container') return v
-  throw new Error(`MOS_BUILD_TOOLBOX=${v} is neither 'host' nor 'container'`)
+  throw new Error(`MICA_BUILD_TOOLBOX=${v} is neither 'host' nor 'container'`)
 }
 
 /**

@@ -774,7 +774,7 @@ try {
   outer.check(true, "explicit image and public boot certificate are accepted", "current signed boot inputs");
   // (5.6) The per-architecture machine/firmware/emulator table, added when this
   // harness stopped being x64's. Pure, so it belongs in this phase: it is a
-  // lookup over a board's declared MOS_ARCH and nothing about it needs a
+  // lookup over a board's declared MICA_ARCH and nothing about it needs a
   // container.
   //
   // WHAT WOULD GO WRONG WITHOUT IT. The three facts are not interchangeable and
@@ -838,14 +838,14 @@ try {
   outer.check(
     unknownArch instanceof Error && unknownArch.message.includes("someboard") &&
       unknownArch.message.includes("riscv64"),
-    "a board whose MOS_ARCH has no row is refused, naming the board and the architecture",
+    "a board whose MICA_ARCH has no row is refused, naming the board and the architecture",
     [
       `expected: an Error naming 'someboard' and 'riscv64'`,
       `actual:   ${unknownArch === undefined ? "it returned quietly, and the boot would have started with undefined fields" : String(unknownArch)}`,
     ].join("\n"),
   );
   // ...and an UNSET arch is refused too, which is the likelier accident: a
-  // layout that never declared MOS_ARCH reads as undefined, not as a bad value.
+  // layout that never declared MICA_ARCH reads as undefined, not as a bad value.
   let noArch: unknown;
   try {
     qemuArchFor(undefined, "someboard");
@@ -854,7 +854,7 @@ try {
   }
   outer.check(
     noArch instanceof Error,
-    "a board that declares no MOS_ARCH at all is refused rather than defaulted",
+    "a board that declares no MICA_ARCH at all is refused rather than defaulted",
     `actual:   ${noArch === undefined ? "it returned quietly" : "refused"}`,
   );
   // The positive control for all four refusals above: the shipped rows resolve.

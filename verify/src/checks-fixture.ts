@@ -386,8 +386,8 @@ function seedShadow(root: string, file: WriteFile): void {
   // build loop's input redirection, and the locked password field.
   file('/usr/lib/mica/mica-shadow-reconcile',
     '#!/bin/sh\n'
-    + 'FACTORY="${MOS_SHADOW_FACTORY:-/usr/share/factory/etc/shadow}"\n'
-    + 'SHADOW="${MOS_SHADOW_PASSWD:-/run/mica/shadow}"\n'
+    + 'FACTORY="${MICA_SHADOW_FACTORY:-/usr/share/factory/etc/shadow}"\n'
+    + 'SHADOW="${MICA_SHADOW_PASSWD:-/run/mica/shadow}"\n'
     + 'while IFS= read -r line; do\n'
     + '  printf \'%s\\n\' "${line}" | awk -F: \'{ $2 = "!"; print }\'\n'
     + 'done <"$FACTORY"\n')
@@ -418,8 +418,8 @@ function seedMqtt(root: string, file: WriteFile): void {
     + 'User=mica-mqttd\n'
     + 'EnvironmentFile=-/var/lib/mica/mqttd.env\n'
     + 'EnvironmentFile=/run/mica/mqttd-device.env\n'
-    + 'ExecStart=/usr/bin/mica-mqttd --device-id ${MOS_MQTT_DEVICE_ID} '
-    + '--broker-host ${MOS_MQTT_BROKER_HOST}\n')
+    + 'ExecStart=/usr/bin/mica-mqttd --device-id ${MICA_MQTT_DEVICE_ID} '
+    + '--broker-host ${MICA_MQTT_BROKER_HOST}\n')
   file('/usr/lib/systemd/system/mica-mqtt-broker.service',
     '[Service]\nUser=mica-mqtt-broker\n')
 

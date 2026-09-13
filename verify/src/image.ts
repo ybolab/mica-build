@@ -365,7 +365,7 @@ export async function fatReadFile(rt: ToolRuntime, slot: FatSlot, path: string):
  * Copy one file out of the slot into a local path, and say whether it landed.
  *
  * NOT `fatReadFile` plus a write. mcopy's `-` target sends the file to stdout and
- * this runtime reads stdout as TEXT -- fine for a `set MOS_*=` fragment, destructive
+ * this runtime reads stdout as TEXT -- fine for a `set MICA_*=` fragment, destructive
  * for a 290 KiB device tree, where every byte that is not valid UTF-8 comes back as
  * U+FFFD. The device tree and compiled boot script are read as BYTES below, so
  * this helper has mcopy write them directly. `false` means the file is not in

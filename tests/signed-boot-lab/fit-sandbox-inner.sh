@@ -1,5 +1,5 @@
 #!/bin/bash
-# mos-build-side: container -- every command below runs inside the U-Boot
+# mica-build-side: container -- every command below runs inside the U-Boot
 #   sandbox image; mkimage and openssl here are that image's.
 #
 # Inside the U-Boot sandbox image: build a required-signature FIT over a

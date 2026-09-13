@@ -80,7 +80,7 @@ export interface Artifact {
    * Two of the twelve do -- micad and apid, which print
    * `<name> <version> (<commit>)` -- and the runner asserts that commit against
    * the one the BUILD recorded embedding, out of `_out/<board>/micad-build.txt`,
-   * which `rootfs/build.sh` reads from the micad archive's `Mos-Source-Commit`
+   * which `rootfs/build.sh` reads from the micad archive's `Mica-Source-Commit`
    * control field.
    * A property of the artifact and not a second contract kind: it is orthogonal
    * to how the artifact is asked, since the argv is the same `--version` and the

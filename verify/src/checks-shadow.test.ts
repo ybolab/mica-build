@@ -468,8 +468,8 @@ describe('the reconcile unit and script', () => {
 
   test('a destination outside /run is caught even though the link still points at /run', async () => {
     const fx = await mutated('shadow-reconcile-builds-in-ram', root =>
-      rewrite(root, REC_SCRIPT, t => t.replace('SHADOW="${MOS_SHADOW_PASSWD:-/run/mica/shadow}"',
-        'SHADOW="${MOS_SHADOW_PASSWD:-/mnt/data/state/mos/shadow}"')))
+      rewrite(root, REC_SCRIPT, t => t.replace('SHADOW="${MICA_SHADOW_PASSWD:-/run/mica/shadow}"',
+        'SHADOW="${MICA_SHADOW_PASSWD:-/mnt/data/state/mos/shadow}"')))
     try {
       expect(await verdictOf(fx, 'shadow-reconcile-builds-in-ram')).toBe('fail')
       expect(await messageOf(fx, 'shadow-reconcile-builds-in-ram')).toContain('would not be on a tmpfs')
@@ -516,7 +516,7 @@ describe('the reconcile unit and script', () => {
     }
   })
 
-  test('a DROP-IN setting MOS_SHADOW_FACTORY is caught, not just the unit', async () => {
+  test('a DROP-IN setting MICA_SHADOW_FACTORY is caught, not just the unit', async () => {
     // A drop-in overrides the unit invisibly. Those two variables exist so the
     // offline harness can drive the real script; in the image they redirect
     // where root's credentials are reconciled from and to, and every other
@@ -524,7 +524,7 @@ describe('the reconcile unit and script', () => {
     const fx = await mutated('shadow-reconcile-no-test-override', (root) => {
       const dir = join(root, '/etc/systemd/system/mica-shadow-reconcile.service.d')
       mkdirSync(dir, { recursive: true })
-      writeFileSync(join(dir, '10-test.conf'), '[Service]\nEnvironment=MOS_SHADOW_FACTORY=/tmp/fake\n')
+      writeFileSync(join(dir, '10-test.conf'), '[Service]\nEnvironment=MICA_SHADOW_FACTORY=/tmp/fake\n')
     })
     try {
       expect(await verdictOf(fx, 'shadow-reconcile-no-test-override')).toBe('fail')
@@ -539,7 +539,7 @@ describe('the reconcile unit and script', () => {
     const fx = await mutated('shadow-reconcile-no-test-override', (root) => {
       const dir = join(root, '/usr/lib/systemd/system/mica-shadow-reconcile.service.d')
       mkdirSync(dir, { recursive: true })
-      writeFileSync(join(dir, '20-vendor.conf'), '[Service]\nEnvironmentFile=/etc/mica/MOS_SHADOW_PASSWD.env\n')
+      writeFileSync(join(dir, '20-vendor.conf'), '[Service]\nEnvironmentFile=/etc/mica/MICA_SHADOW_PASSWD.env\n')
     })
     try {
       expect(await verdictOf(fx, 'shadow-reconcile-no-test-override')).toBe('fail')

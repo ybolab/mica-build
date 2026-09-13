@@ -117,7 +117,7 @@ describe('the bridge is installed, inert, and starts with an explicit identity',
   for (const edit of [
     (text: string): string => text.replace('ConditionPathExists=/run/mica/mqttd-device.env\n', ''),
     (text: string): string => text.replace('EnvironmentFile=/run/mica/mqttd-device.env\n', ''),
-    (text: string): string => text.replace('--device-id ${MOS_MQTT_DEVICE_ID} ', ''),
+    (text: string): string => text.replace('--device-id ${MICA_MQTT_DEVICE_ID} ', ''),
   ]) {
     test('a missing runtime identity link fails closed', async () => {
       const fx = await mutated('mqttd-device-id-runtime-input', root => rewrite(root, MQTTD_UNIT, edit))
@@ -249,7 +249,7 @@ describe('the MQTT/D-Bus boundary', () => {
 describe('broker configuration and identity', () => {
   test('a hardcoded broker host fails', async () => {
     const fx = await mutated('mqttd-broker-from-environment', root =>
-      rewrite(root, MQTTD_UNIT, text => text.replace('${MOS_MQTT_BROKER_HOST}', 'mqtt.invalid')))
+      rewrite(root, MQTTD_UNIT, text => text.replace('${MICA_MQTT_BROKER_HOST}', 'mqtt.invalid')))
     try { expect(await verdictOf(fx, 'mqttd-broker-from-environment')).toBe('fail') }
     finally { fx.dispose() }
   })

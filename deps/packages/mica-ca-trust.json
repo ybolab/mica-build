@@ -1,19 +1,19 @@
 {
   "name": "mica-ca-trust",
   "repository": "mica-system",
-  "commit": "4cd6a0064d6820f0b1f1caba2bb9b203daf0fbed",
+  "commit": "6a714846d4431c8b373868afa094d5dd33914541",
   "targets": {
     "amd64": {
-      "version": "0.1.0+git4cd6a0064d68-1",
+      "version": "0.1.0+git6a714846d443-1",
       "architecture": "all",
-      "sha256": "bcbfa962a3cb96da99a041d6a05bd3b717a6b96862acd310f2c9af936e5762e5",
-      "asset": "mica-ca-trust_0.1.0.git4cd6a0064d68-1_all.deb"
+      "sha256": "0a981de300a36c23a17e52ed5e6e1ae4147b28e5f035184e5c64e5f86ada1081",
+      "asset": "mica-ca-trust_0.1.0.git6a714846d443-1_all.deb"
     },
     "arm64": {
-      "version": "0.1.0+git4cd6a0064d68-1",
+      "version": "0.1.0+git6a714846d443-1",
       "architecture": "all",
-      "sha256": "bcbfa962a3cb96da99a041d6a05bd3b717a6b96862acd310f2c9af936e5762e5",
-      "asset": "mica-ca-trust_0.1.0.git4cd6a0064d68-1_all.deb"
+      "sha256": "0a981de300a36c23a17e52ed5e6e1ae4147b28e5f035184e5c64e5f86ada1081",
+      "asset": "mica-ca-trust_0.1.0.git6a714846d443-1_all.deb"
     }
   }
 }

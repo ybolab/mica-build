@@ -61,8 +61,8 @@ re-pins or re-validates it.
 
 | condition | route |
 |---|---|
-| `MOS_VERIFY_BUN` set | that binary |
-| `MOS_VERIFY_CONTAINER=1` | the pinned container, even where a host bun exists |
+| `MICA_VERIFY_BUN` set | that binary |
+| `MICA_VERIFY_CONTAINER=1` | the pinned container, even where a host bun exists |
 | both set | **refused** — they are two different buns |
 | `bun` on `PATH`, else `~/.bun/bin/bun` | that binary |
 | none of the above | the pinned container |
@@ -139,8 +139,8 @@ status and cannot tell which answered.
 
 | condition | route |
 |---|---|
-| `MOS_VERIFY_TOOLS=host` | this host — **refused**, naming them, if any are missing |
-| `MOS_VERIFY_TOOLS=container` | the pinned `IMAGE_ALPINE_3_21`, even where the host has them |
+| `MICA_VERIFY_TOOLS=host` | this host — **refused**, naming them, if any are missing |
+| `MICA_VERIFY_TOOLS=container` | the pinned `IMAGE_ALPINE_3_21`, even where the host has them |
 | every tool on `PATH` | this host |
 | any tool missing | the pinned container |
 | any tool missing, and no docker | **refused**, naming both |
@@ -238,10 +238,10 @@ returns 1.
 | driven | what it prints |
 |--------|----------------|
 | bash present, no bun on `PATH`, no `~/.bun` | runs the pinned container, from a stock `PATH=/usr/bin:/bin` under `env -i` |
-| the same, and no docker either | refuses, naming bun, `MOS_VERIFY_BUN` and `IMAGE_BUN_1` |
+| the same, and no docker either | refuses, naming bun, `MICA_VERIFY_BUN` and `IMAGE_BUN_1` |
 | `IMAGE_BUN_1` set to a well-formed digest naming no image | refuses by the key, before any run |
 | `IMAGE_BUN_1` set to a tag, or removed | `from.sh`'s own refusal, naming the key and the file |
-| `MOS_VERIFY_BUN` and `MOS_VERIFY_CONTAINER` both set | refused; they are two different buns |
+| `MICA_VERIFY_BUN` and `MICA_VERIFY_CONTAINER` both set | refused; they are two different buns |
 | `--lint` on a board file under `/tmp`, container route | refuses, naming the path and the empty mount rather than the file |
 | a copy whose `REPO_ROOT` has no `Makefile` | the computed `HERE` and `REPO_ROOT`, and that one of them is stale |
 | a suite whose only test file declares no tests | the vacuity refusal above |
@@ -254,8 +254,8 @@ The same for the image-tool seam:
 
 | driven | what it does |
 |---|---|
-| `MOS_VERIFY_TOOLS=hsot` | refused up front — the route is decided once, before any tool runs |
-| `MOS_VERIFY_TOOLS=host` on a tool-less host | refused, naming `sgdisk, mdir, mcopy, mlabel, unsquashfs, veritysetup` |
+| `MICA_VERIFY_TOOLS=hsot` | refused up front — the route is decided once, before any tool runs |
+| `MICA_VERIFY_TOOLS=host` on a tool-less host | refused, naming `sgdisk, mdir, mcopy, mlabel, unsquashfs, veritysetup` |
 | `IMAGE_ALPINE_3_21` = a well-formed digest naming no image | refused **by the key**, at the pull |
 | `IMAGE_ALPINE_3_21` = a tag | `from.sh`'s refusal, naming the key and the file |
 | no image tools **and** no docker | refused, naming both and `IMAGE_ALPINE_3_21` |
@@ -265,7 +265,7 @@ The same for the image-tool seam:
 | `--image` with two boards | refused; one image cannot be both boards' |
 | `--image` naming a file that is not there | refused |
 
-`src/verify-cli.ts` declines to default the board at all. `MOS_BOARD` unset once
+`src/verify-cli.ts` declines to default the board at all. `MICA_BOARD` unset once
 checked an x64 image against cx3576's eleven-partition GPT and reported 191
 failures that were all the harness's.
 
@@ -844,7 +844,7 @@ dates it against **that board's own** artefacts:
 | input | derived from |
 |---|---|
 | `_out/<board>/rootfs-verity.img` | `ctx.outDir`, which is the board under test |
-| `mica-podman:out-<arch>/podman` | that board's own `MOS_ARCH` |
+| `mica-podman:out-<arch>/podman` | that board's own `MICA_ARCH` |
 
 mtime, not a hash: the inputs are a squashfs and a directory of binaries, and
 what is being caught is "you forgot to re-run the build".
@@ -852,7 +852,7 @@ what is being caught is "you forgot to re-run the build".
 **Every direction is a named result.** An input newer than the image is a
 `FAIL:` naming which one; no input present at all is a `SKIP:`, because zero
 comparisons made is the shape a green takes when it asserted nothing;
-`MOS_VERIFY_ALLOW_STALE=1` — for a downloaded release image, whose source is not
+`MICA_VERIFY_ALLOW_STALE=1` — for a downloaded release image, whose source is not
 this tree — is a second `SKIP:` that says so. Absent inputs are named in the
 message in every direction, so a run that compared one input does not read like
 a run that compared two.

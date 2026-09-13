@@ -12,7 +12,7 @@ import { Signer } from '../../shared/update-envelope.ts'
 
 const [outputArg, board, kernelArg, certificateArg, keyArg, initArg, rootArg, shutdownArg] = Bun.argv.slice(2)
 if (!outputArg || !kernelArg || !certificateArg || !keyArg || !initArg || !rootArg || !shutdownArg || (board !== 'x64' && board !== 'virt-arm64')) {
-  throw new Error('Usage: build.ts OUTPUT x64|virt-arm64 BSP_KERNEL CERTIFICATE CONTENT_KEY MOS_INIT FULL_ROOT_TREE MOS_SHUTDOWN')
+  throw new Error('Usage: build.ts OUTPUT x64|virt-arm64 BSP_KERNEL CERTIFICATE CONTENT_KEY MICA_INIT FULL_ROOT_TREE MICA_SHUTDOWN')
 }
 const output = resolve(outputArg)
 mkdirSync(output)

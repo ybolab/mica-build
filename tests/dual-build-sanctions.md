@@ -188,8 +188,8 @@ built from this worktree at one commit, on this host, with x64 being amd64 and
 therefore native:
 
 ```
-a. full     MOS_BOARD=x64 bash rootfs/build.sh
-b. reduced  MOS_BOARD=x64 MOS_ROOTFS_WITHOUT=mqtt bash rootfs/build.sh
+a. full     MICA_BOARD=x64 bash rootfs/build.sh
+b. reduced  MICA_BOARD=x64 MICA_ROOTFS_WITHOUT=mqtt bash rootfs/build.sh
 ```
 
 Each run's `_out/x64/factory-root.oci` was preserved before the next overwrote
@@ -317,7 +317,7 @@ swap is the orientation trap this file's seam note warns about, demonstrated on
 real material rather than asserted.
 
 **Gap 2: the same-configuration claim above is an inference.** Build D repeats
-the full build with no `MOS_ROOTFS_WITHOUT` at all. It cannot be a byte-repeat
+the full build with no `MICA_ROOTFS_WITHOUT` at all. It cannot be a byte-repeat
 of build A, because the tree has moved on by two commits and
 `micad:hack/build-target.sh` embeds `<commit>` at compile time -- which
 is itself what makes the experiment work, since it re-runs the stages that
@@ -376,7 +376,7 @@ the measured set is wider, what widened it is named here in advance.
 ### What the two queued builds measured
 
 Build D (the full build again, commit 23037394a539) and build C
-(`MOS_ROOTFS_WITHOUT=containers`, same commit) ran on a private
+(`MICA_ROOTFS_WITHOUT=containers`, same commit) ran on a private
 docker-container builder, so both chained by OCI layout under this worktree's
 own `_out/x64/stages/` and wrote no daemon-global tag. Build D was cold: 142
 `DONE` against 28 `CACHED`, and 379 apt progress lines. Build C exits 1, which

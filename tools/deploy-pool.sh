@@ -29,7 +29,7 @@ set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${HERE}/.." && pwd)"
-POOL="${MOS_POOL_DIR:-${REPO_ROOT}/_out/debs}"
+POOL="${MICA_POOL_DIR:-${REPO_ROOT}/_out/debs}"
 MEMBER="${HERE}/deb-member.py"
 
 archive_for() {

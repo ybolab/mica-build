@@ -42,7 +42,7 @@ jobs:
   # ybolab/mica-deploy); this job runs the assembly's own suites.
   #
   # WHAT IT COSTS, stated rather than discovered: the runner builds the
-  # mos-build-* family first, because the C and packaging suites below run in
+  # mica-build-* family first, because the C and packaging suites below run in
   # it. That is minutes of image build, in exchange for a gate
   # whose rustc, clippy, rustfmt, nextest and cargo-deny are the values
   # build-env/images.env records rather than whatever rustup resolved that
@@ -59,7 +59,7 @@ jobs:
 
       # bash, make and git only. NOT build-essential and NOT dbus-daemon: both
       # were here because the compile and the bus tests ran on this runner, and
-      # both now live in the image. mos-build-rust-check installs dbus-daemon
+      # both now live in the image. mica-build-rust-check installs dbus-daemon
       # for exactly the three suites that stand up a private session bus, and
       # its parent carries the C toolchain `ring` needs. A package installed
       # here for a process that no longer runs here is a claim nothing tests.
@@ -82,7 +82,7 @@ jobs:
         run: docker network inspect traefik >/dev/null 2>&1 || docker network create --label ai-agent=true traefik
 
       - name: Current component producers and release delivery in pinned Bun
-        run: MOS_BUILD_CONTAINER=1 make os-build-test
+        run: MICA_BUILD_CONTAINER=1 make os-build-test
 
       - name: Firmware record parsing and persistent attempt IO
         run: make os-fit-records-test os-trust-domain-test os-s905x5m-hwinit-test
@@ -217,7 +217,7 @@ jobs:
             echo "error: this runner already has bun at $(command -v bun)." >&2
             echo "       verify would use it and the pinned container would go unexercised, so this" >&2
             echo "       job would report green about a route it never took. Either remove it, or set" >&2
-            echo "       MOS_VERIFY_CONTAINER=1 on the steps below so the pin is still what runs." >&2
+            echo "       MICA_VERIFY_CONTAINER=1 on the steps below so the pin is still what runs." >&2
             exit 1
           fi
           # EXACTLY what run.sh's discovery tests -- an executable at
@@ -315,9 +315,9 @@ jobs:
               cp -a /source/shared/. shared/
               cp -a /source/tests/component-contracts tests/component-contracts
               cd update-server
-              # mos-build-side: container-block -- this script runs in the digest-pinned Bun image above
+              # mica-build-side: container-block -- this script runs in the digest-pinned Bun image above
               bun install --frozen-lockfile
               bun run check
               bun audit
-              # mos-build-side: host
+              # mica-build-side: host
             '

@@ -18,7 +18,7 @@ import { OPEN_TIMEOUT_MS, TOOL_TIMEOUT_MS } from './testing.ts'
 import { COREUTILS } from './toolsets.ts'
 import { FILE_IMAGE_TOOLS } from './file-image.ts'
 
-const docker = process.env.MOS_BUILD_DOCKER || 'docker'
+const docker = process.env.MICA_BUILD_DOCKER || 'docker'
 
 let work = ''
 // Two toolboxes, two images' worth of packages, one route. `coreutils` is the
@@ -318,20 +318,20 @@ describe('a toolbox that cannot provide its tools does not open', () => {
     expect(msg).toContain('IMAGE_ALPINE_3_21')
   })
 
-  test('MOS_BUILD_TOOLBOX=host is refused too, and says which asked', async () => {
+  test('MICA_BUILD_TOOLBOX=host is refused too, and says which asked', async () => {
     // Two ways in, one rule. Honouring the environment variable while refusing
     // the argument -- or the other way round -- would make the policy depend on
     // how it was asked for.
-    const before = process.env.MOS_BUILD_TOOLBOX
-    process.env.MOS_BUILD_TOOLBOX = 'host'
+    const before = process.env.MICA_BUILD_TOOLBOX
+    process.env.MICA_BUILD_TOOLBOX = 'host'
     try {
       let msg = ''
       try { await Toolbox.open(COREUTILS) } catch (e) { msg = (e as Error).message }
-      expect(msg).toContain('MOS_BUILD_TOOLBOX=host asked for it')
+      expect(msg).toContain('MICA_BUILD_TOOLBOX=host asked for it')
       expect(msg).toContain('docs/design/build.md section 0')
     } finally {
-      if (before === undefined) delete process.env.MOS_BUILD_TOOLBOX
-      else process.env.MOS_BUILD_TOOLBOX = before
+      if (before === undefined) delete process.env.MICA_BUILD_TOOLBOX
+      else process.env.MICA_BUILD_TOOLBOX = before
     }
   })
 })
@@ -358,14 +358,14 @@ describe('the session is torn down, and says so if used afterwards', () => {
     await expect(tb.run(['true'])).rejects.toThrow(/coreutils/)
   }, OPEN_TIMEOUT_MS)
 
-  test('MOS_BUILD_TOOLBOX only accepts the two routes there are', async () => {
-    const before = process.env.MOS_BUILD_TOOLBOX
-    process.env.MOS_BUILD_TOOLBOX = 'sometimes'
+  test('MICA_BUILD_TOOLBOX only accepts the two routes there are', async () => {
+    const before = process.env.MICA_BUILD_TOOLBOX
+    process.env.MICA_BUILD_TOOLBOX = 'sometimes'
     try {
       await expect(Toolbox.open(COREUTILS)).rejects.toThrow(/neither 'host' nor 'container'/)
     } finally {
-      if (before === undefined) delete process.env.MOS_BUILD_TOOLBOX
-      else process.env.MOS_BUILD_TOOLBOX = before
+      if (before === undefined) delete process.env.MICA_BUILD_TOOLBOX
+      else process.env.MICA_BUILD_TOOLBOX = before
     }
   })
 })

@@ -38,17 +38,17 @@
 # TARGET-AWARE TOOLS. This stage runs on the BUILD platform while /rootfs is
 # the board's, so the host `objcopy` and `strip` are the wrong ones -- GNU
 # binutils is configured per target, and the native tools would refuse the
-# board's ELF rather than rewrite it correctly. MOS_ARCH picks the cross prefix;
+# board's ELF rather than rewrite it correctly. MICA_ARCH picks the cross prefix;
 # both prefixed toolchains are installed in the stage, so the apt layer is
 # shared between the two architectures instead of keyed on one.
 set -eu
 
-: "${MOS_ARCH:?pack-export-debug.sh needs MOS_ARCH to choose the target binutils}"
-case "${MOS_ARCH}" in
+: "${MICA_ARCH:?pack-export-debug.sh needs MICA_ARCH to choose the target binutils}"
+case "${MICA_ARCH}" in
 amd64) PREFIX=x86_64-linux-gnu- ;;
 arm64) PREFIX=aarch64-linux-gnu- ;;
 *)
-    echo "error: MOS_ARCH=${MOS_ARCH} names no binutils this stage installs. The stripping has to be done by the TARGET's objcopy: the host's is built for one target, and falling back to it would either refuse this root's ELF or rewrite a foreign binary by the wrong convention" >&2
+    echo "error: MICA_ARCH=${MICA_ARCH} names no binutils this stage installs. The stripping has to be done by the TARGET's objcopy: the host's is built for one target, and falling back to it would either refuse this root's ELF or rewrite a foreign binary by the wrong convention" >&2
     exit 1
     ;;
 esac

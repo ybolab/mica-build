@@ -296,13 +296,13 @@ export async function toolImageRef(): Promise<string> {
 export function chooseRoute(forced: string | undefined, missing: readonly string[]): ToolRoute {
   if (forced !== undefined && forced !== 'host' && forced !== 'container') {
     throw new ToolOutputError(
-      `MOS_VERIFY_TOOLS is '${forced}'; it takes 'host' or 'container'. A value that is `
+      `MICA_VERIFY_TOOLS is '${forced}'; it takes 'host' or 'container'. A value that is `
       + `neither would otherwise be read as "not set" and silently choose a route.`,
     )
   }
   if (forced === 'host' && missing.length > 0) {
     throw new ToolOutputError(
-      `MOS_VERIFY_TOOLS=host, but this host has no ${missing.join(', ')}. `
+      `MICA_VERIFY_TOOLS=host, but this host has no ${missing.join(', ')}. `
       + `Unset it to take the pinned ${TOOL_IMAGE_KEY} container, or install them.`,
     )
   }
@@ -314,7 +314,7 @@ export function chooseRoute(forced: string | undefined, missing: readonly string
   // and unsquashfs. docs/design/build.md section 0 calls a tool like that a
   // JUDGE: nothing it writes ships, but two builds of it can disagree about the
   // same image, so the pinned container is the contract and the host route is
-  // an opt-in. MOS_VERIFY_TOOLS=host is that opt-in, and it is announced.
+  // an opt-in. MICA_VERIFY_TOOLS=host is that opt-in, and it is announced.
   return 'container'
 }
 
@@ -330,11 +330,11 @@ export function chooseRoute(forced: string | undefined, missing: readonly string
  */
 export function routeReason(forced: string | undefined, missing: readonly string[]): string {
   if (missing.length > 0) return `no ${missing.join(', ')} on this host`
-  if (forced === 'container') return 'MOS_VERIFY_TOOLS=container'
+  if (forced === 'container') return 'MICA_VERIFY_TOOLS=container'
   // The default is no longer "the host was short of something". A host that has
   // every tool takes the container too, and the line has to say why, or a
   // reader on such a machine is told a reason that is not the reason.
-  if (forced === undefined) return 'the pinned tools are the contract; MOS_VERIFY_TOOLS=host opts out'
+  if (forced === undefined) return 'the pinned tools are the contract; MICA_VERIFY_TOOLS=host opts out'
   return 'asked for'
 }
 
@@ -427,13 +427,13 @@ function installExitHook(): void {
  * Pick a route, prepare it, and hand back the one function that runs a tool.
  *
  * The pinned container is the default whatever this host carries;
- * MOS_VERIFY_TOOLS=host opts out, which is how the two routes are compared on
+ * MICA_VERIFY_TOOLS=host opts out, which is how the two routes are compared on
  * one machine. See docs/design/build.md section 0 for why the default is not a
  * measurement.
  */
 export async function createToolRuntime(request: RuntimeRequest): Promise<ToolRuntime> {
   const log = request.log ?? ((line: string) => console.error(line))
-  const forced = request.route ?? process.env['MOS_VERIFY_TOOLS']
+  const forced = request.route ?? process.env['MICA_VERIFY_TOOLS']
 
   // Computed even when the route is already decided: it is the REASON, not the
   // decision, and the announce line is the only thing that says which tools
@@ -442,10 +442,10 @@ export async function createToolRuntime(request: RuntimeRequest): Promise<ToolRu
   const route = chooseRoute(forced, missing)
 
   if (route === 'host') {
-    log(`verify: image tools on this host, by MOS_VERIFY_TOOLS=host (${REQUIRED_TOOLS.length} of ${REQUIRED_TOOLS.length} present)`)
+    log(`verify: image tools on this host, by MICA_VERIFY_TOOLS=host (${REQUIRED_TOOLS.length} of ${REQUIRED_TOOLS.length} present)`)
     return {
       route,
-      announce: 'verify: image tools on this host, by MOS_VERIFY_TOOLS=host',
+      announce: 'verify: image tools on this host, by MICA_VERIFY_TOOLS=host',
       run: (argv, options) => runChecked(capture, argv, options),
       dispose: async () => {},
     }
@@ -626,7 +626,7 @@ async function createContainerRuntime(
     )
   }
 
-  const announce = `verify: image tools in ${image} (${routeReason(request.route ?? process.env['MOS_VERIFY_TOOLS'], missing)})`
+  const announce = `verify: image tools in ${image} (${routeReason(request.route ?? process.env['MICA_VERIFY_TOOLS'], missing)})`
   log(announce)
 
   return {

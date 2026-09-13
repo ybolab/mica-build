@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Run inside the lab image with the evidence directory mounted at /w.
-# mos-build-side: container -- QEMU and enrollment tools run in the acceptance lab image.
+# mica-build-side: container -- QEMU and enrollment tools run in the acceptance lab image.
 set -euo pipefail
 cd /w
 DISK=${1:-image/disk.img}

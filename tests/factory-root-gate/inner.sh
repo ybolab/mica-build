@@ -1,7 +1,7 @@
 #!/bin/bash
 # The five comparisons. Runs INSIDE the pinned tool container; gate.sh starts it.
 #
-# mos-build-side: container -- gate.sh runs this with `docker run ... sh -c 'apk add ...
+# mica-build-side: container -- gate.sh runs this with `docker run ... sh -c 'apk add ...
 # && bash inner.sh'`; neither unsquashfs nor getcap is readable on the build host.
 #
 #   bash inner.sh <out-dir> <work-dir>

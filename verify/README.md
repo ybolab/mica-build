@@ -27,7 +27,7 @@ than data.
 | bare | `LAYOUT_BOARD=x64` |
 | double-quoted | `BOARD_CMDLINE_ARGS="console=tty0 console=ttyS0,115200 net.ifnames=0"` |
 | single-quoted | nothing expands inside |
-| reference | `EPHEMERAL_SIZE_MIB="${MOS_VAR_MIB}"` |
+| reference | `EPHEMERAL_SIZE_MIB="${MICA_VAR_MIB}"` |
 | interpolation | `BOOT_SLOT_REQUIRED_FILES="Image rk3576-src.dtb ${BOOT_SCRIPT_NAME} mos-verity-@SLOT@.env"` |
 | arithmetic | `ESP_START_SECTOR=$((ESP_START_MIB * MIB_BYTES / SECTOR_SIZE))` |
 | declared empty | `BOARD_FIRMWARE_FILES=""` — **not** the same as absent |
@@ -109,7 +109,7 @@ rejected here:
 | `ROOTFS_A_FS_UUID=""` on a `verity-slot` | reject |
 | `BOOT_ATTEMPTS_DEFAULT=""` on the grub board | reject |
 | `LAYOUT_PARTITIONS=" "` | reject |
-| `MOS_ARCH` deleted, but exported by the caller | reject |
+| `MICA_ARCH` deleted, but exported by the caller | reject |
 
 The last is closed one layer down — the parser never reads `process.env`.
 
@@ -150,7 +150,7 @@ mounts, no host mutation, no root.
 `src/tools.ts` is the seam that decides where the tools come from — this host,
 or the container pinned as `IMAGE_ALPINE_3_21`, the same key the assembler uses,
 resolved through `build-env/from.sh --ref`. One container per run, prepared
-once, `docker exec` per call; `MOS_VERIFY_TOOLS` forces a route.
+once, `docker exec` per call; `MICA_VERIFY_TOOLS` forces a route.
 
 ### Four of the five tools succeed at nothing
 
@@ -217,7 +217,7 @@ its pin all survive to first boot, and from a build log all three look identical
 green.
 
 ```sh
-bash verify/run.sh --smoke                # x64, or $MOS_BOARD
+bash verify/run.sh --smoke                # x64, or $MICA_BOARD
 bash verify/run.sh --smoke --board cx3576
 ```
 
@@ -288,7 +288,7 @@ passing quietly.
 
 The two sides are the string compiled **into** the binary in the packed root,
 read back by executing it, and the string that producer run wrote to disk — and
-both descend from one `MOS_BUILD_COMMIT` in one invocation. So it is **not** a
+both descend from one `MICA_BUILD_COMMIT` in one invocation. So it is **not** a
 check that the commit is right; no reader of an image could be. It closes the
 distance between *the producer was told to embed X* and *the binary in the image
 reports X*: a compile cargo did not re-run for a changed environment variable, an
@@ -307,7 +307,7 @@ PASS  catatonit  …  == CATATONIT_VERSION=v0.2.1  [said: "tini version 0.2.1_ca
 
 ### It refuses rather than skipping, in four places
 
-- **no image** — names the file and `MOS_BOARD=<b> bash rootfs/build.sh`
+- **no image** — names the file and `MICA_BOARD=<b> bash rootfs/build.sh`
 - **register vs pins disagree** — nothing is executed at all
 - **a feature stage was declined** — read off the build's own
   `rootfs-stages.txt`; against such a root the declined feature's artifacts would
@@ -395,8 +395,8 @@ verify: 1.4.0 in oven/bun:1@sha256:5ff6… (no bun on this host)
 RESULT: PASS (26/26 checks)
 ```
 
-`MOS_VERIFY_CONTAINER=1` forces that route on a host that *does* have bun, which
-is how the two are compared; `MOS_VERIFY_BUN` names a binary instead. Setting
+`MICA_VERIFY_CONTAINER=1` forces that route on a host that *does* have bun, which
+is how the two are compared; `MICA_VERIFY_BUN` names a binary instead. Setting
 both is refused.
 
 `make os-layout-lint` needs bun like the suite does, so the container route is

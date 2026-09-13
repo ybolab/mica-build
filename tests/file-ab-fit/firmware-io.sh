@@ -3,10 +3,10 @@ set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/../.."
 command -v docker >/dev/null
 work=$(mktemp -d "$PWD/_out/fit-firmware-io.XXXXXX")
-image=$(bash build-env/from.sh --arch=amd64 --ref LOCAL_MOS_BUILD_C)
+image=$(bash build-env/from.sh --arch=amd64 --ref LOCAL_MICA_BUILD_C)
 # The empty headers isolate hardware declarations; the complete production C
 # policy is included unchanged and called through its normal entry point.
-# mos-build-side: container-block -- the pinned C compiler builds and runs the firmware policy.
+# mica-build-side: container-block -- the pinned C compiler builds and runs the firmware policy.
 docker run --rm --label ai-agent=true --network traefik -v "$PWD:/src:ro" -v "$work:/out" \
     --entrypoint /bin/bash "$image" -ceu '
     mkdir -p /out/include/amlogic /out/include/asm /out/include/u-boot
@@ -21,4 +21,4 @@ docker run --rm --label ai-agent=true --network traefik -v "$PWD:/src:ro" -v "$w
     timeout 20 /out/firmware-io
     done
 '
-# mos-build-side: host
+# mica-build-side: host

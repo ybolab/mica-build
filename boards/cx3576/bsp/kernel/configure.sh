@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# mos-build-side: container -- kconfig and `make olddefconfig` run in the BSP
+# mica-build-side: container -- kconfig and `make olddefconfig` run in the BSP
 # builder image against the vendor tree fetched there; no kernel configuration
 # happens on the host.
 #

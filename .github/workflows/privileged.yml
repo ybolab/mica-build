@@ -224,10 +224,10 @@ jobs:
       # anybody and this lane is where that
       # first happens.
       - name: make os-factory-root-gate
-        run: MOS_BOARD=cx3576 make os-factory-root-gate
+        run: MICA_BOARD=cx3576 make os-factory-root-gate
 
       - name: make os-smoke-negative-test
-        run: MOS_BOARD=cx3576 make os-smoke-negative-test
+        run: MICA_BOARD=cx3576 make os-smoke-negative-test
 
       # The repo-root ca/ trust root for the bundle build and the image's
       # keyring. Dev material, deliberately: this lane proves the pipeline, and

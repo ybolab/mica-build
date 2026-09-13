@@ -20,7 +20,7 @@ bash tests/signed-boot-lab/images.sh             # the lab and guest images
 bash tests/signed-boot-lab/images.sh --uboot     # and the U-Boot sandbox
 ```
 
-Work lands in `_out/signed-boot-lab/` (`MOS_LAB_WORK` overrides it). Every
+Work lands in `_out/signed-boot-lab/` (`MICA_LAB_WORK` overrides it). Every
 container is labelled `ai-agent=true` and named `ai-agent-signed-boot-lab-*`.
 
 ## Entry scripts

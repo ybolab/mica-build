@@ -1,19 +1,19 @@
 {
   "name": "mica-lifecycle",
   "repository": "mica-deploy",
-  "commit": "91d0173ecfbb994551adbff19d26867584199cc9",
+  "commit": "2c71324ad30e95b1aed1e47055ccf219be9dc0d1",
   "targets": {
     "amd64": {
-      "version": "0.1.0+git91d0173ecfbb-1",
+      "version": "0.1.0+git2c71324ad30e-1",
       "architecture": "amd64",
-      "sha256": "5c300c18997acc13fdff9fef9db02bbef25706d0f2c3d1c8c2b7bca509f15308",
-      "asset": "mica-lifecycle_0.1.0.git91d0173ecfbb-1_amd64.deb"
+      "sha256": "85e6e401b6d339aa55c2c57c7f60f7f2dcdaf0d248818ce25154d3a8c5bb8085",
+      "asset": "mica-lifecycle_0.1.0.git2c71324ad30e-1_amd64.deb"
     },
     "arm64": {
-      "version": "0.1.0+git91d0173ecfbb-1",
+      "version": "0.1.0+git2c71324ad30e-1",
       "architecture": "arm64",
-      "sha256": "11d486213f0ec30bd1d82f9a1343e1470dcd9b7167ae43ce7cd93e7c4fe89f43",
-      "asset": "mica-lifecycle_0.1.0.git91d0173ecfbb-1_arm64.deb"
+      "sha256": "f49e995fef3a8e1322935c5663443a43f2d8b41563032ea1968ca5cb055b9104",
+      "asset": "mica-lifecycle_0.1.0.git2c71324ad30e-1_arm64.deb"
     }
   }
 }

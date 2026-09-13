@@ -117,7 +117,7 @@ class Parser {
   parse(): BoardEnvFile {
     // CRLF, refused before anything else is read. A shell sourcing a file with
     // DOS line endings puts the carriage return INSIDE every value, so
-    // `MOS_ARCH` becomes "arm64\r", which compares unequal to "arm64"
+    // `MICA_ARCH` becomes "arm64\r", which compares unequal to "arm64"
     // while appearing identical in a terminal. Refuse that ambiguity once.
     const cr = this.text.indexOf('\r')
     if (cr !== -1) {

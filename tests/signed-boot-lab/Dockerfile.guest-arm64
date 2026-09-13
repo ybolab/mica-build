@@ -9,11 +9,11 @@
 # `find . -xdev` is what keeps the output out of its own input: /w is a bind
 # mount on another device in build-initramfs.sh, and here the archive is
 # excluded by name for the same reason.
-ARG MOS_IMAGE_DEBIAN_TRIXIE
-FROM --platform=linux/arm64 ${MOS_IMAGE_DEBIAN_TRIXIE} AS guest
-ARG MOS_DEBIAN_SNAPSHOT
+ARG MICA_IMAGE_DEBIAN_TRIXIE
+FROM --platform=linux/arm64 ${MICA_IMAGE_DEBIAN_TRIXIE} AS guest
+ARG MICA_DEBIAN_SNAPSHOT
 RUN rm -f /etc/apt/sources.list.d/debian.sources && \
-    printf 'deb [check-valid-until=no] %s trixie main\n' "${MOS_DEBIAN_SNAPSHOT}" \
+    printf 'deb [check-valid-until=no] %s trixie main\n' "${MICA_DEBIAN_SNAPSHOT}" \
       > /etc/apt/sources.list.d/snapshot.list && \
     apt-get -o Acquire::Retries=3 update -qq && \
     apt-get install -y --no-install-recommends cryptsetup-bin cpio && \

@@ -9,8 +9,8 @@
 # is one edit here. libgnutls28-dev and efitools are not optional: the tools
 # and lib/efi_loader targets of this tree need mkeficapsule's headers and
 # cert-to-efi-sig-list, and without them the build stops in the middle.
-ARG MOS_IMAGE_UBUNTU_2404
-FROM ${MOS_IMAGE_UBUNTU_2404} AS build
+ARG MICA_IMAGE_UBUNTU_2404
+FROM ${MICA_IMAGE_UBUNTU_2404} AS build
 ARG DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
         git ca-certificates build-essential bc bison flex libssl-dev \

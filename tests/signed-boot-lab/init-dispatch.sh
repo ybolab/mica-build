@@ -1,5 +1,5 @@
 #!/bin/sh
-# mos-build-side: container -- PID 1 of the proof initramfs; nothing in this
+# mica-build-side: container -- PID 1 of the proof initramfs; nothing in this
 #   file runs on a host.
 #
 # One initramfs, two experiments. /proc first, because the mode is read from

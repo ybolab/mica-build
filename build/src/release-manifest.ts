@@ -475,8 +475,8 @@ function derived(dir: string, m: Omit<ReleaseManifest, 'artifacts'>, image: stri
   return {
     'sbom.cdx.json': { bomFormat: 'CycloneDX', specVersion: '1.5', version: 1,
       metadata: { component: { type: 'operating-system', name: `mos-${m.board}`, version: m.version },
-        properties: [{ name: 'mos:source-commit', value: m.source.commit }, { name: 'mos:source-dirty', value: String(m.source.dirty) }, { name: 'mos:source-offer', value: OFFER }] },
-      components: rows.map(r => ({ type: 'library', name: r.name, version: r.version, properties: [{ name: 'mos:architecture', value: r.architecture }, { name: 'mos:archive-sha256', value: runtime.shippedPackages.find(p => p.package === r.name)!.archive_sha256 }] })) },
+        properties: [{ name: 'mica:source-commit', value: m.source.commit }, { name: 'mica:source-dirty', value: String(m.source.dirty) }, { name: 'mica:source-offer', value: OFFER }] },
+      components: rows.map(r => ({ type: 'library', name: r.name, version: r.version, properties: [{ name: 'mica:architecture', value: r.architecture }, { name: 'mos:archive-sha256', value: runtime.shippedPackages.find(p => p.package === r.name)!.archive_sha256 }] })) },
     'licenses.json': { schemaVersion: 1, statement: OFFER, source: m.source, packages: runtime.licenses },
     'provenance.json': { schema: 'mos/provenance/v1', source: m.source, board: m.board, version: m.version, profile: m.profile, builderImages: images, runtime: { sourceLineage: runtime.sourceLineage, lock: runtime.lock, unlocked: runtime.unlocked, buildPackages: runtime.buildPackages, shippedPackages: runtime.shippedPackages, files: runtime.files, measurements: runtime.measurements },
       inputs: [image, 'update.mosupd', 'firmware.json', 'firmware.bin', 'package-manifest.tsv', 'rootfs-report.runtime.json', 'baked-meta.json', 'development-marker.txt', 'board-evidence.json', 'builder-images.json', 'release-notes.md'].map(filename => measure(dir, filename, files[filename]!)) },

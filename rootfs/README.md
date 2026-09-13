@@ -22,12 +22,12 @@ versions. Changing a pin or consumer mapping requires reviewing its dependency
 closure and rerunning the system acceptance tests.
 
 ```bash
-MOS_ARCH=amd64 make os-debian-cache
-MOS_ARCH=amd64 make os-debian-verify
-MOS_ARCH=amd64 MOS_ROOT=/path/to/empty-root make os-debian-install
+MICA_ARCH=amd64 make os-debian-cache
+MICA_ARCH=amd64 make os-debian-verify
+MICA_ARCH=amd64 MICA_ROOT=/path/to/empty-root make os-debian-install
 
 # Add the upstream dependencies of the common mos package set.
-MOS_ARCH=amd64 MOS_DEBIAN_PACKAGES=rootfs/packages/common.pkgs make os-debian-cache
+MICA_ARCH=amd64 MICA_DEBIAN_PACKAGES=rootfs/packages/common.pkgs make os-debian-cache
 
 # After editing packages/libc6.json, fetch or verify only its amd64 archive.
 bash rootfs/debian/docker.sh cache --arch amd64 --package libc6
@@ -57,7 +57,7 @@ times after every archive is already local: to spell debootstrap's `apt_dest`
 index filename, and as debootstrap's own mirror argument on a run whose download
 phases are all disabled. What fetches is each record's absolute `url`.
 
-`MOS_DEBIAN_MIRROR` rewrites the prefix of that URL at fetch time. The record is
+`MICA_DEBIAN_MIRROR` rewrites the prefix of that URL at fetch time. The record is
 left alone — it stays the provenance statement, naming which snapshot and which
 pool path the pin came from — and the mirror is a property of one build host.
 There is none in the committed defaults: unset, a build downloads exactly what
@@ -69,8 +69,8 @@ it downloaded before.
 | `snapshot:<base>` | `<base>/archive/debian/<SNAPSHOT>/pool/<path>` | a mirror of snapshot.debian.org, which keeps each record's own snapshot |
 
 ```bash
-MOS_DEBIAN_MIRROR=https://deb.debian.org/debian MOS_ARCH=amd64 make os-debian-cache
-MOS_DEBIAN_MIRROR=snapshot:https://snapshot-cloudflare.debian.org \
+MICA_DEBIAN_MIRROR=https://deb.debian.org/debian MICA_ARCH=amd64 make os-debian-cache
+MICA_DEBIAN_MIRROR=snapshot:https://snapshot-cloudflare.debian.org \
     bash rootfs/debian/docker.sh cache --arch amd64 --package hostname
 ```
 
@@ -187,7 +187,7 @@ reconciler rendering into a read-only path fails on device and nowhere else.
 
 ## Image profile (`/usr/lib/mica/profile.conf`)
 
-`MOS_PROFILE=dev` by default; `MOS_PROFILE=prod bash rootfs/build.sh`
+`MICA_PROFILE=dev` by default; `MICA_PROFILE=prod bash rootfs/build.sh`
 builds the production image from the same tree. The build rejects anything that
 is not exactly `dev` or `prod` in lowercase.
 
@@ -298,11 +298,11 @@ package/build reports and the factory root export.
 make os-deb-preflight
 bash build-env/deb/build.sh --producer micad --arch amd64
 bash build-env/deb/repo.sh --arch amd64
-MOS_BOARD=x64 MOS_META_DIR=/absolute/public-defaults bash rootfs/build.sh
+MICA_BOARD=x64 MICA_META_DIR=/absolute/public-defaults bash rootfs/build.sh
 ```
 
 This example builds one producer; prepare the complete selected pool through the
-build guide before composition. `MOS_BOARD=virt-arm64` and `MOS_BOARD=cx3576` use
+build guide before composition. `MICA_BOARD=virt-arm64` and `MICA_BOARD=cx3576` use
 the corresponding ARM64 pool. All signing inputs are explicit in the component
 producer, separate from public factory defaults. Follow
 [the complete build guide](../docs/design/build.md) to package root, kernel/support,

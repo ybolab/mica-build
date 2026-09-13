@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# mos-build-side: container -- runs only in the pinned OpenSSL build image.
+# mica-build-side: container -- runs only in the pinned OpenSSL build image.
 set -euo pipefail
 umask 0077
 cp /certificate.pem /output/signer.cert.pem

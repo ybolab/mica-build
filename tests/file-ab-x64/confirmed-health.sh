@@ -1,5 +1,5 @@
 #!/bin/bash
-# mos-build-side: container -- a confirmed deployment can fail a later health gate.
+# mica-build-side: container -- a confirmed deployment can fail a later health gate.
 set -euo pipefail
 cd /w
 board=${1:?board required}

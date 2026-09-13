@@ -32,17 +32,17 @@ for (const board of ['x64', 'virt-arm64']) {
         writeFileSync(image, 'not a bootable image'); writeFileSync(cert, 'not a signing identity')
         await new Promise<void>(resolve => socket.listen(join(work, 'daemon.sock'), resolve))
         const env: NodeJS.ProcessEnv = { ...process.env, PATH: `${join(work, 'bin')}:${dirname(process.execPath)}:${process.env.PATH}`,
-          DOCKER_HOST: `unix://${join(work, 'daemon.sock')}`, MOS_API_LAUNCHER_FIXTURE: work,
-          MOS_BOARD: board, MOS_QEMU_IMAGE: image, MOS_QEMU_BOOT_CERT: cert, MOS_APID_KEEP_DISK: '1' }
-        for (const key of Object.keys(env)) if (key.startsWith('MOS_QEMU_') && !['MOS_QEMU_IMAGE', 'MOS_QEMU_BOOT_CERT'].includes(key)) delete env[key]
-        if (port !== undefined) Object.assign(env, { MOS_QEMU_SSH_PORT: port })
+          DOCKER_HOST: `unix://${join(work, 'daemon.sock')}`, MICA_API_LAUNCHER_FIXTURE: work,
+          MICA_BOARD: board, MICA_QEMU_IMAGE: image, MICA_QEMU_BOOT_CERT: cert, MICA_APID_KEEP_DISK: '1' }
+        for (const key of Object.keys(env)) if (key.startsWith('MICA_QEMU_') && !['MICA_QEMU_IMAGE', 'MICA_QEMU_BOOT_CERT'].includes(key)) delete env[key]
+        if (port !== undefined) Object.assign(env, { MICA_QEMU_SSH_PORT: port })
         const child = Bun.spawnSync(['bash', join(work, 'tests/apid-api/run.sh')], { env, timeout: 20000 })
         expect(child.exitCode, child.stdout.toString() + child.stderr.toString()).toBe(1)
         const outer = JSON.parse(readFileSync(join(work, 'outer.json'), 'utf8'))
         expect(outer.args.slice(-4)).toEqual(['bun', 'run', 'src/qemu.ts', '--prepare-only'])
-        expect(outer.env.MOS_QEMU_SSH_PORT).toBe(port)
-        expect(outer.env).toMatchObject({ MOS_BOARD: board, MOS_QEMU_IMAGE: image, MOS_QEMU_BOOT_CERT: cert,
-          MOS_QEMU_FORWARD: '1', MOS_QEMU_NETWORK: 'acceptance-fixture', MOS_QEMU_HTTPS_PORT: '18443', MOS_QEMU_HTTP_PORT: '18080' })
+        expect(outer.env.MICA_QEMU_SSH_PORT).toBe(port)
+        expect(outer.env).toMatchObject({ MICA_BOARD: board, MICA_QEMU_IMAGE: image, MICA_QEMU_BOOT_CERT: cert,
+          MICA_QEMU_FORWARD: '1', MICA_QEMU_NETWORK: 'acceptance-fixture', MICA_QEMU_HTTPS_PORT: '18443', MICA_QEMU_HTTP_PORT: '18080' })
         const engine = JSON.parse(readFileSync(join(work, 'engine.json'), 'utf8'))
         expect(engine.exitCode).toBe(1)
         if (port === undefined || port === '22345') {

@@ -14,9 +14,9 @@ import unittest
 # archives the lock imports (mica-system and, for the Quadlet mount unit,
 # mica-podman) at their pins: tools/deb-member.py reads a payload member
 # without dpkg. `make os-rootfs-runtime-test` fetches the amd64 pool first;
-# MOS_POOL_DIR overrides its location.
+# MICA_POOL_DIR overrides its location.
 _REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
-_POOL = pathlib.Path(os.environ.get('MOS_POOL_DIR') or (_REPO_ROOT / '_out/debs'))
+_POOL = pathlib.Path(os.environ.get('MICA_POOL_DIR') or (_REPO_ROOT / '_out/debs'))
 
 
 def shipped(path: str) -> bytes:

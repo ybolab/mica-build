@@ -18,18 +18,18 @@ install -m 0600 "$key" "$work/content.key.pem"
 cert="$work/content.cert.pem"
 key="$work/content.key.pem"
 # The Rust builder supplies the pinned native and cross C linkers.
-builder=$(bash build-env/from.sh --arch=amd64 --ref LOCAL_MOS_BUILD_RUST)
+builder=$(bash build-env/from.sh --arch=amd64 --ref LOCAL_MICA_BUILD_RUST)
 timeout -k 15 180 docker run --rm --platform linux/amd64 --label ai-agent=true --network traefik \
     -v "$work:/w" -v "$PWD/tests/file-ab-x64:/harness:ro" --entrypoint /bin/bash "$builder" \
     -c 'set -euo pipefail; command -v "$1"; "$1" -Wall -Wextra -Werror -shared -fPIC /harness/reset-fault.c -o /w/reset-fault.so -ldl' reset-compiler "$compiler"
 for tier in configuration application-data full-factory; do
     out="$work/$tier"
     mkdir "$out"
-    # mos-build-side: container-block -- extract with the pinned component tools.
+    # mica-build-side: container-block -- extract with the pinned component tools.
     timeout -k 15 240 docker run --rm --label ai-agent=true --network traefik \
         -v "$out:/w" -v "$root:/root.img:ro" ai-agent/mos-boot-tools-amd64 \
         unsquashfs -no-progress -d /w/tree /root.img > "$out/extract.log" 2>&1
-    # mos-build-side: host
+    # mica-build-side: host
     install -m 0755 tests/file-ab-x64/reset-runtime.sh "$out/tree/usr/lib/mica/reset-runtime"
     install -m 0644 "$work/reset-fault.so" "$out/tree/usr/lib/mica/reset-fault.so"
     printf '%s\n' "$tier" > "$out/tree/usr/lib/mica/reset-test-tier"

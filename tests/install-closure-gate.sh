@@ -19,7 +19,7 @@
 #
 #   1  CLEAN-ROOT INSTALL, PER ARCHITECTURE. The package set comes from
 #      rootfs/packages/resolve.sh, for the board that declares this pool's
-#      MOS_ARCH -- not from a list here, which would be a second manifest set
+#      MICA_ARCH -- not from a list here, which would be a second manifest set
 #      agreeing with the first until either is edited. Then, inside that root:
 #      `apt-get check` and `dpkg --audit` clean; every payload path present;
 #      every wants-symlink resolving to a unit file that is also payload; every
@@ -125,7 +125,7 @@ esac
 # The base, resolved from images.env by key exactly as tests/quadlet-doc-test.sh
 # resolves it. mapfile cannot fail, so an empty array is what a refusal looks
 # like from here -- and an empty array would build with no FROM at all.
-mapfile -t BASE_ARGS < <(bash "${FROM_SH}" MOS_BASE=IMAGE_DEBIAN_TRIXIE)
+mapfile -t BASE_ARGS < <(bash "${FROM_SH}" MICA_BASE=IMAGE_DEBIAN_TRIXIE)
 [ "${#BASE_ARGS[@]}" -eq 2 ] || {
     echo "error: build-env/from.sh did not yield IMAGE_DEBIAN_TRIXIE (see its message above); every root below would have been built from an empty FROM" >&2
     exit 1
@@ -829,8 +829,8 @@ EXP
 # build-env/build.sh checks that pin across the Dockerfiles the tree SHIPS,
 # and a file generated under tmp/ is not one of them.
 cat >"${WORK}/Dockerfile" <<'DOCKERFILE'
-ARG MOS_BASE
-FROM ${MOS_BASE} AS poolbase
+ARG MICA_BASE
+FROM ${MICA_BASE} AS poolbase
 ARG EMULATED=0
 ENV DEBIAN_FRONTEND=noninteractive
 ENV EMULATED=${EMULATED}
@@ -915,12 +915,12 @@ for arch in "${ARCHES[@]}"; do
     mkdir -p "${ctx}"
     cp -R "${IN}" "${ctx}/in"
 
-    # The board whose MOS_ARCH is this pool's, found the way
+    # The board whose MICA_ARCH is this pool's, found the way
     # pkgs/mqtt/deb/mqtt/prepare.sh finds it: the board files are the one
     # authority on which architecture a board is, and a table here would be a
     # second one.
     case "$arch" in amd64) board=x64;; arm64) board=cx3576;; esac
-    test "$(sed -n 's/^MOS_ARCH=//p' "$REPO_ROOT/boards/$board/board.env")" = "$arch"
+    test "$(sed -n 's/^MICA_ARCH=//p' "$REPO_ROOT/boards/$board/board.env")" = "$arch"
     radios="$(sed -n 's/^BOARD_RADIOS="\(.*\)"$/\1/p' "${REPO_ROOT}/boards/${board}/board.env" | head -n1)"
 
     # `dev`, and it is the profile whose promise a missing profile package

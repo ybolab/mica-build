@@ -14,7 +14,7 @@
 # carries the measurements and the decision.
 
 # The builder image, injected from build-env/images.env by build-env/from.sh,
-# which boards/x64/bsp/Makefile calls. Ubuntu 24.04 and not mos-build-c, the
+# which boards/x64/bsp/Makefile calls. Ubuntu 24.04 and not mica-build-c, the
 # same choice boards/cx3576/bsp/kernel/Dockerfile makes and for the same
 # structural reason: a BSP builder is pinned by digest and depends on nothing
 # this repository has to build first, so `make x64-kernel` works on a fresh
@@ -23,8 +23,8 @@
 # Dockerfiles mean something. There is no default: without a value docker
 # refuses before any stage runs, where a default would build green against an
 # image nobody chose.
-ARG MOS_IMAGE_UBUNTU_2404
-FROM ${MOS_IMAGE_UBUNTU_2404} AS toolchain
+ARG MICA_IMAGE_UBUNTU_2404
+FROM ${MICA_IMAGE_UBUNTU_2404} AS toolchain
 
 ARG DEBIAN_FRONTEND=noninteractive
 # No cross compiler and no device-tree compiler, which is the whole difference
@@ -223,7 +223,7 @@ FROM gate AS build
 # or a defect.
 ENV KBUILD_BUILD_TIMESTAMP="@1577836800" \
     KBUILD_BUILD_USER=mos \
-    KBUILD_BUILD_HOST=mos-build
+    KBUILD_BUILD_HOST=mica-build
 
 RUN set -eu; cd /ksrc; \
     make -j"$(nproc)" bzImage modules; \

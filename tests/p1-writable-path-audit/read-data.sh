@@ -12,15 +12,15 @@ set -euo pipefail
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 S="${P1_WORK:-$REPO/.tmp/p1-writable-path-audit}"
 mkdir -p "$S"
-BOARD_ENV="$REPO/boards/${MOS_BOARD:-x64}/board.env"
+BOARD_ENV="$REPO/boards/${MICA_BOARD:-x64}/board.env"
 # shellcheck source=/dev/null
 . "$BOARD_ENV"
-QDIR="$REPO/_out/${MOS_BOARD:-x64}/.qemu"
+QDIR="$REPO/_out/${MICA_BOARD:-x64}/.qemu"
 [ -f "$QDIR/disk.img" ] || { echo "error: $QDIR/disk.img not found" >&2; exit 1; }
 [ "$#" -gt 0 ] || { echo "usage: $0 <path-inside-DATA> [...]" >&2; exit 2; }
 
 IMAGE="$(bash "$REPO/build-env/from.sh" --ref IMAGE_DEBIAN_TRIXIE)"
-# mos-build-side: container-block -- sgdisk and debugfs read the DATA partition out of the
+# mica-build-side: container-block -- sgdisk and debugfs read the DATA partition out of the
 # disk copy inside the pinned image; a loop mount on the host would need privileges a test
 # should not want
 docker run --rm --label ai-agent=true --name "ai-agent-iku9ubdw-readdata-$$" \
@@ -43,4 +43,4 @@ docker run --rm --label ai-agent=true --name "ai-agent-iku9ubdw-readdata-$$" \
         debugfs -R "cat ${p}" /tmp/data.img 2>/dev/null | sha256sum | sed "s/^/  /"
     done
 '
-# mos-build-side: host
+# mica-build-side: host

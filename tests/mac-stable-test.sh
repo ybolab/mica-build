@@ -23,7 +23,7 @@
 # path that pair resolves to -- `platform/2a220000.ethernet` for the GMAC,
 # `platform/22000000.pcie/…/0000:01:00.0` for the PCIe part -- and a fixture
 # that stored the string instead would be asserting against its own answer.
-# MOS_MAC_SYSFS and MOS_MAC_CONF exist for this and are unset on a device;
+# MICA_MAC_SYSFS and MICA_MAC_CONF exist for this and are unset on a device;
 # ip(8) is a stub on PATH, so the real script's real command line is what is
 # read back.
 set -euo pipefail
@@ -58,8 +58,8 @@ new_case() {
     : >"$IPLOG"
     cat >"$CASE/bin/ip" <<'IPSTUB'
 #!/bin/sh
-echo "$*" >>"$MOS_TEST_IPLOG"
-exit "${MOS_TEST_IP_STATUS:-0}"
+echo "$*" >>"$MICA_TEST_IPLOG"
+exit "${MICA_TEST_IP_STATUS:-0}"
 IPSTUB
     chmod 0755 "$CASE/bin/ip"
 }
@@ -78,9 +78,9 @@ mknic() {
 
 # Run the real script the way both of its callers do, with no cwd assumption.
 run_mac() {
-    ( cd / && PATH=$CASE/bin:$PATH MOS_TEST_IPLOG=$IPLOG \
-        MOS_TEST_IP_STATUS=${IP_STATUS:-0} \
-        MOS_MAC_CONF=$CASE/mac.conf MOS_MAC_SYSFS=$CASE/sys \
+    ( cd / && PATH=$CASE/bin:$PATH MICA_TEST_IPLOG=$IPLOG \
+        MICA_TEST_IP_STATUS=${IP_STATUS:-0} \
+        MICA_MAC_CONF=$CASE/mac.conf MICA_MAC_SYSFS=$CASE/sys \
         sh "${MAC_SCRIPT:-$SCRIPT}" "$@" ) 2>"$CASE/stderr"
 }
 

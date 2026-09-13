@@ -7,7 +7,7 @@ import { REPO_ROOT, boardEnvPath } from './paths.ts'
 import { chooseRoute, createToolRuntime, missingHostTools } from './tools.ts'
 
 async function main() {
-  let name = process.env.MOS_BOARD ?? '', image = '', work = join(REPO_ROOT, '_out/verify')
+  let name = process.env.MICA_BOARD ?? '', image = '', work = join(REPO_ROOT, '_out/verify')
   const keys: string[] = []
   const args = Bun.argv.slice(2)
   for (let i = 0; i < args.length; i++) {
@@ -31,7 +31,7 @@ async function main() {
   mkdirSync(work, { recursive: true })
   const workDir = mkdtempSync(join(work, `${name}-`))
   const tools = await createToolRuntime({ workDir, readOnly: [image, REPO_ROOT],
-    route: chooseRoute(process.env.MOS_VERIFY_TOOLS, await missingHostTools()), log: console.log })
+    route: chooseRoute(process.env.MICA_VERIFY_TOOLS, await missingHostTools()), log: console.log })
   let passed = 0, failed = 0, skipped = 0
   try {
     const roots = await verifyFactoryImage(board.layout, image, keys, workDir, tools, fact => { console.log(`PASS: ${fact}`); passed++ })

@@ -7,7 +7,7 @@ Two classes of archive are allowed in the pool, and nothing else:
   imported     a package a pin (deps/packages/<package>.json) names, at the
                locked version, sha256, source repository and source commit.
 
-MOS_POOL_UNLOCKED names imported packages whose digest check is waived for
+MICA_POOL_UNLOCKED names imported packages whose digest check is waived for
 local development; the waiver is recorded in the lineage record, in the image's
 identity file, and build/src/release-manifest.ts refuses such an image outside
 the development channel.
@@ -190,7 +190,7 @@ def pool_identity(pool: Path, arch: str, version: str, lock: list, unlocked: lis
     tree_stamp = stamp(version)
     locked = {row['package']: row for row in lock}
     for name in unlocked:
-        require(name in locked, 'MOS_POOL_UNLOCKED names ' + name + ', which the lock does not import')
+        require(name in locked, 'MICA_POOL_UNLOCKED names ' + name + ', which the lock does not import')
     files = {p.relative_to(pool).as_posix(): sha(p) for p in sorted(pool.glob('pool/*.deb'))}
     require(files, 'empty pool')
     for name in ('Packages', 'SHA256SUMS', 'manifest.txt'):
@@ -229,8 +229,8 @@ def pool_identity(pool: Path, arch: str, version: str, lock: list, unlocked: lis
         p, v, a = (fields[k] for k in ('Package', 'Version', 'Architecture'))
         package_name(p)
         require(a in (arch, 'all'), 'archive architecture: ' + p)
-        repo = repo_name(fields.get('Mos-Source-Repo', ''))
-        commit = hex_id(fields.get('Mos-Source-Commit', ''), 40)
+        repo = repo_name(fields.get('Mica-Source-Repo', ''))
+        commit = hex_id(fields.get('Mica-Source-Commit', ''), 40)
         require(all(indexed[name][k] == fields[k] for k in ('Package', 'Version', 'Architecture')), 'archive control/index mismatch: ' + p)
         # THE TWO-CLASS RULE.
         if p in locked:
@@ -320,7 +320,7 @@ def main() -> None:
     parser.add_argument('--arch', required=True)
     parser.add_argument('--epoch', type=int, required=True)
     parser.add_argument('--lock', type=Path, required=True, help='the deps/packages directory')
-    parser.add_argument('--unlocked', default='', help='space-separated MOS_POOL_UNLOCKED names')
+    parser.add_argument('--unlocked', default='', help='space-separated MICA_POOL_UNLOCKED names')
     parser.add_argument('--local-packages', required=True, help="space-separated packages this tree's producers emit")
     parser.add_argument('--output', type=Path, required=True)
     args = parser.parse_args()

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # tests/bare-host-gate/gate.sh runs this inside the pinned IMAGE_DOCKER_CLI_28
 # plus `apk add bash make`; it IS the constrained host, so every command below
-# is a host command by construction. No `# mos-build-side: container` marker for
+# is a host command by construction. No `# mica-build-side: container` marker for
 # the reason substrate.sh states: nothing here is a producer, and declaring a
 # file elides it from the lint's scan rather than exempting anything.
 #
@@ -50,10 +50,10 @@
 # all the ones this ladder never runs, so a producer that starts reaching for a
 # host tool inside rootfs/build.sh is still a finding. What neither half sees is
 # section 6's own stated residue -- a binary behind a variable, a heredoc body,
-# and a `# mos-build-side: container` declaration that is simply wrong.
+# and a `# mica-build-side: container` declaration that is simply wrong.
 set -euo pipefail
 
-CLONE="${MOS_BARE_HOST_CLONE:?the gate passes the clone path in; without it the paths below are guesses}"
+CLONE="${MICA_BARE_HOST_CLONE:?the gate passes the clone path in; without it the paths below are guesses}"
 cd "${CLONE}"
 
 LOGDIR="$(mktemp -d)"

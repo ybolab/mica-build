@@ -3,7 +3,7 @@
 import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
-const work = process.env.MOS_API_LAUNCHER_FIXTURE!
+const work = process.env.MICA_API_LAUNCHER_FIXTURE!
 const args = Bun.argv.slice(2)
 if (args[0] === 'info' || (args[0] === 'image' && args[1] === 'inspect') || args[0] === 'stop') process.exit(0)
 if (args[0] === 'ps' && args[1] === '-q') process.exit(0)
@@ -26,7 +26,7 @@ if (args.includes('src/qemu.ts')) {
   // an already existing tiny disk, using only the environment Docker received.
   const child = Bun.spawnSync([process.execPath, join(work, 'tests/apid-api/src/qemu.ts'),
     '--capture', join(work, 'console.log')], {
-    env: { PATH: process.env.PATH!, MOS_API_LAUNCHER_FIXTURE: work, ...env, MOS_QEMU_REUSE_DISK: '1' },
+    env: { PATH: process.env.PATH!, MICA_API_LAUNCHER_FIXTURE: work, ...env, MICA_QEMU_REUSE_DISK: '1' },
     timeout: 10000,
   })
   writeFileSync(join(work, 'engine.json'), JSON.stringify({ exitCode: child.exitCode, stderr: child.stderr.toString() }))

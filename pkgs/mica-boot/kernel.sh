@@ -1,5 +1,5 @@
 #!/bin/bash
-# mos-build-side: container -- package an already built kernel and early init.
+# mica-build-side: container -- package an already built kernel and early init.
 set -euo pipefail
 export SOURCE_DATE_EPOCH=1577836800
 EFI_ARCH=${2:?EFI architecture required}

@@ -44,7 +44,7 @@ under `/tmp` would be invisible.
 Docker puts every `ARG` that has a value into the `RUN`'s **environment**, so
 the shell reads them from there — and so does any child of that shell. Nothing
 is passed explicitly on the `RUN` line, because nothing needs to be: the script
-inherits `BOARD_RADIOS`, `MOS_ARCH` and the rest exactly as an inline body
+inherits `BOARD_RADIOS`, `MICA_ARCH` and the rest exactly as an inline body
 would see them.
 
 The failing side matches too. An `ARG` declared with no value is *unset* in the

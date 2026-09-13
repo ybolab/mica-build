@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# mos-build-side: container -- package independent board and radio selections.
+# mica-build-side: container -- package independent board and radio selections.
 set -euo pipefail
 bash /in/render.sh /src /render
 board=/stage/mica-board-s905x5m
@@ -27,5 +27,5 @@ for root in /stage/*; do
     package=${root##*/}
     install -D -m 0644 /in/copyright "$root/usr/share/doc/$package/copyright"
     pack.sh --root "$root" --control "/in/control/$package.control" \
-        --version "$MOS_DEB_VERSION" --arch "$MOS_DEB_ARCH" --out /out
+        --version "$MICA_DEB_VERSION" --arch "$MICA_DEB_ARCH" --out /out
 done

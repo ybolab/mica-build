@@ -1,19 +1,19 @@
 # syntax=docker/dockerfile:1@sha256:ecfaec9ed6d810b56388c508f4121597bfbba70d41a6dfeee4d8cad5f295fc32
 # Bootstrap the minimal locked base, then add selected runtime and mos packages.
-ARG MOS_IMAGE_BUN
-FROM --platform=$TARGETPLATFORM ${MOS_IMAGE_BUN} AS bootstrap
-ARG MOS_ARCH
+ARG MICA_IMAGE_BUN
+FROM --platform=$TARGETPLATFORM ${MICA_IMAGE_BUN} AS bootstrap
+ARG MICA_ARCH
 COPY rootfs/debian/ /mos/rootfs/debian/
 RUN --network=none \
     --mount=type=bind,source=_out/debian-base,target=/cache \
-    bash /mos/rootfs/debian/run.sh install --arch "$MOS_ARCH" --cache-dir /cache --root /target
+    bash /mos/rootfs/debian/run.sh install --arch "$MICA_ARCH" --cache-dir /cache --root /target
 
 ARG COMPOSE_DIR
 COPY ${COMPOSE_DIR}/packages.txt /selected.pkgs
 RUN --network=none \
     --mount=type=bind,source=_out/debian-base,target=/cache \
-    bash /mos/rootfs/debian/run.sh verify --arch "$MOS_ARCH" --cache-dir /cache --packages /selected.pkgs && \
-    bash /mos/rootfs/debian/run.sh select --arch "$MOS_ARCH" --packages /selected.pkgs >/upstream.tsv && \
+    bash /mos/rootfs/debian/run.sh verify --arch "$MICA_ARCH" --cache-dir /cache --packages /selected.pkgs && \
+    bash /mos/rootfs/debian/run.sh select --arch "$MICA_ARCH" --packages /selected.pkgs >/upstream.tsv && \
     bun /mos/rootfs/debian/manifest.ts helper >/helper.tsv
 
 # THE ROOT, ENTERED RATHER THAN CHROOTED INTO. `install` above only unpacks the
@@ -35,12 +35,12 @@ RUN --network=none sh /.debian-extra/configure.sh
 # layer this Dockerfile hands the finalizer as dead weight under a whiteout.
 FROM scratch AS composed
 COPY --from=base / /
-ARG MOS_ARCH
-ARG MOS_BOARD
-ARG MOS_PROFILE
-ARG MOS_RELEASE_VERSION
-ARG MOS_RELEASE_COMMIT_DATE
-ARG MOS_RELEASE_UNLOCKED
+ARG MICA_ARCH
+ARG MICA_BOARD
+ARG MICA_PROFILE
+ARG MICA_RELEASE_VERSION
+ARG MICA_RELEASE_COMMIT_DATE
+ARG MICA_RELEASE_UNLOCKED
 ARG SOURCE_DATE_EPOCH
 ARG COMPOSE_DIR
 COPY ${COMPOSE_DIR}/ /mos-compose/

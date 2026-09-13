@@ -31,7 +31,7 @@ export function qemuArchFor(arch: string | undefined, board: string): QemuArch {
 }
 
 export function requireSignedInputs(image: string | undefined, certificate: string | undefined, append: string | undefined): void {
-  if (!image || !certificate) throw new Error("MOS_QEMU_IMAGE and MOS_QEMU_BOOT_CERT are required");
+  if (!image || !certificate) throw new Error("MICA_QEMU_IMAGE and MICA_QEMU_BOOT_CERT are required");
   if (append !== undefined) throw new Error("Kernel command-line overrides are forbidden; seed DATA test units instead");
 }
 
@@ -69,14 +69,14 @@ exec ${arch.binary} -machine ${arch.machine} -cpu max -m "$MEM" -smp 2 \\
 
 async function main(): Promise<void> {
   const env = process.env;
-  requireSignedInputs(env.MOS_QEMU_IMAGE, env.MOS_QEMU_BOOT_CERT, env.MOS_QEMU_APPEND);
-  const board = env.MOS_BOARD ?? "x64";
+  requireSignedInputs(env.MICA_QEMU_IMAGE, env.MICA_QEMU_BOOT_CERT, env.MICA_QEMU_APPEND);
+  const board = env.MICA_BOARD ?? "x64";
   if (board !== "x64" && board !== "virt-arm64") throw new Error("QEMU acceptance requires x64 or virt-arm64");
   const layout = parseFileLayout(fs.readFileSync(path.join(REPO_ROOT, "boards", board, "board.env"), "utf8"));
   if (layout.backend !== "systemd-boot") throw new Error("Expected the current signed UEFI layout");
   const arch = qemuArchFor(board === "x64" ? "amd64" : "arm64", board);
-  const image = path.resolve(env.MOS_QEMU_IMAGE!);
-  const certificate = path.resolve(env.MOS_QEMU_BOOT_CERT!);
+  const image = path.resolve(env.MICA_QEMU_IMAGE!);
+  const certificate = path.resolve(env.MICA_QEMU_BOOT_CERT!);
   if (!fs.lstatSync(image).isFile() || !fs.lstatSync(certificate).isFile()) throw new Error("Boot inputs must be regular files");
   const runDir = path.join(REPO_ROOT, "_out", board, ".qemu");
   const disk = path.join(runDir, "disk.img");
@@ -89,10 +89,10 @@ async function main(): Promise<void> {
   if (!(mode === "--prepare-only" && args.length === 0) && !(mode === "--capture" && args.length === 1)) {
     throw new Error("Usage: qemu.ts --prepare-only | --capture FILE | --seed SOURCE /state/TARGET ...");
   }
-  if (env.MOS_QEMU_REUSE_DISK === "1") {
+  if (env.MICA_QEMU_REUSE_DISK === "1") {
     if (!fs.existsSync(disk)) throw new Error("The prepared disk does not exist");
   } else {
-    const diskMib = integer(env.MOS_QEMU_DISK_MIB, 4096);
+    const diskMib = integer(env.MICA_QEMU_DISK_MIB, 4096);
     if (diskMib * MIB <= fs.statSync(image).size) throw new Error("Virtual medium must be larger than the factory image");
     fs.rmSync(runDir, { recursive: true, force: true });
     fs.mkdirSync(runDir, { recursive: true });
@@ -102,18 +102,18 @@ async function main(): Promise<void> {
     fs.copyFileSync(certificate, path.join(runDir, "db.cert.pem"));
   }
   if (mode === "--prepare-only") {
-    console.log(`Prepared ${disk}; seed DATA, then use MOS_QEMU_REUSE_DISK=1`);
+    console.log(`Prepared ${disk}; seed DATA, then use MICA_QEMU_REUSE_DISK=1`);
     return;
   }
   fs.writeFileSync(path.join(runDir, "run.sh"), innerRunSh(arch));
   const name = `ai-agent-mos-api-${board}-${process.pid}`;
   const dockerArgs = ["run", "--rm", "--label", "ai-agent=true", "--name", name,
-    "--network", env.MOS_QEMU_NETWORK ?? "traefik", "-v", `${runDir}:/w`,
-    "-e", `MEM=${integer(env.MOS_QEMU_MEM, 2048)}`, "-e", `RUN_SECONDS=${integer(env.MOS_QEMU_RUN_SECONDS, 2400)}`];
+    "--network", env.MICA_QEMU_NETWORK ?? "traefik", "-v", `${runDir}:/w`,
+    "-e", `MEM=${integer(env.MICA_QEMU_MEM, 2048)}`, "-e", `RUN_SECONDS=${integer(env.MICA_QEMU_RUN_SECONDS, 2400)}`];
   let hostfwd = "";
-  if (env.MOS_QEMU_FORWARD === "1") {
-    for (const [raw, fallback, guest] of [[env.MOS_QEMU_HTTPS_PORT, 18443, 443], [env.MOS_QEMU_HTTP_PORT, 18080, 80],
-      ...(env.MOS_QEMU_SSH_PORT ? [[env.MOS_QEMU_SSH_PORT, 18022, 22] as const] : [])] as const) {
+  if (env.MICA_QEMU_FORWARD === "1") {
+    for (const [raw, fallback, guest] of [[env.MICA_QEMU_HTTPS_PORT, 18443, 443], [env.MICA_QEMU_HTTP_PORT, 18080, 80],
+      ...(env.MICA_QEMU_SSH_PORT ? [[env.MICA_QEMU_SSH_PORT, 18022, 22] as const] : [])] as const) {
       const port = integer(raw, fallback);
       if (port > 65535) throw new Error("Invalid forwarding port");
       hostfwd += `,hostfwd=tcp::${port}-:${guest}`;
@@ -127,7 +127,7 @@ async function main(): Promise<void> {
   process.on("SIGINT", stop);
   try {
     const child = spawn("docker", dockerArgs, { stdio: ["ignore", capture, capture] });
-    const backstop = setTimeout(stop, integer(env.MOS_QEMU_TIMEOUT, 2700) * 1000);
+    const backstop = setTimeout(stop, integer(env.MICA_QEMU_TIMEOUT, 2700) * 1000);
     try {
       const code = await new Promise<number | null>((resolve, reject) => {
         child.once("error", reject);

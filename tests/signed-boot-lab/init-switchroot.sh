@@ -1,5 +1,5 @@
 #!/bin/sh
-# mos-build-side: container -- PID 1 of the proof initramfs; every command below runs inside the QEMU guest the lab boots.
+# mica-build-side: container -- PID 1 of the proof initramfs; every command below runs inside the QEMU guest the lab boots.
 # PID 1: establish the SIGNED verity mapping named by mos.testroot= and switch
 # the machine's root onto it. The point is the switch: a program that runs after
 # it is executed out of the authenticated image, not out of this initramfs.

@@ -33,7 +33,7 @@ package set that never reaches an image and never fails a build either.
 
 The `--without` tokens are the `feature-*.pkgs` basenames plus the
 `radio-*.pkgs` basenames: each radio is its own decline token, so
-`MOS_ROOTFS_WITHOUT=bluetooth` keeps Wi-Fi and vice versa. There is no
+`MICA_ROOTFS_WITHOUT=bluetooth` keeps Wi-Fi and vice versa. There is no
 umbrella `radios` token -- `--radios` is the board's statement of which radios
 the hardware has, `--without <radio>` is the build's decision to leave one out
 anyway, and the two compose per radio. A radio and a feature sharing one name
@@ -58,7 +58,7 @@ of two resolutions is a diff of the images.
 
 **Every input is an argument and none is re-derived.** `resolve.sh` does not
 read `boards/<board>/board.env`, `boards/<board>/bsp/containers.env`, or
-`WITH_MOSD` / `WITH_CONTAINERS` / `MOS_ROOTFS_WITHOUT` / `MOS_PROFILE` from the
+`WITH_MOSD` / `WITH_CONTAINERS` / `MICA_ROOTFS_WITHOUT` / `MICA_PROFILE` from the
 environment. `rootfs/build.sh` already owns every one of those decisions —
 which board file is read, which environment variable beats which file, how the
 historical `WITH_*` spellings fold into one decline list. A second copy of that
@@ -147,7 +147,7 @@ to exercise.
 
 ## Optional board components
 
-`MOS_ROOTFS_COMPONENTS="bm201-front-panel mqtt-reference" MOS_BOARD=s905x5m
+`MICA_ROOTFS_COMPONENTS="bm201-front-panel mqtt-reference" MICA_BOARD=s905x5m
 bash rootfs/build.sh` selects those component packages. Leave the variable
 unset to omit both. The resolver accepts the same space-separated list as
 `--components`. An unknown component or one belonging to another board is

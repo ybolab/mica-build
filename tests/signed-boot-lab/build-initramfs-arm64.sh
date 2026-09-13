@@ -20,7 +20,7 @@ docker buildx inspect "${BUILDER}" >/dev/null 2>&1 ||
     docker buildx create --name "${BUILDER}" --driver docker-container >/dev/null
 
 SNAPSHOT="$(. "${REPO_ROOT}/rootfs/debian/sources.env"; printf '%s' "${MIRROR}")"
-mapfile -t TRIXIE_ARG < <(bash "${REPO_ROOT}/build-env/from.sh" MOS_IMAGE_DEBIAN_TRIXIE=IMAGE_DEBIAN_TRIXIE)
+mapfile -t TRIXIE_ARG < <(bash "${REPO_ROOT}/build-env/from.sh" MICA_IMAGE_DEBIAN_TRIXIE=IMAGE_DEBIAN_TRIXIE)
 [ "${#TRIXIE_ARG[@]}" -eq 2 ] || { echo "error: build-env/from.sh did not resolve IMAGE_DEBIAN_TRIXIE" >&2; exit 1; }
 
 TMP="${LAB_WORK}/arm64-initramfs"
@@ -28,7 +28,7 @@ rm -rf "${TMP}"; mkdir -p "${TMP}/ctx"
 docker buildx build --builder "${BUILDER}" \
     --build-context inits="${LAB_DIR}" \
     --build-context payload="${LAB_WORK}/payload" \
-    "${TRIXIE_ARG[@]}" --build-arg "MOS_DEBIAN_SNAPSHOT=${SNAPSHOT}" \
+    "${TRIXIE_ARG[@]}" --build-arg "MICA_DEBIAN_SNAPSHOT=${SNAPSHOT}" \
     -f "${LAB_DIR}/Dockerfile.guest-arm64" --target out \
     -o "${TMP}" "${TMP}/ctx"
 mv "${TMP}/initramfs.cpio" "${LAB_WORK}/${OUT}"

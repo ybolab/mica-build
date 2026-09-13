@@ -28,8 +28,8 @@ printf 'FIXTURE_VERSION=1.0\n' > "$fixture/version.env"
 cat > "$fixture/pkgs/component/prepare.sh" <<'HOOK'
 #!/bin/bash
 set -eu
-test "$MOS_DEB_PREFLIGHT" = 1
-test -z "${MOS_DEB_STAGE:-}"
+test "$MICA_DEB_PREFLIGHT" = 1
+test -z "${MICA_DEB_STAGE:-}"
 for count in examined missing warned; do
     test "${OMIT_COUNT:-}" != "$count" || continue
     case "$count" in

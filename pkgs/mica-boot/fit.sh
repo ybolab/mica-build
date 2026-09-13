@@ -1,5 +1,5 @@
 #!/bin/bash
-# mos-build-side: container -- sign the complete kernel/DTB/initramfs configuration.
+# mica-build-side: container -- sign the complete kernel/DTB/initramfs configuration.
 set -euo pipefail
 export SOURCE_DATE_EPOCH=1577836800
 bash /tools/initramfs.sh /tmp/initramfs aa64
@@ -53,4 +53,4 @@ dumpimage -T flat_dt -p 2 -o signed-initrd.zst boot.itb
 cmp initramfs.cpio.zst signed-initrd.zst
 rm signed-initrd.zst
 test "$(stat -c%s boot.itb)" -le 134217728
-printf '%s\n' 'MOS_SIGNED_FIT_KERNEL_PASS'
+printf '%s\n' 'MICA_SIGNED_FIT_KERNEL_PASS'

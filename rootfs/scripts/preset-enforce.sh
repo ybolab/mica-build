@@ -1,5 +1,5 @@
 #!/bin/sh
-# mos-build-side: container -- this edits the composed root inside the pack
+# mica-build-side: container -- this edits the composed root inside the pack
 # stage; nothing in this repository's checkout is touched.
 #
 # Make the enablement links in the packed root agree with the preset policy the
@@ -107,8 +107,8 @@ for dir in ${UNIT_DIRS}; do
         src=${got#*	}
         [ "${verb}" = disable ] || continue
         rm -f "${link}"
-        if [ -d /mos-build-inputs ]; then
-            printf '%s\t%s\n' "${link}" "${src}" >> /mos-build-inputs/preset-removed.tsv
+        if [ -d /mica-build-inputs ]; then
+            printf '%s\t%s\n' "${link}" "${src}" >> /mica-build-inputs/preset-removed.tsv
         fi
         removed=$((removed + 1))
         echo "preset: removed ${link} (${src} says disable)"

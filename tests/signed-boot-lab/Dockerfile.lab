@@ -10,11 +10,11 @@
 # fails rather than building against a floating tag. Everything installed on
 # top comes from the snapshot rootfs/debian/sources.env already pins, which is
 # what makes `systemd-boot` and `ukify` here the same 257.x the image ships.
-ARG MOS_IMAGE_DEBIAN_TRIXIE
-FROM ${MOS_IMAGE_DEBIAN_TRIXIE}
-ARG MOS_DEBIAN_SNAPSHOT
+ARG MICA_IMAGE_DEBIAN_TRIXIE
+FROM ${MICA_IMAGE_DEBIAN_TRIXIE}
+ARG MICA_DEBIAN_SNAPSHOT
 RUN rm -f /etc/apt/sources.list.d/debian.sources && \
-    printf 'deb [check-valid-until=no] %s trixie main\n' "${MOS_DEBIAN_SNAPSHOT}" \
+    printf 'deb [check-valid-until=no] %s trixie main\n' "${MICA_DEBIAN_SNAPSHOT}" \
       > /etc/apt/sources.list.d/snapshot.list && \
     printf 'Package: *\nPin: origin "snapshot.debian.org"\nPin-Priority: 1001\n' > /etc/apt/preferences.d/snapshot && \
     dpkg --add-architecture arm64 && \

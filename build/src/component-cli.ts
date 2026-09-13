@@ -19,7 +19,7 @@ import { Toolbox } from './toolbox.ts'
 const USAGE = `Usage: bash build/run.sh --components COMMAND [OPTIONS]
   root        --input COMPOSED_ROOT --arch ARCH --version VERSION --out DIR
               --content-key FILE --content-cert FILE
-  kernel      --input BSP_KERNEL --init MOS_INIT --shutdown MOS_SHUTDOWN --public-key BASE64 (repeatable)
+  kernel      --input BSP_KERNEL --init MICA_INIT --shutdown MICA_SHUTDOWN --public-key BASE64 (repeatable)
               --board x64|virt-arm64|cx3576|s905x5m --out DIR --content-key FILE --content-cert FILE
               --boot-key FILE --boot-cert FILE
   firmware    --board x64|virt-arm64|cx3576|s905x5m --out DIR --metadata-key FILE --generation N --version VERSION

@@ -37,7 +37,7 @@ hosts, and fleet disabled with a null URL.
 
 ## Public root-build input
 
-Point `MOS_META_DIR` at a distributed public-only directory with this shape:
+Point `MICA_META_DIR` at a distributed public-only directory with this shape:
 
 ```text
 updates/manifest.json
@@ -68,7 +68,7 @@ Initialize the local signing directory with:
 make os-keys-init
 ```
 
-This defaults to the ignored `meta/` directory; set `MOS_SIGNING_OUTPUT` to
+This defaults to the ignored `meta/` directory; set `MICA_SIGNING_OUTPUT` to
 select another directory. Missing or empty directories receive new development
 inputs. Repeated runs verify the existing private-key permissions, key types,
 certificate validity and public/private pairing without changing identities.

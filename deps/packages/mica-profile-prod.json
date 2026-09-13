@@ -1,19 +1,19 @@
 {
   "name": "mica-profile-prod",
   "repository": "mica-system",
-  "commit": "4cd6a0064d6820f0b1f1caba2bb9b203daf0fbed",
+  "commit": "6a714846d4431c8b373868afa094d5dd33914541",
   "targets": {
     "amd64": {
-      "version": "0.1.0+git4cd6a0064d68-1",
+      "version": "0.1.0+git6a714846d443-1",
       "architecture": "all",
-      "sha256": "7b16e629c431e8bfc477249b712763cb5fc25e8a300ae3b6f229cff6ea5621bd",
-      "asset": "mica-profile-prod_0.1.0.git4cd6a0064d68-1_all.deb"
+      "sha256": "c4b71ffa94b24f2678e05537ef40bc216934ebfe057b03c277b80962d2500096",
+      "asset": "mica-profile-prod_0.1.0.git6a714846d443-1_all.deb"
     },
     "arm64": {
-      "version": "0.1.0+git4cd6a0064d68-1",
+      "version": "0.1.0+git6a714846d443-1",
       "architecture": "all",
-      "sha256": "7b16e629c431e8bfc477249b712763cb5fc25e8a300ae3b6f229cff6ea5621bd",
-      "asset": "mica-profile-prod_0.1.0.git4cd6a0064d68-1_all.deb"
+      "sha256": "c4b71ffa94b24f2678e05537ef40bc216934ebfe057b03c277b80962d2500096",
+      "asset": "mica-profile-prod_0.1.0.git6a714846d443-1_all.deb"
     }
   }
 }

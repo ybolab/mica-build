@@ -98,7 +98,7 @@ are driven from the failing side — `HARNESS.md` names the mutation for every o
 ### The derived layout
 
 `src/layout-cx3576.ts`. Two modes, and **the mode is selected by whether
-`MOS_ROOTFS_SLOT_MIB` was supplied at all, never by its value**, so a release
+`MICA_ROOTFS_SLOT_MIB` was supplied at all, never by its value**, so a release
 that pins the same number as the built-in default still gets the strict mode.
 Deciding by value would agree on every number and disagree about which mode a
 release build is in, and the mode is what decides whether an oversized rootfs is
@@ -175,9 +175,9 @@ refusals, each driven from the failing side with a positive control beside it.
 
 It serves BOTH UEFI boards -- x64 and virt-arm64 -- which differ in three facts:
 the grub target, the removable-media file name, and the package carrying the
-module tree. `src/toolsets.ts` holds them as a table keyed on `MOS_ARCH` and
+module tree. `src/toolsets.ts` holds them as a table keyed on `MICA_ARCH` and
 checks each board's own `ESP_REQUIRED_FILES` against it, so a board declaring
-`MOS_ARCH=arm64` beside `BOOTX64.EFI` is refused rather than assembled into an
+`MICA_ARCH=arm64` beside `BOOTX64.EFI` is refused rather than assembled into an
 image no firmware boots.
 
 ### Why this is not `mkimage-cx3576.ts` with a board parameter
@@ -193,7 +193,7 @@ the difference is arithmetic rather than style: x64 applies its headroom
 percentage to the payload's **byte count** and ceilings to MiB afterwards, where
 cx3576 ceilings first. Measured — the two agree on all 2048 whole-MiB payloads
 and disagree on thousands of others. x64 also has **no pinned slot mode at all**:
-`MOS_ROOTFS_SLOT_MIB` never reaches its layout.
+`MICA_ROOTFS_SLOT_MIB` never reaches its layout.
 
 ### The ESP cluster floor, and why its position is the check
 
@@ -439,7 +439,7 @@ full image, and refuses to decline a file that is not a feature. **Nothing
 passes it today.** The composition directory contains no feature files at all,
 so a decline reaches the image through the *resolution* instead, as fewer
 package names: `rootfs/build.sh` folds `WITH_CONTAINERS=0`, `WITH_MOSD=0`
-and `MOS_ROOTFS_WITHOUT` into one list and hands it to
+and `MICA_ROOTFS_WITHOUT` into one list and hands it to
 `rootfs/packages/resolve.sh`, which refuses an unmatched feature name for the
 same reason this flag did.
 
@@ -480,9 +480,9 @@ build: 1.4.0 at /srv/bkd/runtime/bun
 build: 1.4.0 in oven/bun:1@sha256:5ff6… (no bun on this host)
 ```
 
-`MOS_BUILD_CONTAINER=1` forces that route where a host bun exists, which is how
-the two are compared; `MOS_BUILD_BUN` names a binary instead; setting both is
-refused. `MOS_BUILD_TOOLBOX=host|container` forces a *toolbox's* route the same
+`MICA_BUILD_CONTAINER=1` forces that route where a host bun exists, which is how
+the two are compared; `MICA_BUILD_BUN` names a binary instead; setting both is
+refused. `MICA_BUILD_TOOLBOX=host|container` forces a *toolbox's* route the same
 way, one level down.
 
 ## Layout

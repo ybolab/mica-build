@@ -1,18 +1,18 @@
 # syntax=docker/dockerfile:1@sha256:ecfaec9ed6d810b56388c508f4121597bfbba70d41a6dfeee4d8cad5f295fc32
 # check=skip=InvalidDefaultArgInFrom
-ARG MOS_IMAGE_DEBIAN_TRIXIE
-FROM ${MOS_IMAGE_DEBIAN_TRIXIE} AS tools
-ARG MOS_BOOT_TARGET=x64
-ARG MOS_DEBIAN_SNAPSHOT
-RUN case "$MOS_BOOT_TARGET" in x64|aa64) ;; *) echo 'invalid boot-tools target' >&2; exit 64 ;; esac; \
+ARG MICA_IMAGE_DEBIAN_TRIXIE
+FROM ${MICA_IMAGE_DEBIAN_TRIXIE} AS tools
+ARG MICA_BOOT_TARGET=x64
+ARG MICA_DEBIAN_SNAPSHOT
+RUN case "$MICA_BOOT_TARGET" in x64|aa64) ;; *) echo 'invalid boot-tools target' >&2; exit 64 ;; esac; \
     rm -f /etc/apt/sources.list.d/debian.sources && \
-    printf 'deb [check-valid-until=no] %s trixie main\n' "${MOS_DEBIAN_SNAPSHOT}" > /etc/apt/sources.list.d/snapshot.list && \
+    printf 'deb [check-valid-until=no] %s trixie main\n' "${MICA_DEBIAN_SNAPSHOT}" > /etc/apt/sources.list.d/snapshot.list && \
     apt-get -o Acquire::Retries=3 update -qq && \
     apt-get install -y --no-install-recommends \
         cryptsetup-bin dmsetup util-linux mount cpio file binutils zstd \
         systemd systemd-boot-efi systemd-ukify sbsigntool squashfs-tools && \
     rm -rf /var/lib/apt/lists/*
-RUN if [ "$MOS_BOOT_TARGET" = aa64 ]; then \
+RUN if [ "$MICA_BOOT_TARGET" = aa64 ]; then \
     dpkg --add-architecture arm64 && apt-get update -qq && \
     apt-get install -y --no-install-recommends binutils-aarch64-linux-gnu && \
     mkdir -p /arm-debs/partial /arm64 && \
@@ -27,7 +27,7 @@ COPY initramfs.sh kernel.sh compression.sh elf-closure.py /tools/
 
 FROM tools AS loader-build
 RUN cross_packages=; \
-    if [ "$MOS_BOOT_TARGET" = aa64 ]; then cross_packages='gcc-aarch64-linux-gnu g++-aarch64-linux-gnu'; fi; \
+    if [ "$MICA_BOOT_TARGET" = aa64 ]; then cross_packages='gcc-aarch64-linux-gnu g++-aarch64-linux-gnu'; fi; \
     printf 'Package: *\nPin: origin snapshot.debian.org\nPin-Priority: 1001\n' > /etc/apt/preferences.d/snapshot && \
     apt-get update -qq && apt-get install -y --allow-downgrades --no-install-recommends \
         ca-certificates curl gcc g++ $cross_packages libc6-dev meson ninja-build pkgconf \
@@ -42,7 +42,7 @@ COPY systemd-boot-persistence.patch /policy.patch
 COPY arm64-cross.ini /arm64-cross.ini
 RUN set -eu; cd /source; patch -p1 < /policy.patch; \
     mkdir /loader-out; \
-    if [ "$MOS_BOOT_TARGET" = x64 ]; then \
+    if [ "$MICA_BOOT_TARGET" = x64 ]; then \
     meson setup /build -Dmode=release -Dauto_features=disabled -Dbootloader=enabled \
         -Dman=disabled -Dhtml=disabled -Dtests=false -Dinstall-tests=false \
         -Dversion-tag=257.13-mos1 -Dvcs-tag=false && \
@@ -58,6 +58,6 @@ RUN set -eu; cd /source; patch -p1 < /policy.patch; \
     fi
 
 FROM tools AS artifact-tools
-LABEL mos.boot.target=${MOS_BOOT_TARGET}
+LABEL mos.boot.target=${MICA_BOOT_TARGET}
 COPY --from=loader-build /loader-out/ /usr/lib/systemd/boot/efi/
 COPY --from=loader-build /source/LICENSE.LGPL2.1 /usr/share/doc/mos-systemd-boot/LICENSE.LGPL2.1

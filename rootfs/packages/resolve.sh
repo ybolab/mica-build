@@ -53,7 +53,7 @@ in_list() {
 
 # EVERY INPUT IS AN ARGUMENT, AND NONE OF THEM IS RE-DERIVED HERE. This script
 # does not read boards/<board>/board.env, boards/<board>/bsp/containers.env
-# or WITH_MOSD/WITH_CONTAINERS/MOS_ROOTFS_WITHOUT/MOS_PROFILE out of the
+# or WITH_MOSD/WITH_CONTAINERS/MICA_ROOTFS_WITHOUT/MICA_PROFILE out of the
 # environment, and it must not learn to: rootfs/build.sh already owns
 # every one of those decisions -- which board file is read, which environment
 # variable beats which file, how the historical WITH_* spellings fold into the

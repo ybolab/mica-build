@@ -1,5 +1,5 @@
 #!/bin/bash
-# mos-build-side: container -- inject faults into fresh copies of the full image.
+# mica-build-side: container -- inject faults into fresh copies of the full image.
 set -euo pipefail
 cd /w
 board=${1:?x64 or virt-arm64 required}

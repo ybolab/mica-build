@@ -5,7 +5,7 @@
 #   bash verify/run.sh --verify --board cx3576   (on a host with no bun)
 #   make os-verify-cx3576
 #
-# Not built by `make build-env`, which builds the four mos-build-* compiler
+# Not built by `make build-env`, which builds the four mica-build-* compiler
 # images: .github/workflows/check.yml's os-verify job installs no bun and runs no
 # build-env, so an image produced there would be missing at exactly the moment it
 # is needed. verify/run.sh builds this on demand instead, once, and only when
@@ -30,12 +30,12 @@
 # would produce an image that fails at exec time with a message about an
 # interpreter, three steps away from the cause.
 
-ARG MOS_DOCKER_CLI_IMAGE=invalid-must-be-passed
-ARG MOS_BUN_IMAGE=invalid-must-be-passed
+ARG MICA_DOCKER_CLI_IMAGE=invalid-must-be-passed
+ARG MICA_BUN_IMAGE=invalid-must-be-passed
 
-FROM ${MOS_DOCKER_CLI_IMAGE} AS cli
+FROM ${MICA_DOCKER_CLI_IMAGE} AS cli
 
-FROM ${MOS_BUN_IMAGE}
+FROM ${MICA_BUN_IMAGE}
 # /usr/local/bin, which is where the client image itself keeps it and where the
 # bun image's PATH already looks. Copied to its own path rather than /usr/bin so
 # that it cannot shadow anything the base ships.

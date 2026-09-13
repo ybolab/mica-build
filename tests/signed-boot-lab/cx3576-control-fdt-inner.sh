@@ -1,5 +1,5 @@
 #!/bin/bash
-# mos-build-side: container -- every command below runs inside the U-Boot
+# mica-build-side: container -- every command below runs inside the U-Boot
 #   sandbox image; the mkimage is the one built from the board's own commit.
 #
 # Write a required FIT signing key into the CX3576 U-Boot's own control FDT,

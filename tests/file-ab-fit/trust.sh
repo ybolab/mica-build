@@ -1,5 +1,5 @@
 #!/bin/bash
-# mos-build-side: container -- required FIT keys during explicit overlap/removal.
+# mica-build-side: container -- required FIT keys during explicit overlap/removal.
 set -euo pipefail
 cd /w
 mkdir next-key

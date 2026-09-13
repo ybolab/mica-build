@@ -298,7 +298,7 @@ describe('judge -- the build commit, asserted only against a recorded fact', () 
   test('a binary reporting unknown against a recorded commit FAILS, and says why', () => {
     const r = judge(micad, pin('0.1.0'), ok('micad 0.1.0 (unknown)'), fact('00b674e9a628'))
     expect(r.verdict).toBe('fail')
-    expect(r.message).toMatch(/MOS_BUILD_COMMIT not passed in/)
+    expect(r.message).toMatch(/MICA_BUILD_COMMIT not passed in/)
   })
 
   // An unavailable fact is printed and asserted about nothing. What matters is
@@ -962,7 +962,7 @@ describe('readFactoryRoot -- a missing image REFUSES rather than skipping', () =
     const empty = join(scratch(), 'no-such-out')
     mkdirSync(empty, { recursive: true })
     expect(() => readFactoryRoot('x64', empty)).toThrow(/factory-root\.txt does not exist/)
-    expect(() => readFactoryRoot('x64', empty)).toThrow(/MOS_BOARD=x64 bash rootfs\/build\.sh/)
+    expect(() => readFactoryRoot('x64', empty)).toThrow(/MICA_BOARD=x64 bash rootfs\/build\.sh/)
     expect(() => readFactoryRoot('x64', empty)).toThrow(/a skip reports the same green as a pass/)
   })
 

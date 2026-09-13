@@ -11,7 +11,7 @@ import { Signer } from '../../shared/update-envelope.ts'
 
 const [evidenceArg, certArg, keyArg, generationArg, kind, rootDirArg, kernelDirArg, initArg, shutdownArg] = Bun.argv.slice(2)
 if (!evidenceArg || !certArg || !keyArg || !generationArg || !rootDirArg || !kernelDirArg || !initArg || !shutdownArg || !['root', 'kernel', 'combined', 'bad-health'].includes(kind ?? '')) {
-  throw new Error('Usage: update.ts EVIDENCE CERT KEY GENERATION root|kernel|combined|bad-health ROOT_COMPONENT KERNEL_COMPONENT MOS_INIT MOS_SHUTDOWN')
+  throw new Error('Usage: update.ts EVIDENCE CERT KEY GENERATION root|kernel|combined|bad-health ROOT_COMPONENT KERNEL_COMPONENT MICA_INIT MICA_SHUTDOWN')
 }
 const evidence = resolve(evidenceArg)
 const generation = Number(generationArg)

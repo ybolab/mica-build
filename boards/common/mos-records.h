@@ -1,13 +1,13 @@
 /* SPDX-License-Identifier: GPL-2.0+ */
-#ifndef MOS_BOOT_RECORDS_H
-#define MOS_BOOT_RECORDS_H
+#ifndef MICA_BOOT_RECORDS_H
+#define MICA_BOOT_RECORDS_H
 
 #include <stdio.h>
 #include <string.h>
 
-#define MOS_BOOT_RECORD_LIMIT 2
-#define MOS_BOOT_VALUE_LIMIT 512
-#define MOS_BOOT_GENERATION_LIMIT 9007199254740991ULL
+#define MICA_BOOT_RECORD_LIMIT 2
+#define MICA_BOOT_VALUE_LIMIT 512
+#define MICA_BOOT_GENERATION_LIMIT 9007199254740991ULL
 
 struct mos_boot_record {
 	char id[65];
@@ -17,7 +17,7 @@ struct mos_boot_record {
 };
 
 struct mos_boot_records {
-	struct mos_boot_record entry[MOS_BOOT_RECORD_LIMIT];
+	struct mos_boot_record entry[MICA_BOOT_RECORD_LIMIT];
 	unsigned int count;
 };
 
@@ -43,9 +43,9 @@ static inline int mos_boot_parse(const char *text, struct mos_boot_records *out)
 	const char *p, *end;
 	unsigned int length, i;
 
-	for (length = 0; length <= MOS_BOOT_VALUE_LIMIT && text[length]; length++)
+	for (length = 0; length <= MICA_BOOT_VALUE_LIMIT && text[length]; length++)
 		;
-	if (length > MOS_BOOT_VALUE_LIMIT || length < 4 || strncmp(text, "v1|", 3))
+	if (length > MICA_BOOT_VALUE_LIMIT || length < 4 || strncmp(text, "v1|", 3))
 		return -1;
 	memset(out, 0, sizeof(*out));
 	p = text + 3;
@@ -53,7 +53,7 @@ static inline int mos_boot_parse(const char *text, struct mos_boot_records *out)
 	while (p < end) {
 		struct mos_boot_record *r;
 
-		if (out->count == MOS_BOOT_RECORD_LIMIT)
+		if (out->count == MICA_BOOT_RECORD_LIMIT)
 			return -1;
 		r = &out->entry[out->count];
 		if (mos_boot_id(&p, end, r->id) || mos_boot_id(&p, end, r->kernel))
@@ -63,7 +63,7 @@ static inline int mos_boot_parse(const char *text, struct mos_boot_records *out)
 		while (p < end && *p >= '0' && *p <= '9') {
 			unsigned int digit = *p++ - '0';
 
-			if (r->generation > (MOS_BOOT_GENERATION_LIMIT - digit) / 10)
+			if (r->generation > (MICA_BOOT_GENERATION_LIMIT - digit) / 10)
 				return -1;
 			r->generation = r->generation * 10 + digit;
 		}
@@ -90,12 +90,12 @@ static inline int mos_boot_parse(const char *text, struct mos_boot_records *out)
 }
 
 static inline int mos_boot_render(const struct mos_boot_records *records,
-				  char text[MOS_BOOT_VALUE_LIMIT + 1])
+				  char text[MICA_BOOT_VALUE_LIMIT + 1])
 {
 	struct mos_boot_records checked;
 	unsigned int i, used = 3;
 
-	if (!records->count || records->count > MOS_BOOT_RECORD_LIMIT)
+	if (!records->count || records->count > MICA_BOOT_RECORD_LIMIT)
 		return -1;
 	memcpy(text, "v1|", 4);
 	for (i = 0; i < records->count; i++) {
@@ -104,11 +104,11 @@ static inline int mos_boot_render(const struct mos_boot_records *records,
 
 		if (r->tries < -1 || r->tries > 3)
 			return -1;
-		written = snprintf(text + used, MOS_BOOT_VALUE_LIMIT + 1 - used,
+		written = snprintf(text + used, MICA_BOOT_VALUE_LIMIT + 1 - used,
 				   "%s%s,%s,%llu,%c", i ? ";" : "", r->id,
 				   r->kernel, r->generation,
 				   r->tries < 0 ? '-' : '0' + r->tries);
-		if (written < 0 || (unsigned int)written > MOS_BOOT_VALUE_LIMIT - used)
+		if (written < 0 || (unsigned int)written > MICA_BOOT_VALUE_LIMIT - used)
 			return -1;
 		used += written;
 	}

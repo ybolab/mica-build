@@ -16,8 +16,8 @@ cp --reflink=auto "${kernel}" "${work}/kernel"
 cp --reflink=auto "${initrd}" "${work}/initramfs.cpio"
 cp "${cert}" "${work}/certificate.pem"
 cp "${LAB_DIR}/init-lifecycle.sh" "${work}/init-lifecycle"
-compiler="$(bash "${REPO_ROOT}/build-env/from.sh" --arch=amd64 --ref LOCAL_MOS_BUILD_C)"
-# mos-build-side: container-block -- compilation and cpio packing run in pinned images.
+compiler="$(bash "${REPO_ROOT}/build-env/from.sh" --arch=amd64 --ref LOCAL_MICA_BUILD_C)"
+# mica-build-side: container-block -- compilation and cpio packing run in pinned images.
 docker run --rm --label ai-agent=true --network traefik \
     -v "${LAB_DIR}/key-revoke.c:/probe.c:ro" -v "${work}:/w" \
     --entrypoint /bin/sh "${compiler}" -ec \
@@ -33,7 +33,7 @@ docker run --rm --label ai-agent=true --network traefik -v "${work}:/w" \
         if openssl verify -attime "$(date -u -d 2045-01-01 +%s)" -CAfile certificate.pem certificate.pem > after-expiry.log 2>&1; then exit 1; fi
         grep "error 10 at 0 depth" after-expiry.log >/dev/null
     ' | tee "${work}/certificate-dates.log"
-# mos-build-side: host
+# mica-build-side: host
 for epoch in 2020-01-01 2045-01-01; do
     docker run --rm --label ai-agent=true --network traefik \
         --name "ai-agent-mica-lifecycle-$$" -v "${work}:/w:ro" \

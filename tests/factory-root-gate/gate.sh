@@ -35,7 +35,7 @@ done
 out="${1:-_out/x64}"
 [ -d "${out}" ] || {
     echo "error: ${out} is not a directory. Build a root first:" >&2
-    echo "         MOS_BOARD=x64 bash rootfs/build.sh" >&2
+    echo "         MICA_BOARD=x64 bash rootfs/build.sh" >&2
     exit 1
 }
 out="$(cd "${out}" && pwd)"

@@ -51,7 +51,7 @@ for (const [script, board, kind] of callers) {
       const capture = join(f.work, 'capture.json')
       const child = Bun.spawnSync([process.execPath, '--preload', resolve(import.meta.dir, 'native-input.preload.ts'),
         resolve(import.meta.dir, script), ...f.args], {
-        cwd: resolve(import.meta.dir, '../..'), env: { ...process.env, MOS_FILE_AB_INPUT_CAPTURE: capture }, timeout: 10000,
+        cwd: resolve(import.meta.dir, '../..'), env: { ...process.env, MICA_FILE_AB_INPUT_CAPTURE: capture }, timeout: 10000,
       })
       const stderr = child.stderr.toString()
       expect(child.exitCode).not.toBe(0)

@@ -20,15 +20,15 @@
 # build-env/from.sh, which boards/cx3576/bsp/Makefile calls. A bare tag like
 # `ubuntu:24.04` is one Canonical repoints on every point release, so the answer
 # to "which toolchain produced this artefact" would be the date of the build.
-# Ubuntu and not mos-build-c: the BSP builders get digest pins only, because
+# Ubuntu and not mica-build-c: the BSP builders get digest pins only, because
 # this cross-compiles a vendor tree against gcc-aarch64-linux-gnu,
 # python3-pyelftools, swig and device-tree-compiler at the versions that tree
-# was tested with, and mos-build-c would be a BSP rebuilt under a toolchain
+# was tested with, and mica-build-c would be a BSP rebuilt under a toolchain
 # nobody has booted on the hardware. There is no default: without a value docker
 # refuses before any stage runs, where a default would build green against an
 # image nobody chose.
-ARG MOS_IMAGE_UBUNTU_2404
-FROM --platform=$BUILDPLATFORM ${MOS_IMAGE_UBUNTU_2404} AS build
+ARG MICA_IMAGE_UBUNTU_2404
+FROM --platform=$BUILDPLATFORM ${MICA_IMAGE_UBUNTU_2404} AS build
 
 # THE BUILD CLOCK, pinned. Measured under RFCT-343: this Dockerfile pinned none
 # of SOURCE_DATE_EPOCH or KBUILD_BUILD_*, and both variants shipped their own

@@ -3,7 +3,7 @@
 # that host. tests/bare-host-gate/gate.sh runs it inside the pinned
 # IMAGE_DOCKER_CLI_28, before anything is added to it.
 #
-# No `# mos-build-side: container` marker, although this does run in one: it
+# No `# mica-build-side: container` marker, although this does run in one: it
 # invokes no producer, so the marker would buy nothing and cost the scan --
 # tests/host-toolchain-lint.sh elides a declared file WHOLE, so declaring this
 # one would take it out of the 9371 command lines that check examines and
@@ -67,7 +67,7 @@ sha="$(git rev-parse HEAD 2>/dev/null || true)"
 if [ -n "${sha}" ]; then
     pass "git reads the clone: HEAD ${sha}"
 else
-    fail "\`git rev-parse HEAD\` answered nothing inside the container. The clone is mounted at ${MOS_BARE_HOST_CLONE:-?}; either the mount carried nothing or git refused the checkout"
+    fail "\`git rev-parse HEAD\` answered nothing inside the container. The clone is mounted at ${MICA_BARE_HOST_CLONE:-?}; either the mount carried nothing or git refused the checkout"
 fi
 
 n="$(git ls-files | wc -l | tr -d " " 2>/dev/null || echo 0)"

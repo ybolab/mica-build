@@ -1,12 +1,12 @@
 #!/bin/bash
-# mos-build-side: container -- snapshot exact SYSTEM features with loop/dm privileges.
+# mica-build-side: container -- snapshot exact SYSTEM features with loop/dm privileges.
 set -euo pipefail
 cd /w
 cp --reflink=auto --sparse=always system.img live.img
 mkdir mount
 device=$(losetup --find --show /w/live.img)
 mapping="mos-file-ab-$(cat /proc/sys/kernel/random/uuid)"
-export MOS_TEST_MAPPING="$mapping"
+export MICA_TEST_MAPPING="$mapping"
 dmsetup create "$mapping" --table "0 $(blockdev --getsz "$device") linear $device 0"
 cleanup() {
     dmsetup resume "$mapping" >/dev/null 2>&1 || true
@@ -32,7 +32,7 @@ def directory(path):
 def snapshot(name):
     # Stop block IO without freezing/syncing ext4. Copying the backing file
     # then captures one stable disk state, including its unclean journal.
-    mapping=os.environ['MOS_TEST_MAPPING']
+    mapping=os.environ['MICA_TEST_MAPPING']
     subprocess.run(['dmsetup','suspend','--noflush','--nolockfs',mapping],check=True,timeout=15)
     try:
         subprocess.run(['cp','--sparse=always','/w/live.img',f'/w/{name}.img'],check=True,timeout=60)

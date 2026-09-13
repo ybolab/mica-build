@@ -52,9 +52,9 @@ new_case() {
 # Run it the way mica-gadget.service does: cwd `/`, which is what makes a
 # relative configfs target resolve somewhere else entirely.
 run_gadget() {
-    ( cd / && MOS_GADGET_CONF=$CASE/gadget.conf \
-        MOS_GADGET_CONFIGFS=$CONFIGFS \
-        MOS_GADGET_UDC_DIR=$UDCDIR \
+    ( cd / && MICA_GADGET_CONF=$CASE/gadget.conf \
+        MICA_GADGET_CONFIGFS=$CONFIGFS \
+        MICA_GADGET_UDC_DIR=$UDCDIR \
         sh "$SCRIPT" ) 2>"$CASE/stderr"
 }
 

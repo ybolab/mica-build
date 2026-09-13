@@ -23,7 +23,7 @@ for selection in wifi bluetooth both neither; do
     : > "$work/modules"
     case "$selection" in wifi|both) touch "$work/wifi.conf";; esac
     case "$selection" in bluetooth|both) touch "$work/bluetooth.conf";; esac
-    PATH="$work/bin:$PATH" MODULE_LOG="$work/modules" MOS_CONF="$work/wireless.conf" \
+    PATH="$work/bin:$PATH" MODULE_LOG="$work/modules" MICA_CONF="$work/wireless.conf" \
         sh "$repo/boards/s905x5m/hwinit/hwinit-wireless"
     if [[ "$selection" = wifi || "$selection" = both ]]; then
         grep -qx -- '-q skw' "$work/modules"

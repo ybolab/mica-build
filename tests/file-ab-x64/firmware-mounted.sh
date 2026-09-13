@@ -1,5 +1,5 @@
 #!/bin/bash
-# mos-build-side: container -- maintenance runs inside the privileged disposable lab image.
+# mica-build-side: container -- maintenance runs inside the privileged disposable lab image.
 # Offline ESP maintenance inside the disposable privileged lab container.
 set -euo pipefail
 disk=${1:?disk file required}

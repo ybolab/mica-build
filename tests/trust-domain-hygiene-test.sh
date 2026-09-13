@@ -12,8 +12,8 @@ for file in meta/boot/signer.key.pem meta/verity/signer.key.pem meta/updates/sig
     git check-ignore -q "$file"
 done
 bash pkgs/mica-boot/dev-keys.sh --out "$work/keys"
-image=$(bash build-env/from.sh --arch=amd64 --ref LOCAL_MOS_BUILD_OPENSSL)
-# mos-build-side: container-block -- pinned OpenSSL reads isolated test keys.
+image=$(bash build-env/from.sh --arch=amd64 --ref LOCAL_MICA_BUILD_OPENSSL)
+# mica-build-side: container-block -- pinned OpenSSL reads isolated test keys.
 docker run --rm --label ai-agent=true --network traefik -v "$work/keys:/keys:ro" --entrypoint /bin/bash "$image" -ceu '
     set -o pipefail
     for domain in boot verity updates; do
@@ -33,7 +33,7 @@ docker run --rm --label ai-agent=true --network traefik -v "$work/keys:/keys:ro"
     cmp /tmp/metadata.base64 /keys/updates/public.key
     grep -qx DEVELOPMENT-GRADE /keys/GENERATED
 '
-# mos-build-side: host
+# mica-build-side: host
 cp "$work/keys/GENERATED" "$work/marker-before"
 if bash pkgs/mica-boot/dev-keys.sh --out "$work/keys" > "$work/refusal.log" 2>&1; then
     echo 'FAIL: generator overwrote an existing output' >&2; exit 1

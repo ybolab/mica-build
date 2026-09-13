@@ -18,9 +18,9 @@
 # DEFAULT is a pin any caller can silently replace, and a caller that forgets
 # the argument builds against something else with no error at all. Without a
 # default docker refuses before the first stage runs.
-ARG MOS_IMAGE_ALPINE_3_24_1
-ARG MOS_IMAGE_UBUNTU_2404
-FROM ${MOS_IMAGE_ALPINE_3_24_1} AS rootfs
+ARG MICA_IMAGE_ALPINE_3_24_1
+ARG MICA_IMAGE_UBUNTU_2404
+FROM ${MICA_IMAGE_ALPINE_3_24_1} AS rootfs
 
 RUN apk add --no-cache \
         openrc busybox-openrc busybox-mdev-openrc \
@@ -127,7 +127,7 @@ RUN test -x /sbin/dhcpcd && \
     grep -qx 'PermitRootLogin yes' /etc/ssh/sshd_config.d/10-rk3576-debug.conf && \
     test -x /usr/bin/btmgmt
 
-FROM --platform=$BUILDPLATFORM ${MOS_IMAGE_UBUNTU_2404} AS pack
+FROM --platform=$BUILDPLATFORM ${MICA_IMAGE_UBUNTU_2404} AS pack
 RUN apt-get update && apt-get install -y --no-install-recommends e2fsprogs ripgrep \
     && rm -rf /var/lib/apt/lists/*
 COPY --from=rootfs / /rootfs/

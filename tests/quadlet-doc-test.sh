@@ -24,7 +24,7 @@ REPO_ROOT="$(cd "${HERE}/.." && pwd)"
 # test because the documentation lives in ybolab/mica; a drift between the two
 # is a diff to review, not a silent divergence.
 DOC="${REPO_ROOT}/tests/quadlet-doc/containers.md"
-QUADLET="${MOS_QUADLET_BIN:-${REPO_ROOT}/_out/debs/arm64/mica-podman/quadlet}"
+QUADLET="${MICA_QUADLET_BIN:-${REPO_ROOT}/_out/debs/arm64/mica-podman/quadlet}"
 
 [ -f "${DOC}" ] || { echo "error: ${DOC} not found" >&2; exit 1; }
 [ -f "${QUADLET}" ] || {
@@ -112,7 +112,7 @@ cp "${QUADLET}" "${WORK}/quadlet"
 # linked, so the base decides the glibc it loads against, and a base that
 # drifted would surface as a documentation test failing about unit content.
 mapfile -t FROM_ARGS < <(bash "${REPO_ROOT}/build-env/from.sh" \
-    MOS_IMAGE_DEBIAN_TRIXIE=IMAGE_DEBIAN_TRIXIE)
+    MICA_IMAGE_DEBIAN_TRIXIE=IMAGE_DEBIAN_TRIXIE)
 # mapfile cannot fail, so its status says nothing about the process inside the
 # substitution; an empty array is what a refusal looks like from here, and an
 # empty array would build with no --build-arg and no FROM at all. Same check,
@@ -123,8 +123,8 @@ mapfile -t FROM_ARGS < <(bash "${REPO_ROOT}/build-env/from.sh" \
 }
 
 cat >"${WORK}/Dockerfile" <<'DOCKERFILE'
-ARG MOS_IMAGE_DEBIAN_TRIXIE
-FROM ${MOS_IMAGE_DEBIAN_TRIXIE} AS run
+ARG MICA_IMAGE_DEBIAN_TRIXIE
+FROM ${MICA_IMAGE_DEBIAN_TRIXIE} AS run
 COPY quadlet /usr/libexec/podman/quadlet
 COPY units/ /etc/containers/systemd/
 RUN set -eu; \

@@ -76,7 +76,7 @@ class SourceLineageTest(unittest.TestCase):
         (root / 'usr/bin').mkdir(parents=True)
         (root / 'usr/bin' / name).write_text(name + ' bytes\n')
         (root / 'DEBIAN/control').write_text(f'Package: {name}\nVersion: {version}\nArchitecture: {arch}\nMaintainer: Fixture <fixture@example.invalid>\n'
-                                             f'Description: isolated package\nMos-Source-Repo: {repo}\nMos-Source-Commit: {commit}\n{control_extra}')
+                                             f'Description: isolated package\nMica-Source-Repo: {repo}\nMica-Source-Commit: {commit}\n{control_extra}')
         for old in (self.pool / 'pool').glob(name + '_*.deb'):
             old.unlink()
         archive = self.pool / 'pool' / f'{name}_{version}_{arch}.deb'
@@ -190,13 +190,13 @@ class SourceLineageTest(unittest.TestCase):
             h.validate(record, 'amd64', 1577836800)
 
     def test_unlocked_naming_an_unlocked_package_refuses(self):
-        self.refuses('MOS_POOL_UNLOCKED names mos-fixture, which the lock does not import', unlocked='mos-fixture')
-        self.refuses('MOS_POOL_UNLOCKED names mos-other, which the lock does not import', unlocked='mos-other')
+        self.refuses('MICA_POOL_UNLOCKED names mos-fixture, which the lock does not import', unlocked='mos-fixture')
+        self.refuses('MICA_POOL_UNLOCKED names mos-other, which the lock does not import', unlocked='mos-other')
 
     def test_missing_provenance_fields_refuse(self):
         root = self.work / 'deb-mos-fixture'
         control = root / 'DEBIAN/control'
-        control.write_text('\n'.join(l for l in control.read_text().splitlines() if not l.startswith('Mos-Source-Commit')) + '\n')
+        control.write_text('\n'.join(l for l in control.read_text().splitlines() if not l.startswith('Mica-Source-Commit')) + '\n')
         archive = self.archives['mos-fixture'][0]
         self.must('dpkg-deb', '--build', root, archive)
         self.archives['mos-fixture'] = (archive, hashlib.sha256(archive.read_bytes()).hexdigest(), *self.archives['mos-fixture'][2:])

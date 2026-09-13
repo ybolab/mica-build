@@ -21,7 +21,7 @@ beforeAll(() => {
   mkdirSync(join(REPO_ROOT, '.tmp'), { recursive: true })
   scratch = mkdtempSync(join(REPO_ROOT, '.tmp/p2-verity-'))
   const arch = process.arch === 'x64' ? 'amd64' : process.arch
-  const resolved = run('bash', [join(REPO_ROOT, 'build-env/from.sh'), `--arch=${arch}`, '--ref', 'LOCAL_MOS_BUILD_OPENSSL'])
+  const resolved = run('bash', [join(REPO_ROOT, 'build-env/from.sh'), `--arch=${arch}`, '--ref', 'LOCAL_MICA_BUILD_OPENSSL'])
   expect(resolved.status).toBe(0)
   image = resolved.stdout.trim()
   const created = crypto('umask 077; openssl req -x509 -newkey rsa:2048 -nodes -sha256 -days 1 -subj /CN=verity-test -keyout /w/key.pem -out /w/cert.pem >/dev/null 2>&1')

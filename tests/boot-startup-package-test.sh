@@ -1,5 +1,5 @@
 #!/bin/bash
-# mos-build-side: container -- real static x64 inputs; no target execution.
+# mica-build-side: container -- real static x64 inputs; no target execution.
 set -euo pipefail
 REPO=${1:?repository root}
 WORK=$(mktemp -d)
@@ -22,14 +22,14 @@ docker.write_text('#!/usr/bin/env python3\nimport json,os,sys\nopen(os.environ["
 docker.chmod(0o755)
 record = route / 'docker.jsonl'
 env = dict(os.environ, PATH=str(bin_dir) + ':' + os.environ['PATH'], ROUTE_ARGV=str(record))
-env.pop('MOS_BOOT_TARGET', None)
+env.pop('MICA_BOOT_TARGET', None)
 cases = [(['--target', ''], {}, False), (['--target', 'invalid'], {}, False),
          (['--target', 'x64', '--target', 'aa64'], {}, False),
-         ([], {'MOS_BOOT_TARGET': ''}, False), ([], {'MOS_BOOT_TARGET': 'amd64'}, False),
-         (['--target', 'aa64'], {'MOS_BOOT_TARGET': 'x64'}, False),
+         ([], {'MICA_BOOT_TARGET': ''}, False), ([], {'MICA_BOOT_TARGET': 'amd64'}, False),
+         (['--target', 'aa64'], {'MICA_BOOT_TARGET': 'x64'}, False),
          ([], {}, 'x64'), (['--target', 'x64'], {}, 'x64'),
-         ([], {'MOS_BOOT_TARGET': 'aa64'}, 'aa64'),
-         (['--target', 'aa64'], {'MOS_BOOT_TARGET': 'aa64'}, 'aa64')]
+         ([], {'MICA_BOOT_TARGET': 'aa64'}, 'aa64'),
+         (['--target', 'aa64'], {'MICA_BOOT_TARGET': 'aa64'}, 'aa64')]
 for args, extra, target in cases:
     record.write_text('')
     result = subprocess.run(['bash', str(repo / 'pkgs/mica-boot/build-tools.sh'), *args],
@@ -41,31 +41,31 @@ for args, extra, target in cases:
         assert result.returncode == 0 and len(calls) == 1, result.stderr
         argv = calls[0]
         assert argv[0] == 'build' and argv[-1] == str(repo / 'pkgs/mica-boot')
-        assert argv.count('MOS_BOOT_TARGET=' + target) == 1 and argv.count('--platform') == 1
+        assert argv.count('MICA_BOOT_TARGET=' + target) == 1 and argv.count('--platform') == 1
         assert argv[argv.index('--platform') + 1] == 'linux/amd64'
         assert argv[argv.index('-t') + 1] == 'ai-agent/mos-boot-tools-' + {'x64': 'amd64', 'aa64': 'arm64'}[target]
-        assert any(v.startswith('MOS_IMAGE_DEBIAN_TRIXIE=') and '@sha256:' in v for v in argv)
-        assert any(v.startswith('MOS_DEBIAN_SNAPSHOT=http://snapshot.debian.org/archive/debian/') for v in argv)
+        assert any(v.startswith('MICA_IMAGE_DEBIAN_TRIXIE=') and '@sha256:' in v for v in argv)
+        assert any(v.startswith('MICA_DEBIAN_SNAPSHOT=http://snapshot.debian.org/archive/debian/') for v in argv)
     print('PASS: target launcher', args, extra, target or 'refused')
 
 recipe = (repo / 'pkgs/mica-boot/Dockerfile').read_text().replace('\\\n', '')
 instructions = [line.strip() for line in recipe.splitlines() if line and not line.startswith('#')]
 runs = [line[4:] for line in instructions if line.startswith('RUN ')]
-assert instructions.count('ARG MOS_BOOT_TARGET=x64') == 1
-guard = re.match(r'(case "\$MOS_BOOT_TARGET" in .*?esac;)', runs[0])
+assert instructions.count('ARG MICA_BOOT_TARGET=x64') == 1
+guard = re.match(r'(case "\$MICA_BOOT_TARGET" in .*?esac;)', runs[0])
 assert guard, 'target must be checked before first acquisition'
 for target in ('', 'both', 'x64 aa64'):
-    result = subprocess.run(['sh', '-c', guard[1]], env=dict(env, MOS_BOOT_TARGET=target), capture_output=True, timeout=10)
+    result = subprocess.run(['sh', '-c', guard[1]], env=dict(env, MICA_BOOT_TARGET=target), capture_output=True, timeout=10)
     assert result.returncode != 0, target
 assert [line for line in instructions if line.startswith('FROM ')] == [
-    'FROM ${MOS_IMAGE_DEBIAN_TRIXIE} AS tools', 'FROM tools AS loader-build',
+    'FROM ${MICA_IMAGE_DEBIAN_TRIXIE} AS tools', 'FROM tools AS loader-build',
     'FROM tools AS artifact-tools']
 assert 'COPY --from=loader-build /loader-out/ /usr/lib/systemd/boot/efi/' in instructions
 assert not any(line.startswith('COPY --from=loader-build /build') for line in instructions)
 for required in (
     'COPY initramfs.sh kernel.sh compression.sh elf-closure.py /tools/',
     'COPY --from=loader-build /source/LICENSE.LGPL2.1 /usr/share/doc/mos-systemd-boot/LICENSE.LGPL2.1',
-    'LABEL mos.boot.target=${MOS_BOOT_TARGET}',
+    'LABEL mos.boot.target=${MICA_BOOT_TARGET}',
 ):
     assert required in instructions, required
 
@@ -93,7 +93,7 @@ for target in ('x64', 'aa64'):
         code = re.sub(r'(?<![A-Za-z0-9_/])/(?:etc/|var/|source(?=[/\s;]|$)|policy\.patch|versions\.env|busybox-out|arm-debs)',
                       lambda match: str(root) + match[0], code)
         result = subprocess.run(['sh', '-eu', '-c', prefix + code], cwd=root,
-                                env=dict(env, MOS_BOOT_TARGET=target, MOS_DEBIAN_SNAPSHOT='fixture', ROUTE_COMMANDS=str(commands)),
+                                env=dict(env, MICA_BOOT_TARGET=target, MICA_DEBIAN_SNAPSHOT='fixture', ROUTE_COMMANDS=str(commands)),
                                 capture_output=True, text=True, timeout=15)
         assert result.returncode == 0, (target, code, result.stderr)
     lines = commands.read_text().splitlines()

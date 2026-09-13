@@ -176,7 +176,7 @@ describe('auditChain refuses, by name', () => {
     expect(messages(discoverStages(dir))).toContain('share the number 10')
   })
 
-  test('a first stage that declares MOS_STAGE_PREV', () => {
+  test('a first stage that declares MICA_STAGE_PREV', () => {
     const dir = scratch({ '10-base.Dockerfile': LINK, '90-pack.Dockerfile': TERMINAL })
     expect(messages(discoverStages(dir))).toContain('is the first stage and declares')
   })
@@ -319,14 +319,14 @@ describe('discoverStages', () => {
 describe('planChain', () => {
   const dir = () =>
     scratch({
-      '10-base.Dockerfile': `ARG TRIXIE\nFROM \${TRIXIE}\nARG MOS_PROFILE=dev\nRUN true\n`,
+      '10-base.Dockerfile': `ARG TRIXIE\nFROM \${TRIXIE}\nARG MICA_PROFILE=dev\nRUN true\n`,
       '20-install.Dockerfile': `ARG ${PREV_ARG}\nFROM \${${PREV_ARG}}\nARG OVERLAY_DIR\nRUN true\n`,
       '90-pack.Dockerfile': `ARG ${PREV_ARG}\nARG BOOKWORM\nFROM \${${PREV_ARG}} AS closed\nRUN true\nFROM scratch AS artifact\nCOPY --from=closed /x /\nFROM scratch AS ${DEFAULT_OCI_TARGET}\nCOPY --from=closed / /\n`,
     })
   const supplied = {
     TRIXIE: 'debian@sha256:aaa',
     BOOKWORM: 'debian@sha256:bbb',
-    MOS_PROFILE: 'dev',
+    MICA_PROFILE: 'dev',
     OVERLAY_DIR: '_out/x64/overlay',
   }
 
@@ -352,7 +352,7 @@ describe('planChain', () => {
 
   test('a stage is handed only the arguments it declares', () => {
     const builds = planChain(discoverStages(dir()), { board: 'x64', supplied })
-    expect(builds[0]!.buildArgs).toEqual({ TRIXIE: 'debian@sha256:aaa', MOS_PROFILE: 'dev' })
+    expect(builds[0]!.buildArgs).toEqual({ TRIXIE: 'debian@sha256:aaa', MICA_PROFILE: 'dev' })
     expect(builds[1]!.buildArgs).toEqual({ OVERLAY_DIR: '_out/x64/overlay' })
     expect(builds[2]!.buildArgs).toEqual({ BOOKWORM: 'debian@sha256:bbb' })
   })
@@ -878,18 +878,18 @@ describe('the driver refuses a builder that cannot chain', () => {
 
   test('the docker CLI is this package\'s, not a bare name', () => {
     // Measured: on the pinned-bun route the host client is bind-mounted at its
-    // own path and named in MOS_BUILD_DOCKER, and a bare `docker` there asks a
+    // own path and named in MICA_BUILD_DOCKER, and a bare `docker` there asks a
     // different question -- is /usr/bin on this image's PATH. src/toolbox.ts
     // reads the same variable for the same reason.
-    const before = process.env.MOS_BUILD_DOCKER
+    const before = process.env.MICA_BUILD_DOCKER
     try {
-      delete process.env.MOS_BUILD_DOCKER
+      delete process.env.MICA_BUILD_DOCKER
       expect(dockerBin()).toBe('docker')
-      process.env.MOS_BUILD_DOCKER = '/usr/bin/docker'
+      process.env.MICA_BUILD_DOCKER = '/usr/bin/docker'
       expect(dockerBin()).toBe('/usr/bin/docker')
     } finally {
-      if (before === undefined) delete process.env.MOS_BUILD_DOCKER
-      else process.env.MOS_BUILD_DOCKER = before
+      if (before === undefined) delete process.env.MICA_BUILD_DOCKER
+      else process.env.MICA_BUILD_DOCKER = before
     }
   })
 
@@ -918,7 +918,7 @@ describe('parseArgs', () => {
       '--source-date-epoch',
       '1577836800',
       '--arg',
-      'MOS_ARCH=amd64',
+      'MICA_ARCH=amd64',
       '--arg',
       'BOARD_RADIOS=',
     ])
@@ -926,7 +926,7 @@ describe('parseArgs', () => {
     expect(o.dest).toBe('/out/x64')
     expect(o.sourceDateEpoch).toBe('1577836800')
     expect(o.ociTarget).toBe(DEFAULT_OCI_TARGET)
-    expect(o.args).toEqual({ MOS_ARCH: 'amd64', BOARD_RADIOS: '' })
+    expect(o.args).toEqual({ MICA_ARCH: 'amd64', BOARD_RADIOS: '' })
   })
 
   test('a real build with no --source-date-epoch is refused; a plan without one is not', () => {
@@ -1129,7 +1129,7 @@ describe('the assembly this tree actually ships', () => {
       expect(s.declaresPrev).toBe(i > 0)
     })
     const withBase = stages.filter((s) =>
-      s.declaredArgs.some((a) => a.startsWith('MOS_IMAGE_')),
+      s.declaredArgs.some((a) => a.startsWith('MICA_IMAGE_')),
     )
     // Bun runs the locked dpkg bootstrap; bookworm supplies packing tools.
     expect(withBase.map((s) => s.name)).toEqual(['10-compose', '90-pack'])
@@ -1195,7 +1195,7 @@ describe('the assembly this tree actually ships', () => {
   // would mean the selection had moved back into the Dockerfile.
   test('10-compose takes the resolved set and the pool arch as arguments', () => {
     const compose = stages.find((s) => s.name === '10-compose')!
-    for (const a of ['COMPOSE_DIR', 'MOS_ARCH', 'MOS_BOARD', 'SOURCE_DATE_EPOCH']) {
+    for (const a of ['COMPOSE_DIR', 'MICA_ARCH', 'MICA_BOARD', 'SOURCE_DATE_EPOCH']) {
       expect(compose.declaredArgs).toContain(a)
     }
   })

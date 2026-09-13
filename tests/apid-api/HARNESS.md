@@ -61,12 +61,12 @@ and container routing are usable.
 
 | variable | default | purpose |
 | --- | --- | --- |
-| `MOS_APID_PHASES` | all eight registered phases | restrict the ordered phase list; partial runs are reported loudly |
-| `MOS_APID_READY_TIMEOUT` | `900` | deadline for apid readiness |
-| `MOS_APID_CONTAINER_TIMEOUT` | `240` | deadline to find the QEMU container |
-| `MOS_APID_KEEP_DISK` | `0` | retain the prepared `disk.img` after the run |
-| `MOS_QEMU_HTTPS_PORT` / `MOS_QEMU_HTTP_PORT` | `18443` / `18080` | forwarded listeners |
-| `MOS_QEMU_RUN_SECONDS` / `MOS_QEMU_TIMEOUT` | `2400` / `2700` | QEMU backstops |
+| `MICA_APID_PHASES` | all eight registered phases | restrict the ordered phase list; partial runs are reported loudly |
+| `MICA_APID_READY_TIMEOUT` | `900` | deadline for apid readiness |
+| `MICA_APID_CONTAINER_TIMEOUT` | `240` | deadline to find the QEMU container |
+| `MICA_APID_KEEP_DISK` | `0` | retain the prepared `disk.img` after the run |
+| `MICA_QEMU_HTTPS_PORT` / `MICA_QEMU_HTTP_PORT` | `18443` / `18080` | forwarded listeners |
+| `MICA_QEMU_RUN_SECONDS` / `MICA_QEMU_TIMEOUT` | `2400` / `2700` | QEMU backstops |
 | `APID_NEGATIVE` | — | invert the first matching check to prove the live suite can go red |
 
 ## Artifacts and reporting

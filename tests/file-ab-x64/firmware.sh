@@ -7,7 +7,7 @@ test -f "$evidence/updates/6/fallback.log"
 test ! -d "$evidence/loader-replacement"
 bun_image=$(bash build-env/from.sh --ref IMAGE_BUN_1)
 docker build --label ai-agent=true -t ai-agent/mos-firmware-lab \
-    --build-arg "MOS_BUN_IMAGE=$bun_image" --build-arg MOS_LAB_IMAGE=ai-agent/mos-p2-lab \
+    --build-arg "MICA_BUN_IMAGE=$bun_image" --build-arg MICA_LAB_IMAGE=ai-agent/mos-p2-lab \
     -f tests/file-ab-x64/Dockerfile.maintenance tests/file-ab-x64
 maintain() {
     timeout -k 10 300 docker run --rm --privileged --label ai-agent=true --network traefik \

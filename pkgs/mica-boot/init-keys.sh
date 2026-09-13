@@ -17,7 +17,7 @@ while [ "$parent" != / ]; do
     [ ! -L "$parent" ] || { echo 'error: signing path contains a symlink' >&2; exit 1; }
     parent=$(dirname "$parent")
 done
-image=$(bash "$repo/build-env/from.sh" --arch=amd64 --ref LOCAL_MOS_BUILD_OPENSSL)
+image=$(bash "$repo/build-env/from.sh" --arch=amd64 --ref LOCAL_MICA_BUILD_OPENSSL)
 umask 077
 mkdir -p "$repo/.tmp"
 lock=$(printf '%s' "$output" | sha256sum | cut -d' ' -f1)
@@ -35,7 +35,7 @@ case "$output" in
 /root/*) host_output="/srv/station/root/${output#/root/}";;
 *) host_output=$output;;
 esac
-# mos-build-side: container-block -- validate keys with the pinned signing toolchain.
+# mica-build-side: container-block -- validate keys with the pinned signing toolchain.
 if ! docker run --rm --label ai-agent=true --name "ai-agent-mos-key-init-$$" --network traefik \
     --mount "type=bind,source=$host_output,target=/keys,readonly" \
     --entrypoint /bin/bash "$image" -ceu '
@@ -71,5 +71,5 @@ if ! docker run --rm --label ai-agent=true --name "ai-agent-mos-key-init-$$" --n
     echo 'error: signing inputs are incomplete, invalid or mismatched; existing identities were not replaced' >&2
     exit 1
 fi
-# mos-build-side: host
+# mica-build-side: host
 echo "Development signing inputs verified at $output"

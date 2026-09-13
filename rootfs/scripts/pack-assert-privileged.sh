@@ -3,7 +3,7 @@
 #
 # Called from rootfs/compose/90-pack.Dockerfile (pack stage), where the reasoning lives.
 #
-# mos-build-side: container -- run by 90-pack.Dockerfile's pack stage, never on a host.
+# mica-build-side: container -- run by 90-pack.Dockerfile's pack stage, never on a host.
 
 set -eu
 unsquashfs -lln /out/rootfs.squashfs \

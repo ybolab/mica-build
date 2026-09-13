@@ -54,7 +54,7 @@
 #     finding count by exactly one, the sentence at
 #     tests/cx3576-bench/collect.sh:1058 -- and a `-c` special case would buy
 #     nothing present at the price of flagging every container's script.
-#   - A DECLARATION THAT IS WRONG. `# mos-build-side: container` is a claim by
+#   - A DECLARATION THAT IS WRONG. `# mica-build-side: container` is a claim by
 #     whoever wrote it. This counts the claims and refuses a run that found
 #     none; it cannot check one.
 #   - A TYPESCRIPT LAUNCH THROUGH A VARIABLE. The second scan below reads every
@@ -62,7 +62,7 @@
 #     `$`${docker} exec ...`` and `Bun.spawn(argv)` resolve at runtime, and 16
 #     of this tree's 35 launch sites are that shape. They are counted and
 #     reported as unresolved rather than passed over silently.
-#   - A TYPESCRIPT `mos-build-side:` MARKER. There is none, deliberately: every
+#   - A TYPESCRIPT `mica-build-side:` MARKER. There is none, deliberately: every
 #     producer this tree's TypeScript runs goes through `docker`, so no `.ts`
 #     file is itself a container's script, and a marker grammar nothing uses is
 #     a grammar nobody maintains. A TypeScript finding that must stand is
@@ -70,10 +70,10 @@
 #
 # DECLARING A SIDE. Two markers, both requiring a reason after `--`:
 #
-#   # mos-build-side: container -- <why>          the whole FILE runs in an image;
+#   # mica-build-side: container -- <why>          the whole FILE runs in an image;
 #                                                 must appear before any code
-#   # mos-build-side: container-block -- <why>    the lines BELOW run in an image
-#   # mos-build-side: host                        ...and here they stop
+#   # mica-build-side: container-block -- <why>    the lines BELOW run in an image
+#   # mica-build-side: host                        ...and here they stop
 #
 # EXEMPTIONS live in tests/host-toolchain-exemptions, one `path<TAB>tool<TAB>reason`
 # per site, and an exemption that matches NOTHING is a failure -- a rename must
@@ -236,23 +236,23 @@ for f in "${files[@]}"; do
             # still reports clean. A real heredoc body is already handled
             # above, so nothing is lost by looking at `#` first.
             if (line ~ /^[[:space:]]*#/) {
-                if (line ~ /^[[:space:]]*#[[:space:]]*mos-build-side:/) {
-                    if (line ~ /^[[:space:]]*#[[:space:]]*mos-build-side:[[:space:]]*container[[:space:]]*--[[:space:]]*[^[:space:]]/) {
+                if (line ~ /^[[:space:]]*#[[:space:]]*mica-build-side:/) {
+                    if (line ~ /^[[:space:]]*#[[:space:]]*mica-build-side:[[:space:]]*container[[:space:]]*--[[:space:]]*[^[:space:]]/) {
                         if (code) { emit("err", "a whole-file container declaration must come before any code; this one is after line " code, ""); next }
                         filedecl = 1; emit("stat", "filedecl", ""); next
                     }
-                    if (line ~ /^[[:space:]]*#[[:space:]]*mos-build-side:[[:space:]]*container-block[[:space:]]*--[[:space:]]*[^[:space:]]/) {
+                    if (line ~ /^[[:space:]]*#[[:space:]]*mica-build-side:[[:space:]]*container-block[[:space:]]*--[[:space:]]*[^[:space:]]/) {
                         if (block) { emit("err", "a container block opened at line " blockline " is still open", ""); next }
                         block = 1; blockline = NR; emit("stat", "blockdecl", ""); next
                     }
-                    if (line ~ /^[[:space:]]*#[[:space:]]*mos-build-side:[[:space:]]*host[[:space:]]*$/) {
-                        if (!block) { emit("err", "a `mos-build-side: host` closes a container block that was never opened", ""); next }
+                    if (line ~ /^[[:space:]]*#[[:space:]]*mica-build-side:[[:space:]]*host[[:space:]]*$/) {
+                        if (!block) { emit("err", "a `mica-build-side: host` closes a container block that was never opened", ""); next }
                         block = 0; next
                     }
                     # A marker with no reason is a rubber stamp; refuse it by
                     # name rather than ignoring it, which would read as "not a
                     # marker" to the tool and as "declared" to its author.
-                    emit("err", "malformed `mos-build-side:` marker; the forms are `container -- <why>`, `container-block -- <why>` and `host`", "")
+                    emit("err", "malformed `mica-build-side:` marker; the forms are `container -- <why>`, `container-block -- <why>` and `host`", "")
                 }
                 next
             }
@@ -402,7 +402,7 @@ for f in "${files[@]}"; do
                 fail "${f}:${lineno}: this prepends a directory under \$HOME to PATH, which is how a script reaches a toolchain the machine's package management never installed and nothing pins. See docs/design/build.md section 0. Register it in ${EXEMPTIONS} as '${f}<TAB>host-toolchain-on-PATH<TAB><why>' if it cannot move yet."
                 continue
             fi
-            fail "${f}:${lineno}: \`${a}\` runs on the host. Producers run in a container pinned in build-env/images.env; see docs/design/build.md section 0. If this line runs INSIDE an image, say so with \`# mos-build-side: container-block -- <why>\`; if it cannot move yet, register it in ${EXEMPTIONS} with the reason."
+            fail "${f}:${lineno}: \`${a}\` runs on the host. Producers run in a container pinned in build-env/images.env; see docs/design/build.md section 0. If this line runs INSIDE an image, say so with \`# mica-build-side: container-block -- <why>\`; if it cannot move yet, register it in ${EXEMPTIONS} with the reason."
             ;;
         esac
     done

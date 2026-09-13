@@ -23,12 +23,12 @@
 #   restating it, so it needs that SOURCE at the pinned commit: --source
 #   checks it out with build-env/deb/source.sh, at the commit every micad
 #   pin names, into _out/src/micad. `make os-verify-test` and `make
-#   os-verify` run it first; MOS_VERIFY_RECONCILER_DIR overrides the path.
+#   os-verify` run it first; MICA_VERIFY_RECONCILER_DIR overrides the path.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${HERE}/.." && pwd)"
-POOL="${MOS_POOL_DIR:-${REPO_ROOT}/_out/debs}"
+POOL="${MICA_POOL_DIR:-${REPO_ROOT}/_out/debs}"
 MEMBER="${HERE}/deb-member.py"
 
 case "${1:-}" in

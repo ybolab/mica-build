@@ -82,7 +82,7 @@ function unitValue(root: string, unit: string, key: string): string {
  * `sed -n '/^ExecStart=/,/[^\\]$/p' | tr -d '\\\n'`: from the ExecStart line to
  * the first line not ending in a backslash, with the backslashes and newlines
  * removed. A unit that wraps its command line would otherwise be read as its
- * first fragment, and the `${MOS_MQTT_BROKER_HOST}` reference is usually in the
+ * first fragment, and the `${MICA_MQTT_BROKER_HOST}` reference is usually in the
  * middle of it.
  */
 function execStart(root: string, unit: string): string {
@@ -446,7 +446,7 @@ const MQTTD_CHECKS: readonly CheckCase[] = [
       const ok = conditions.includes(DEVICE_ID_ENV)
         && envfiles.includes(DEVICE_ID_ENV)
         && !envfiles.includes(`-${DEVICE_ID_ENV}`)
-        && exec.includes('--device-id ${MOS_MQTT_DEVICE_ID}')
+        && exec.includes('--device-id ${MICA_MQTT_DEVICE_ID}')
       return [verdict(
         'mqttd-device-id-runtime-input',
         ok,
@@ -574,14 +574,14 @@ const MQTTD_CHECKS: readonly CheckCase[] = [
     },
     run: async (ctx): Promise<readonly CheckResult[]> => {
       const exec = execStart(await packedRoot(ctx), MQTTD_UNIT)
-      const ok = exec.includes('${MOS_MQTT_BROKER_HOST}')
+      const ok = exec.includes('${MICA_MQTT_BROKER_HOST}')
       return [verdict(
         'mqttd-broker-from-environment',
         ok,
         ok
           ? 'mqttd: ExecStart takes the broker from the environment, so the address is not baked into '
             + 'the verity root'
-          : `mqttd: ExecStart does not reference \${MOS_MQTT_BROKER_HOST}: [${exec}]. The root `
+          : `mqttd: ExecStart does not reference \${MICA_MQTT_BROKER_HOST}: [${exec}]. The root `
             + `filesystem is read-only and systemctl edit has nowhere to write, so a literal broker `
             + `address here is the same address on every device flashed with this image, unchangeable`,
       )]
