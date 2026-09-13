@@ -566,7 +566,7 @@ test('non-publication acceptance refuses false source, dirty checkout, policy wi
   const checkout = await virtAcceptanceFixture()
   await expect(acceptProvenance({ ...inputs, source: { commit: '0'.repeat(40), dirty: false } }, checkout)).rejects.toThrow('frozen source')
   for (const change of [{ board: 'x64' }, { channel: 'candidate' }, { profile: 'prod' }]) {
-    await expect(acceptProvenance({ ...inputs, ...change } as ReleaseInputs, checkout)).rejects.toThrow('virt-arm64/development/dev')
+    await expect(acceptProvenance({ ...inputs, ...change } as ReleaseInputs, checkout)).rejects.toThrow('not a release target')
   }
   await expect(acceptProvenance({ ...inputs, builderImages: { IMAGE_TEST: 'wrong' } }, checkout)).rejects.toThrow('builder image')
   const evidence = join(work, 'changed-evidence.json')
