@@ -11,8 +11,8 @@ for (const board of ['x64', 'virt-arm64']) {
       const work = mkdtempSync(join(tmpdir(), 'mos-api-launcher-'))
       const socket = createServer()
       try {
-        for (const path of ['pkgs/micad/tests/apid-api/run.sh', 'pkgs/micad/tests/apid-api/src/qemu.ts',
-          'pkgs/micad/tests/apid-api/src/main.ts', `boards/${board}/board.env`, 'build-env/from.sh', 'build-env/images.env']) {
+        for (const path of ['tests/apid-api/run.sh', 'tests/apid-api/src/qemu.ts',
+          'tests/apid-api/src/main.ts', `boards/${board}/board.env`, 'build-env/from.sh', 'build-env/images.env']) {
           mkdirSync(dirname(join(work, path)), { recursive: true })
           copyFileSync(join(repo, path), join(work, path))
           expect(readFileSync(join(work, path))).toEqual(readFileSync(join(repo, path)))
@@ -36,7 +36,7 @@ for (const board of ['x64', 'virt-arm64']) {
           MOS_BOARD: board, MOS_QEMU_IMAGE: image, MOS_QEMU_BOOT_CERT: cert, MOS_APID_KEEP_DISK: '1' }
         for (const key of Object.keys(env)) if (key.startsWith('MOS_QEMU_') && !['MOS_QEMU_IMAGE', 'MOS_QEMU_BOOT_CERT'].includes(key)) delete env[key]
         if (port !== undefined) Object.assign(env, { MOS_QEMU_SSH_PORT: port })
-        const child = Bun.spawnSync(['bash', join(work, 'pkgs/micad/tests/apid-api/run.sh')], { env, timeout: 20000 })
+        const child = Bun.spawnSync(['bash', join(work, 'tests/apid-api/run.sh')], { env, timeout: 20000 })
         expect(child.exitCode, child.stdout.toString() + child.stderr.toString()).toBe(1)
         const outer = JSON.parse(readFileSync(join(work, 'outer.json'), 'utf8'))
         expect(outer.args.slice(-4)).toEqual(['bun', 'run', 'src/qemu.ts', '--prepare-only'])

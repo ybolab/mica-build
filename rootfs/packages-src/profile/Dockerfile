@@ -32,7 +32,7 @@ ARG MOS_DEB_SOURCE_REPO
 ARG MOS_DEB_SOURCE_COMMIT
 
 # One loop over the two profile values, and not two spelled-out stanzas as
-# pkgs/micad/deb/micad/Dockerfile has. There the two packages hold different
+# micad:deb/micad/Dockerfile has. There the two packages hold different
 # binaries and different units, so writing them out is writing out a real
 # difference; here the two payloads are ONE payload rendered twice, differing
 # in the bytes of profile.conf and in the doc directory that carries the
@@ -64,7 +64,7 @@ RUN set -eu; \
             --version "${MOS_DEB_VERSION}" --arch "${MOS_DEB_ARCH}" --out /out; \
     done
 
-# The export stage, the shape pkgs/micad/deb/micad/Dockerfile ends in:
+# The export stage, the shape micad:deb/micad/Dockerfile ends in:
 # `-o type=local` writes this stage's filesystem into _out/debs/<arch>/pool/
 # and nothing here installs into a root.
 FROM scratch AS out

@@ -18,7 +18,7 @@ this directory once had a driver of their own; it was retired into that one and
 its refusals went with it. What follows is what is specific to THESE producers:
 what a producer declares, and what each of the four emits.
 
-The pool is **shared** with `pkgs/micad`'s producers. A producer deletes only
+The pool is **shared** with `micad`'s producers. A producer deletes only
 its own archives from it (`rm -f <package>_*.deb`), never the whole directory.
 `bash build-env/deb/repo.sh --arch <arch>` then indexes it.
 

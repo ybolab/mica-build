@@ -319,7 +319,7 @@ real material rather than asserted.
 **Gap 2: the same-configuration claim above is an inference.** Build D repeats
 the full build with no `MOS_ROOTFS_WITHOUT` at all. It cannot be a byte-repeat
 of build A, because the tree has moved on by two commits and
-`pkgs/micad/hack/build-target.sh` embeds `<commit>` at compile time -- which
+`micad:hack/build-target.sh` embeds `<commit>` at compile time -- which
 is itself what makes the experiment work, since it re-runs the stages that
 generate both non-reproducible files.
 
@@ -507,7 +507,7 @@ paths. Each of the eleven is named below with the producer that has to own it.
 - **4 `content` in the self-built binaries** -- `/usr/bin/micad`,
   `/usr/bin/apid`, `/usr/bin/mica-mqttd`, `/usr/bin/mica-mqtt-broker`. Two
   independent compilations of one source tree: the chain builds all four in one
-  cargo invocation through `pkgs/micad/hack/build-target.sh` into `target/`,
+  cargo invocation through `micad:hack/build-target.sh` into `target/`,
   while the composed root gets them from two producers through
   `build-deb.sh`, each with its own `CARGO_TARGET_DIR`. `micad` and `apid` carry
   the SAME embedded commit `498eeb824cda` in both roots, checked with `strings`.
@@ -606,7 +606,7 @@ two extracted trees; `mica-mqttd` and `mica-mqtt-broker` read no build-commit
 variable and carry none, which is itself a recorded fact rather than an absence
 nobody looked at. There is no version skew here and no second source tree: the
 chain compiles the four crates in ONE cargo invocation through
-`pkgs/micad/hack/build-target.sh` into `target/`, and the composer's packages
+`micad:hack/build-target.sh` into `target/`, and the composer's packages
 compile them two at a time through `build-deb.sh` into `target-deb/<producer>/`.
 
 **What differs is the compilation environment, not the program.** rustc records
@@ -802,7 +802,7 @@ fixed in place.
 ### /usr/bin/micad
 - classes: content
 - status: active
-- reason: The management daemon, compiled twice: by the chain through pkgs/micad/hack/build-target.sh into target/, and for the composer by the micad producer through build-deb.sh into target-deb/micad/. Measured at commit 5c470e98acaa: BOTH roots carry that commit embedded, found with `strings`, and the sizes are 8,887,880 bytes on the chain against 8,892,200 composed -- a delta of 4,320 in 8.9 MB. See "The four own-binary stanzas, and the road not taken" above for why this is plain rather than narrowed: the two paths compile the same source in different build contexts, the difference is compilation-environment noise, the class evaporates when one path exists, and making the two byte-identical is a producer restructure spent on a comparison that retires with the chain.
+- reason: The management daemon, compiled twice: by the chain through micad:hack/build-target.sh into target/, and for the composer by the micad producer through build-deb.sh into target-deb/micad/. Measured at commit 5c470e98acaa: BOTH roots carry that commit embedded, found with `strings`, and the sizes are 8,887,880 bytes on the chain against 8,892,200 composed -- a delta of 4,320 in 8.9 MB. See "The four own-binary stanzas, and the road not taken" above for why this is plain rather than narrowed: the two paths compile the same source in different build contexts, the difference is compilation-environment noise, the class evaporates when one path exists, and making the two byte-identical is a producer restructure spent on a comparison that retires with the chain.
 
 ### /usr/bin/apid
 - classes: content

@@ -1,0 +1,19 @@
+{
+  "name": "mica-mqtt-broker",
+  "repository": "micad",
+  "commit": "97426adbfa8c15154894b2bd183d520dcd3b7f82",
+  "targets": {
+    "amd64": {
+      "version": "0.1.0+git97426adbfa8c-1",
+      "architecture": "amd64",
+      "sha256": "989abfcc46ff021b3e88c0e88cdf42f255d25d0aead4beef81bc52b86caa6553",
+      "asset": "mica-mqtt-broker_0.1.0.git97426adbfa8c-1_amd64.deb"
+    },
+    "arm64": {
+      "version": "0.1.0+git97426adbfa8c-1",
+      "architecture": "arm64",
+      "sha256": "440c9ef82e5440ab8e6f6aba6abb6720c23c43d474bc598c62659e609de4608d",
+      "asset": "mica-mqtt-broker_0.1.0.git97426adbfa8c-1_arm64.deb"
+    }
+  }
+}

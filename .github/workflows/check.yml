@@ -1,6 +1,6 @@
 # The gates this repository already defines, executed on every push.
 #
-# It runs `pkgs/micad/hack/check.sh` and the `make` targets rather than restating
+# It runs the `make` targets rather than restating
 # what they do. That is deliberate and it is the whole design: a workflow that
 # spelled out `cargo clippy -- -D warnings` here would be a second copy of the
 # gate definition, free to drift from the one a developer runs locally, and the
@@ -8,7 +8,7 @@
 # definition of "checked", in the tree, and this file only decides when it runs.
 #
 # Scope, stated rather than implied: the three targets that need root or
-# privileged docker -- os-dbus-policy-test, os-repart-test and the image
+# privileged docker -- os-repart-test and the image
 # assembly/verification pair -- are NOT run here. They need a runner with those
 # privileges, and a runner that silently lacked them would turn a skipped proof
 # into a green tick. They stay manual until such a runner exists; see the job
@@ -38,14 +38,12 @@ jobs:
   # toolchain resolved from the workspace MSRVs, drop two prebuilt binaries into
   # ~/.cargo/bin and then run both scripts there -- five steps whose only product
   # was a toolchain, and the last host toolchain anywhere in this repository's CI.
-  # That was PLAN-080 backlog B7, and this is it closed: `make os-rust-gate`
-  # (tests/rust-gate.sh) runs the same two scripts, UNMODIFIED, inside
-  # localhost/mos-build-rust-check -- which is where a developer running
-  # `make os-rust-gate` has run them since RFCT-309. One route, not two.
+  # The Rust gates run where the workspaces live now (ybolab/micad,
+  # ybolab/mica-deploy); this job runs the assembly's own suites.
   #
-  # WHAT IT COSTS, stated rather than discovered: the runner now builds the
-  # mos-build-* family first, because rust-check is FROM mos-build-rust which is
-  # FROM mos-build-base. That is minutes of image build, in exchange for a gate
+  # WHAT IT COSTS, stated rather than discovered: the runner builds the
+  # mos-build-* family first, because the C and packaging suites below run in
+  # it. That is minutes of image build, in exchange for a gate
   # whose rustc, clippy, rustfmt, nextest and cargo-deny are the values
   # build-env/images.env records rather than whatever rustup resolved that
   # morning -- and for the four rows in tests/host-toolchain-exemptions that
@@ -85,30 +83,6 @@ jobs:
 
       - name: Current component producers and release delivery in pinned Bun
         run: MOS_BUILD_CONTAINER=1 make os-build-test
-
-      # The gate itself. `tee` and then grep the announce line rather than
-      # trusting the exit status alone -- the os-verify job below makes the same
-      # move for the same reason: a pass proves the gate ran, and this proves
-      # WHICH image ran it. The reference comes from build-env/from.sh, the one
-      # resolver, so the assertion cannot drift from the pin the way a literal
-      # in this file would.
-      #
-      # The workspace is named: a future default that quietly took another
-      # would leave a crate shipping unchecked with this job still green.
-      # mica-deploy runs its own gate in ybolab/mica-deploy.
-      - name: The Rust gate, the micad workspace, in localhost/mos-build-rust-check
-        run: |
-          set -euo pipefail
-          image="$(bash build-env/from.sh --arch=amd64 --ref LOCAL_MOS_BUILD_RUST_CHECK)"
-          make os-rust-gate 2>&1 | tee /tmp/rust-gate.log
-          for w in micad; do
-            grep -qF "=== rust gate: pkgs/${w} in ${image} ===" /tmp/rust-gate.log || {
-              echo "error: the gate passed, but nothing said pkgs/${w} ran in ${image}." >&2
-              echo "       tests/rust-gate.sh prints one such line per workspace, and it is the" >&2
-              echo "       only thing that says which image produced the result." >&2
-              exit 1
-            }
-          done
 
       - name: Firmware record parsing and persistent attempt IO
         run: make os-fit-records-test os-trust-domain-test os-s905x5m-hwinit-test
@@ -191,7 +165,6 @@ jobs:
         if: always()
         run: |
           echo "Not run here (needs root or privileged docker):" >&2
-          echo "  make os-dbus-policy-test   real dbus-daemon, drops to uid 65534" >&2
           echo "  make os-repart-test        privileged docker, loop devices" >&2
           echo "  make os-image / os-verify (explicit board, records and keys)   image assembly and verification" >&2
           echo "Not run here (board artifact builds; cross toolchains and BSP trees):" >&2
@@ -305,13 +278,10 @@ jobs:
       # it needs a built image and boots QEMU. That is the whole reason this
       # step exists -- a milestone that moves a shipped status leaves every
       # phase pinning the old one green until somebody boots the image.
-      - name: The apid phase pins agree with the committed OpenAPI document
+      - name: The apid phase pins agree with the OpenAPI document the pinned mica-apid ships
         run: make os-apid-api-spec-pins
-
-      - name: The built-in apid SPA builds as ignored production assets
-        run: |
-          make os-apid-ui-build-contract-test
-          bash pkgs/micad/apid/ui/run.sh
+        env:
+          GH_TOKEN: ${{ secrets.MICA_DEPS_TOKEN }}
 
       - name: What this job does not cover
         if: always()

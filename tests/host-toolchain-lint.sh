@@ -16,7 +16,7 @@
 # `build/run.sh` and `verify/run.sh` would take if a fifth toolbox seam were
 # written past the four that are closed. The second shape exists
 # because the first one nearly missed the largest violation in the tree: this
-# host has no cargo, and `pkgs/micad/hack/check.sh` finds one only because its
+# host has no cargo, and `micad:hack/check.sh` finds one only because its
 # line 8 puts $HOME/.cargo/bin in front. A producer is a tool whose own build can
 # change the bytes it writes: a compiler, a filesystem maker, an image
 # assembler, a packer, a signer. docs/design/build.md section 0 states the test
@@ -281,7 +281,7 @@ for f in "${files[@]}"; do
             examined++
 
             # THE SECOND SHAPE. A script that REACHES for a host toolchain is
-            # invisible to the table above: `pkgs/micad/hack/check.sh` runs
+            # invisible to the table above: `micad:hack/check.sh` runs
             # `cargo`, which the table does catch, but it can only find one
             # because line 8 puts $HOME/.cargo/bin in front of PATH -- and on
             # this host `command -v cargo` answers nothing without it. A

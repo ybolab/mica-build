@@ -1,6 +1,6 @@
 [Unit]
 Description=Hostname from DATA/state
-# micad's hostname reconciler (pkgs/micad/micad/src/reconciler/hostname.rs) calls
+# micad's hostname reconciler (micad:micad/src/reconciler/hostname.rs) calls
 # SetStaticHostname on org.freedesktop.hostname1, and systemd-hostnamed
 # implements that by writing /etc/hostname. /etc is on the read-only squashfs,
 # so without this bind the call fails EROFS and "set the hostname" in the web

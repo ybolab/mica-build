@@ -603,10 +603,10 @@ It refuses rather than skipping when the image is absent.
 | netavark | `/usr/libexec/podman/netavark` | `netavark 2.1.0` | `NETAVARK_VERSION=v2.1.0` |
 | aardvark-dns | `/usr/libexec/podman/aardvark-dns` | `aardvark-dns 2.1.0` | `AARDVARK_VERSION=v2.1.0` |
 | catatonit | `/usr/libexec/podman/catatonit` | `tini version 0.2.1_catatonit` | `CATATONIT_VERSION=v0.2.1` |
-| mica-mqttd | `/usr/bin/mica-mqttd` | `mica-mqttd 0.1.0` | `pkgs/micad/mqttd/Cargo.toml` |
-| mica-mqtt-broker | `/usr/bin/mica-mqtt-broker` | `mica-mqtt-broker 0.1.0` | `pkgs/micad/broker/Cargo.toml` |
-| micad | `/usr/bin/micad` | `micad 0.1.0 (<commit>)` | `pkgs/micad/micad/Cargo.toml` |
-| apid | `/usr/bin/apid` | `apid 0.1.0 (<commit>)` | `pkgs/micad/apid/Cargo.toml` |
+| mica-mqttd | `/usr/bin/mica-mqttd` | `mica-mqttd 0.1.0` | `micad:mqttd/Cargo.toml` |
+| mica-mqtt-broker | `/usr/bin/mica-mqtt-broker` | `mica-mqtt-broker 0.1.0` | `micad:broker/Cargo.toml` |
+| micad | `/usr/bin/micad` | `micad 0.1.0 (<commit>)` | `micad:micad/Cargo.toml` |
+| apid | `/usr/bin/apid` | `apid 0.1.0 (<commit>)` | `micad:apid/Cargo.toml` |
 
 **Five of the seven container binaries are not in `/usr/bin`.**
 `podman-install.sh` writes them through a `${VAR}`-assembled destination, so the

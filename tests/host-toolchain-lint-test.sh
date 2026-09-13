@@ -219,7 +219,7 @@ expect "an exemption with no reason is refused" "${d}" red 'no tool or no reason
 # ---------------------------------------------------------------------------
 # 12. THE SECOND SHAPE: a script that REACHES for a host toolchain. The table of
 #     binaries nearly missed the largest violation in the tree, because this
-#     host has no cargo at all -- pkgs/micad/hack/check.sh finds one only by
+#     host has no cargo at all -- micad:hack/check.sh finds one only by
 #     putting $HOME/.cargo/bin in front of PATH. And the negative half, which is
 #     what keeps the rule narrow: a fixture PATH built out of a directory the
 #     test just made is not a finding, and two suites here do exactly that.

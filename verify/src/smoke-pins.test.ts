@@ -19,10 +19,8 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { REPO_ROOT } from './paths.ts'
 import {
-  cratePath,
   expectedFromRecorded,
   PODMAN_VERSIONS_ENV,
-  readCratePackageVersion,
   readPin,
   readVersionsEnv,
   pinKeys,
@@ -146,58 +144,3 @@ describe('readPin', () => {
   })
 })
 
-describe('readCratePackageVersion -- and why it tracks the TOML table', () => {
-  test('reads the four shipped crates', () => {
-    // The search space, first: all four manifests exist and answer.
-    for (const crate of ['micad', 'apid', 'mqttd', 'broker']) {
-      const pin = readCratePackageVersion(cratePath(crate))
-      expect(pin.key).toBe('package.version')
-      expect(pin.recorded).toMatch(/^[0-9]/)
-      expect(pin.file).toContain(join('pkgs', 'micad', crate))
-    }
-  })
-
-  // The case a one-line regex gets wrong, and the reason this reader is not
-  // one. `/^version = "(.*)"/m` over this file finds 9.9.9 and hands it back as
-  // the crate's own -- a comparison that has silently started asserting a
-  // dependency's version against a binary's, and passes or fails for a reason
-  // that has nothing to do with either.
-  test('a version in another table is NOT the crate version', () => {
-    const path = fixture(
-      'deps-only.toml',
-      '[package]\nname = "thing"\nedition = "2024"\n\n[dependencies]\nversion = "9.9.9"\nserde = "1"\n',
-    )
-    expect(() => readCratePackageVersion(path)).toThrow(/no `version = "\.\.\."` inside a \[package\] table/)
-  })
-
-  test('a [package] version after another table is still found', () => {
-    const path = fixture(
-      'reordered.toml',
-      '[dependencies]\nversion = "9.9.9"\n\n[package]\nname = "thing"\nversion = "3.2.1"\n',
-    )
-    expect(readCratePackageVersion(path).recorded).toBe('3.2.1')
-  })
-
-  test('a workspace-inherited version is refused rather than resolved', () => {
-    const path = fixture('inherited.toml', '[package]\nname = "thing"\nversion.workspace = true\n')
-    expect(() => readCratePackageVersion(path)).toThrow(/no `version = "\.\.\."` inside a \[package\] table/)
-  })
-
-  test('an empty [package] version is refused, not returned', () => {
-    const path = fixture('emptyver.toml', '[package]\nname = "thing"\nversion = ""\n')
-    expect(() => readCratePackageVersion(path)).toThrow(/EMPTY \[package\] version/)
-  })
-
-  test('a manifest with no [package] table at all is refused', () => {
-    const path = fixture('workspace.toml', '[workspace]\nmembers = ["a"]\n')
-    expect(() => readCratePackageVersion(path)).toThrow(/no `version = "\.\.\."` inside a \[package\] table/)
-  })
-
-  test('comments and whitespace do not hide the value', () => {
-    const path = fixture(
-      'commented.toml',
-      '# a header\n[package]  # the crate\nname = "thing"\n  version   =   "7.7.7"   # pinned\n',
-    )
-    expect(readCratePackageVersion(path).recorded).toBe('7.7.7')
-  })
-})

@@ -10,8 +10,8 @@
 # any line below goes red in the preflight steps, not green:
 #
 #   - Linux x86_64 with apt (the dependency steps use apt-get, like check.yml).
-#   - root, either directly or via passwordless sudo. os-dbus-policy-test
-#     refuses to run otherwise -- its whole point is dropping to uid 65534.
+#   - root, either directly or via passwordless sudo, for the suites that
+#     mount, loop-attach or drop privileges.
 #   - a docker daemon reachable by the job user, with `--privileged`
 #     containers permitted (os-repart-test attaches loop devices) and
 #     `docker buildx` available (the BSP builds are buildx builds).
@@ -114,15 +114,6 @@ jobs:
           $SUDO apt-get update
           $SUDO apt-get install -y --no-install-recommends \
             bash make git ca-certificates dbus util-linux python3
-
-      # Proves the SHIPPED com.mica.micad policy against a real dbus-daemon,
-      # both directions of every guard. Needs root: it drops to uid 65534.
-      - name: make os-dbus-policy-test
-        run: |
-          set -euo pipefail
-          SUDO=""
-          [ "$(id -u)" -eq 0 ] || SUDO="sudo"
-          $SUDO make os-dbus-policy-test
 
       # BOTH assemblers against synthetic fixtures: byte-identical reassembly,
       # the full GPT contract, and every guard's negative direction.

@@ -212,7 +212,7 @@ fi
 #
 # `degraded` is the status on purpose. It inherits the existing guarantee that
 # mica-health's `degraded` is not in the reboot gate's `blockingStatuses`
-# (pkgs/micad/micad/src/bus.rs), so a reported failed unit can no more block a
+# (micad:micad/src/bus.rs), so a reported failed unit can no more block a
 # reboot than a full /var can. This runs BEFORE the remaining members so the
 # list is in the journal even when the gate goes on to fail.
 failed=$(run systemctl list-units --state=failed --no-legend --plain --full 2>/dev/null |
@@ -264,7 +264,7 @@ fi
 # verification; /healthz is apid's existing endpoint and bypasses its auth gate.
 #
 # Required because apid is the only NETWORK route in: the `prod` image profile
-# seeds SSH off (pkgs/micad/micad/src/provisioning.rs), so with apid down micad
+# seeds SSH off (micad:micad/src/provisioning.rs), so with apid down micad
 # would take a bundle that nothing can deliver without physical access to the
 # serial console. An image that genuinely ships no apid drops the line.
 if requires apid; then

@@ -1,0 +1,19 @@
+{
+  "name": "mica-apid",
+  "repository": "micad",
+  "commit": "97426adbfa8c15154894b2bd183d520dcd3b7f82",
+  "targets": {
+    "amd64": {
+      "version": "0.1.0+git97426adbfa8c-1",
+      "architecture": "amd64",
+      "sha256": "e874a170c3ba3f2f306b073f2dc3bbccff53346bd18f57b63d03531de7521721",
+      "asset": "mica-apid_0.1.0.git97426adbfa8c-1_amd64.deb"
+    },
+    "arm64": {
+      "version": "0.1.0+git97426adbfa8c-1",
+      "architecture": "arm64",
+      "sha256": "aa15b5a55b71acdc50cf17209dceda58612b7bc86a7a89e6cdf68851a9922038",
+      "asset": "mica-apid_0.1.0.git97426adbfa8c-1_arm64.deb"
+    }
+  }
+}

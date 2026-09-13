@@ -107,7 +107,7 @@ export interface SmokeResult {
  * A pin's file, relative to the repository root.
  *
  * NOT `basename`: four of the twelve read a `Cargo.toml`, and
- * `pkgs/micad/mqttd/Cargo.toml` and `pkgs/micad/broker/Cargo.toml` are different files with
+ * `micad:mqttd/Cargo.toml` and `micad:broker/Cargo.toml` are different files with
  * the same last component, so a row saying "in Cargo.toml" would not tell a
  * reader which one to edit. Absolute paths carry a worktree prefix that differs
  * per checkout and turns every line into noise.
@@ -591,7 +591,7 @@ export function outDir(board: string): string {
  * Read a `key<TAB>value` record as data.
  *
  * Tab-separated, exactly as `ociRecord` in build/src/stages.ts writes it and
- * as `pkgs/micad/hack/build-deb.sh` writes `_out/micad-build-<arch>.txt`, parsed rather
+ * as `micad:hack/build-deb.sh` writes `_out/micad-build-<arch>.txt`, parsed rather
  * than sourced. Comment lines are skipped by having no tab, which is why
  * `# Load it with: docker load -i ...` cannot become a key -- a reader that
  * split on whitespace would have made one. One reader for both records, because
@@ -682,7 +682,7 @@ export const MOSD_BUILD_RECORD_NAME = 'micad-build.txt'
 /**
  * The commit the micad and apid in this board's factory root were built from.
  *
- * Read out of the record `pkgs/micad/hack/build-deb.sh` wrote and
+ * Read out of the record `micad:hack/build-deb.sh` wrote and
  * `rootfs/build.sh` copied in beside the image -- NOT out of the working
  * tree. See [`BuildCommitFact`]. Absent is not a refusal here, unlike the
  * factory root itself: an image built before RFCT-356 moved the record onto the
@@ -702,7 +702,7 @@ export function readMosdBuildFact(board: string, dir: string = outDir(board)): B
     return {
       source:
         `${shown} does not exist, so no commit was recorded for this image. It is written by `
-        + `pkgs/micad/hack/build-deb.sh whenever it compiles micad and apid, and copied here by `
+        + `micad:hack/build-deb.sh whenever it compiles micad and apid, and copied here by `
         + `rootfs/build.sh; rebuild the board to have the commit asserted rather than printed`,
     }
   }

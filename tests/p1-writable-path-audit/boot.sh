@@ -78,7 +78,7 @@ RUN_DIR_REAL="$(readlink -f "$REPO/_out/$MOS_BOARD/.qemu")"
 #
 # The serving sshd reads /etc/ssh/authorized_keys.d/%u -- that is what the
 # image's own sshd_config.d/05-mos-authorized-keys.conf sets -- and
-# pkgs/micad/micad/src/reconciler/sshd.rs RENDERS that file from
+# micad:micad/src/reconciler/sshd.rs RENDERS that file from
 # settings.access.ssh.keys on every reconcile. With the factory default of no
 # keys it renders an empty file, so a key written there by tmpfiles at
 # sysinit.target authenticates only until micad starts at multi-user.target.
@@ -101,7 +101,7 @@ fi
 # --- launch the boot in the background -------------------------------------
 docker run --rm --label ai-agent=true \
     -v "$REPO:$REPO" -v /var/run/docker.sock:/var/run/docker.sock \
-    -w "$REPO/pkgs/micad/tests/apid-api" \
+    -w "$REPO/tests/apid-api" \
     -e "MOS_BOARD=$MOS_BOARD" \
     -e MOS_QEMU_REUSE_DISK=1 \
     -e "MOS_QEMU_RUN_SECONDS=$RUN_SECONDS" \

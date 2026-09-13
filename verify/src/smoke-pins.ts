@@ -34,6 +34,29 @@ import { REPO_ROOT } from './paths.ts'
 export const PODMAN_VERSIONS_ENV: string = join(REPO_ROOT, 'deps', 'packages', 'mica-podman.versions.env')
 
 
+/**
+ * The version an imported package's pin records: `deps/packages/<name>.json`,
+ * the archive version with the pool's git stamp cut off. `0.1.0+git<commit>-1`
+ * is what dpkg sees; `0.1.0` is what the binary reports, because the crate
+ * that built it carries the number and the stamp is added by the packer.
+ * Both architectures' rows carry the same version by construction (one
+ * release, one commit); the amd64 row is read and the arm64 row must agree.
+ */
+export function readPinnedPackageVersion(name: string): Pin {
+  const file = join(REPO_ROOT, 'deps', 'packages', `${name}.json`)
+  const pin = JSON.parse(readFileSync(file, 'utf8')) as { targets?: Record<string, { version?: string }> }
+  const versions = new Set(Object.values(pin.targets ?? {}).map(t => t.version ?? ''))
+  if (versions.size !== 1 || versions.has('')) {
+    throw new Error(`${file} does not record one non-empty version across its targets (got ${[...versions].join(', ') || 'none'}); the pin is what says which version ${name} must report, and a pin that says two things says nothing`)
+  }
+  const recorded = [...versions][0]!
+  const upstream = recorded.replace(/\+git[0-9a-f]{12}(\.dirty)?-\d+$/, '')
+  if (upstream === recorded) {
+    throw new Error(`${file} records the version '${recorded}', which carries no pool git stamp (+git<commit12>-<n>); the archive version and the reported version are told apart by that stamp`)
+  }
+  return { recorded, expected: upstream, file, key: `targets.*.version` }
+}
+
 /** Every `versions.env` a pin is read out of, so coverage can be asserted over all of them. */
 export const VERSIONS_ENV_FILES: readonly string[] = [PODMAN_VERSIONS_ENV]
 
@@ -127,83 +150,4 @@ export function readPin(file: string, key: string): Pin {
   return { recorded, expected: expectedFromRecorded(recorded), file, key }
 }
 
-/** `pkgs/micad/<crate>/Cargo.toml` -- the four device binaries this repository writes. */
-/**
- * The version an imported package's pin records: `deps/packages/<name>.json`,
- * the archive version with the pool's git stamp cut off. `0.1.0+git<commit>-1`
- * is what dpkg sees; `0.1.0` is what the binary reports, because the crate
- * that built it carries the number and the stamp is added by the packer.
- * Both architectures' rows carry the same version by construction (one
- * release, one commit); the amd64 row is read and the arm64 row must agree.
- */
-export function readPinnedPackageVersion(name: string): Pin {
-  const file = join(REPO_ROOT, 'deps', 'packages', `${name}.json`)
-  const pin = JSON.parse(readFileSync(file, 'utf8')) as { targets?: Record<string, { version?: string }> }
-  const versions = new Set(Object.values(pin.targets ?? {}).map(t => t.version ?? ''))
-  if (versions.size !== 1 || versions.has('')) {
-    throw new Error(`${file} does not record one non-empty version across its targets (got ${[...versions].join(', ') || 'none'}); the pin is what says which version ${name} must report, and a pin that says two things says nothing`)
-  }
-  const recorded = [...versions][0]!
-  const upstream = recorded.replace(/\+git[0-9a-f]{12}(\.dirty)?-\d+$/, '')
-  if (upstream === recorded) {
-    throw new Error(`${file} records the version '${recorded}', which carries no pool git stamp (+git<commit12>-<n>); the archive version and the reported version are told apart by that stamp`)
-  }
-  return { recorded, expected: upstream, file, key: `targets.*.version` }
-}
-
-export function cratePath(crate: string): string {
-  return join(REPO_ROOT, 'pkgs', 'micad', crate, 'Cargo.toml')
-}
-
-/**
- * The `version` of a Cargo manifest's `[package]` table, and only that one.
- *
- * Why this is not a one-line regex. `version = "..."` appears many times in a
- * manifest and only the first table's is the crate's own: `pkgs/micad/apid/Cargo.toml`
- * has a `[dependencies]` section under it, and a workspace member inherits
- * `[workspace.package]` keys. A `/^version = "(.*)"/m` over the whole file finds
- * whichever came first in the byte order, which is the crate's today and a
- * dependency's the day someone reorders the file -- a comparison that silently
- * starts asserting a dependency's version against a binary's.
- *
- * So the table is tracked. Lines are scanned until `[package]` opens, values are
- * taken until the next `[`-header closes it, and a `version` outside that window
- * is not this crate's.
- *
- * @throws Error naming the file when there is no `[package]` table or no
- *   `version` in it -- never a default, for `readPin`'s reason.
- */
-export function readCratePackageVersion(file: string): Pin {
-  let inPackage = false
-  let lineNo = 0
-  for (const raw of readFileSync(file, 'utf8').split('\n')) {
-    lineNo += 1
-    const line = raw.replace(/#.*$/, '').trim()
-    if (line === '') continue
-    if (line.startsWith('[')) {
-      // `[package]` and nothing else opens the window; every other header,
-      // `[dependencies]` and `[lints]` included, closes it.
-      inPackage = line === '[package]'
-      continue
-    }
-    if (!inPackage) continue
-    const m = /^version\s*=\s*"([^"]*)"\s*$/.exec(line)
-    if (m === null) continue
-    const recorded = m[1]!
-    if (recorded === '') {
-      throw new Error(
-        `${file}:${lineNo} declares an EMPTY [package] version. The smoke runner compares what a `
-        + `binary reports against this value; an empty one is an expectation nothing can meet and `
-        + `nothing can fail against for a readable reason.`,
-      )
-    }
-    return { recorded, expected: expectedFromRecorded(recorded), file, key: 'package.version' }
-  }
-  throw new Error(
-    `${file} has no \`version = "..."\` inside a [package] table. That value is what the binary `
-    + `this crate builds is required to report, so the smoke runner has nothing to compare `
-    + `against. A workspace-inherited \`version.workspace = true\` would land here too, and it is `
-    + `refused rather than resolved: this reader would then be following a second file without `
-    + `saying so.`,
-  )
-}
+/** `micad:<crate>/Cargo.toml` -- the four device binaries this repository writes. */

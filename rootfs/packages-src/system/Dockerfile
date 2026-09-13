@@ -149,7 +149,7 @@ ARG MOS_DEB_SOURCE_COMMIT
 #
 # /var/lib/mica is an empty directory and is load-bearing: it and
 # var-lib-mica.mount are two halves of one mechanism, micad.service declares
-# `RequiresMountsFor=/var/lib/mica`, and pkgs/micad/deb/README.md records that
+# `RequiresMountsFor=/var/lib/mica`, and micad:deb/README.md records that
 # micad names mica-system in Depends rather than shipping the directory itself.
 # /root is 0700 root:root for the reason stages/20-install gives: a root home
 # that reached the image group- or world-readable would be a different defect
@@ -272,7 +272,7 @@ RUN set -eu; \
         --maintainer-scripts /in/maintainer/mica-system \
         --version "${MOS_DEB_VERSION}" --arch "${MOS_DEB_ARCH}" --out /out
 
-# The export stage, the shape pkgs/micad/deb/micad/Dockerfile ends in:
+# The export stage, the shape micad:deb/micad/Dockerfile ends in:
 # `-o type=local` writes this stage's filesystem into _out/debs/<arch>/pool/
 # and nothing here installs into a root.
 FROM scratch AS out

@@ -110,7 +110,7 @@ describe('the register names exactly the artifacts in scope', () => {
   // The commit half, and the set is stated here rather than derived from the
   // register for the reason the whole SCOPE_ARTIFACTS list is: this is an
   // independent statement of what the scope amendment authorised. The user
-  // lifted the exclusion for pkgs/micad/micad/src/main.rs and pkgs/micad/apid/src/main.rs.
+  // lifted the exclusion for micad:micad/src/main.rs and micad:apid/src/main.rs.
   // mica-mqttd and mica-mqtt-broker are built by the same script from the same
   // workspace and were NOT named, so they do not embed a commit -- and if a
   // later change gives them one, this test is where that has to be argued for.

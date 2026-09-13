@@ -749,7 +749,7 @@ echo "installed size: ${total_mb} MB (budget ${SIZE_BUDGET_MB} MB)"
 # package. Each of those ships an archive every check upstream accepts, and
 # turns the version rows red only here.
 #
-# The binaries report `<commit12>[-dirty]` (pkgs/micad/hack/build-deb.sh's
+# The binaries report `<commit12>[-dirty]` (micad:hack/build-deb.sh's
 # MOS_BUILD_COMMIT); the archive carries the full commit and marks a dirty
 # tree in its version stamp, so the record is spelled the way the binary
 # spells it.

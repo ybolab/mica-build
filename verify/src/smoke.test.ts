@@ -393,9 +393,9 @@ describe('firstLine', () => {
 })
 
 describe('pinSource', () => {
-  test('is repo-relative, so four Cargo.toml rows are four different files', () => {
-    expect(pinSource(join(REPO_ROOT, 'pkgs', 'micad', 'mqttd', 'Cargo.toml'))).toBe('pkgs/micad/mqttd/Cargo.toml')
-    expect(pinSource(join(REPO_ROOT, 'pkgs', 'micad', 'broker', 'Cargo.toml'))).toBe('pkgs/micad/broker/Cargo.toml')
+  test('is repo-relative, so four pin rows are four different files', () => {
+    expect(pinSource(join(REPO_ROOT, 'deps', 'packages', 'mica-mqttd.json'))).toBe('deps/packages/mica-mqttd.json')
+    expect(pinSource(join(REPO_ROOT, 'deps', 'packages', 'mica-mqtt-broker.json'))).toBe('deps/packages/mica-mqtt-broker.json')
   })
   test('leaves a path outside the repository alone rather than mangling it', () => {
     expect(pinSource('/elsewhere/versions.env')).toBe('/elsewhere/versions.env')

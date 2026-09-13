@@ -1,4 +1,4 @@
-.PHONY: os-trust-domain-test build-env help os-apid-api-spec-pins os-apid-api-test os-apid-ui-build-contract-test os-bare-host-gate os-boot-tools os-build-test os-components os-cx3576-flash-test os-dbus-policy-test os-deb-package-gate os-deb-preflight os-deb-preflight-test os-debian-cache os-debian-install os-debian-test os-debian-verify os-debs os-devkeys os-lock-bump os-pool os-pool-lock-test os-factory-root-gate os-fit-records-test os-gadget-test os-health-test os-host-toolchain-lint os-host-toolchain-lint-test os-image os-install-closure-gate os-layout-lint os-mac-test os-netavark-kernel-test os-quadlet-doc-test os-repart-test os-rootfs-cx3576 os-rootfs-manifest-test os-rootfs-virt-arm64 os-rootfs-x64 os-rust-gate os-shadow-test os-shell-pipefail-lint os-smoke-negative-test os-smoke-test os-verify os-verify-test
+.PHONY: os-trust-domain-test build-env help os-apid-api-spec-pins os-apid-api-test os-bare-host-gate os-boot-tools os-build-test os-components os-cx3576-flash-test os-deb-package-gate os-deb-preflight os-deb-preflight-test os-debian-cache os-debian-install os-debian-test os-debian-verify os-debs os-devkeys os-lock-bump os-pool os-pool-lock-test os-factory-root-gate os-fit-records-test os-gadget-test os-health-test os-host-toolchain-lint os-host-toolchain-lint-test os-image os-install-closure-gate os-layout-lint os-mac-test os-netavark-kernel-test os-quadlet-doc-test os-repart-test os-rootfs-cx3576 os-rootfs-manifest-test os-rootfs-virt-arm64 os-rootfs-x64 os-shadow-test os-shell-pipefail-lint os-smoke-negative-test os-smoke-test os-verify os-verify-test
 
 # THE SOURCE DEPENDENCIES, before anything else: build-env/ (mica-build-env)
 # is the substrate every target reaches through, rootfs/debian/ (mica-debian)
@@ -65,7 +65,6 @@ help:
 	@echo "  os-health-test      run the health and failure-handler tests"
 	@echo "  os-shadow-test      run the offline tests for the DATA /etc/shadow reconciler"
 	@echo "  os-mac-test         prove the stable-MAC derivation follows the port, not the interface name; drives the by-name defect red"
-	@echo "  os-dbus-policy-test prove the shipped micad D-Bus policy is root-only against a real dbus-daemon"
 	@echo "  os-repart-test      prove first-boot repart growth grows DATA and cannot wipe the loader (privileged docker)"
 	@echo "  os-cx3576-flash-test    drive the cx3576 flash read-back against a stub rkdeveloptool: argv, sector arithmetic, and a hole that must go red before rd"
 	@echo "  os-host-toolchain-lint  no compiler, filesystem maker or assembler runs on the host (docs/design/build.md section 0)"
@@ -75,7 +74,6 @@ help:
 	@echo "  os-build-test       run the build bun+TypeScript suite: board geometry and the toolset wrappers (docker)"
 	@echo "  os-netavark-kernel-test  assert every board kernel config carries the symbols netavark programs rules against"
 	@echo "  build-env           build the pinned builder images localhost/mos-build-{base,c,deb,go,openssl,rust,rust-check}:<arch>"
-	@echo "  os-rust-gate        run the micad workspace's hack/check.sh (fmt, clippy -D warnings, nextest, doctests, cargo-deny) in the pinned gate image (docker)"
 	@echo "  os-deb-<producer>   build one producer's Debian packages for the architectures it declares; \`bash build-env/deb/producers.sh\` lists them (docker)"
 	@echo "  os-deb-preflight    list every missing package-build input at once, and check every lock row is reachable, before os-pool starts a container"
 	@echo "  os-deb-preflight-test   drive that pre-flight red and green, and mutate each half of its hook count contract"
@@ -111,6 +109,7 @@ s905x5m-%:
 # with --board.
 os-verify:
 	@test -n "$(MOS_BOARD)" -a -n "$(MOS_VERIFY_IMAGE)" -a -n "$(MOS_METADATA_PUBLIC_KEY_FILES)"
+	bash tools/micad-pool.sh --source
 	bash verify/run.sh --verify --board "$(MOS_BOARD)" --image "$(MOS_VERIFY_IMAGE)" $(foreach key,$(MOS_METADATA_PUBLIC_KEY_FILES),--public-key "$(key)")
 
 # Every self-built binary EXECUTED inside the root that ships it, with the
@@ -194,16 +193,6 @@ os-mac-test:
 os-shadow-test:
 	bash tests/shadow-reconcile-test.sh
 
-# Stands up a real dbus-daemon whose configuration <include>s the SHIPPED
-# pkgs/micad/dist/com.mica.micad.conf, owns com.mica.micad from a root connection, and
-# drives root and non-root clients at it. Reading the XML back would only prove
-# the file says the right thing; this proves dbus-daemon acts on it. Both
-# directions of every guard — a refusal-only suite passes just as well against a
-# policy that denies root too. Needs root (it drops to uid 65534 with setpriv)
-# and fails loudly when it cannot run rather than skipping.
-os-dbus-policy-test:
-	bash pkgs/micad/tests/dbus-policy-test.sh
-
 # Behavioural check on first-boot growth: a real systemd-repart, with discard
 # enabled, over a copy of each assembled image on a loop device. It proves two
 # things the image contract cannot — that growth does not wipe the Rockchip
@@ -235,13 +224,8 @@ os-cx3576-flash-test:
 # build-env/images.env, automatically and with the route announced; CI
 # installs no bun, so that is the route it takes.
 os-verify-test:
+	bash tools/micad-pool.sh --source
 	bash verify/run.sh
-
-# The built-in UI is generated before Rust compiles APID. This source-only
-# gate proves the generated tree stays outside Git and that every owned Cargo
-# entry preserves the producer boundary.
-os-apid-ui-build-contract-test:
-	bash tests/apid-ui-build-contract-test.sh
 
 # The TypeScript build driver: the typed board geometry the assemblers read, and
 # the Bun.$ wrappers for the toolset they drive.
@@ -562,26 +546,6 @@ os-netavark-kernel-test:
 build-env:
 	bash build-env/build.sh
 
-# The Rust gate: `pkgs/micad/hack/check.sh`, UNMODIFIED, inside
-# localhost/mos-build-rust-check (mica-deploy runs its own in ybolab/mica-deploy).
-# Five commands per workspace -- `cargo fmt --all --check`, clippy at `-D warnings`, nextest,
-# doctests, and `cargo deny check licenses bans advisories`.
-#
-# This target exists because those scripts were unrunnable HERE. Their four
-# tools came from /srv/mos-rust-tools, a host directory mounted at /tools that
-# no Makefile target and no script referenced; it was emptied on 2026-08-29 and
-# NOTHING WENT RED. CI kept running both scripts on its own rustup toolchain,
-# so the workspace stayed checked and the local route simply stopped existing,
-# silently. A substrate that can evaporate without a single failure is one
-# nobody is told about; reachable as a target, it is at least noticeable.
-#
-# `bash tests/rust-gate.sh micad` runs one workspace. Needs docker, and it builds
-# the built-in UI tree first because the gate embeds it; it fails loudly when
-# the image is missing rather than skipping, with `make build-env` as the
-# remedy.
-os-rust-gate:
-	bash tests/rust-gate.sh
-
 cx3576-%:
 	$(MAKE) -C boards/cx3576/bsp $*
 
@@ -627,17 +591,17 @@ virt-arm64-%:
 # another container holds that directory rather than discovering the collision
 # halfway through a nine-minute boot.
 #
-# `bash pkgs/micad/tests/apid-api/run.sh --dry-run` performs the preconditions and the
+# `bash tests/apid-api/run.sh --dry-run` performs the preconditions and the
 # network discovery and boots nothing; it is how to check the harness in
 # seconds. Needs docker, and it fails loudly when it cannot run rather than
 # skipping.
 os-apid-api-test:
-	bash pkgs/micad/tests/apid-api/run.sh
+	bash tests/apid-api/run.sh
 
 # The BUILD-TIME half of that suite, and the only part of it that runs on a
 # checkout: every literal a phase pins which openapi.json ALSO states, asserted
 # to agree with the document. No image, no QEMU, no network -- it reads the
-# phase files' own bytes and pkgs/micad/apid/openapi.json and compares them.
+# phase files' own bytes and the OpenAPI document the pinned mica-apid archive ships and compares them.
 #
 # It exists because os-apid-api-test above is the only thing that runs the
 # phases, and it needs a built image and a nine-minute boot. A milestone that
@@ -649,7 +613,7 @@ os-apid-api-test:
 # pinned as IMAGE_BUN_1 otherwise, and says which. MOS_APID_CONTAINER=1 forces
 # the pinned container.
 os-apid-api-spec-pins:
-	bash pkgs/micad/tests/apid-api/spec-pins.sh
+	bash tests/apid-api/spec-pins.sh
 
 os-boot-tools:
 	bash pkgs/mica-boot/build-tools.sh

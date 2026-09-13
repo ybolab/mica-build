@@ -107,7 +107,7 @@ resolved` and its note line an empty list. The branch has no material.
 ### The ruling: **yes** — `micad` should declare `Depends: mica-profile`
 
 `micad` reads `/usr/lib/mica/profile.conf` (`DEFAULT_PROFILE_PATH`,
-`pkgs/micad/micad/src/provisioning.rs`) once on first boot, and that path is
+`micad:micad/src/provisioning.rs`) once on first boot, and that path is
 the entire payload of the two profile packages and of nothing else. `micad`
 **fails closed**: a missing file resolves to `Prod`, which is SSH off. So a
 composition that installed `micad` and no profile package would produce an image
@@ -138,7 +138,7 @@ Unversioned, necessarily: an unversioned `Provides` cannot satisfy an
 exact-version dependency, which is why the gate does not require a version pin
 on this class.
 
-**Not implemented in this L3**: `pkgs/micad/deb/micad/control/micad.control`
+**Not implemented in this L3**: `micad:deb/micad/control/micad.control`
 belongs to a sibling producer's workstream. Whoever lands it should also confirm
 what APT does when a `Depends: mica-profile` is unsatisfied and two mutually
 conflicting packages provide it — the intent is that the transaction fails by

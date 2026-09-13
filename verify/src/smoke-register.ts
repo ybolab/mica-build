@@ -17,7 +17,7 @@
 
 import { join } from 'node:path'
 import { REPO_ROOT } from './paths.ts'
-import { cratePath, readCratePackageVersion, readPin, pinKeys, type Pin } from './smoke-pins.ts'
+import { readPin, pinKeys, type Pin } from './smoke-pins.ts'
 import { PODMAN_VERSIONS_ENV, VERSIONS_ENV_FILES, readPinnedPackageVersion } from './smoke-pins.ts'
 
 /**
@@ -101,17 +101,18 @@ export interface Artifact {
 
 /** The container engine's shared pin file, named once per entry rather than per line. */
 const podman = (key: string) => () => readPin(PODMAN_VERSIONS_ENV, key)
-const crate = (name: string) => () => readCratePackageVersion(cratePath(name))
+/** An imported package's pin, `deps/packages/<name>.json`, named once per entry. */
+const pinned = (name: string) => () => readPinnedPackageVersion(name)
 
 export const ARTIFACTS: readonly Artifact[] = [
-  // The four this repository writes in Rust. Their recorded version is the
-  // `[package] version` of the crate that builds them, the only place this tree
-  // records one: there is no `pkgs/micad/versions.env`, because a pin file exists to
-  // fix an UPSTREAM version and these have no upstream.
+  // The four ybolab/micad writes in Rust and this repository imports through
+  // the lock. Their recorded version is the pin's archive version with the
+  // pool stamp cut off: the crate that built them carries the number and the
+  // packer added the stamp, so the binary reports the former.
   {
     // micad and apid answer `--version` before any daemon initialisation --
     // provisioning, bus connection, key generation -- because asking a daemon
-    // for its version must not MUTATE. pkgs/micad/micad/src/main.rs answers from a
+    // for its version must not MUTATE. micad:micad/src/main.rs answers from a
     // synchronous `main`, before the tokio runtime, the subscriber, the settings
     // store and provisioning, so this invocation reports, exits 0 and leaves
     // nothing behind. `/usr/bin/micad` with no argv still provisions (secrets/,
@@ -120,7 +121,7 @@ export const ARTIFACTS: readonly Artifact[] = [
     // prints no version at all.
     name: 'micad',
     path: '/usr/bin/micad',
-    pin: crate('micad'),
+    pin: pinned('micad'),
     contract: { kind: 'version', argv: ['--version'] },
     embedsBuildCommit: true,
   },
@@ -129,14 +130,14 @@ export const ARTIFACTS: readonly Artifact[] = [
     // binds 0.0.0.0:443 and never returns.
     name: 'apid',
     path: '/usr/bin/apid',
-    pin: crate('apid'),
+    pin: pinned('mica-apid'),
     contract: { kind: 'version', argv: ['--version'] },
     embedsBuildCommit: true,
   },
   {
     name: 'mica-mqttd',
     path: '/usr/bin/mica-mqttd',
-    pin: crate('mqttd'),
+    pin: pinned('mica-mqttd'),
     // The two crates that CAN answer are the two that declare clap and carry
     // `#[command(name = ..., version)]`, which emits CARGO_PKG_VERSION -- so
     // the value compared is literally the manifest's, one file, two readers.
@@ -145,7 +146,7 @@ export const ARTIFACTS: readonly Artifact[] = [
   {
     name: 'mica-mqtt-broker',
     path: '/usr/bin/mica-mqtt-broker',
-    pin: crate('broker'),
+    pin: pinned('mica-mqtt-broker'),
     contract: { kind: 'version', argv: ['--version'] },
   },
 
@@ -264,7 +265,7 @@ export function artifactsForPackages(packages: ReadonlySet<string>): readonly Ar
   const result = [...ARTIFACTS]
   if (packages.has('mica-mqtt-reference')) result.push({
     name: 'mica-mqtt-reference', path: '/usr/bin/mica-mqtt-reference',
-    pin: crate('mqtt-reference'), contract: { kind: 'version', argv: ['--version'] },
+    pin: pinned('mica-mqtt-reference'), contract: { kind: 'version', argv: ['--version'] },
   })
   return result
 }

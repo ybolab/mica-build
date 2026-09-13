@@ -150,6 +150,11 @@ mkdir -p "${WORK}"
 # manifests.
 POOL_VERSION="$(bash "${VERSION_SH}")"
 CRATE_VERSION="${POOL_VERSION%%+*}"
+# The version an imported package's pin records, with the pool stamp cut off:
+# what the crate that built the binary carries, and so what it reports.
+pinned_version() {
+    python3 -c 'import json,re,sys; v={t["version"] for t in json.load(open(sys.argv[1]))["targets"].values()}; assert len(v)==1, v; print(re.sub(r"\+git[0-9a-f]{12}(\.dirty)?-\d+$", "", v.pop()))' "${REPO_ROOT}/deps/packages/$1.json"
+}
 case "${CRATE_VERSION}" in
 [0-9]*.[0-9]*.[0-9]*) ;;
 *)
@@ -183,15 +188,13 @@ pin() {
 # pass or fail, under emulation exactly as natively.
 COMPONENTS="${WORK}/components.tsv"
 {
-    printf 'micad\t/usr/bin/micad\t%s\tbuild-env/deb/version.sh\t-\t-\n' "${CRATE_VERSION}"
-    printf 'apid\t/usr/bin/apid\t%s\tbuild-env/deb/version.sh\t-\t-\n' "${CRATE_VERSION}"
-    printf 'mica-mqttd\t/usr/bin/mica-mqttd\t%s\tbuild-env/deb/version.sh\t-\t-\n' "${CRATE_VERSION}"
-    printf 'mica-mqtt-broker\t/usr/bin/mica-mqtt-broker\t%s\tbuild-env/deb/version.sh\t-\t-\n' "${CRATE_VERSION}"
+    printf 'micad\t/usr/bin/micad\t%s\tdeps/packages/micad.json\t-\t-\n' "$(pinned_version micad)"
+    printf 'apid\t/usr/bin/apid\t%s\tdeps/packages/mica-apid.json\t-\t-\n' "$(pinned_version mica-apid)"
+    printf 'mica-mqttd\t/usr/bin/mica-mqttd\t%s\tdeps/packages/mica-mqttd.json\t-\t-\n' "$(pinned_version mica-mqttd)"
+    printf 'mica-mqtt-broker\t/usr/bin/mica-mqtt-broker\t%s\tdeps/packages/mica-mqtt-broker.json\t-\t-\n' "$(pinned_version mica-mqtt-broker)"
     # Imported through the lock: the pin's archive version, with the pool's
     # git stamp cut off, is what the binary reports.
-    deploy_version=$(python3 -c 'import json,re,sys; v={t["version"] for t in json.load(open(sys.argv[1]))["targets"].values()}; assert len(v)==1, v; print(re.sub(r"\+git[0-9a-f]{12}(\.dirty)?-\d+$", "", v.pop()))' "${REPO_ROOT}/deps/packages/mica-deploy.json")
-    test -n "$deploy_version"
-    printf 'mica-deploy\t/usr/bin/mica-deploy\t%s\tdeps/packages/mica-deploy.json\t-\t-\n' "$deploy_version"
+    printf 'mica-deploy\t/usr/bin/mica-deploy\t%s\tdeps/packages/mica-deploy.json\t-\t-\n' "$(pinned_version mica-deploy)"
     printf 'podman\t/usr/bin/podman\t%s\tPODMAN_VERSION\t-\t-\n' "$(pin "${PODMAN_VERSIONS}" PODMAN_VERSION)"
     printf 'quadlet\t/usr/libexec/podman/quadlet\t%s\tPODMAN_VERSION\t-\t-\n' "$(pin "${PODMAN_VERSIONS}" PODMAN_VERSION)"
     # crun 1.29.1 re-executes libcrun out of a memory file descriptor -- its
