@@ -1,13 +1,13 @@
 {
   "name": "mica-board-virt-arm64",
   "repository": "mica-boards",
-  "commit": "0ff6d58798cb36368f6e6be95ff1e0a7c996f51d",
+  "commit": "bc2ea38c59318305c779880d5888b79eeb03a047",
   "targets": {
     "arm64": {
-      "version": "0.1.0+git0ff6d58798cb-1",
+      "version": "0.1.0+gitbc2ea38c5931-1",
       "architecture": "arm64",
-      "sha256": "d333ec141db695a0fc7c48ef4bebe219a515781c1bb501b880245ad0af67a7e0",
-      "asset": "mica-board-virt-arm64_0.1.0.git0ff6d58798cb-1_arm64.deb"
+      "sha256": "2751b3f3a3121187a5b7278cc61045a3a9a0456ef8c605a2c7783af57c1b7eac",
+      "asset": "mica-board-virt-arm64_0.1.0.gitbc2ea38c5931-1_arm64.deb"
     }
   }
 }
