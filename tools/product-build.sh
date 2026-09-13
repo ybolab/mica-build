@@ -11,7 +11,7 @@
 #   writes  _out/products/<name>/{receipt.txt,lifecycle/,root/,kernel/,firmware/,deployments/,records.json,image/,update.mosupd}
 #
 # THE STEPS, in the order the components depend on one another:
-#   fetch     the board bundle and the pool of the board's architecture
+#   fetch     the product's closure out of the pool of the board's architecture, and the board bundle
 #   compose   the root (rootfs/build.sh, MICA_PRODUCT), into _out/<board>/
 #   root      the signed root component out of that composition
 #   kernel    the signed kernel/support component out of the bundle and the pinned lifecycle binaries
@@ -86,8 +86,13 @@ if [ -f "${OUT}/receipt.txt" ] && [ "$(cat "${OUT}/receipt.txt")" = "${WANT}" ] 
 fi
 case "${WANT}" in *' dirty'*) echo "note: the tree is dirty; this build is recorded as such and is not a release candidate" ;; esac
 
+# THE CLOSURE, resolved before anything is fetched: the resolver reads the
+# pins and the bundle's manifests, not the pool, so the pool can be fetched
+# for exactly what this product installs, plus the two archives the
+# components read -- the board bundle and the lifecycle binaries.
 echo "=== product ${NAME}: fetch (board ${BOARD}, ${MICA_ARCH}) ==="
-bash build-env/deb/fetch.sh --arch "${MICA_ARCH}"
+CLOSURE="$(bash rootfs/packages/resolve.sh --board "${BOARD}" --board-dir "${BOARD_DIR}/manifests" --profile "${PROFILE}" --features "${FEATURES}" --components "${COMPONENTS}" | tr '\n' ' ')"
+bash build-env/deb/fetch.sh --arch "${MICA_ARCH}" --packages "${CLOSURE} mica-kernel-${BOARD} mica-lifecycle"
 bash build-env/deb/repo.sh --arch "${MICA_ARCH}"
 bash tools/board-pool.sh --fetch "${BOARD}"
 

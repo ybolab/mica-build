@@ -301,6 +301,82 @@ jobs:
           echo "truth is the running device is" >&2
           echo "unchecked on this runner and is checked by a booted run or not at all." >&2
 
+  # ONE JOB PER PRODUCT. The products are discovered from products/, and a
+  # push selects the products its diff touches: a product's own directory or
+  # its board's pins select that product; anything the engine reads (the
+  # Makefile, build/, verify/, rootfs/, tools/, the other pins and the source
+  # pins) selects every product. Each job fetches its board's bundle and the
+  # pool of that architecture, composes the product's root and executes the
+  # smoke over it -- the composition is the proof that the recipe resolves,
+  # installs, packs and runs. Signing and image assembly need the signing
+  # workspace and privileged docker; they stay in privileged.yml.
+  products-changed:
+    runs-on: ubuntu-latest
+    outputs:
+      products: ${{ steps.select.outputs.products }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Which products this push touches
+        id: select
+        run: |
+          set -euo pipefail
+          base="${{ github.event.before }}"
+          if [ "${{ github.event_name }}" = pull_request ]; then base="origin/${{ github.base_ref }}"; git fetch -q origin "${{ github.base_ref }}"; fi
+          if [ -z "$base" ] || ! git cat-file -e "$base" 2>/dev/null; then changed="."; else changed="$(git diff --name-only "$base" HEAD)"; fi
+          all=0
+          selected=""
+          for p in $(ls products | grep -v README); do
+            board="$(sed -n 's/^BOARD=//p' "products/$p/product.env" | tr -d '"')"
+            if printf '%s\n' "$changed" | grep -qE "^(products/$p/|deps/packages/mica-(kernel|board)-$board\.json)"; then selected="$selected $p"; fi
+          done
+          if printf '%s\n' "$changed" | grep -qvE '^(products/|deps/packages/mica-(kernel|board)-[a-z0-9-]+\.json$|docs/|[^/]+\.md$)'; then all=1; fi
+          [ "$all" = 0 ] || selected="$(ls products | grep -v README | tr '\n' ' ')"
+          list="$(printf '%s\n' $selected | sort -u | grep . | jq -R . | jq -sc .)"
+          echo "products=$list" >> "$GITHUB_OUTPUT"
+          echo "selected: $list (every product: $all)"
+  products:
+    needs: products-changed
+    if: ${{ needs.products-changed.outputs.products != '[]' }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        product: ${{ fromJSON(needs.products-changed.outputs.products) }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fetch the source dependencies at their pins
+        run: make deps
+        env:
+          GH_TOKEN: ${{ secrets.MICA_DEPS_TOKEN }}
+      - name: Install suite dependencies
+        run: |
+          set -euo pipefail
+          SUDO=""
+          [ "$(id -u)" -eq 0 ] || SUDO="sudo"
+          $SUDO apt-get update
+          $SUDO apt-get install -y --no-install-recommends bash make ca-certificates git python3 jq
+      - name: Emulation for the arm64 products
+        uses: docker/setup-qemu-action@v3
+      - name: The board bundle and the pool of its architecture
+        run: |
+          set -euo pipefail
+          board="$(sed -n 's/^BOARD=//p' "products/${{ matrix.product }}/product.env" | tr -d '"')"
+          arch="$(python3 -c 'import json,sys; print(list(json.load(open(sys.argv[1]))["targets"])[0])' "deps/packages/mica-kernel-$board.json")"
+          bash build-env/deb/fetch.sh --arch "$arch"
+          bash build-env/deb/repo.sh --arch "$arch"
+          bash tools/board-pool.sh --fetch "$board"
+        env:
+          GH_TOKEN: ${{ secrets.MICA_DEPS_TOKEN }}
+      - name: The product validates against its board
+        run: bash tools/product.sh "${{ matrix.product }}"
+      - name: Compose the product's root and execute its smoke
+        run: make os-rootfs PRODUCT="${{ matrix.product }}"
+        env:
+          MICA_BUILD_CONTAINER: "1"
+          MICA_VERIFY_CONTAINER: "1"
+
   update-server:
     runs-on: ubuntu-latest
     steps:

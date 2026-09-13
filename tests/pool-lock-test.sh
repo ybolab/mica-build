@@ -211,6 +211,18 @@ else fail "F2 fetch: $(cat "${OUT}")"; fi
 if ${FETCH} --arch amd64 >"${OUT}" 2>&1 && says "${OUT}" "0 archive(s) fetched, 2 already present"; then
     pass "F3 a second fetch downloads nothing"
 else fail "F3 refetch: $(cat "${OUT}")"; fi
+# --packages: a product's closure, and nothing beside it.
+rm -f "${POOL}/amd64/pool/mos-fixture_${V1}_amd64.deb" "${POOL}/amd64/pool/mos-data_${V1}_all.deb"
+if ${FETCH} --arch amd64 --packages "mos-fixture" >"${OUT}" 2>&1 && [ -f "${POOL}/amd64/pool/mos-fixture_${V1}_amd64.deb" ] && [ ! -f "${POOL}/amd64/pool/mos-data_${V1}_all.deb" ]; then
+    pass "F3a --packages fetches the named row and not the other"
+else fail "F3a packages: $(cat "${OUT}")"; fi
+if ! ${FETCH} --arch amd64 --packages "mos-fixture mos-nosuch" >"${OUT}" 2>&1 && says "${OUT}" "names 'mos-nosuch', which" && says "${OUT}" "does not pin for amd64"; then
+    pass "F3b --packages naming a package the lock does not pin is refused by name"
+else fail "F3b unknown package: $(cat "${OUT}")"; fi
+if ! ${FETCH} --arch amd64 --packages "" >"${OUT}" 2>&1 && says "${OUT}" "names nothing"; then
+    pass "F3c --packages with nothing named is refused rather than fetching everything"
+else fail "F3c empty packages: $(cat "${OUT}")"; fi
+${FETCH} --arch amd64 >/dev/null 2>&1
 if ! MICA_POOL_TEST_TOKEN= ${FETCH} --arch arm64 >"${OUT}" 2>&1 && says "${OUT}" "MICA_POOL_TEST_TOKEN is unset"; then
     pass "F4 a missing token is refused by the variable's name (the lock has an all row for arm64)"
 else fail "F4 token: $(cat "${OUT}")"; fi
