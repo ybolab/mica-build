@@ -63,6 +63,13 @@ export interface Artifact {
   /** Its installed path INSIDE the factory root. Not a host path. */
   readonly path: string
   /**
+   * The package that ships it, as the composition record names it. A product
+   * that does not select the package does not carry the binary, and the
+   * runner executes what the root carries (artifactsForPackages); absent,
+   * the artifact is executed in every root.
+   */
+  readonly package?: string
+  /**
    * The recorded version, read from its own file when the runner asks.
    *
    * A function and not a value: a `Pin` computed at module load would be read
@@ -119,7 +126,7 @@ export const ARTIFACTS: readonly Artifact[] = [
     // settings.toml) and still exits 1 on the absent system bus, and
     // `/usr/bin/micad -v` -- NOT this flag -- falls through into that daemon and
     // prints no version at all.
-    name: 'micad',
+    name: 'micad', package: 'micad',
     path: '/usr/bin/micad',
     pin: pinned('micad'),
     contract: { kind: 'version', argv: ['--version'] },
@@ -128,14 +135,14 @@ export const ARTIFACTS: readonly Artifact[] = [
   {
     // The same, and for the same reason: without the early handler this binary
     // binds 0.0.0.0:443 and never returns.
-    name: 'apid',
+    name: 'apid', package: 'mica-apid',
     path: '/usr/bin/apid',
     pin: pinned('mica-apid'),
     contract: { kind: 'version', argv: ['--version'] },
     embedsBuildCommit: true,
   },
   {
-    name: 'mica-mqttd',
+    name: 'mica-mqttd', package: 'mica-mqttd',
     path: '/usr/bin/mica-mqttd',
     pin: pinned('mica-mqttd'),
     // The two crates that CAN answer are the two that declare clap and carry
@@ -144,7 +151,7 @@ export const ARTIFACTS: readonly Artifact[] = [
     contract: { kind: 'version', argv: ['--version'] },
   },
   {
-    name: 'mica-mqtt-broker',
+    name: 'mica-mqtt-broker', package: 'mica-mqtt-broker',
     path: '/usr/bin/mica-mqtt-broker',
     pin: pinned('mica-mqtt-broker'),
     contract: { kind: 'version', argv: ['--version'] },
@@ -152,7 +159,7 @@ export const ARTIFACTS: readonly Artifact[] = [
 
   // The authenticated file-deployment client.
   {
-    name: 'mica-deploy',
+    name: 'mica-deploy', package: 'mica-deploy',
     path: '/usr/bin/mica-deploy',
     pin: () => readPinnedPackageVersion('mica-deploy'),
     contract: { kind: 'version', argv: ['--version'] },
@@ -160,7 +167,7 @@ export const ARTIFACTS: readonly Artifact[] = [
 
   // The container engine, built from source by mica-podman:.
   {
-    name: 'podman',
+    name: 'podman', package: 'mica-podman',
     path: '/usr/bin/podman',
     pin: podman('PODMAN_VERSION'),
     contract: { kind: 'version', argv: ['--version'] },
@@ -173,13 +180,13 @@ export const ARTIFACTS: readonly Artifact[] = [
     // only artifact whose --version output is the bare number `5.8.6`, with no
     // program name in front of it. Nothing here depends on that shape --
     // `versionTokens` reads the numbers out of whatever is printed.
-    name: 'quadlet',
+    name: 'quadlet', package: 'mica-podman',
     path: '/usr/libexec/podman/quadlet',
     pin: podman('PODMAN_VERSION'),
     contract: { kind: 'version', argv: ['--version'] },
   },
   {
-    name: 'crun',
+    name: 'crun', package: 'mica-podman',
     path: '/usr/bin/crun',
     pin: podman('CRUN_VERSION'),
     contract: { kind: 'version', argv: ['--version'] },
@@ -206,19 +213,19 @@ export const ARTIFACTS: readonly Artifact[] = [
     },
   },
   {
-    name: 'conmon',
+    name: 'conmon', package: 'mica-podman',
     path: '/usr/libexec/podman/conmon',
     pin: podman('CONMON_VERSION'),
     contract: { kind: 'version', argv: ['--version'] },
   },
   {
-    name: 'netavark',
+    name: 'netavark', package: 'mica-podman',
     path: '/usr/libexec/podman/netavark',
     pin: podman('NETAVARK_VERSION'),
     contract: { kind: 'version', argv: ['--version'] },
   },
   {
-    name: 'aardvark-dns',
+    name: 'aardvark-dns', package: 'mica-podman',
     path: '/usr/libexec/podman/aardvark-dns',
     pin: podman('AARDVARK_VERSION'),
     contract: { kind: 'version', argv: ['--version'] },
@@ -236,7 +243,7 @@ export const ARTIFACTS: readonly Artifact[] = [
     // exec-only conjunct is discharged rather than dropped, because a `version`
     // contract asserts exit 0 exactly as an `exec` one does and asserts the
     // output on top.
-    name: 'catatonit',
+    name: 'catatonit', package: 'mica-podman',
     path: '/usr/libexec/podman/catatonit',
     // The normalisation, stated, because this is where it could go soft. The pin
     // is `CATATONIT_VERSION=v0.2.1` and the binary says
@@ -260,9 +267,14 @@ export const ARTIFACTS: readonly Artifact[] = [
   },
 ]
 
-/** Optional binaries follow the composition record, including independent radio declines. */
+/**
+ * The artifacts a root carries, by the packages its composition record names:
+ * every entry whose owning package is installed, plus the optional binaries a
+ * product may add. Coverage is judged over the whole register (every pin has
+ * an artifact); execution over this subset (every artifact that is there).
+ */
 export function artifactsForPackages(packages: ReadonlySet<string>): readonly Artifact[] {
-  const result = [...ARTIFACTS]
+  const result = ARTIFACTS.filter(a => a.package === undefined || packages.has(a.package))
   if (packages.has('mica-mqtt-reference')) result.push({
     name: 'mica-mqtt-reference', path: '/usr/bin/mica-mqtt-reference',
     pin: pinned('mica-mqtt-reference'), contract: { kind: 'version', argv: ['--version'] },

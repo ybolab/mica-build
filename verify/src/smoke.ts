@@ -1422,6 +1422,12 @@ export async function smokeRun(opts: SmokeRunOptions): Promise<{ results: SmokeR
   const packageRecord = join(outDir(opts.board), 'rootfs-packages.txt')
   const packages = opts.exec === undefined
     ? parsePackageInventory(readFileSync(packageRecord, 'utf8'), 7) : undefined
+  // Two lists: the REGISTER, judged for coverage against the pins (every
+  // pinned version has an artifact that reads it), and the artifacts this
+  // root CARRIES, which are what is executed -- a product that selected no
+  // container engine ships no podman, and a run that demanded it would refuse
+  // every minimal image.
+  const register = opts.artifacts ?? ARTIFACTS
   const artifacts = opts.artifacts ?? (packages === undefined ? ARTIFACTS : artifactsForPackages(packages))
 
   // Who may go unasked, before what may go unexecuted. Both are questions about
@@ -1429,7 +1435,7 @@ export async function smokeRun(opts: SmokeRunOptions): Promise<{ results: SmokeR
   // container starts -- a run that executed eleven things and then discovered
   // its twelfth was silently excused has already produced the output somebody
   // would quote.
-  const unclaimed = unclaimedFaults(artifacts, opts.allowUnclaimed)
+  const unclaimed = unclaimedFaults(register, opts.allowUnclaimed)
   if (unclaimed.length > 0) {
     throw new Error(
       `the smoke register marks artifacts unclaimed that nothing authorised, so nothing was executed:\n`
@@ -1438,8 +1444,8 @@ export async function smokeRun(opts: SmokeRunOptions): Promise<{ results: SmokeR
   }
 
   const faults = opts.files === undefined
-    ? pinCoverageFaults(artifacts)
-    : pinCoverageFaults(artifacts, opts.files)
+    ? pinCoverageFaults(register)
+    : pinCoverageFaults(register, opts.files)
   if (faults.length > 0) {
     const lines = faults.map(f => `         ${f.file}: ${f.message}`).join('\n')
     throw new Error(
@@ -1453,10 +1459,16 @@ export async function smokeRun(opts: SmokeRunOptions): Promise<{ results: SmokeR
     const record = readFactoryRoot(opts.board)
     log(`verify smoke: ${opts.board} ${record.ref} (${record.platform}, ${record.bytes} bytes, sha256 ${record.sha256})`)
 
-    // A full shared smoke register requires each owning feature package.
-    const required = ['micad', 'mica-mqttd', 'mica-mqtt-broker', 'mica-deploy', 'mica-podman']
-    const missing = required.filter(p => !packages?.has(p))
-    if (missing.length > 0) throw new Error(`smoke requires the full feature package set; absent from ${packageRecord}: ${missing.join(', ')}`)
+    // The register is scoped to the packages the product installed
+    // (artifactsForPackages): a minimal product carries the floor and its
+    // board package and nothing selectable, so what is executed is what it
+    // ships. What is excused is said, by package, rather than left to be
+    // inferred from a shorter list; an empty register is refused, because a
+    // run that executed nothing is the green nobody would read.
+    const owners = ['micad', 'mica-mqttd', 'mica-mqtt-broker', 'mica-deploy', 'mica-podman']
+    const absent = owners.filter(p => !packages?.has(p))
+    if (absent.length > 0) log(`verify smoke: ${packageRecord} carries no ${absent.join(', ')}; their artifacts are not in this root and are not executed`)
+    if (artifacts.length === 0) throw new Error(`smoke has nothing to execute: no artifact of the register is owned by a package in ${packageRecord}`)
 
     // The build fact, read and printed whether or not it is there. A run that
     // asserted nothing about the commit must say so on its own first lines
