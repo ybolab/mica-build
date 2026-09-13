@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync, cpSync } from 'node:fs'
 import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
@@ -11,13 +11,19 @@ for (const board of ['x64', 'virt-arm64']) {
       const work = mkdtempSync(join(tmpdir(), 'mos-api-launcher-'))
       const socket = createServer()
       try {
-        for (const path of ['tests/apid-api/run.sh', 'tests/apid-api/src/qemu.ts',
-          'tests/apid-api/src/main.ts', `_out/boards/${board}/board.env`, 'build-env/from.sh', 'build-env/images.env']) {
+        // The harness is keyed by product: the recipe, the reader and the
+        // board's pin travel with the fixture, the way the checkout has them.
+        const product = `${board}-dev`
+        for (const path of ['tests/apid-api/run.sh', 'tests/apid-api/src/qemu.ts', 'tools/product.sh',
+          'tests/apid-api/src/main.ts', `_out/boards/${board}/board.env`, `deps/packages/mica-kernel-${board}.json`,
+          `products/${product}/product.env`, `products/${product}/meta/updates/manifest.json`, 'build-env/from.sh', 'build-env/images.env']) {
           mkdirSync(dirname(join(work, path)), { recursive: true })
           copyFileSync(join(repo, path), join(work, path))
           expect(readFileSync(join(work, path))).toEqual(readFileSync(join(repo, path)))
         }
         symlinkSync(join(repo, 'build'), join(work, 'build'))
+        // tools/product.sh validates the recipe's features against the engine's manifests.
+        cpSync(join(repo, 'rootfs/packages'), join(work, 'rootfs/packages'), { recursive: true })
         mkdirSync(join(work, 'bin'))
         copyFileSync(join(import.meta.dir, 'api-launcher-docker.ts'), join(work, 'bin/docker'))
         chmodSync(join(work, 'bin/docker'), 0o755)
@@ -25,7 +31,7 @@ for (const board of ['x64', 'virt-arm64']) {
         mkdirSync(join(work, 'tests/signed-boot-lab'), { recursive: true })
         writeFileSync(join(work, 'tests/signed-boot-lab/images.sh'), '#!/bin/bash\nexit 0 # Isolated expensive image boundary\n')
         writeFileSync(join(work, 'Makefile'), '# Isolated launcher fixture\n')
-        const diskDir = join(work, '_out', board, '.qemu')
+        const diskDir = join(work, '_out', 'products', product, 'qemu')
         mkdirSync(diskDir, { recursive: true })
         writeFileSync(join(diskDir, 'disk.img'), 'existing isolated fixture disk')
         const image = join(work, 'factory.img'), cert = join(work, 'boot.cert.pem')
@@ -33,7 +39,7 @@ for (const board of ['x64', 'virt-arm64']) {
         await new Promise<void>(resolve => socket.listen(join(work, 'daemon.sock'), resolve))
         const env: NodeJS.ProcessEnv = { ...process.env, PATH: `${join(work, 'bin')}:${dirname(process.execPath)}:${process.env.PATH}`,
           DOCKER_HOST: `unix://${join(work, 'daemon.sock')}`, MICA_API_LAUNCHER_FIXTURE: work,
-          MICA_BOARD: board, MICA_QEMU_IMAGE: image, MICA_QEMU_BOOT_CERT: cert, MICA_APID_KEEP_DISK: '1' }
+          MICA_PRODUCT: product, MICA_QEMU_IMAGE: image, MICA_QEMU_BOOT_CERT: cert, MICA_APID_KEEP_DISK: '1' }
         for (const key of Object.keys(env)) if (key.startsWith('MICA_QEMU_') && !['MICA_QEMU_IMAGE', 'MICA_QEMU_BOOT_CERT'].includes(key)) delete env[key]
         if (port !== undefined) Object.assign(env, { MICA_QEMU_SSH_PORT: port })
         const child = Bun.spawnSync(['bash', join(work, 'tests/apid-api/run.sh')], { env, timeout: 20000 })
@@ -41,7 +47,7 @@ for (const board of ['x64', 'virt-arm64']) {
         const outer = JSON.parse(readFileSync(join(work, 'outer.json'), 'utf8'))
         expect(outer.args.slice(-4)).toEqual(['bun', 'run', 'src/qemu.ts', '--prepare-only'])
         expect(outer.env.MICA_QEMU_SSH_PORT).toBe(port)
-        expect(outer.env).toMatchObject({ MICA_BOARD: board, MICA_QEMU_IMAGE: image, MICA_QEMU_BOOT_CERT: cert,
+        expect(outer.env).toMatchObject({ MICA_BOARD: board, MICA_PRODUCT: product, MICA_QEMU_IMAGE: image, MICA_QEMU_BOOT_CERT: cert,
           MICA_QEMU_FORWARD: '1', MICA_QEMU_NETWORK: 'acceptance-fixture', MICA_QEMU_HTTPS_PORT: '18443', MICA_QEMU_HTTP_PORT: '18080' })
         const engine = JSON.parse(readFileSync(join(work, 'engine.json'), 'utf8'))
         expect(engine.exitCode).toBe(1)

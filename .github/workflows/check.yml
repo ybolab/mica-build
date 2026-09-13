@@ -265,6 +265,10 @@ jobs:
         run: make os-layout-lint
       - name: Every product validates against its board; the product contract's refusals fire
         run: make os-product-test
+      - name: The pool and source scripts, and the board fetch, against a registry container
+        run: |
+          make os-pool-lock-test
+          make os-board-artifact-test
 
       # The apid API suite's build-time half. HERE and not in offline-suites,
       # for that job's own stated reason: it needs docker. There is no bun on
@@ -286,7 +290,7 @@ jobs:
           echo "This job runs bun ONLY as the digest pinned in build-env/images.env." >&2
           echo "The UI source is read-only and every generated file stays below _out/." >&2
           echo >&2
-          echo "It also does not run make os-verify-cx3576. That" >&2
+          echo "It also does not run the FIT board product verify. That" >&2
           echo "target needs a BUILT IMAGE and docker, and a bun on the host --" >&2
           echo "run.sh refuses --verify on the container route, because the verifier" >&2
           echo "drives docker itself and the pinned bun image has no docker client." >&2
@@ -294,7 +298,7 @@ jobs:
           echo "their cases) DOES run above; what is untested on this runner is the" >&2
           echo "register against a real image." >&2
           echo >&2
-          echo "It does not run make os-apid-api-test either: that suite BOOTS the x64" >&2
+          echo "It does not run make os-apid-api-test either: that suite BOOTS a UEFI" >&2
           echo "image in QEMU and drives apid over a real socket, and there is no image" >&2
           echo "here. What ran above is its build-time half only -- the phase literals" >&2
           echo "openapi.json also states. Every phase assertion whose only source of" >&2
@@ -329,9 +333,9 @@ jobs:
           selected=""
           for p in $(ls products | grep -v README); do
             board="$(sed -n 's/^BOARD=//p' "products/$p/product.env" | tr -d '"')"
-            if printf '%s\n' "$changed" | grep -qE "^(products/$p/|deps/packages/mica-(kernel|board)-$board\.json)"; then selected="$selected $p"; fi
+            if printf '%s\n' "$changed" | grep -qE "^(products/$p/|deps/boards/$board\.json|deps/packages/mica-(kernel|board)-$board\.json)"; then selected="$selected $p"; fi
           done
-          if printf '%s\n' "$changed" | grep -qvE '^(products/|deps/packages/mica-(kernel|board)-[a-z0-9-]+\.json$|docs/|[^/]+\.md$)'; then all=1; fi
+          if printf '%s\n' "$changed" | grep -qvE '^(products/|deps/boards/[a-z0-9-]+\.json$|deps/packages/mica-(kernel|board)-[a-z0-9-]+\.json$|docs/|[^/]+\.md$)'; then all=1; fi
           [ "$all" = 0 ] || selected="$(ls products | grep -v README | tr '\n' ' ')"
           list="$(printf '%s\n' $selected | sort -u | grep . | jq -R . | jq -sc .)"
           echo "products=$list" >> "$GITHUB_OUTPUT"

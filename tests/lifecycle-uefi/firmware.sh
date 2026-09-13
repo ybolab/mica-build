@@ -3,6 +3,12 @@
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/../.."
 evidence=${1:?completed trust-rotation evidence required}
+board=${2:?board required}
+# The board's facts, out of its fetched bundle: the suite boots UEFI boards
+# of either architecture and dispatches on nothing else.
+[ -f "_out/boards/$board/board.env" ] || { echo "error: $board is not a fetched board (make board-fetch BOARD=$board)" >&2; exit 1; }
+[ "$(sed -n 's/^BOOT_BACKEND=//p' "_out/boards/$board/board.env")" = systemd-boot ] || { echo "error: $board boots a FIT; this suite boots UEFI boards" >&2; exit 1; }
+arch="$(sed -n 's/^MICA_ARCH=//p' "_out/boards/$board/board.env")"
 test -f "$evidence/updates/6/fallback.log"
 test ! -d "$evidence/loader-replacement"
 bun_image=$(bash build-env/from.sh --ref IMAGE_BUN_1)
@@ -12,12 +18,12 @@ docker build --label ai-agent=true -t ai-agent/mos-firmware-lab \
 maintain() {
     timeout -k 10 300 docker run --rm --privileged --label ai-agent=true --network traefik \
         -v "$PWD:/src:ro" -v "$evidence:/w" ai-agent/mos-firmware-lab \
-        bash /src/tests/lifecycle-uefi/firmware-mounted.sh "$@"
+        bash /src/tests/lifecycle-uefi/firmware-mounted.sh "$@" "$board"
 }
 boot() {
     timeout -k 10 350 docker run --rm --label ai-agent=true --network traefik \
         -v "$evidence:/w" -v "$PWD/tests/lifecycle-uefi:/harness:ro" ai-agent/mos-p2-lab \
-        bash /harness/boot.sh "$1" writable "${3:-300}" x64 > "$2" 2>&1
+        bash /harness/boot.sh "$1" writable "${3:-300}" "$arch" > "$2" 2>&1
 }
 maintain /w/image/disk.img /w/firmware-next /w/firmware/firmware.json /w/loader-replacement
 boot image/disk.img "$evidence/loader-replaced.log"

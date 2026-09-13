@@ -1,4 +1,4 @@
-.PHONY: build-env help os-apid-api-spec-pins os-apid-api-test os-bare-host-gate os-boot-tools os-build-test os-components os-deb-package-gate os-deb-preflight os-deb-preflight-test os-debian-cache os-debian-install os-debian-test os-debian-verify os-debs os-devkeys os-lock-bump os-pool os-pool-lock-test os-factory-root-gate os-fit-records-test os-host-toolchain-lint os-host-toolchain-lint-test os-image os-install-closure-gate os-layout-lint os-netavark-kernel-test os-quadlet-doc-test os-repart-test os-rootfs os-rootfs-manifest-test os-product-test os-board-name-lint os-board-name-lint-test product product-verify products board-add lifecycle-uefi os-shell-pipefail-lint os-smoke-negative-test os-smoke-test os-verify os-verify-test board-fetch board-fetch-all
+.PHONY: product-repart-test product-release os-board-artifact-test build-env help os-apid-api-spec-pins os-apid-api-test os-bare-host-gate os-boot-tools os-build-test os-components os-deb-package-gate os-deb-preflight os-deb-preflight-test os-debian-cache os-debian-install os-debian-test os-debian-verify os-debs os-devkeys os-lock-bump os-pool os-pool-lock-test os-factory-root-gate os-fit-records-test os-host-toolchain-lint os-host-toolchain-lint-test os-image os-install-closure-gate os-layout-lint os-netavark-kernel-test os-quadlet-doc-test os-repart-test os-rootfs os-rootfs-manifest-test os-product-test os-board-name-lint os-board-name-lint-test product product-verify products board-add lifecycle-uefi os-shell-pipefail-lint os-smoke-negative-test os-smoke-test os-verify os-verify-test board-fetch board-fetch-all
 
 # THE SOURCE DEPENDENCIES, before anything else: build-env/ (mica-build-env)
 # is the substrate every target reaches through, rootfs/debian/ (mica-debian)
@@ -50,7 +50,9 @@ help:
 	@echo "  product-verify      verify that product's image against the contract"
 	@echo "  lifecycle-uefi      the QEMU lifecycle suite (boot, runtime, updates, faults, reset, shutdown) over a built UEFI product (PRODUCT=<name>)"
 	@echo "  products            product, for every product whose board is a release target"
-	@echo "  board-add           pin a new board's bundle and packages from the latest mica-boards release and write products/<board>-minimal (BOARD=<board>)"
+	@echo "  board-add           pin a new board's bundle artifact (deps/boards) and its packages from the newest mica-boards artifacts, write products/<board>-minimal (BOARD=<board> [BOARD_TAG=build-<commit12>])"
+	@echo "  os-board-artifact-test  tools/board-pool.sh --pin/--fetch against a local registry container: every refusal by name"
+	@echo "  product-release     push a built product's composed root as ghcr.io/ybolab/mica-root/<name>:build-<commit12> (PRODUCT=<name>)"
 	@echo "  os-rootfs           compose a product's root (PRODUCT=<name>; products/*/product.env, tools/product.sh --list)"
 	@echo "  os-product-test     every product validates against its board, and each refusal of the product contract fires"
 	@echo "  os-board-name-lint  no board name in the engine: the assembly dispatches on board facts, never on a name (tests/board-name-lint.sh)"
@@ -67,7 +69,7 @@ help:
 	@echo "image (signed component files on SYSTEM with unified DATA):"
 	@echo "  os-boot-tools       build the pinned signed UKI/systemd-boot packager (boot/, the mica-boot pin)"
 	@echo "  board-fetch         read a board's bundle -- board.env, manifests, kernel, firmware, U-Boot -- out of its pinned mica-kernel-<board> archive into _out/boards/<board> (BOARD=<board>)"
-	@echo "  board-fetch-all     the same for every pinned board (deps/packages/mica-kernel-*.json); os-pool runs it"
+	@echo "  board-fetch-all     the same for every pinned board (deps/boards/*.json); os-pool runs it"
 	@echo "  os-components      build independent components (MICA_COMPONENT_ARGS='root|kernel|firmware|deployment|image|archive ...')"
 	@echo "  os-verify verify the assembled mos image against the mos image contract (docker)"
 	@echo "  os-smoke-test       execute every self-built binary inside the factory root, assert its pin (docker)"
@@ -90,7 +92,7 @@ help:
 	@echo "  deps-bump           rewrite the pin of DEP=<repository> from its newest build-* release (or DEP_TAG=build-<commit12>)"
 	@echo "  os-pool             the whole pool: fetch what deps/packages/ pins from the source repositories' releases, build the rest, index both pools (docker, network)"
 	@echo "  os-lock-bump        rewrite the package pins of COMPONENT=<repository> from its newest build-* release (or LOCK_TAG=build-<commit12>) and print the diff (network)"
-	@echo "  os-pool-lock-test   drive fetch.sh and lock.sh against a stub of the release API: every refusal by name (no docker, no network)"
+	@echo "  os-pool-lock-test   drive fetch.sh, lock.sh, publish.sh and deps.sh against a local registry container: every refusal by name"
 	@echo "  os-deb-package-gate check the built pools: ownership, fields, reproducibility, enablement (docker)"
 	@echo "  os-install-closure-gate  apt-install both pools into clean roots: closure, ldd, accounts, versions (docker)"
 	@echo "  os-rootfs-manifest-test  resolve every product and every legal feature set of every board; prove each refusal and that no package is unreachable"
@@ -112,7 +114,10 @@ product:
 # derives the suite's inputs from _out/products/<name>.
 lifecycle-uefi:
 	@test -n "$(PRODUCT)" || { echo "error: PRODUCT=<name> is required" >&2; exit 1; }
-	bash -c 'eval "$$(bash tests/lifecycle-uefi/product-inputs.sh "$(PRODUCT)")" && bash tests/lifecycle-uefi/runtime-build.sh "$$ROOT_IMAGE" "$$KERNEL_DIR" "$$CERT" "$$KEY" "$$INIT" "$$BOARD" "$$SHUTDOWN"'
+	bash tests/lifecycle-uefi/run.sh "$(PRODUCT)"
+product-release:
+	@test -n "$(PRODUCT)" || { echo "error: PRODUCT=<name> is required" >&2; exit 1; }
+	bash tools/product-release.sh "$(PRODUCT)"
 product-verify:
 	@test -n "$(PRODUCT)" || { echo "error: PRODUCT=<name> is required" >&2; exit 1; }
 	bash tools/product-build.sh "$(PRODUCT)" --verify
@@ -125,8 +130,8 @@ products:
 	done
 board-add:
 	@test -n "$(BOARD)" || { echo "error: BOARD=<board> is required" >&2; exit 1; }
-	bash build-env/deb/lock.sh --bump mica-boards --package "mica-kernel-$(BOARD)" --package "mica-board-$(BOARD)"
-	bash build-env/deb/fetch.sh --arch "$$(python3 -c 'import json,sys; print(list(json.load(open(sys.argv[1]))["targets"])[0])' "deps/packages/mica-kernel-$(BOARD).json")"
+	@set -e; tag="$$(bash tools/board-pool.sh --pin "$(BOARD)" $(if $(BOARD_TAG),--tag $(BOARD_TAG)))"; \
+	    bash build-env/deb/lock.sh --bump mica-boards --tag "$$tag" --package "mica-board-$(BOARD)"
 	bash tools/board-pool.sh --fetch "$(BOARD)"
 	@test -d "products/$(BOARD)-minimal" || { mkdir -p "products/$(BOARD)-minimal/meta/updates"; cp meta.example/updates/manifest.json "products/$(BOARD)-minimal/meta/updates/manifest.json"; \
 	    printf '# The $(BOARD) minimal image: the floor and the board package, nothing selectable.\nPRODUCT=$(BOARD)-minimal\nBOARD=$(BOARD)\nPROFILE=dev\nFEATURES=""\nCOMPONENTS=""\nIMAGE_KINDS="disk"\n' > "products/$(BOARD)-minimal/product.env"; \
@@ -207,6 +212,10 @@ os-factory-root-gate:
 # os-verify; it fails loudly when it cannot run rather than skipping.
 os-repart-test:
 	bash tests/repart-loader-test.sh "$(MICA_BOARD)" "$(MICA_VERIFY_IMAGE)" "$(MICA_VERIFY_ROOT_IMAGE)"
+# The same over a built product: its board, its image and its root component.
+product-repart-test:
+	@test -n "$(PRODUCT)" || { echo "error: PRODUCT=<name> is required" >&2; exit 1; }
+	bash -c 'eval "$$(bash tools/product.sh "$(PRODUCT)")" && bash tests/repart-loader-test.sh "$$BOARD" "_out/products/$(PRODUCT)/image/$$(awk "NR == 1 { print \$$2 }" _out/products/$(PRODUCT)/image/SHA256SUMS)" "_out/products/$(PRODUCT)/root/rootfs.img"'
 # The cx3576 flash read-back, driven against a stub rkdeveloptool: the argv the
 # BSP's flash targets build, the sector arithmetic they derive from
 # boards/cx3576/board.env, and the failure this suite exists for -- a write that
@@ -365,7 +374,9 @@ os-pool: os-deb-preflight
 # commit, a duplicate row, a missing or wrong token, each red by name; the
 # bump's diff and its no-op.
 os-pool-lock-test:
-	bash tests/pool-lock-test.sh
+	bash build-env/tests/oci-test.sh
+os-board-artifact-test:
+	bash tests/board-artifact-test.sh
 
 # The pins' only writer. Reads a release of COMPONENT (a package repository's
 # name) -- LOCK_TAG=build-<commit12>, else its newest build-* release --

@@ -3,6 +3,7 @@ import { createPrivateKey, generateKeyPairSync } from 'node:crypto'
 import { cpSync, copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { COMPONENT_TOOLS, describeRoot, packComponent } from '../../build/src/component-build.ts'
+import { loadBoardFacts } from '../../build/src/board-facts.ts'
 import { canonicalJson, componentId, parseDeployment } from '../../build/src/components.ts'
 import { packKernel } from '../../build/src/kernel-package.ts'
 import { parseFileLayout } from '../../build/src/file-layout.ts'
@@ -26,7 +27,7 @@ let kernelDirectory = resolve(kernelDirArg)
 let rootfs = JSON.parse(readFileSync(join(rootDirectory, 'rootfs.json'), 'utf8'))
 let kernel = JSON.parse(readFileSync(join(kernelDirectory, 'kernel.json'), 'utf8'))
 const board = kernel.board
-if (board !== 'x64' && board !== 'virt-arm64') throw new Error('Unsupported acceptance board')
+if (loadBoardFacts(board).backend !== 'systemd-boot') throw new Error(`${board} boots a FIT; this suite boots UEFI boards`)
 const arch = kernel.arch
 const bsp = resolve(`_out/boards/${board}/kernel`)
 const tb = await Toolbox.open(COMPONENT_TOOLS, { mounts: [evidence, resolve(join(evidence, '../tree')), bsp] })

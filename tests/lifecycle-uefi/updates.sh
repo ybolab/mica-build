@@ -6,15 +6,20 @@ evidence=${1:?full runtime evidence directory required}
 certificate=${2:?public content certificate required}
 key=${3:?external content key required}
 init=${4:?compiled mica-init required}
-board=${5:?x64 or virt-arm64 required}
+board=${5:?board required}
 shutdown=${6:?compiled mica-shutdown required}
-case "$board" in x64) firmware=BOOTX64.EFI;; virt-arm64) firmware=BOOTAA64.EFI;; *) exit 1;; esac
+# The board's facts, out of its fetched bundle: the suite boots UEFI boards
+# of either architecture and dispatches on nothing else.
+[ -f "_out/boards/$board/board.env" ] || { echo "error: $board is not a fetched board (make board-fetch BOARD=$board)" >&2; exit 1; }
+[ "$(sed -n 's/^BOOT_BACKEND=//p' "_out/boards/$board/board.env")" = systemd-boot ] || { echo "error: $board boots a FIT; this suite boots UEFI boards" >&2; exit 1; }
+arch="$(sed -n 's/^MICA_ARCH=//p' "_out/boards/$board/board.env")"
+case "$arch" in amd64) firmware=BOOTX64.EFI;; arm64) firmware=BOOTAA64.EFI;; esac
 test -f "$evidence/image/factory-disk.img"
 test ! -e "$evidence/updates"
 boot() {
     docker run --rm --label ai-agent=true --network traefik -v "$evidence:/w" \
         -v "$PWD/tests/lifecycle-uefi:/harness:ro" ai-agent/mos-p2-lab \
-        bash /harness/boot.sh image/disk.img writable 300 "$board" >"$1" 2>&1
+        bash /harness/boot.sh image/disk.img writable 300 "$arch" >"$1" 2>&1
 }
 firmware_digest() {
     docker run --rm --label ai-agent=true --network traefik -v "$evidence:/w:ro" \
@@ -33,7 +38,7 @@ for spec in '3 root' '4 kernel' '5 bad-health' '6 combined'; do
         mv "$evidence/offline" "$output/installed-media"
         timeout 660 docker run --rm --label ai-agent=true --network traefik -v "$evidence:/w" \
             -v "$PWD/tests/lifecycle-uefi:/harness:ro" ai-agent/mos-p2-lab \
-            bash /harness/confirmed-health.sh "$board"
+            bash /harness/confirmed-health.sh "$arch"
         for attempt in 1 2 3; do
             boot "$output/attempt-$attempt.log"
             grep -F 'mica-init: verified deployment' "$output/attempt-$attempt.log"

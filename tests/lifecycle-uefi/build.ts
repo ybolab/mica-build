@@ -8,12 +8,16 @@ import { FILE_IMAGE_TOOLS, assembleFileImage } from '../../build/src/file-image.
 import { parseFileLayout } from '../../build/src/file-layout.ts'
 import { packBootFirmware, packKernel } from '../../build/src/kernel-package.ts'
 import { Toolbox } from '../../build/src/toolbox.ts'
+import { loadBoardFacts } from '../../build/src/board-facts.ts'
 import { Signer } from '../../shared/update-envelope.ts'
 
 const [outputArg, board, kernelArg, certificateArg, keyArg, initArg, rootArg, shutdownArg] = Bun.argv.slice(2)
-if (!outputArg || !kernelArg || !certificateArg || !keyArg || !initArg || !rootArg || !shutdownArg || (board !== 'x64' && board !== 'virt-arm64')) {
-  throw new Error('Usage: build.ts OUTPUT x64|virt-arm64 BSP_KERNEL CERTIFICATE CONTENT_KEY MICA_INIT FULL_ROOT_TREE MICA_SHUTDOWN')
+if (!outputArg || !board || !kernelArg || !certificateArg || !keyArg || !initArg || !rootArg || !shutdownArg) {
+  throw new Error('Usage: build.ts OUTPUT BOARD BSP_KERNEL CERTIFICATE CONTENT_KEY MICA_INIT FULL_ROOT_TREE MICA_SHUTDOWN')
 }
+// A UEFI board of either architecture; the suite dispatches on its facts.
+const facts = loadBoardFacts(board!)
+if (facts.backend !== 'systemd-boot') throw new Error(`${board} boots a FIT; this suite boots UEFI boards`)
 const output = resolve(outputArg)
 mkdirSync(output)
 const signing = { certificate: resolve(certificateArg), key: resolve(keyArg) }
@@ -29,7 +33,7 @@ try {
   const kernel = await packKernel({ board, kernelDirectory: resolve(kernelArg), init: resolve(initArg), shutdown: resolve(shutdownArg), publicKeys: [signer.publicKey],
     systemPartUuid: layout.partitions[1]!.guid, dataPartUuid: layout.partitions[2]!.guid, output: join(output, 'kernel'), contentSigning: signing, bootSigning }, tb)
   const content = await packComponent(resolve(rootArg), join(output, 'root'), 'rootfs', signing, tb)
-  const rootfs = describeRoot(board === 'x64' ? 'amd64' : 'arm64', 'proof', content)
+  const rootfs = describeRoot(facts.arch, 'proof', content)
   writeFileSync(join(output, 'root/rootfs.json'), canonicalJson(rootfs))
   packBootFirmware({ output: join(output, 'firmware'), bootSigning, board, metadataKey: join(output, 'metadata.key.pem'), generation: 1, version: 'proof-1' })
   const records = [1, 2].map(generation => {

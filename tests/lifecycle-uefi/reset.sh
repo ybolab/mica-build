@@ -9,7 +9,12 @@ key=$(realpath "${4:?content key required}")
 init=$(realpath "${5:?production init required}")
 board=${6:?board required}
 shutdown=${7:?compiled mica-shutdown required}
-case "$board" in x64) compiler=gcc;; virt-arm64) compiler=aarch64-linux-gnu-gcc;; *) exit 1;; esac
+# The board's facts, out of its fetched bundle: the suite boots UEFI boards
+# of either architecture and dispatches on nothing else.
+[ -f "_out/boards/$board/board.env" ] || { echo "error: $board is not a fetched board (make board-fetch BOARD=$board)" >&2; exit 1; }
+[ "$(sed -n 's/^BOOT_BACKEND=//p' "_out/boards/$board/board.env")" = systemd-boot ] || { echo "error: $board boots a FIT; this suite boots UEFI boards" >&2; exit 1; }
+arch="$(sed -n 's/^MICA_ARCH=//p' "_out/boards/$board/board.env")"
+case "$arch" in amd64) compiler=gcc;; arm64) compiler=aarch64-linux-gnu-gcc;; esac
 work=$(mktemp -d "$PWD/_out/reset-runtime.XXXXXX")
 printf 'Evidence: %s\n' "$work"
 # The Bun orchestrator mounts this project; keep explicit signing inputs inside it.
@@ -57,7 +62,7 @@ UNIT
     for boot in 1 2 3; do
         timeout -k 15 600 docker run --rm --label ai-agent=true --network traefik \
             -v "$out/boot:/w" -v "$PWD/tests/lifecycle-uefi:/harness:ro" ai-agent/mos-p2-lab \
-            bash /harness/boot.sh image/disk.img writable 540 "$board" > "$out/boot-$boot.log" 2>&1
+            bash /harness/boot.sh image/disk.img writable 540 "$arch" > "$out/boot-$boot.log" 2>&1
         if [ "$boot" = 1 ]; then
             grep -F "FILE_AB_RESET_STAGED: $tier" "$out/boot-$boot.log"
         else

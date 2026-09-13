@@ -6,11 +6,11 @@ cd /w
 DISK=${1:-image/disk.img}
 MODE=${2:-writable}
 LIMIT=${3:-100}
-BOARD=${4:?x64 or virt-arm64 required}
-case "$BOARD" in
-    x64) QEMU=qemu-system-x86_64; MACHINE=q35; CODE=/usr/share/OVMF/OVMF_CODE_4M.secboot.fd; VARS=/usr/share/OVMF/OVMF_VARS_4M.fd ;;
-    virt-arm64) QEMU=qemu-system-aarch64; MACHINE=virt; CODE=/usr/share/AAVMF/AAVMF_CODE.secboot.fd; VARS=/usr/share/AAVMF/AAVMF_VARS.fd ;;
-    *) echo 'unsupported acceptance board' >&2; exit 1 ;;
+ARCH=${4:?amd64 or arm64 required}
+case "$ARCH" in
+    amd64) QEMU=qemu-system-x86_64; MACHINE=q35; CODE=/usr/share/OVMF/OVMF_CODE_4M.secboot.fd; VARS=/usr/share/OVMF/OVMF_VARS_4M.fd ;;
+    arm64) QEMU=qemu-system-aarch64; MACHINE=virt; CODE=/usr/share/AAVMF/AAVMF_CODE.secboot.fd; VARS=/usr/share/AAVMF/AAVMF_VARS.fd ;;
+    *) echo 'unsupported acceptance architecture' >&2; exit 1 ;;
 esac
 DRIVE="if=none,id=disk0,format=raw,file=$DISK"
 if [ "$MODE" = readonly ]; then DRIVE="$DRIVE,readonly=on"; fi

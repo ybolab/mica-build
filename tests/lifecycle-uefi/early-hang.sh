@@ -8,7 +8,11 @@ init=$(realpath "${3:?fault-injected init required}")
 cert=$(realpath "${4:?content certificate required}")
 key=$(realpath "${5:?content key required}")
 shutdown=${6:?compiled mica-shutdown required}
-case "$board" in x64|virt-arm64) ;; *) exit 1;; esac
+# The board's facts, out of its fetched bundle: the suite boots UEFI boards
+# of either architecture and dispatches on nothing else.
+[ -f "_out/boards/$board/board.env" ] || { echo "error: $board is not a fetched board (make board-fetch BOARD=$board)" >&2; exit 1; }
+[ "$(sed -n 's/^BOOT_BACKEND=//p' "_out/boards/$board/board.env")" = systemd-boot ] || { echo "error: $board boots a FIT; this suite boots UEFI boards" >&2; exit 1; }
+arch="$(sed -n 's/^MICA_ARCH=//p' "_out/boards/$board/board.env")"
 work=$(mktemp -d "$PWD/_out/early-hang.XXXXXX")
 out="$work/boot"
 mkdir -p "$out/image" "$work/tree"
@@ -20,7 +24,7 @@ printf 'Evidence: %s\n' "$work"
 timeout -k 20 700 bun tests/lifecycle-uefi/update.ts "$out" "$cert" "$key" 7 kernel "$out/root" "$out/kernel" "$init" "$shutdown"
 timeout -k 15 450 docker run --rm --label ai-agent=true --network traefik \
     -v "$out:/w" -v "$PWD/tests/lifecycle-uefi:/harness:ro" ai-agent/mos-p2-lab \
-    bash /harness/boot.sh image/disk.img writable 400 "$board" > "$out/install.log" 2>&1
+    bash /harness/boot.sh image/disk.img writable 400 "$arch" > "$out/install.log" 2>&1
 grep -F FILE_AB_INSTALL_PASS "$out/install.log"
 grep -F FILE_AB_RUNTIME_PASS "$out/install.log"
 bash tests/lifecycle-uefi/shutdown-check.sh "$out/install.log"
@@ -36,7 +40,7 @@ PY
 for attempt in 1 2 3; do
     timeout -k 15 450 docker run --rm --label ai-agent=true --network traefik \
         -v "$out:/w" -v "$PWD/tests/lifecycle-uefi:/harness:ro" ai-agent/mos-p2-lab \
-        python3 /harness/qmp-boot.py "/w/events-$attempt.jsonl" bash /w/boot.sh image/disk.img writable 400 "$board" > "$out/attempt-$attempt.log" 2>&1
+        python3 /harness/qmp-boot.py "/w/events-$attempt.jsonl" bash /w/boot.sh image/disk.img writable 400 "$arch" > "$out/attempt-$attempt.log" 2>&1
     grep -F 'FILE_AB_EARLY_HANG_TRIGGER: before SYSTEM and systemd' "$out/attempt-$attempt.log"
     ! grep -F 'mica-init: verified deployment' "$out/attempt-$attempt.log"
     ! grep -F 'systemd[1]:' "$out/attempt-$attempt.log"
@@ -53,7 +57,7 @@ PY
 done
 timeout -k 15 450 docker run --rm --label ai-agent=true --network traefik \
     -v "$out:/w" -v "$PWD/tests/lifecycle-uefi:/harness:ro" ai-agent/mos-p2-lab \
-    bash /harness/boot.sh image/disk.img writable 400 "$board" > "$out/fallback.log" 2>&1
+    bash /harness/boot.sh image/disk.img writable 400 "$arch" > "$out/fallback.log" 2>&1
 grep -F FILE_AB_RUNTIME_PASS "$out/fallback.log"
 ! grep -F "mica-init: verified deployment $bad;" "$out/fallback.log"
 bash tests/lifecycle-uefi/shutdown-check.sh "$out/fallback.log"

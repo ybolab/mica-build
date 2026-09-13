@@ -83,15 +83,22 @@ export function shippedBoards(dir: string = BOARDS_DIR): string[] {
  * "agreed on all 0 keys" -- so a discovery used as a test's input refuses to
  * return nothing, by name, rather than letting the caller decide to notice.
  */
+/** `deps/boards`: the board pins, `<board>.json`, one per board (the bundle artifact's digest). */
+export const BOARD_PINS_DIR: string = join(REPO_ROOT, 'deps', 'boards')
+
 /**
- * The boards this tree pins: `deps/packages/mica-kernel-<board>.json`, one
- * per board. A board exists here exactly when its bundle is pinned; its
- * definition is read out of the fetched bundle under BOARDS_DIR.
+ * The boards this tree pins: `deps/boards/<board>.json`, one per board (and,
+ * until every board is pinned as an artifact, `deps/packages/mica-kernel-<board>.json`).
+ * A board exists here exactly when its bundle is pinned; its definition is
+ * read out of the fetched bundle under BOARDS_DIR.
  */
-export function pinnedBoards(dir: string = PINS_DIR): string[] {
-  return readdirSync(dir)
+export function pinnedBoards(dir: string = PINS_DIR, boardPins: string = BOARD_PINS_DIR): string[] {
+  const fromArtifacts = existsSync(boardPins)
+    ? readdirSync(boardPins).flatMap(name => { const match = /^(.+)\.json$/.exec(name); return match ? [match[1]!] : [] })
+    : []
+  const fromArchives = readdirSync(dir)
     .flatMap(name => { const match = /^mica-kernel-(.+)\.json$/.exec(name); return match ? [match[1]!] : [] })
-    .sort()
+  return [...new Set([...fromArtifacts, ...fromArchives])].sort()
 }
 
 export function requireShippedBoards(dir: string = BOARDS_DIR, pins: string = PINS_DIR): string[] {

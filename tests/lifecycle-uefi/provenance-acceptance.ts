@@ -5,12 +5,13 @@ import { canonicalJson } from '../../build/src/components.ts'
 import { assembleRelease, fileSha256, gateRelease, type ReleaseInputs } from '../../build/src/release-manifest.ts'
 import { sourceIdentity } from '../../build/src/release-cli.ts'
 import { REPO_ROOT } from '../../build/src/paths.ts'
+import { loadBoardFacts } from '../../build/src/board-facts.ts'
 
 // This consumer records artifact checks only. Guest, hardware and publication
 // qualification remain separate; the normal release CLI retains its policy.
 export async function acceptProvenance(inputs: ReleaseInputs, checkout = REPO_ROOT) {
-  if (inputs.board !== 'virt-arm64' || inputs.channel !== 'development' || inputs.profile !== 'dev') {
-    throw new Error('Non-publication acceptance requires virt-arm64/development/dev')
+  if (loadBoardFacts(inputs.board).releaseTarget || inputs.channel !== 'development' || inputs.profile !== 'dev') {
+    throw new Error('Non-publication acceptance requires a board that is not a release target, on development/dev')
   }
   const out = resolve(inputs.out)
   const recordPath = `${out}.acceptance.json`
@@ -21,9 +22,9 @@ export async function acceptProvenance(inputs: ReleaseInputs, checkout = REPO_RO
   if (source.dirty || canonicalJson(source) !== canonicalJson(inputs.source)) {
     throw new Error('Acceptance inputs must match the actual clean frozen source')
   }
-  const boardEnv = readFileSync(join(checkout, '_out/boards/virt-arm64/board.env'), 'utf8')
+  const boardEnv = readFileSync(join(checkout, `_out/boards/${inputs.board}/board.env`), 'utf8')
   if (!/^BOARD_RELEASE_TARGET=0$/m.test(boardEnv)) throw new Error('Expected the committed non-publication board policy')
-  if (!readFileSync(inputs.evidence).equals(readFileSync(join(checkout, '_out/boards/virt-arm64/evidence.json')))) {
+  if (!readFileSync(inputs.evidence).equals(readFileSync(join(checkout, `_out/boards/${inputs.board}/evidence.json`)))) {
     throw new Error('Acceptance must preserve the committed board evidence bytes')
   }
   const builderImages = Object.fromEntries(readFileSync(join(checkout, 'build-env/images.env'), 'utf8').split('\n')

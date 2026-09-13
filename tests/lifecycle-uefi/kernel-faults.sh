@@ -4,7 +4,11 @@ set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/../.."
 evidence=$(realpath "${1:?runtime evidence required}")
 board=${2:?board required}
-case "$board" in x64|virt-arm64) ;; *) exit 1;; esac
+# The board's facts, out of its fetched bundle: the suite boots UEFI boards
+# of either architecture and dispatches on nothing else.
+[ -f "_out/boards/$board/board.env" ] || { echo "error: $board is not a fetched board (make board-fetch BOARD=$board)" >&2; exit 1; }
+[ "$(sed -n 's/^BOOT_BACKEND=//p' "_out/boards/$board/board.env")" = systemd-boot ] || { echo "error: $board boots a FIT; this suite boots UEFI boards" >&2; exit 1; }
+arch="$(sed -n 's/^MICA_ARCH=//p' "_out/boards/$board/board.env")"
 work=$(mktemp -d "$PWD/_out/kernel-faults.XXXXXX")
 printf 'Evidence: %s\n' "$work"
 bad=$(sed -n 's/.*mica-init: verified deployment \([a-f0-9]\{64\}\);.*/\1/p' "$evidence/boot.log" | head -1)
@@ -47,7 +51,7 @@ Path(sys.argv[1]).write_text(source.replace('-nographic -no-reboot', '-qmp unix:
 PY
  for attempt in 1 2 3; do
   timeout -k 15 450 docker run --rm --label ai-agent=true --network traefik -v "$out:/w" -v "$PWD/tests/lifecycle-uefi:/harness:ro" ai-agent/mos-p2-lab \
-    python3 /harness/qmp-boot.py "/w/events-$attempt.jsonl" bash /w/boot.sh disk.img writable 400 "$board" > "$out/attempt-$attempt.log" 2>&1
+    python3 /harness/qmp-boot.py "/w/events-$attempt.jsonl" bash /w/boot.sh disk.img writable 400 "$arch" > "$out/attempt-$attempt.log" 2>&1
   grep -F "FILE_AB_KERNEL_FAULT_TRIGGER: $mode" "$out/attempt-$attempt.log"
   grep -F 'Kernel panic - not syncing: sysrq triggered crash' "$out/attempt-$attempt.log"
   ! grep -F FILE_AB_RUNTIME_PASS "$out/attempt-$attempt.log"
@@ -66,7 +70,7 @@ PY
   grep -F "mos-$bad+$left-$attempt.conf" "$out/entries-$attempt.txt"
  done
  timeout -k 15 450 docker run --rm --label ai-agent=true --network traefik -v "$out:/w" -v "$PWD/tests/lifecycle-uefi:/harness:ro" ai-agent/mos-p2-lab \
-   bash /harness/boot.sh disk.img writable 400 "$board" > "$out/fallback.log" 2>&1
+   bash /harness/boot.sh disk.img writable 400 "$arch" > "$out/fallback.log" 2>&1
  grep -F FILE_AB_RUNTIME_PASS "$out/fallback.log"
  ! grep -F "mica-init: verified deployment $bad;" "$out/fallback.log"
  bash tests/lifecycle-uefi/shutdown-check.sh "$out/fallback.log"

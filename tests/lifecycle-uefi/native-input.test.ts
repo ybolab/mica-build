@@ -35,7 +35,7 @@ function fixture(script: string, board: string, kind: string) {
   const cert = join(work, 'content.cert'), signingKey = join(work, 'content.key')
   const args = script === 'build.ts' ? [join(work, 'output'), board, kernel, cert, signingKey, init, root, shutdown]
     : script === 'update.ts' ? [baseline, cert, signingKey, '3', kind, root, kernel, init, shutdown]
-      : [work, baseline, init, cert, signingKey, shutdown]
+      : [work, baseline, init, cert, signingKey, shutdown, board]
   return { work, args, init, shutdown, arch: arch as 'amd64' | 'arm64', bytes }
 }
 
@@ -43,7 +43,8 @@ for (const [script, board, kind] of callers) {
   for (const scenario of ['valid', 'missing', 'wrong-architecture'] as const) {
     test(`${script} ${board} ${kind}: ${scenario} required native input`, () => {
       const f = fixture(script, board, kind)
-      if (scenario === 'missing') f.args.pop()
+      // trust-rotation.ts names the board last; the native input before it is what goes missing.
+      if (scenario === 'missing') f.args.splice(script === 'trust-rotation.ts' ? -2 : -1, 1)
       if (scenario === 'wrong-architecture') {
         f.bytes.writeUInt16LE(board === 'x64' ? 183 : 62, 18)
         writeFileSync(f.shutdown, f.bytes)

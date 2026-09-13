@@ -3,7 +3,8 @@
 set -euo pipefail
 mode=${1:?uki or fit}
 if [ "$mode" = uki ]; then
-    bash /tools/kernel.sh kernel x64
+    # The boot tools name the EFI architecture as UEFI does, in lower case.
+    bash /tools/kernel.sh kernel "$(echo X64 | tr '[:upper:]' '[:lower:]')"
     python3 - /output/boot.efi /output/initramfs.cpio.zst /output/tampered.efi <<'PY'
 import pathlib, sys
 uki, payload, output = map(pathlib.Path, sys.argv[1:])

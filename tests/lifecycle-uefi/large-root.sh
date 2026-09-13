@@ -8,9 +8,15 @@ certificate=${3:?content certificate required}
 key=${4:?content key required}
 init=${5:?compiled mica-init required}
 shutdown=${6:?compiled mica-shutdown required}
+board=${7:?board required}
+# The board's facts, out of its fetched bundle: the suite boots UEFI boards
+# of either architecture and dispatches on nothing else.
+[ -f "_out/boards/$board/board.env" ] || { echo "error: $board is not a fetched board (make board-fetch BOARD=$board)" >&2; exit 1; }
+[ "$(sed -n 's/^BOOT_BACKEND=//p' "_out/boards/$board/board.env")" = systemd-boot ] || { echo "error: $board boots a FIT; this suite boots UEFI boards" >&2; exit 1; }
+arch="$(sed -n 's/^MICA_ARCH=//p' "_out/boards/$board/board.env")"
 work=$(mktemp -d "$PWD/_out/large-root.XXXXXX")
 printf 'Evidence: %s\n' "$work"
-bash tests/lifecycle-uefi/runtime-build.sh "$root" "$kernel" "$certificate" "$key" "$init" x64 "$shutdown" > "$work/small-build.log" 2>&1
+bash tests/lifecycle-uefi/runtime-build.sh "$root" "$kernel" "$certificate" "$key" "$init" "$board" "$shutdown" > "$work/small-build.log" 2>&1
 small=$(tail -1 "$work/small-build.log")
 mkdir "$work/tree"
 docker run --rm --label ai-agent=true --network traefik -v "$work:/w" -v "$root:/root.img:ro" \
@@ -23,7 +29,7 @@ with open(sys.argv[1], 'xb') as output:
 PY
 docker run --rm --label ai-agent=true --network traefik -v "$work:/w" \
     ai-agent/mos-p2-lab mksquashfs /w/tree /w/large-source.img -noappend -all-root -comp zstd -no-progress > "$work/pack.log"
-bash tests/lifecycle-uefi/runtime-build.sh "$work/large-source.img" "$kernel" "$certificate" "$key" "$init" x64 "$shutdown" > "$work/large-build.log" 2>&1
+bash tests/lifecycle-uefi/runtime-build.sh "$work/large-source.img" "$kernel" "$certificate" "$key" "$init" "$board" "$shutdown" > "$work/large-build.log" 2>&1
 large=$(tail -1 "$work/large-build.log")
 for size in small large; do
     evidence=${!size}
@@ -32,7 +38,7 @@ for size in small large; do
         log="$work/$size-$iteration.log"
         timeout -k 10 330 docker run --rm --label ai-agent=true --network traefik \
             -v "$evidence:/w" -v "$PWD/tests/lifecycle-uefi:/harness:ro" \
-            ai-agent/mos-p2-lab python3 /harness/timed-boot.py bash /harness/boot.sh image/disk.img writable 300 x64 > "$log" 2>&1
+            ai-agent/mos-p2-lab python3 /harness/timed-boot.py bash /harness/boot.sh image/disk.img writable 300 "$arch" > "$log" 2>&1
         grep -F FILE_AB_RUNTIME_PASS "$log"
         bash tests/lifecycle-uefi/shutdown-check.sh "$log"
         python3 tests/lifecycle-uefi/metrics.py "$log" > "$work/$size-$iteration.json"

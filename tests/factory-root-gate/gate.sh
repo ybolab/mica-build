@@ -32,10 +32,10 @@ for anchor in "${HERE}/inner.sh" "${HERE}/mutate.sh" "${REPO}/build-env/from.sh"
     }
 done
 
-out="${1:-_out/x64}"
+out="${1:?the product's build directory is required: _out/products/<product>/build}"
 [ -d "${out}" ] || {
     echo "error: ${out} is not a directory. Build a root first:" >&2
-    echo "         MICA_BOARD=x64 bash rootfs/build.sh" >&2
+    echo "         make os-rootfs PRODUCT=<product>" >&2
     exit 1
 }
 out="$(cd "${out}" && pwd)"

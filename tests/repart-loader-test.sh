@@ -5,7 +5,7 @@ cd "$(dirname "${BASH_SOURCE[0]}")/.."
 board=${1:?board required}
 image=$(realpath "${2:?complete factory image required}")
 root_image=$(realpath "${3:?matching composed root image required}")
-case "$board" in x64|virt-arm64|cx3576|s905x5m) ;; *) echo 'unsupported board' >&2; exit 1;; esac
+[ -f "_out/boards/$board/board.env" ] || { echo "error: $board is not a fetched board (make board-fetch BOARD=$board)" >&2; exit 1; }
 [ -f "$image" ] && [ -f "$root_image" ]
 command -v docker >/dev/null
 . "_out/boards/$board/board.env"

@@ -187,67 +187,32 @@ jobs:
           $SUDO apt-get install -y --no-install-recommends \
             bash make git ca-certificates
 
-      # The BSP artifacts the image needs: the kernel (Image + dtb) and the
-      # mos A/B U-Boot variant. Both are docker builds; the host needs no
-      # cross toolchain. This is the slow half of the lane.
-      - name: The cx3576 kernel and U-Boot out of the pinned mica-kernel-cx3576 archive
-        run: |
-          set -euo pipefail
-          bash build-env/deb/fetch.sh --arch arm64
-          make os-board-kernel MICA_BOARD=cx3576
+      # THE PRODUCTS. One make product per recipe under products/, the way
+      # check.yml's matrix runs them, and then the three checks only this lane
+      # can run: the factory-root gate and the smoke negatives execute the
+      # root's own binaries (arm64 roots need the emulation this label
+      # promises), and the repart test needs loop devices in a --privileged
+      # container. No board is named here: a product names its own, and a
+      # board pinned tomorrow is covered by its products/ recipe.
+      - name: Fetch the source dependencies at their pins
+        run: make deps
         env:
           GH_TOKEN: ${{ secrets.MICA_DEPS_TOKEN }}
 
-
-      # rootfs (squashfs + dm-verity, built for linux/arm64 -- this needs host
-      # binfmt since; see the preflight note at the top of this
-      # file for what changed and why) and the eleven-partition A/B image
-      # around it.
-      - name: make os-image-cx3576
-        run: make os-image-cx3576
-
-      - name: make os-verify-cx3576
-        run: make os-verify-cx3576
-
-      # THE SMOKE RUN ITSELF IS NOT A STEP HERE, deliberately:
-      # rootfs/build.sh runs it as its last step under `set -e`, so the
-      # step above that builds the image has already executed every self-built
-      # binary inside the root it packed. A second invocation here would report
-      # the same green twice and would read like the only thing running it.
-      #
-      # These two are what build.sh does NOT do. The gate compares the OCI
-      # export against the squashfs the device ships -- the assumption every
-      # smoke result rests on, and nothing else checks it. The negative tests
-      # break that root three ways and require the runner to notice; they are a
-      # check on the checker, and running them on every rootfs build would put
-      # three deliberate defects in front of every image.
-      #
-      # Both need the arm64 emulation this lane's label already promises: they
-      # EXECUTE what is in an arm64 root. Neither has been run on cx3576 by
-      # anybody and this lane is where that
-      # first happens.
-      - name: make os-factory-root-gate
-        run: MICA_BOARD=cx3576 make os-factory-root-gate
-
-      - name: make os-smoke-negative-test
-        run: MICA_BOARD=cx3576 make os-smoke-negative-test
-
-      # The repo-root ca/ trust root for the bundle build and the image's
-      # keyring. Dev material, deliberately: this lane proves the pipeline, and
-      # production signing is an offline ceremony
-      # (docs/design/release-signing.md), never a CI step. Run explicitly
-      # rather than left to the build's own auto-generation, so that a failure
-      # to produce it is attributed to this step; gen-dev-keys.sh is a no-op
-      # when ca/ is complete, so a runner that retains its workspace does not
-      # regenerate.
-      - name: make os-devkeys
+      - name: The trust material the products are signed with (development, this lane proves the pipeline)
         run: make os-devkeys
 
-      - name: make os-bundle-cx3576
-        run: make os-bundle-cx3576
-
-      # Against the image built above: real systemd-repart, discard enabled,
-      # loop devices in a --privileged container; positive and negative
-      # directions per image, then the shipped repart.d growth.
-      - name: make os-repart-test
-        run: make os-repart-test
+      - name: Every product: build, verify, gate, smoke negatives, repart
+        run: |
+          set -euo pipefail
+          for p in $(bash tools/product.sh --list); do
+            echo "::group::${p}"
+            make product PRODUCT="${p}"
+            make product-verify PRODUCT="${p}"
+            make os-factory-root-gate PRODUCT="${p}"
+            make os-smoke-negative-test PRODUCT="${p}"
+            make product-repart-test PRODUCT="${p}"
+            echo "::endgroup::"
+          done
+        env:
+          GH_TOKEN: ${{ secrets.MICA_DEPS_TOKEN }}

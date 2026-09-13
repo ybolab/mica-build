@@ -7,9 +7,13 @@ kernel=${2:?BSP kernel directory required}
 certificate=${3:?public content certificate required}
 key=${4:?external content signing key required}
 init=${5:?compiled mica-init required}
-board=${6:?x64 or virt-arm64 required}
+board=${6:?board required}
 shutdown=${7:?compiled mica-shutdown required}
-case "$board" in x64|virt-arm64) ;; *) echo 'unsupported acceptance board' >&2; exit 1;; esac
+# The board's facts, out of its fetched bundle: the suite boots UEFI boards
+# of either architecture and dispatches on nothing else.
+[ -f "_out/boards/$board/board.env" ] || { echo "error: $board is not a fetched board (make board-fetch BOARD=$board)" >&2; exit 1; }
+[ "$(sed -n 's/^BOOT_BACKEND=//p' "_out/boards/$board/board.env")" = systemd-boot ] || { echo "error: $board boots a FIT; this suite boots UEFI boards" >&2; exit 1; }
+arch="$(sed -n 's/^MICA_ARCH=//p' "_out/boards/$board/board.env")"
 scratch=$(mktemp -d "$PWD/_out/file-runtime.XXXXXX")
 evidence="$scratch/boot"
 mkdir "$scratch/tree"

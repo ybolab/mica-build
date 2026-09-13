@@ -915,12 +915,17 @@ for arch in "${ARCHES[@]}"; do
     mkdir -p "${ctx}"
     cp -R "${IN}" "${ctx}/in"
 
-    # The board whose MICA_ARCH is this pool's, found the way
-    # pkgs/mqtt/deb/mqtt/prepare.sh finds it: the board files are the one
-    # authority on which architecture a board is, and a table here would be a
-    # second one.
-    case "$arch" in amd64) board=x64;; arm64) board=cx3576;; esac
-    test "$(sed -n 's/^MICA_ARCH=//p' "$REPO_ROOT/_out/boards/$board/board.env")" = "$arch"
+    # A board whose MICA_ARCH is this pool's and whose development product
+    # exists, found in the fetched boards: the board files are the one
+    # authority on which architecture a board is, and a table here would be
+    # a second one.
+    board=""
+    for d in "$REPO_ROOT"/_out/boards/*/; do
+        b="$(basename "$d")"
+        [ "$(sed -n 's/^MICA_ARCH=//p' "$d/board.env")" = "$arch" ] && [ -f "$REPO_ROOT/products/$b-dev/product.env" ] || continue
+        board="$b"; break
+    done
+    [ -n "$board" ] || { echo "error: no fetched board of ${arch} has a products/<board>-dev recipe" >&2; exit 1; }
     # The board's development product: the features it selects are the full
     # set this closure proves, the way products/<board>-dev declares them.
     features="$(bash "${REPO_ROOT}/tools/product.sh" "${board}-dev" | sed -n 's/^FEATURES="\(.*\)"$/\1/p')"

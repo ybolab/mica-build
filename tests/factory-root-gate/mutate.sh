@@ -116,11 +116,19 @@ expect_agrees "byte" "content" content_cmp
 # -- a node restored with the right major and the wrong mode leaves METADATA red
 # for the rest of the run and the failure would be read as the mutation's.
 dev="$(cd "${oci}" && find . -mindepth 1 -type c -printf '%P\n' | LC_ALL=C sort | sed -n '1p')"
-[ -n "${dev}" ] || {
-    echo "  !! no character device in the export, so the device comparison has nothing behind it" >&2
-    echo "     here and inner.sh's DEVICES line compares an empty file with an empty file." >&2
-    exit 1
-}
+if [ -z "${dev}" ]; then
+    # A root that ships no device node (devtmpfs makes them; the composed
+    # roots carry none) leaves the device comparison with an empty file on
+    # each side. Prove it can go red anyway: a node ADDED to one side is a
+    # difference it must see, and the export is then put back as it was.
+    echo "== 5. no device node in the export: one added to one side =="
+    mknod -m 0666 "${oci}/dev/mica-gate-probe" c 1 3
+    expect_differs "dev/mica-gate-probe added (1:3)" "device" devices_cmp
+    rm -f "${oci}/dev/mica-gate-probe"
+    expect_agrees "added device removed" "device" devices_cmp
+    echo "== 6-7. skipped: the export carries no device node to move or remove =="
+fi
+if [ -n "${dev}" ]; then
 node="${oci}/${dev}"
 dev_mode="$(stat -c %a "${node}")"
 dev_uid="$(stat -c %u "${node}")"
@@ -165,6 +173,7 @@ rm "${node}"
 expect_differs "${dev} removed" "device" devices_cmp
 restore_dev
 expect_agrees "removal" "device" devices_cmp
+fi
 
 echo "== 8. a file capability =="
 # The one this root cannot demonstrate on its own, added to the OCI side only,

@@ -2,7 +2,7 @@
 # mica-build-side: container -- a corrupt confirmed deployment must not loop forever.
 set -euo pipefail
 cd /w
-board=${1:?board required}
+arch=${1:?amd64 or arm64 required}
 cp --reflink=auto --sparse=always image/factory-disk.img failed-confirmed.img
 cp --reflink=auto --sparse=always image/system.img damaged-system.img
 python3 - <<'PY'
@@ -19,11 +19,11 @@ PY
 debugfs -w -f damage.commands damaged-system.img > damage.log 2>&1
 dd if=damaged-system.img of=failed-confirmed.img bs=1M seek=513 conv=notrunc,sparse status=none
 mren -i failed-confirmed.img@@1M "::/loader/entries/mos-$(cat current-id)+3.conf" "mos-$(cat current-id).conf"
-bash /lab/boot.sh failed-confirmed.img writable 60 "$board" > refused.log 2>&1
+bash /lab/boot.sh failed-confirmed.img writable 60 "$arch" > refused.log 2>&1
 grep -q 'metadata signature rejected' refused.log
 mdir -i failed-confirmed.img@@1M -b ::/loader/entries > after-refusal.txt
 grep -q "mos-$(cat current-id)+0-3.conf" after-refusal.txt
-bash /lab/boot.sh failed-confirmed.img writable 300 "$board" > fallback.log 2>&1
+bash /lab/boot.sh failed-confirmed.img writable 300 "$arch" > fallback.log 2>&1
 grep -q FILE_AB_RUNTIME_PASS fallback.log
 grep -q "\"deploymentId\":\"$(cat fallback-id)\"" fallback.log
 echo 'FILE_AB_CONFIRMED_CORRUPTION_FALLBACK_PASS'

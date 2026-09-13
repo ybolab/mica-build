@@ -10,12 +10,17 @@ board=${5:?board required}
 origin=${6:?running update server origin required}
 token=${7:?admin token file required}
 shutdown=${8:?compiled mica-shutdown required}
+# The board's facts, out of its fetched bundle: the suite boots UEFI boards
+# of either architecture and dispatches on nothing else.
+[ -f "_out/boards/$board/board.env" ] || { echo "error: $board is not a fetched board (make board-fetch BOARD=$board)" >&2; exit 1; }
+[ "$(sed -n 's/^BOOT_BACKEND=//p' "_out/boards/$board/board.env")" = systemd-boot ] || { echo "error: $board boots a FIT; this suite boots UEFI boards" >&2; exit 1; }
+arch="$(sed -n 's/^MICA_ARCH=//p' "_out/boards/$board/board.env")"
 test -f "$evidence/image/factory-disk.img"
 test ! -e "$evidence/updates"
 boot() {
     docker run --rm --label ai-agent=true --network traefik -v "$evidence:/w" \
         -v "$PWD/tests/lifecycle-uefi:/harness:ro" ai-agent/mos-p2-lab \
-        bash /harness/boot.sh image/disk.img writable 420 "$board" >"$1" 2>&1
+        bash /harness/boot.sh image/disk.img writable 420 "$arch" >"$1" 2>&1
     grep -F FILE_AB_RUNTIME_PASS "$1"
     bash tests/lifecycle-uefi/shutdown-check.sh "$1"
 }

@@ -74,7 +74,7 @@ done
 receipt() {
     {
         find "products/${NAME}" -type f | sort | xargs sha256sum
-        sha256sum deps/packages/*.json deps/sources/*.json
+        find deps/packages deps/boards deps/sources -name '*.json' 2>/dev/null | sort | xargs sha256sum
         sha256sum "${BOARD_DIR}/board.env" "${BOARD_DIR}/kernel/kernel.release" "${BOARD_DIR}/kernel/config"
         sha256sum "${SIGNING}/verity/signer.cert.pem" "${SIGNING}/boot/signer.cert.pem" "${SIGNING}/updates/public.key"
         printf 'tree %s%s\n' "$(git rev-parse HEAD)" "$([ -z "$(git status --porcelain)" ] || printf ' dirty')"
@@ -94,7 +94,9 @@ case "${WANT}" in *' dirty'*) echo "note: the tree is dirty; this build is recor
 # components read -- the board bundle and the lifecycle binaries.
 echo "=== product ${NAME}: fetch (board ${BOARD}, ${MICA_ARCH}) ==="
 CLOSURE="$(bash rootfs/packages/resolve.sh --board "${BOARD}" --board-dir "${BOARD_DIR}/manifests" --profile "${PROFILE}" --features "${FEATURES}" --components "${COMPONENTS}" | tr '\n' ' ')"
-bash build-env/deb/fetch.sh --arch "${MICA_ARCH}" --packages "${CLOSURE} mica-kernel-${BOARD} mica-lifecycle"
+# The board bundle: its artifact (deps/boards) or, until pinned as one, the kernel archive in the pool.
+KERNEL_PIN=""; [ -f "deps/boards/${BOARD}.json" ] || KERNEL_PIN="mica-kernel-${BOARD}"
+bash build-env/deb/fetch.sh --arch "${MICA_ARCH}" --packages "${CLOSURE} ${KERNEL_PIN} mica-lifecycle"
 bash build-env/deb/repo.sh --arch "${MICA_ARCH}"
 bash tools/board-pool.sh --fetch "${BOARD}"
 

@@ -5,7 +5,11 @@ cd "$(dirname "${BASH_SOURCE[0]}")/../.."
 source=$(realpath "${1:?completed HTTP runtime evidence required}")
 catalog=$(realpath "${2:?captured catalog envelope required}")
 board=${3:?board required}
-case "$board" in x64|virt-arm64) ;; *) exit 1;; esac
+# The board's facts, out of its fetched bundle: the suite boots UEFI boards
+# of either architecture and dispatches on nothing else.
+[ -f "_out/boards/$board/board.env" ] || { echo "error: $board is not a fetched board (make board-fetch BOARD=$board)" >&2; exit 1; }
+[ "$(sed -n 's/^BOOT_BACKEND=//p' "_out/boards/$board/board.env")" = systemd-boot ] || { echo "error: $board boots a FIT; this suite boots UEFI boards" >&2; exit 1; }
+arch="$(sed -n 's/^MICA_ARCH=//p' "_out/boards/$board/board.env")"
 test -s "$source/updates/6/http-measurements.json"
 expected=$(python3 - "$source/updates/6/inputs.json" <<'PY'
 import json,sys
@@ -39,7 +43,7 @@ s=s.replace(network, '-nic none -rtc base='+sys.argv[2]+',clock=vm')
 Path(sys.argv[1]).write_text(s)
 PY
     timeout -k 15 600 docker run --rm --label ai-agent=true --network traefik \
-        -v "$out:/w" ai-agent/mos-p2-lab bash /w/boot.sh disk.img writable 540 "$board" > "$out/boot.log" 2>&1
+        -v "$out:/w" ai-agent/mos-p2-lab bash /w/boot.sh disk.img writable 540 "$arch" > "$out/boot.log" 2>&1
     grep -F "mica-init: verified deployment $expected;" "$out/boot.log"
     grep -F FILE_AB_RUNTIME_PASS "$out/boot.log"
     bash tests/lifecycle-uefi/shutdown-check.sh "$out/boot.log"
