@@ -1,4 +1,4 @@
-.PHONY: os-trust-domain-test os-file-transaction-faults build-env docs-verify docs-verify-test help os-apid-api-spec-pins os-apid-api-test os-apid-ui-build-contract-test os-bare-host-gate os-boot-tools os-build-test os-components os-cx3576-flash-test os-dbus-policy-test os-deb-package-gate os-deb-preflight os-deb-preflight-test os-debian-cache os-debian-install os-debian-test os-debian-verify os-debs os-devkeys os-lock-bump os-pool os-pool-lock-test os-factory-root-gate os-fit-records-test os-gadget-test os-health-test os-host-toolchain-lint os-host-toolchain-lint-test os-image os-install-closure-gate os-layout-lint os-mac-test os-netavark-kernel-test os-quadlet-doc-test os-repart-test os-rootfs-cx3576 os-rootfs-manifest-test os-rootfs-virt-arm64 os-rootfs-x64 os-rust-gate os-shadow-test os-shell-pipefail-lint os-smoke-negative-test os-smoke-test os-verify os-verify-test podman podman-pins podman-pins-test
+.PHONY: os-trust-domain-test os-file-transaction-faults build-env help os-apid-api-spec-pins os-apid-api-test os-apid-ui-build-contract-test os-bare-host-gate os-boot-tools os-build-test os-components os-cx3576-flash-test os-dbus-policy-test os-deb-package-gate os-deb-preflight os-deb-preflight-test os-debian-cache os-debian-install os-debian-test os-debian-verify os-debs os-devkeys os-lock-bump os-pool os-pool-lock-test os-factory-root-gate os-fit-records-test os-gadget-test os-health-test os-host-toolchain-lint os-host-toolchain-lint-test os-image os-install-closure-gate os-layout-lint os-mac-test os-netavark-kernel-test os-quadlet-doc-test os-repart-test os-rootfs-cx3576 os-rootfs-manifest-test os-rootfs-virt-arm64 os-rootfs-x64 os-rust-gate os-shadow-test os-shell-pipefail-lint os-smoke-negative-test os-smoke-test os-verify os-verify-test podman podman-pins podman-pins-test
 
 # THE SOURCE DEPENDENCIES, before anything else: build-env/ (mica-build-env)
 # is the substrate every target reaches through, rootfs/debian/ (mica-debian)
@@ -73,8 +73,6 @@ help:
 	@echo "  os-bare-host-gate   climb PLAN-080 section 4's ladder for real: clone HEAD into the pinned docker-cli image and build from it (docker)"
 	@echo "  os-verify-test      run the verify bun+TypeScript suite (typecheck + bun test)"
 	@echo "  os-build-test       run the build bun+TypeScript suite: board geometry and the toolset wrappers (docker)"
-	@echo "  docs-verify         assert the docs catalog, links, truth-status lines, board dossiers, tracking records and stale terms"
-	@echo "  docs-verify-test    prove those assertions actually fail on fixtures where their facts are false"
 	@echo "  podman              build the container engine from source into pkgs/podman/out-\$$MOS_ARCH"
 	@echo "  podman-pins         ask the six pinned upstreams for their newest release; red when a pin is behind (network)"
 	@echo "  podman-pins-test    drive that check against recorded upstream responses, both directions (no network)"
@@ -505,30 +503,6 @@ os-deb-preflight-test:
 # directions, relative links, truth-status evidence, zh coverage, board
 # dossiers, the /pma tracking indexes against their records, and stale terms or
 # dead record citations in permanent documents.
-docs-verify:
-	bash tools/docs/verify-index.sh
-	bash tools/docs/verify-links.sh
-	bash tools/docs/verify-status.sh
-	bash tools/docs/verify-coverage.sh
-	bash tools/docs/verify-board.sh
-	bash tools/docs/verify-tracking.sh
-	bash tools/docs/verify-terms.sh
-
-# Negative tests for the target above. Each assertion is driven against an
-# index where its fact is false and required to fail with ITS OWN message -- a
-# duplicated entry is the likeliest wrong resolution of a two-row append
-# conflict, and a forward `grep -q` plus a reverse `sort -u` cannot see one.
-# Needs no root and no network, and it fails loudly when it cannot run rather
-# than skipping.
-docs-verify-test:
-	bash tools/docs/verify-index-test.sh
-	bash tools/docs/verify-links-test.sh
-	bash tools/docs/verify-status-test.sh
-	bash tools/docs/verify-coverage-test.sh
-	bash tools/docs/verify-board-test.sh
-	bash tools/docs/verify-tracking-test.sh
-	bash tools/docs/verify-terms-test.sh
-
 # Every example in docs/design/containers.md, fed to the aarch64 Quadlet
 # generator the image ships. A configuration example nothing executes is a claim
 # that cannot fail; this makes the document part of the suite.

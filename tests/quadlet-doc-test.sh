@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Feed every example in docs/design/containers.md to the Quadlet generator this
+# Feed every example in tests/quadlet-doc/containers.md (the executed copy of
+# mica:docs/design/containers.md) to the Quadlet generator this
 # image ships.
 #
 #   bash tests/quadlet-doc-test.sh
@@ -19,7 +20,10 @@ set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${HERE}/.." && pwd)"
-DOC="${REPO_ROOT}/docs/design/containers.md"
+# The executed specimen of mica:docs/design/containers.md, kept beside the
+# test because the documentation lives in ybolab/mica; a drift between the two
+# is a diff to review, not a silent divergence.
+DOC="${REPO_ROOT}/tests/quadlet-doc/containers.md"
 QUADLET="${MOS_QUADLET_BIN:-${REPO_ROOT}/pkgs/podman/out-arm64/quadlet}"
 
 [ -f "${DOC}" ] || { echo "error: ${DOC} not found" >&2; exit 1; }

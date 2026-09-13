@@ -286,15 +286,16 @@ run_step() {
     echo "--- rung ${rung}: PASS ---"
 }
 
-# Rung 1. One gate, run by bash, with make still unreachable to it -- section
-# 4.2's `183/183 PASS`. It is the smallest statement the ladder makes: this
-# tree's entry points are bash scripts and a bash script can run one.
-run_step 1 bash tools/docs/verify-index.sh
+# Rung 1. One gate, run by bash, with make still unreachable to it. It is the
+# smallest statement the ladder makes: this tree's entry points are bash
+# scripts and a bash script can run one. (The documentation gates moved to
+# ybolab/mica with the documentation; the policy lint is what is left that
+# needs nothing but bash.)
+run_step 1 bash tests/host-toolchain-lint.sh
 
-# Rung 2. The target names are the build's interface, so make running five gates
+# Rung 2. The target names are the build's interface, so make running a gate
 # is a different claim from bash running one; and the policy's own check is
 # here because it is what covers everything above this ladder's ceiling.
-run_step 2 make docs-verify
 run_step 2 make os-host-toolchain-lint
 
 # Rung 3. Both of these reach for bun, which this host does not have and must

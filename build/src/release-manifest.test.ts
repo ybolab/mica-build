@@ -335,7 +335,7 @@ test.each(['ordinary', 'linked'])('shipped release CLI and documented verificati
   const result = spawnSync(process.execPath, args, { cwd: join(checkout, 'build'), encoding: 'utf8' })
   expect(result.status, `${result.stdout}${result.stderr}`).toBe(0)
   expect(result.stdout).toContain('RELEASE_GATE_PASS')
-  const doc = readFileSync(join(repo, 'docs/design/release-artifacts.md'), 'utf8')
+  const doc = readFileSync(join(repo, 'build/release-verify.md'), 'utf8')
   const section = doc.split('<!-- release-verify-test:start -->')[1]!.split('<!-- release-verify-test:end -->')[0]!
   const commands = section.match(/```bash\n([\s\S]*?)```/)![1]!
   expect(commands).toContain('sha256sum -c SHA256SUMS')

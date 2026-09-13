@@ -43,11 +43,8 @@ with a sunset date. Do not silently override skill rules in this file.
 
 ### Documentation entry points
 
-- Catalog and ownership rules: `docs/README.md` (product name Mica OS; `mos` prefixes stay in identifiers)
-- Board status: `docs/boards/support-tiers.md`
-- Docs gates: `tools/docs/` (run through `make docs-verify` and `make docs-verify-test`)
-- Tasks: `docs/task/index.md`
-- Plans: `docs/plan/index.md`
-- Decisions: `docs/decisions/`
-- Architecture: `docs/architecture.md`
-- Changelog: `docs/changelog.md`
+The records of this repository live in `ybolab/mica`, the project management
+and documentation repository (`mica:docs/task/index.md`, `mica:docs/plan/index.md`,
+`mica:docs/decisions/`, `mica:docs/architecture.md`, `mica:docs/changelog.md`);
+a change here lands with its record there. The build harness is described in
+`build/HARNESS.md` and the release verification commands in `build/release-verify.md`.
