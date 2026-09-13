@@ -1,19 +1,19 @@
 {
   "name": "mica-mqtt-broker",
-  "repository": "micad",
-  "commit": "6211503847b96aecce479af99a6ffb37b554774b",
+  "repository": "mica-core",
+  "commit": "c05bec48fa8e68a89a74a255582a1dc565dc9d28",
   "targets": {
     "amd64": {
-      "version": "0.1.0+git6211503847b9-1",
+      "version": "0.1.0+gitc05bec48fa8e-1",
       "architecture": "amd64",
-      "sha256": "08b7084dc111e18305f7619319590bf93d2221a03be8bc7ad8265a11590e865c",
-      "asset": "mica-mqtt-broker_0.1.0.git6211503847b9-1_amd64.deb"
+      "sha256": "6c430be721b4733b5fab151eaf7bf0ec181e887ef144c5cd4c38d45083a141c6",
+      "asset": "mica-mqtt-broker_0.1.0.gitc05bec48fa8e-1_amd64.deb"
     },
     "arm64": {
-      "version": "0.1.0+git6211503847b9-1",
+      "version": "0.1.0+gitc05bec48fa8e-1",
       "architecture": "arm64",
-      "sha256": "4cf54b94e5ad11725ccb478f530317ff034edcdd2a631b849d81d4c33da6f68a",
-      "asset": "mica-mqtt-broker_0.1.0.git6211503847b9-1_arm64.deb"
+      "sha256": "7eb91ce4f3f78eaa048c813e1a12131f51d4bb4c36519c7b7fff95f1cbde5aa7",
+      "asset": "mica-mqtt-broker_0.1.0.gitc05bec48fa8e-1_arm64.deb"
     }
   }
 }

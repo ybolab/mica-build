@@ -38,7 +38,7 @@ jobs:
   # toolchain resolved from the workspace MSRVs, drop two prebuilt binaries into
   # ~/.cargo/bin and then run both scripts there -- five steps whose only product
   # was a toolchain, and the last host toolchain anywhere in this repository's CI.
-  # The Rust gates run where the workspaces live now (ybolab/micad,
+  # The Rust gates run where the workspaces live now (ybolab/mica-core,
   # ybolab/mica-deploy); this job runs the assembly's own suites.
   #
   # WHAT IT COSTS, stated rather than discovered: the runner builds the
@@ -236,7 +236,7 @@ jobs:
       # broke the moment a suite was widened. run.sh prints the real one.
       # The token is for tools/micad-pool.sh --source, which os-verify-test runs
       # first: verify's connd family reads the wifi reconcilers' contract out
-      # of the micad source at its pinned commit, cloned over https with it.
+      # of the mica-core source at its pinned commit, cloned over https with it.
       - name: The verify suite, in the pinned bun container
         env:
           GH_TOKEN: ${{ secrets.MICA_DEPS_TOKEN }}

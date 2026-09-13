@@ -2,13 +2,13 @@
 # What this tree reads out of the imported mica-apid archive.
 #
 #   bash tools/micad-pool.sh --openapi    the OpenAPI document into _out/debs/mica-apid/openapi.json
-#   bash tools/micad-pool.sh --source     the micad source at the pinned commit into _out/src/micad
+#   bash tools/micad-pool.sh --source     the mica-core source at the pinned commit into _out/src/mica-core
 #
 #   reads   _out/debs/amd64/pool/mica-apid_*.deb   (fetched at the pin by build-env/deb/fetch.sh)
 #   writes  _out/debs/mica-apid/openapi.json
-#           _out/src/micad/                        (build-env/deb/source.sh)
+#           _out/src/mica-core/                        (build-env/deb/source.sh)
 #
-# The management daemon and apid are built and released by ybolab/micad;
+# The management daemon and apid are built and released by ybolab/mica-core;
 # this repository imports micad, mica-apid, mica-mqttd and mica-mqtt-broker
 # through deps/packages/ and never sees that repository's tree. Two consumers
 # still need something out of it:
@@ -22,7 +22,7 @@
 #   config paths, the sweep prefix) out of micad/src/reconciler/ rather than
 #   restating it, so it needs that SOURCE at the pinned commit: --source
 #   checks it out with build-env/deb/source.sh, at the commit every micad
-#   pin names, into _out/src/micad. `make os-verify-test` and `make
+#   pin names, into _out/src/mica-core. `make os-verify-test` and `make
 #   os-verify` run it first; MICA_VERIFY_RECONCILER_DIR overrides the path.
 set -euo pipefail
 
@@ -45,9 +45,9 @@ case "${1:-}" in
     echo "micad-pool.sh: ${POOL#"${REPO_ROOT}"/}/mica-apid/openapi.json from ${found[0]##*/}"
     ;;
 --source)
-    bash "${REPO_ROOT}/build-env/deb/source.sh" micad
-    [ -d "${REPO_ROOT}/_out/src/micad/micad/src/reconciler" ] || {
-        echo "error: _out/src/micad/micad/src/reconciler does not exist at the pinned micad commit; verify's connd family reads the reconcilers' contract out of it" >&2
+    bash "${REPO_ROOT}/build-env/deb/source.sh" mica-core
+    [ -d "${REPO_ROOT}/_out/src/mica-core/micad/src/reconciler" ] || {
+        echo "error: _out/src/mica-core/micad/src/reconciler does not exist at the pinned mica-core commit; verify's connd family reads the reconcilers' contract out of it" >&2
         exit 1
     }
     ;;
