@@ -89,7 +89,7 @@ are:
 | `tests/file-ab-x64/seed-refusals.ts` | Actual DATA path refusals preserve the complete image hash |
 | `tests/file-ab-x64/http-measure-server.ts`, `publish.ts` | Production publication/acquisition with measured response bytes and immutable object reuse |
 | `tests/file-ab-x64/offline-clock.sh` | Installed HTTP deployment boots offline with RTC before catalog issuance or after its expiry |
-| `tests/file-ab-faults/run.sh` | Native transaction IO interruption and ENOSPC at observed install/confirm/GC boundaries |
+| `mica-deploy:gate/file-ab-faults/run.sh` | Native transaction IO interruption and ENOSPC at observed install/confirm/GC boundaries (runs in `ybolab/mica-deploy`) |
 | `tests/file-ab-fit/records.sh`, `firmware-io.sh` | Actual fixed firmware record parser and persistence-before-load behavior under sanitizers |
 | `tests/file-ab-fit/signatures.sh` | Required FIT signature acceptance and missing/unknown/modified signature refusal |
 | `pkgs/micad/tests/apid-api/run.sh` | HTTPS API, authentication, native lifecycle, reset and network acceptance against a fresh complete guest |
@@ -111,7 +111,7 @@ make os-build-test
 make os-verify-test
 make os-release-verify-test
 make os-fit-records-test
-make os-file-transaction-faults
+make file-transaction-faults      # in ybolab/mica-deploy
 make docs-verify
 ```
 

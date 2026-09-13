@@ -7,9 +7,15 @@ arch=${2:?architecture required}
 case "$arch" in amd64) target=x86_64-unknown-linux-gnu;; arm64) target=aarch64-unknown-linux-gnu;; *) exit 1;; esac
 test ! -e "$out/source"
 mkdir "$out/source"
-cp pkgs/mica-deploy/Cargo.toml pkgs/mica-deploy/Cargo.lock "$out/source/"
-cp -a pkgs/mica-deploy/src "$out/source/src"
-cp -a pkgs/mica-deploy/lifecycle-sys "$out/source/lifecycle-sys"
+# The source the pinned mica-lifecycle archives were built from, checked out
+# at the locked commit: the fault variant differs from the shipped mica-init
+# by one injected hang and nothing else.
+bash build-env/deb/source.sh mica-deploy
+src=_out/src/mica-deploy
+cp "$src/Cargo.toml" "$src/Cargo.lock" "$out/source/"
+cp -a "$src/src" "$out/source/src"
+cp -a "$src/lifecycle-sys" "$out/source/lifecycle-sys"
+cp -a "$src/tests" "$out/source/tests"
 python3 - "$out/source/src/bin/mica-init.rs" <<'PY'
 from pathlib import Path
 import sys

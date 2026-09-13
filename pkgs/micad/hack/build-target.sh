@@ -186,7 +186,7 @@ docker run --rm \
 # exec time on the device, one binary later than a wholly wrong-arch build.
 #
 # It runs in a second container, not the build one and not the host, the same
-# separation mica-podman:build.sh and pkgs/mica-deploy/build.sh draw: the build
+# separation mica-podman:build.sh and mica-deploy:build.sh draw: the build
 # asserts what it built, this asserts what landed in the directory
 # rootfs/build.sh is about to copy from, so an export that dropped a file
 # or a mount that wrote somewhere unexpected is caught. On the host it would

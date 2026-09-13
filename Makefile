@@ -1,4 +1,4 @@
-.PHONY: os-trust-domain-test os-file-transaction-faults build-env help os-apid-api-spec-pins os-apid-api-test os-apid-ui-build-contract-test os-bare-host-gate os-boot-tools os-build-test os-components os-cx3576-flash-test os-dbus-policy-test os-deb-package-gate os-deb-preflight os-deb-preflight-test os-debian-cache os-debian-install os-debian-test os-debian-verify os-debs os-devkeys os-lock-bump os-pool os-pool-lock-test os-factory-root-gate os-fit-records-test os-gadget-test os-health-test os-host-toolchain-lint os-host-toolchain-lint-test os-image os-install-closure-gate os-layout-lint os-mac-test os-netavark-kernel-test os-quadlet-doc-test os-repart-test os-rootfs-cx3576 os-rootfs-manifest-test os-rootfs-virt-arm64 os-rootfs-x64 os-rust-gate os-shadow-test os-shell-pipefail-lint os-smoke-negative-test os-smoke-test os-verify os-verify-test
+.PHONY: os-trust-domain-test build-env help os-apid-api-spec-pins os-apid-api-test os-apid-ui-build-contract-test os-bare-host-gate os-boot-tools os-build-test os-components os-cx3576-flash-test os-dbus-policy-test os-deb-package-gate os-deb-preflight os-deb-preflight-test os-debian-cache os-debian-install os-debian-test os-debian-verify os-debs os-devkeys os-lock-bump os-pool os-pool-lock-test os-factory-root-gate os-fit-records-test os-gadget-test os-health-test os-host-toolchain-lint os-host-toolchain-lint-test os-image os-install-closure-gate os-layout-lint os-mac-test os-netavark-kernel-test os-quadlet-doc-test os-repart-test os-rootfs-cx3576 os-rootfs-manifest-test os-rootfs-virt-arm64 os-rootfs-x64 os-rust-gate os-shadow-test os-shell-pipefail-lint os-smoke-negative-test os-smoke-test os-verify os-verify-test
 
 # THE SOURCE DEPENDENCIES, before anything else: build-env/ (mica-build-env)
 # is the substrate every target reaches through, rootfs/debian/ (mica-debian)
@@ -75,7 +75,7 @@ help:
 	@echo "  os-build-test       run the build bun+TypeScript suite: board geometry and the toolset wrappers (docker)"
 	@echo "  os-netavark-kernel-test  assert every board kernel config carries the symbols netavark programs rules against"
 	@echo "  build-env           build the pinned builder images localhost/mos-build-{base,c,deb,go,openssl,rust,rust-check}:<arch>"
-	@echo "  os-rust-gate        run both Rust workspaces' hack/check.sh (fmt, clippy -D warnings, nextest, doctests, cargo-deny) in the pinned gate image (docker)"
+	@echo "  os-rust-gate        run the micad workspace's hack/check.sh (fmt, clippy -D warnings, nextest, doctests, cargo-deny) in the pinned gate image (docker)"
 	@echo "  os-deb-<producer>   build one producer's Debian packages for the architectures it declares; \`bash build-env/deb/producers.sh\` lists them (docker)"
 	@echo "  os-deb-preflight    list every missing package-build input at once, and check every lock row is reachable, before os-pool starts a container"
 	@echo "  os-deb-preflight-test   drive that pre-flight red and green, and mutate each half of its hook count contract"
@@ -373,6 +373,7 @@ os-pool: os-deb-preflight
 	bash build-env/deb/fetch.sh --arch arm64
 	$(MAKE) os-debs
 	bash tools/podman-pool.sh --check
+	bash tools/deploy-pool.sh --check
 
 # fetch.sh and lock.sh against a stub of the release API that requires the
 # token: a replaced asset, a lying lock row, a missing asset, an unreleased
@@ -561,9 +562,9 @@ os-netavark-kernel-test:
 build-env:
 	bash build-env/build.sh
 
-# The Rust gate: `pkgs/micad/hack/check.sh` and `pkgs/mica-deploy/hack/check.sh`,
-# UNMODIFIED, inside localhost/mos-build-rust-check. Five commands per
-# workspace -- `cargo fmt --all --check`, clippy at `-D warnings`, nextest,
+# The Rust gate: `pkgs/micad/hack/check.sh`, UNMODIFIED, inside
+# localhost/mos-build-rust-check (mica-deploy runs its own in ybolab/mica-deploy).
+# Five commands per workspace -- `cargo fmt --all --check`, clippy at `-D warnings`, nextest,
 # doctests, and `cargo deny check licenses bans advisories`.
 #
 # This target exists because those scripts were unrunnable HERE. Their four
@@ -696,10 +697,6 @@ os-layout-lint:
 os-fit-records-test:
 	bash tests/file-ab-fit/records.sh
 	bash tests/file-ab-fit/firmware-io.sh
-
-# Exact native transaction code, interrupted before and after each observed IO.
-os-file-transaction-faults:
-	bash tests/file-ab-faults/run.sh
 
 os-trust-domain-test:
 	bash tests/trust-domain-hygiene-test.sh

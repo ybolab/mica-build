@@ -128,6 +128,29 @@ export function readPin(file: string, key: string): Pin {
 }
 
 /** `pkgs/micad/<crate>/Cargo.toml` -- the four device binaries this repository writes. */
+/**
+ * The version an imported package's pin records: `deps/packages/<name>.json`,
+ * the archive version with the pool's git stamp cut off. `0.1.0+git<commit>-1`
+ * is what dpkg sees; `0.1.0` is what the binary reports, because the crate
+ * that built it carries the number and the stamp is added by the packer.
+ * Both architectures' rows carry the same version by construction (one
+ * release, one commit); the amd64 row is read and the arm64 row must agree.
+ */
+export function readPinnedPackageVersion(name: string): Pin {
+  const file = join(REPO_ROOT, 'deps', 'packages', `${name}.json`)
+  const pin = JSON.parse(readFileSync(file, 'utf8')) as { targets?: Record<string, { version?: string }> }
+  const versions = new Set(Object.values(pin.targets ?? {}).map(t => t.version ?? ''))
+  if (versions.size !== 1 || versions.has('')) {
+    throw new Error(`${file} does not record one non-empty version across its targets (got ${[...versions].join(', ') || 'none'}); the pin is what says which version ${name} must report, and a pin that says two things says nothing`)
+  }
+  const recorded = [...versions][0]!
+  const upstream = recorded.replace(/\+git[0-9a-f]{12}(\.dirty)?-\d+$/, '')
+  if (upstream === recorded) {
+    throw new Error(`${file} records the version '${recorded}', which carries no pool git stamp (+git<commit12>-<n>); the archive version and the reported version are told apart by that stamp`)
+  }
+  return { recorded, expected: upstream, file, key: `targets.*.version` }
+}
+
 export function cratePath(crate: string): string {
   return join(REPO_ROOT, 'pkgs', 'micad', crate, 'Cargo.toml')
 }

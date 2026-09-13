@@ -460,7 +460,7 @@ echo "compose: $resolved_n package(s) resolved for $MOS_BOARD/$MOS_PROFILE, decl
 sed 's/^/  /' "$COMPOSE_STAGE/packages.txt"
 
 # The builder is NAMED rather than inherited -- the same BUILDX_BUILDER
-# register as pkgs/mica-deploy/build.sh and mica-podman:build.sh, and the same
+# register as mica-deploy:build.sh and mica-podman:build.sh, and the same
 # selection. BUILDX_BUILDER wins, because a caller who names a builder has made
 # a decision. With nothing named, `default` is the docker driver on every
 # docker installation, and it reaches linux/${MOS_ARCH} exactly when the host

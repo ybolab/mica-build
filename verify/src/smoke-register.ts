@@ -18,7 +18,7 @@
 import { join } from 'node:path'
 import { REPO_ROOT } from './paths.ts'
 import { cratePath, readCratePackageVersion, readPin, pinKeys, type Pin } from './smoke-pins.ts'
-import { PODMAN_VERSIONS_ENV, VERSIONS_ENV_FILES } from './smoke-pins.ts'
+import { PODMAN_VERSIONS_ENV, VERSIONS_ENV_FILES, readPinnedPackageVersion } from './smoke-pins.ts'
 
 /**
  * How an artifact is asked what it is.
@@ -153,7 +153,7 @@ export const ARTIFACTS: readonly Artifact[] = [
   {
     name: 'mica-deploy',
     path: '/usr/bin/mica-deploy',
-    pin: () => readCratePackageVersion(join(REPO_ROOT, 'pkgs/mica-deploy/Cargo.toml')),
+    pin: () => readPinnedPackageVersion('mica-deploy'),
     contract: { kind: 'version', argv: ['--version'] },
   },
 

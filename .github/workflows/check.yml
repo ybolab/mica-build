@@ -73,37 +73,6 @@ jobs:
           $SUDO apt-get update
           $SUDO apt-get install -y --no-install-recommends bash make ca-certificates git
 
-      # Read out of the manifests rather than written here: the MSRV lives in
-      # each Cargo.toml, and a second copy in this file could disagree with it.
-      #
-      # STILL TWO MANIFESTS AND STILL ONE COMPILER, so this survives the change
-      # above unaltered in substance -- only what PROVIDES the compiler moved.
-      # tests/rust-gate.sh takes both workspaces into one image and that image
-      # carries one rustc. Taking the higher of the two MSRVs would let a crate
-      # claim one this gate never proves, and taking the first would let the
-      # other drift unnoticed. If they should ever legitimately differ, that is
-      # the point at which the gate needs two images, and this is what says so.
-      - name: The two workspaces agree about the MSRV, because one image runs both
-        run: |
-          set -euo pipefail
-          read_msrv() {
-            local v
-            v=$(sed -n 's/^rust-version *= *"\([^"]*\)".*/\1/p' "$1" | head -1)
-            [ -n "$v" ] || { echo "no rust-version in $1" >&2; exit 1; }
-            echo "$v"
-          }
-          micad_msrv=$(read_msrv pkgs/micad/Cargo.toml)
-          sign_msrv=$(read_msrv pkgs/mica-deploy/Cargo.toml)
-          [ "$micad_msrv" = "$sign_msrv" ] || {
-            echo "error: the two workspaces disagree about the MSRV." >&2
-            echo "       pkgs/micad/Cargo.toml:         $micad_msrv" >&2
-            echo "       pkgs/mica-deploy/Cargo.toml:    $sign_msrv" >&2
-            echo "       tests/rust-gate.sh runs both gates in ONE image, which carries one" >&2
-            echo "       rustc, so it cannot honour two MSRVs. Reconcile them, or split the gate." >&2
-            exit 1
-          }
-          echo "workspace MSRV (both manifests agree): $micad_msrv"
-
       # The images the gate runs in. build-env/build.sh builds the whole table
       # in dependency order; rust-check is the last row and the one this job
       # needs, and it cannot be built on its own because its FROM is a sibling
@@ -124,16 +93,15 @@ jobs:
       # resolver, so the assertion cannot drift from the pin the way a literal
       # in this file would.
       #
-      # BOTH workspaces are named. `tests/rust-gate.sh` with no argument takes
-      # both; a future default that quietly took one would leave the second
-      # crate shipping unchecked with this job still green, which is the exact
-      # failure the separate mica-deploy step here used to guard against.
-      - name: The Rust gate, both workspaces, in localhost/mos-build-rust-check
+      # The workspace is named: a future default that quietly took another
+      # would leave a crate shipping unchecked with this job still green.
+      # mica-deploy runs its own gate in ybolab/mica-deploy.
+      - name: The Rust gate, the micad workspace, in localhost/mos-build-rust-check
         run: |
           set -euo pipefail
           image="$(bash build-env/from.sh --arch=amd64 --ref LOCAL_MOS_BUILD_RUST_CHECK)"
           make os-rust-gate 2>&1 | tee /tmp/rust-gate.log
-          for w in micad mica-deploy; do
+          for w in micad; do
             grep -qF "=== rust gate: pkgs/${w} in ${image} ===" /tmp/rust-gate.log || {
               echo "error: the gate passed, but nothing said pkgs/${w} ran in ${image}." >&2
               echo "       tests/rust-gate.sh prints one such line per workspace, and it is the" >&2
@@ -145,8 +113,6 @@ jobs:
       - name: Firmware record parsing and persistent attempt IO
         run: make os-fit-records-test os-trust-domain-test os-s905x5m-hwinit-test
 
-      - name: Native file transactions survive interrupted IO and ENOSPC
-        run: make os-file-transaction-faults
 
   # Offline suites without Docker; DATA initialization also runs as root.
   # Each one fails loudly when it

@@ -187,9 +187,11 @@ COMPONENTS="${WORK}/components.tsv"
     printf 'apid\t/usr/bin/apid\t%s\tbuild-env/deb/version.sh\t-\t-\n' "${CRATE_VERSION}"
     printf 'mica-mqttd\t/usr/bin/mica-mqttd\t%s\tbuild-env/deb/version.sh\t-\t-\n' "${CRATE_VERSION}"
     printf 'mica-mqtt-broker\t/usr/bin/mica-mqtt-broker\t%s\tbuild-env/deb/version.sh\t-\t-\n' "${CRATE_VERSION}"
-    deploy_version=$(sed -n 's/^version = "\([^" ]*\)"/\1/p' "${REPO_ROOT}/pkgs/mica-deploy/Cargo.toml" | head -1)
+    # Imported through the lock: the pin's archive version, with the pool's
+    # git stamp cut off, is what the binary reports.
+    deploy_version=$(python3 -c 'import json,re,sys; v={t["version"] for t in json.load(open(sys.argv[1]))["targets"].values()}; assert len(v)==1, v; print(re.sub(r"\+git[0-9a-f]{12}(\.dirty)?-\d+$", "", v.pop()))' "${REPO_ROOT}/deps/packages/mica-deploy.json")
     test -n "$deploy_version"
-    printf 'mica-deploy\t/usr/bin/mica-deploy\t%s\tpkgs/mica-deploy/Cargo.toml\t-\t-\n' "$deploy_version"
+    printf 'mica-deploy\t/usr/bin/mica-deploy\t%s\tdeps/packages/mica-deploy.json\t-\t-\n' "$deploy_version"
     printf 'podman\t/usr/bin/podman\t%s\tPODMAN_VERSION\t-\t-\n' "$(pin "${PODMAN_VERSIONS}" PODMAN_VERSION)"
     printf 'quadlet\t/usr/libexec/podman/quadlet\t%s\tPODMAN_VERSION\t-\t-\n' "$(pin "${PODMAN_VERSIONS}" PODMAN_VERSION)"
     # crun 1.29.1 re-executes libcrun out of a memory file descriptor -- its

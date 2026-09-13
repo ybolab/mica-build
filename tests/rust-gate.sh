@@ -3,7 +3,6 @@
 #
 #   bash tests/rust-gate.sh              both workspaces
 #   bash tests/rust-gate.sh micad         pkgs/micad only
-#   bash tests/rust-gate.sh mica-deploy    pkgs/mica-deploy only
 #
 # It runs `pkgs/<ws>/hack/check.sh` UNMODIFIED. That is the whole contract of
 # this file: the gate is those two scripts, this is the container they need, and
@@ -11,7 +10,7 @@
 # name would recreate the failure it exists to fix -- a documented gate and a
 # runnable gate that are not the same gate.
 #
-# Two workspaces, because pkgs/mica-deploy is its own `[workspace]` and
+# One workspace here (mica-deploy runs its own gate in ybolab/mica-deploy); it was two, because pkgs/mica-deploy was its own `[workspace]` and
 # `cargo clippy --workspace` from pkgs/micad has not reached it since the split.
 # One image serves both: same compiler, same four tools, different Cargo.lock.
 #
@@ -35,7 +34,7 @@ done
 
 # The workspaces, and what each needs. Both run the same script name; only micad
 # needs the built-in UI tree, because only its `ui-bundle` crate embeds one.
-ALL_WORKSPACES=(micad mica-deploy)
+ALL_WORKSPACES=(micad)
 WORKSPACES=()
 if [ "$#" -eq 0 ]; then
     WORKSPACES=("${ALL_WORKSPACES[@]}")

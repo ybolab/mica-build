@@ -22,7 +22,6 @@ Start with the [documentation portal](docs/README.md) or the
 |---|---|
 | `boards/` | Board policy, kernel and boot-firmware BSPs |
 | `pkgs/mica-boot/` | UKI/FIT, initramfs and explicit development signing inputs |
-| `pkgs/mica-deploy/` | Native early boot and transactional deployment tools |
 | `pkgs/micad/` | Management services, API, dashboard and MQTT |
 | `rootfs/` | Userspace package composition and immutable root packing |
 | `build/` | Signed components, offline archives and complete image assembly |

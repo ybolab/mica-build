@@ -76,7 +76,7 @@ RUN set -eu; \
     pack.sh --root /stage/apid --control /in/control/mica-apid.control \
             --version "${MOS_DEB_VERSION}" --arch "${MOS_DEB_ARCH}" --out /out
 
-# The export stage, the shape pkgs/mica-deploy/Dockerfile and
+# The export stage, the shape mica-deploy:Dockerfile and
 # mica-podman:Dockerfile end in: `-o type=local` writes this stage's
 # filesystem into _out/debs/<arch>/pool/ and nothing here installs into a root.
 FROM scratch AS out

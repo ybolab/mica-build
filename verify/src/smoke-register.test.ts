@@ -351,9 +351,9 @@ describe('pinCoverageFaults -- reverse, the direction that catches a NEW artifac
     expect(faults[0]!.message).not.toContain('NEWTHING_SHA256')
   })
 
-  test('the deployment client reads its crate version', () => {
+  test('the deployment client reads its version from the pin that imports it', () => {
     const deploy = ARTIFACTS.find(a => a.name === 'mica-deploy')!
-    expect(deploy.pin().file).toBe(join(REPO_ROOT, 'pkgs/mica-deploy/Cargo.toml'))
-    expect(deploy.pin().key).toBe('package.version')
+    expect(deploy.pin().file).toBe(join(REPO_ROOT, 'deps/packages/mica-deploy.json'))
+    expect(deploy.pin().key).toBe('targets.*.version')
   })
 })

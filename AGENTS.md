@@ -8,7 +8,7 @@ update this file.
 ### Skill stack
 
 - `/pma` — workflow control, three-phase gate, task and plan tracking
-- `/pma-rust` — `pkgs/micad/` (micad, apid, mica-mqttd, broker, settings), `pkgs/mica-deploy/`
+- `/pma-rust` — `pkgs/micad/` (micad, apid, mica-mqttd, broker, settings); the deployment tools live in `ybolab/mica-deploy`
 - `/pma-bun` — `verify/`, `build/`, `update-server/`, `pkgs/micad/tests/apid-api/`
 - `/pma-web` — `pkgs/micad/apid/ui/` (React + Vite, embedded into apid)
 
