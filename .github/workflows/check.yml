@@ -387,9 +387,10 @@ jobs:
             -v "$PWD:/source:ro" --tmpfs /check:exec \
             --workdir /check --entrypoint /bin/bash "$image" -c '
               set -euo pipefail
-              mkdir -p update-server build shared tests
+              mkdir -p update-server build shared tests verify
               tar -C /source/update-server --exclude=./node_modules --exclude=./.env --exclude=./.data --exclude=./dist -cf - . | tar -C update-server -xf -
               cp -a /source/build/src build/src
+              cp -a /source/verify/src verify/src
               cp -a /source/shared/. shared/
               cp -a /source/tests/component-contracts tests/component-contracts
               cd update-server
