@@ -205,7 +205,7 @@ jobs:
       - name: The trust material the products are signed with (development, this lane proves the pipeline)
         run: make os-devkeys
 
-      - name: Every product: build, verify, gate, smoke negatives, repart
+      - name: "Every product: build, verify, gate, smoke negatives, repart"
         run: |
           set -euo pipefail
           for p in $(bash tools/product.sh --list); do
