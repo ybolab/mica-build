@@ -101,12 +101,16 @@ def generated_rules(engine: selector.Selector, inputs: Path, configured: dict) -
     public_rules = [r for r in roots if r.get('generated') == public_producer]
     if public_rules:
         manifest = '/usr/share/mica/meta/updates/manifest.json'
+        product = '/usr/lib/mica/product.conf'
         marker = '/usr/share/mica/meta/GENERATED'
-        require(len(public_rules) == 1 and public_rules[0]['paths'] == [manifest], 'ambiguous public metadata declaration')
-        for directory in ['/usr/share/mica/meta', '/usr/share/mica/meta/updates']:
+        # Two declared public files -- the manifest and the product record --
+        # and the marker, declared here when captured.
+        declared = {r['paths'][0]: r for r in public_rules if len(r['paths']) == 1}
+        require(len(public_rules) == 2 and set(declared) == {manifest, product}, 'ambiguous public metadata declaration')
+        for directory in ['/usr/share/mica/meta', '/usr/share/mica/meta/updates', '/usr/lib/mica']:
             require(configured.get(directory, {}).get('type') == 'directory' and engine.at(directory).is_dir()
                     and not engine.at(directory).is_symlink(), f'public metadata directory changed: {directory}')
-        for path in [manifest, marker]:
+        for path in [manifest, product, marker]:
             original = configured.get(path)
             at = engine.at(path)
             if path == marker and original is None:
@@ -117,8 +121,8 @@ def generated_rules(engine: selector.Selector, inputs: Path, configured: dict) -
             require(at.is_file() and not at.is_symlink() and selector.sha256(at) == original['sha256'],
                     f'public metadata changed after capture: {path}')
             expected = dict(mode=0o644, uid=0, gid=0, sha256=original['sha256'])
-            if path == manifest:
-                public_rules[0]['expect'] = expected
+            if path in declared:
+                declared[path]['expect'] = expected
             else:
                 roots.append(dict(paths=[path], kind='resource', reason='captured nonempty public development marker',
                                   generated=public_producer, expect=expected))

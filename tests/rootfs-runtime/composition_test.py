@@ -844,10 +844,12 @@ class CompositionTest(unittest.TestCase):
     def public_metadata(self, marker=None):
         producer = 'rootfs/build.sh public-meta staging; compose-install.sh meta_install'
         rules = json.loads((REPO / 'rootfs/runtime/consumers.json').read_text())
-        rule = next(r for r in rules['consumers']['mica-system']['roots'] if r.get('generated') == producer)
-        self.f.rules['consumers']['mica-system']['roots'].append(rule)
+        # Every declared public file: the manifest and the product record.
+        for rule in [r for r in rules['consumers']['mica-system']['roots'] if r.get('generated') == producer]:
+            self.f.rules['consumers']['mica-system']['roots'].append(rule)
         self.f.rules_path.write_text(json.dumps(self.f.rules))
         self.f.write('/usr/share/mica/meta/updates/manifest.json', (REPO / 'meta.example/updates/manifest.json').read_bytes())
+        self.f.write('/usr/lib/mica/product.conf', b'PRODUCT=fixture\nBOARD=fixture\nPROFILE=dev\nFEATURES=""\nCOMPONENTS=""\n')
         if marker is not None:
             self.f.write('/usr/share/mica/meta/GENERATED', marker)
 
@@ -857,7 +859,7 @@ class CompositionTest(unittest.TestCase):
         r = self.compose()
         self.assertEqual(r.returncode, 0, r.stderr)
         report = json.loads(self.f.report.read_text())
-        for path in ['/usr/share/mica/meta/updates/manifest.json', '/usr/share/mica/meta/GENERATED']:
+        for path in ['/usr/share/mica/meta/updates/manifest.json', '/usr/share/mica/meta/GENERATED', '/usr/lib/mica/product.conf']:
             self.assertEqual(self.f.out.joinpath(path.lstrip('/')).read_bytes(), self.f.root.joinpath(path.lstrip('/')).read_bytes())
             provenance = report['provenance']['files'][path]
             self.assertEqual(provenance['configured']['sha256'], provenance['final']['sha256'])
