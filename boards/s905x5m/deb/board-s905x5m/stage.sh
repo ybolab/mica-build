@@ -12,9 +12,9 @@ for entry in 'mica-board-s905x5m audio' 'mica-s905x5m-wireless wireless'; do
     root=/stage/$package
     install -D -m 0644 "/in/init/$name.conf" "$root/etc/mica/$name.conf"
     install -D -m 0755 "/in/hwinit/hwinit-$name" "$root/usr/lib/mica/hwinit-$name"
-    install -D -m 0644 "/in/hwinit/mos-$name.service" "$root/usr/lib/systemd/system/mos-$name.service"
+    install -D -m 0644 "/in/hwinit/mica-$name.service" "$root/usr/lib/systemd/system/mica-$name.service"
     install -d "$root/etc/systemd/system/multi-user.target.wants"
-    ln -s "/usr/lib/systemd/system/mos-$name.service" "$root/etc/systemd/system/multi-user.target.wants/"
+    ln -s "/usr/lib/systemd/system/mica-$name.service" "$root/etc/systemd/system/multi-user.target.wants/"
 done
 install -D -m 0644 /in/init/wifi.conf /stage/mica-s905x5m-wifi/etc/mica/wifi.conf
 panel=/stage/mica-bm201-front-panel

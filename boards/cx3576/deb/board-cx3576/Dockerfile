@@ -20,7 +20,7 @@ ARG MOS_DEB_SOURCE_COMMIT
 RUN set -eu; \
     bash /in/render.sh /src /render; \
     . /src/boards/cx3576/board.env; \
-    PKG="mos-board-${LAYOUT_BOARD}"; ROOT="/stage/${PKG}"; \
+    PKG="mica-board-${LAYOUT_BOARD}"; ROOT="/stage/${PKG}"; \
     install -d -m 0755 "${ROOT}/etc/repart.d" "${ROOT}/etc/mica" \
         "${ROOT}/etc/systemd/system/multi-user.target.wants" \
         "${ROOT}/usr/lib/mica" "${ROOT}/usr/lib/systemd/system" \
@@ -81,17 +81,17 @@ RUN set -eu; \
         [ -f "${conf}" ] || { echo "error: ${LAYOUT_BOARD} declares '${n}' in BOARD_HWINIT_CONFS and boards/${LAYOUT_BOARD}/bsp/init/${n}.conf does not exist; the unit that reads it would find no fact on the device" >&2; exit 1; }; \
         install -m 0644 "${conf}" "${ROOT}/etc/mica/${n}.conf"; \
         [ "${n}" != bt ] || continue; \
-        script="/in/hwinit/hwinit-${n}"; unit="/in/hwinit/mos-${n}.service"; \
+        script="/in/hwinit/hwinit-${n}"; unit="/in/hwinit/mica-${n}.service"; \
         [ -f "${script}" ] || { echo "error: /etc/mica/${n}.conf is a board fact that no hwinit script reads (there is no boards/${LAYOUT_BOARD}/hwinit/hwinit-${n}); a fact nothing consumes is a silent no-op on the device" >&2; exit 1; }; \
-        [ -f "${unit}" ] || { echo "error: boards/${LAYOUT_BOARD}/hwinit/hwinit-${n} has no unit to run it (there is no boards/${LAYOUT_BOARD}/hwinit/mos-${n}.service)" >&2; exit 1; }; \
+        [ -f "${unit}" ] || { echo "error: boards/${LAYOUT_BOARD}/hwinit/hwinit-${n} has no unit to run it (there is no boards/${LAYOUT_BOARD}/hwinit/mica-${n}.service)" >&2; exit 1; }; \
         install -m 0755 "${script}" "${ROOT}/usr/lib/mica/hwinit-${n}"; \
-        install -m 0644 "${unit}" "${ROOT}/usr/lib/systemd/system/mos-${n}.service"; \
+        install -m 0644 "${unit}" "${ROOT}/usr/lib/systemd/system/mica-${n}.service"; \
         # ENABLEMENT IS A FILE THIS PACKAGE OWNS. The image creates exactly \
         # this symlink today; a postinst `systemctl enable` would write it \
         # into a root that is sealed read-only before the device ever boots. \
-        ln -s "/usr/lib/systemd/system/mos-${n}.service" \
-            "${ROOT}/etc/systemd/system/multi-user.target.wants/mos-${n}.service"; \
-        for r in /in/hwinit/*-mos-"${n}"-*.rules; do \
+        ln -s "/usr/lib/systemd/system/mica-${n}.service" \
+            "${ROOT}/etc/systemd/system/multi-user.target.wants/mica-${n}.service"; \
+        for r in /in/hwinit/*-mica-"${n}"-*.rules; do \
             [ -e "${r}" ] || continue; \
             install -m 0644 "${r}" "${ROOT}/usr/lib/udev/rules.d/$(basename "${r}")"; \
         done; \
@@ -102,7 +102,7 @@ RUN set -eu; \
         # machine-id-derived address over a port hwinit-mac is about to \
         # assign; without it that program is a no-op on this board, so the \
         # file is part of the mechanism and not decoration. \
-        for l in /in/hwinit/*-mos-"${n}"-*.link; do \
+        for l in /in/hwinit/*-mica-"${n}"-*.link; do \
             [ -e "${l}" ] || continue; \
             install -m 0644 "${l}" "${ROOT}/usr/lib/systemd/network/$(basename "${l}")"; \
         done; \
