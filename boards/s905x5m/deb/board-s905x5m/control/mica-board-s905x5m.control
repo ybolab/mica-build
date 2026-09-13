@@ -4,5 +4,5 @@ Architecture: @ARCH@
 Maintainer: mos build <mos@example.invalid>
 Section: admin
 Priority: optional
-Depends: mica-system (= @VERSION@), kmod, alsa-utils
+Depends: mica-system, kmod, alsa-utils
 Description: MOS S905X5M hardware and storage policy
