@@ -20,7 +20,7 @@ key="$work/content.key.pem"
 # The Rust builder supplies the pinned native and cross C linkers.
 builder=$(bash build-env/from.sh --arch=amd64 --ref LOCAL_MICA_BUILD_RUST)
 timeout -k 15 180 docker run --rm --platform linux/amd64 --label ai-agent=true --network traefik \
-    -v "$work:/w" -v "$PWD/tests/file-ab-x64:/harness:ro" --entrypoint /bin/bash "$builder" \
+    -v "$work:/w" -v "$PWD/tests/lifecycle-uefi:/harness:ro" --entrypoint /bin/bash "$builder" \
     -c 'set -euo pipefail; command -v "$1"; "$1" -Wall -Wextra -Werror -shared -fPIC /harness/reset-fault.c -o /w/reset-fault.so -ldl' reset-compiler "$compiler"
 for tier in configuration application-data full-factory; do
     out="$work/$tier"
@@ -30,7 +30,7 @@ for tier in configuration application-data full-factory; do
         -v "$out:/w" -v "$root:/root.img:ro" ai-agent/mos-boot-tools-amd64 \
         unsquashfs -no-progress -d /w/tree /root.img > "$out/extract.log" 2>&1
     # mica-build-side: host
-    install -m 0755 tests/file-ab-x64/reset-runtime.sh "$out/tree/usr/lib/mica/reset-runtime"
+    install -m 0755 tests/lifecycle-uefi/reset-runtime.sh "$out/tree/usr/lib/mica/reset-runtime"
     install -m 0644 "$work/reset-fault.so" "$out/tree/usr/lib/mica/reset-fault.so"
     printf '%s\n' "$tier" > "$out/tree/usr/lib/mica/reset-test-tier"
     mkdir -p "$out/tree/etc/systemd/system/micad.service.d"
@@ -52,11 +52,11 @@ RuntimeMaxSec=240
 WantedBy=multi-user.target
 UNIT
     ln -s /etc/systemd/system/reset-acceptance.service "$out/tree/etc/systemd/system/multi-user.target.wants/reset-acceptance.service"
-    timeout -k 20 900 bash tests/file-ab-x64/bun.sh tests/file-ab-x64/build.ts "$out/boot" "$board" "$kernel" "$cert" "$key" "$init" "$out/tree" "$shutdown" > "$out/build.log" 2>&1
+    timeout -k 20 900 bash tests/lifecycle-uefi/bun.sh tests/lifecycle-uefi/build.ts "$out/boot" "$board" "$kernel" "$cert" "$key" "$init" "$out/tree" "$shutdown" > "$out/build.log" 2>&1
     truncate -s 4G "$out/boot/image/disk.img"
     for boot in 1 2 3; do
         timeout -k 15 600 docker run --rm --label ai-agent=true --network traefik \
-            -v "$out/boot:/w" -v "$PWD/tests/file-ab-x64:/harness:ro" ai-agent/mos-p2-lab \
+            -v "$out/boot:/w" -v "$PWD/tests/lifecycle-uefi:/harness:ro" ai-agent/mos-p2-lab \
             bash /harness/boot.sh image/disk.img writable 540 "$board" > "$out/boot-$boot.log" 2>&1
         if [ "$boot" = 1 ]; then
             grep -F "FILE_AB_RESET_STAGED: $tier" "$out/boot-$boot.log"
@@ -68,7 +68,7 @@ UNIT
                 ! grep -F FILE_AB_RESET_INTERRUPTION "$out/boot-$boot.log"
             fi
         fi
-        bash tests/file-ab-x64/shutdown-check.sh "$out/boot-$boot.log"
+        bash tests/lifecycle-uefi/shutdown-check.sh "$out/boot-$boot.log"
     done
     echo "FILE_AB_INTERRUPTED_RESET_PASS: $board $tier"
 done

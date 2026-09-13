@@ -41,12 +41,12 @@ UNIT
  python3 - "$out/boot.sh" <<'PY'
 from pathlib import Path
 import sys
-source=Path('tests/file-ab-x64/boot.sh').read_text()
+source=Path('tests/lifecycle-uefi/boot.sh').read_text()
 assert source.count('-nographic -no-reboot')==1
 Path(sys.argv[1]).write_text(source.replace('-nographic -no-reboot', '-qmp unix:/w/boot-events.sock,server=on,wait=off -nographic -no-reboot'))
 PY
  for attempt in 1 2 3; do
-  timeout -k 15 450 docker run --rm --label ai-agent=true --network traefik -v "$out:/w" -v "$PWD/tests/file-ab-x64:/harness:ro" ai-agent/mos-p2-lab \
+  timeout -k 15 450 docker run --rm --label ai-agent=true --network traefik -v "$out:/w" -v "$PWD/tests/lifecycle-uefi:/harness:ro" ai-agent/mos-p2-lab \
     python3 /harness/qmp-boot.py "/w/events-$attempt.jsonl" bash /w/boot.sh disk.img writable 400 "$board" > "$out/attempt-$attempt.log" 2>&1
   grep -F "FILE_AB_KERNEL_FAULT_TRIGGER: $mode" "$out/attempt-$attempt.log"
   grep -F 'Kernel panic - not syncing: sysrq triggered crash' "$out/attempt-$attempt.log"
@@ -65,10 +65,10 @@ PY
     mdir -i /w/disk.img@@1M -b ::/loader/entries > "$out/entries-$attempt.txt"
   grep -F "mos-$bad+$left-$attempt.conf" "$out/entries-$attempt.txt"
  done
- timeout -k 15 450 docker run --rm --label ai-agent=true --network traefik -v "$out:/w" -v "$PWD/tests/file-ab-x64:/harness:ro" ai-agent/mos-p2-lab \
+ timeout -k 15 450 docker run --rm --label ai-agent=true --network traefik -v "$out:/w" -v "$PWD/tests/lifecycle-uefi:/harness:ro" ai-agent/mos-p2-lab \
    bash /harness/boot.sh disk.img writable 400 "$board" > "$out/fallback.log" 2>&1
  grep -F FILE_AB_RUNTIME_PASS "$out/fallback.log"
  ! grep -F "mica-init: verified deployment $bad;" "$out/fallback.log"
- bash tests/file-ab-x64/shutdown-check.sh "$out/fallback.log"
+ bash tests/lifecycle-uefi/shutdown-check.sh "$out/fallback.log"
  printf 'FILE_AB_KERNEL_FAULT_FALLBACK_PASS: %s %s\n' "$board" "$mode"
 done

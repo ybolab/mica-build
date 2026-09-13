@@ -49,7 +49,7 @@ export async function acceptProvenance(inputs: ReleaseInputs, checkout = REPO_RO
 if (import.meta.main) {
   try {
     const [input, ...extra] = Bun.argv.slice(2)
-    if (!input || extra.length) throw new Error('Usage: tests/file-ab-x64/bun.sh tests/file-ab-x64/provenance-acceptance.ts INPUTS_JSON')
+    if (!input || extra.length) throw new Error('Usage: tests/lifecycle-uefi/bun.sh tests/lifecycle-uefi/provenance-acceptance.ts INPUTS_JSON')
     await acceptProvenance(JSON.parse(readFileSync(resolve(input), 'utf8')))
   } catch (error) {
     console.error(error instanceof Error ? error.message : String(error))

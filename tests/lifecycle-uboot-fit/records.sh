@@ -8,7 +8,7 @@ image=$(bash build-env/from.sh --arch=amd64 --ref LOCAL_MICA_BUILD_C)
 docker run --rm --label ai-agent=true --network traefik -v "$PWD:/src:ro" -v "$PWD/_out/tests:/out" \
     --entrypoint /bin/bash "$image" -ceu '
     gcc -std=c11 -Wall -Wextra -Werror -fsanitize=address,undefined \
-        /src/tests/file-ab-fit/records.c -o /out/fit-records
+        /src/tests/lifecycle-uboot-fit/records.c -o /out/fit-records
     timeout 15 /out/fit-records
 '
 # mica-build-side: host

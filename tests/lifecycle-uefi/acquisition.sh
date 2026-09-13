@@ -14,16 +14,16 @@ test -f "$evidence/image/factory-disk.img"
 test ! -e "$evidence/updates"
 boot() {
     docker run --rm --label ai-agent=true --network traefik -v "$evidence:/w" \
-        -v "$PWD/tests/file-ab-x64:/harness:ro" ai-agent/mos-p2-lab \
+        -v "$PWD/tests/lifecycle-uefi:/harness:ro" ai-agent/mos-p2-lab \
         bash /harness/boot.sh image/disk.img writable 420 "$board" >"$1" 2>&1
     grep -F FILE_AB_RUNTIME_PASS "$1"
-    bash tests/file-ab-x64/shutdown-check.sh "$1"
+    bash tests/lifecycle-uefi/shutdown-check.sh "$1"
 }
 root="$evidence/root"
 kernel="$evidence/kernel"
 for spec in '3 root' '4 kernel'; do
     read -r generation kind <<<"$spec"
-    timeout 360s bun tests/file-ab-x64/update.ts "$evidence" "$certificate" "$key" "$generation" "$kind" "$root" "$kernel" "$init" "$shutdown"
+    timeout 360s bun tests/lifecycle-uefi/update.ts "$evidence" "$certificate" "$key" "$generation" "$kind" "$root" "$kernel" "$init" "$shutdown"
     output="$evidence/updates/$generation"
     mv "$evidence/offline" "$output/raw-media"
     mkdir "$evidence/offline"
@@ -37,7 +37,7 @@ for spec in '3 root' '4 kernel'; do
             --input "$output/offline/deployment.json" --kernel "$kernel" --root "$root" \
             --public-key "$(cat "$evidence/metadata.pub")" --out "$evidence/offline/update.mosupd"
     else
-        timeout 300s bun tests/file-ab-x64/publish.ts "$evidence" "$generation" "$origin" "$token"
+        timeout 300s bun tests/lifecycle-uefi/publish.ts "$evidence" "$generation" "$origin" "$token"
     fi
     boot "$output/install.log"
     grep -F FILE_AB_INSTALL_PASS "$output/install.log"

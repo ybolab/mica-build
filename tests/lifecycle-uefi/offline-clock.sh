@@ -32,7 +32,7 @@ for rtc in 2040-01-01T00:00:00 1970-01-01T00:00:00; do
     python3 - "$out/boot.sh" "$rtc" <<'PY'
 from pathlib import Path
 import sys
-s=Path('tests/file-ab-x64/boot.sh').read_text()
+s=Path('tests/lifecycle-uefi/boot.sh').read_text()
 network='-netdev user,id=net0 -device virtio-net-pci,netdev=net0'
 assert s.count(network)==1
 s=s.replace(network, '-nic none -rtc base='+sys.argv[2]+',clock=vm')
@@ -42,7 +42,7 @@ PY
         -v "$out:/w" ai-agent/mos-p2-lab bash /w/boot.sh disk.img writable 540 "$board" > "$out/boot.log" 2>&1
     grep -F "mica-init: verified deployment $expected;" "$out/boot.log"
     grep -F FILE_AB_RUNTIME_PASS "$out/boot.log"
-    bash tests/file-ab-x64/shutdown-check.sh "$out/boot.log"
+    bash tests/lifecycle-uefi/shutdown-check.sh "$out/boot.log"
     echo "FILE_AB_OFFLINE_CLOCK_PASS: $board $rtc"
 done
 printf 'Evidence: %s\n' "$work"

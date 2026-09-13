@@ -9,7 +9,7 @@ import { canonicalJson, componentId } from './components.ts'
 import { packArchive } from './component-archive.ts'
 import { assembleRelease, gateRelease, lockRows, readPins, sourceLineage, verifyArchive, type ReleaseInputs } from './release-manifest.ts'
 import { sourceIdentity } from './release-cli.ts'
-import { acceptProvenance } from '../../tests/file-ab-x64/provenance-acceptance.ts'
+import { acceptProvenance } from '../../tests/lifecycle-uefi/provenance-acceptance.ts'
 import { Toolbox } from './toolbox.ts'
 import { OPEN_TIMEOUT_MS } from './testing.ts'
 

@@ -1,4 +1,4 @@
-.PHONY: build-env help os-apid-api-spec-pins os-apid-api-test os-bare-host-gate os-boot-tools os-build-test os-components os-deb-package-gate os-deb-preflight os-deb-preflight-test os-debian-cache os-debian-install os-debian-test os-debian-verify os-debs os-devkeys os-lock-bump os-pool os-pool-lock-test os-factory-root-gate os-fit-records-test os-host-toolchain-lint os-host-toolchain-lint-test os-image os-install-closure-gate os-layout-lint os-netavark-kernel-test os-quadlet-doc-test os-repart-test os-rootfs os-rootfs-manifest-test os-product-test os-board-name-lint os-board-name-lint-test product product-verify products board-add os-shell-pipefail-lint os-smoke-negative-test os-smoke-test os-verify os-verify-test board-fetch board-fetch-all
+.PHONY: build-env help os-apid-api-spec-pins os-apid-api-test os-bare-host-gate os-boot-tools os-build-test os-components os-deb-package-gate os-deb-preflight os-deb-preflight-test os-debian-cache os-debian-install os-debian-test os-debian-verify os-debs os-devkeys os-lock-bump os-pool os-pool-lock-test os-factory-root-gate os-fit-records-test os-host-toolchain-lint os-host-toolchain-lint-test os-image os-install-closure-gate os-layout-lint os-netavark-kernel-test os-quadlet-doc-test os-repart-test os-rootfs os-rootfs-manifest-test os-product-test os-board-name-lint os-board-name-lint-test product product-verify products board-add lifecycle-uefi os-shell-pipefail-lint os-smoke-negative-test os-smoke-test os-verify os-verify-test board-fetch board-fetch-all
 
 # THE SOURCE DEPENDENCIES, before anything else: build-env/ (mica-build-env)
 # is the substrate every target reaches through, rootfs/debian/ (mica-debian)
@@ -48,6 +48,7 @@ help:
 	@echo "  os-image            assemble two signed deployments (MICA_BOARD, MICA_IMAGE_RECORDS, MICA_METADATA_PUBLIC_KEYS, MICA_FIRMWARE_PACKAGE, MICA_IMAGE_OUT)"
 	@echo "  product             one product's closure: fetch, compose, sign root/kernel/firmware, two deployments, the image and the update archive into _out/products/<name> (PRODUCT=<name>; reused when its receipt is unchanged)"
 	@echo "  product-verify      verify that product's image against the contract"
+	@echo "  lifecycle-uefi      the QEMU lifecycle suite (boot, runtime, updates, faults, reset, shutdown) over a built UEFI product (PRODUCT=<name>)"
 	@echo "  products            product, for every product whose board is a release target"
 	@echo "  board-add           pin a new board's bundle and packages from the latest mica-boards release and write products/<board>-minimal (BOARD=<board>)"
 	@echo "  os-rootfs           compose a product's root (PRODUCT=<name>; products/*/product.env, tools/product.sh --list)"
@@ -106,6 +107,12 @@ os-product-test:
 product:
 	@test -n "$(PRODUCT)" || { echo "error: PRODUCT=<name> is required; the products are: $$(bash tools/product.sh --list | tr '\n' ' ')" >&2; exit 1; }
 	bash tools/product-build.sh "$(PRODUCT)"
+# The UEFI lifecycle suite (boot, runtime, updates, faults, reset, shutdown
+# under QEMU) over a built product; tests/lifecycle-uefi/product-inputs.sh
+# derives the suite's inputs from _out/products/<name>.
+lifecycle-uefi:
+	@test -n "$(PRODUCT)" || { echo "error: PRODUCT=<name> is required" >&2; exit 1; }
+	bash -c 'eval "$$(bash tests/lifecycle-uefi/product-inputs.sh "$(PRODUCT)")" && bash tests/lifecycle-uefi/runtime-build.sh "$$ROOT_IMAGE" "$$KERNEL_DIR" "$$CERT" "$$KEY" "$$INIT" "$$BOARD" "$$SHUTDOWN"'
 product-verify:
 	@test -n "$(PRODUCT)" || { echo "error: PRODUCT=<name> is required" >&2; exit 1; }
 	bash tools/product-build.sh "$(PRODUCT)" --verify
@@ -659,8 +666,8 @@ os-layout-lint:
 # out at their pinned commits by tools/board-pool.sh --source.
 os-fit-records-test:
 	bash tools/board-pool.sh --source
-	bash tests/file-ab-fit/records.sh
-	bash tests/file-ab-fit/firmware-io.sh
+	bash tests/lifecycle-uboot-fit/records.sh
+	bash tests/lifecycle-uboot-fit/firmware-io.sh
 
 # Current independent-artifact release directory, SBOM and publication gate.
 .PHONY: os-release os-release-gate os-release-verify-test

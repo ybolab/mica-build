@@ -8,15 +8,15 @@ test ! -d "$evidence/loader-replacement"
 bun_image=$(bash build-env/from.sh --ref IMAGE_BUN_1)
 docker build --label ai-agent=true -t ai-agent/mos-firmware-lab \
     --build-arg "MICA_BUN_IMAGE=$bun_image" --build-arg MICA_LAB_IMAGE=ai-agent/mos-p2-lab \
-    -f tests/file-ab-x64/Dockerfile.maintenance tests/file-ab-x64
+    -f tests/lifecycle-uefi/Dockerfile.maintenance tests/lifecycle-uefi
 maintain() {
     timeout -k 10 300 docker run --rm --privileged --label ai-agent=true --network traefik \
         -v "$PWD:/src:ro" -v "$evidence:/w" ai-agent/mos-firmware-lab \
-        bash /src/tests/file-ab-x64/firmware-mounted.sh "$@"
+        bash /src/tests/lifecycle-uefi/firmware-mounted.sh "$@"
 }
 boot() {
     timeout -k 10 350 docker run --rm --label ai-agent=true --network traefik \
-        -v "$evidence:/w" -v "$PWD/tests/file-ab-x64:/harness:ro" ai-agent/mos-p2-lab \
+        -v "$evidence:/w" -v "$PWD/tests/lifecycle-uefi:/harness:ro" ai-agent/mos-p2-lab \
         bash /harness/boot.sh "$1" writable "${3:-300}" x64 > "$2" 2>&1
 }
 maintain /w/image/disk.img /w/firmware-next /w/firmware/firmware.json /w/loader-replacement

@@ -13,7 +13,7 @@ test -f "$evidence/image/factory-disk.img"
 test ! -e "$evidence/updates"
 boot() {
     docker run --rm --label ai-agent=true --network traefik -v "$evidence:/w" \
-        -v "$PWD/tests/file-ab-x64:/harness:ro" ai-agent/mos-p2-lab \
+        -v "$PWD/tests/lifecycle-uefi:/harness:ro" ai-agent/mos-p2-lab \
         bash /harness/boot.sh image/disk.img writable 300 "$board" >"$1" 2>&1
 }
 firmware_digest() {
@@ -25,14 +25,14 @@ root="$evidence/root"
 kernel="$evidence/kernel"
 for spec in '3 root' '4 kernel' '5 bad-health' '6 combined'; do
     read -r generation kind <<<"$spec"
-    timeout 360s bun tests/file-ab-x64/update.ts "$evidence" "$certificate" "$key" "$generation" "$kind" "$root" "$kernel" "$init" "$shutdown"
+    timeout 360s bun tests/lifecycle-uefi/update.ts "$evidence" "$certificate" "$key" "$generation" "$kind" "$root" "$kernel" "$init" "$shutdown"
     output="$evidence/updates/$generation"
     boot "$output/install.log"
     grep -F FILE_AB_INSTALL_PASS "$output/install.log"
     if [ "$kind" = bad-health ]; then
         mv "$evidence/offline" "$output/installed-media"
         timeout 660 docker run --rm --label ai-agent=true --network traefik -v "$evidence:/w" \
-            -v "$PWD/tests/file-ab-x64:/harness:ro" ai-agent/mos-p2-lab \
+            -v "$PWD/tests/lifecycle-uefi:/harness:ro" ai-agent/mos-p2-lab \
             bash /harness/confirmed-health.sh "$board"
         for attempt in 1 2 3; do
             boot "$output/attempt-$attempt.log"

@@ -10,7 +10,7 @@ function git(checkout: string, ...args: string[]) {
   return result.stdout.trim()
 }
 function wrapper(checkout: string, code: string, paths: string[]) {
-  const result = spawnSync('timeout', ['90', 'bash', join(checkout, 'tests/file-ab-x64/bun.sh'), '-e', code, ...paths], {
+  const result = spawnSync('timeout', ['90', 'bash', join(checkout, 'tests/lifecycle-uefi/bun.sh'), '-e', code, ...paths], {
     encoding: 'utf8', timeout: 95000,
   })
   expect(result.status, result.stdout + result.stderr).toBe(0)
@@ -49,7 +49,7 @@ test('pinned wrapper protects ordinary checkout metadata and preserves writable 
   mkdirSync(join(repo, '.tmp'), { recursive: true })
   const checkout = mkdtempSync(join(repo, '.tmp/bun-identity-'))
   try {
-    for (const path of ['tests/file-ab-x64/bun.sh', 'build-env/from.sh', 'build-env/images.env', 'verify/Dockerfile']) {
+    for (const path of ['tests/lifecycle-uefi/bun.sh', 'build-env/from.sh', 'build-env/images.env', 'verify/Dockerfile']) {
       mkdirSync(dirname(join(checkout, path)), { recursive: true })
       copyFileSync(join(repo, path), join(checkout, path))
     }
