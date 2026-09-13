@@ -31,6 +31,7 @@ const USAGE = `Usage: bash build/run.sh --components COMMAND [OPTIONS]
               --metadata-key FILE --out FILE
   image       --records FILE --public-key BASE64 (repeatable) --firmware DIR
               --board x64|virt-arm64|cx3576|s905x5m --out DIR
+              [--provisioning FILE]  a factory seed (mos-provisioning.toml on the ESP; UEFI boards only)
   archive     --input DEPLOYMENT --kernel DIR --root DIR
               --public-key BASE64 (repeatable) --out FILE.mosupd
 
@@ -42,7 +43,7 @@ Image output: mos-BOARD-YYYYMMDD-HHmmss.img (UTC) and SHA256SUMS; prints the ima
 async function main() {
   const options: Record<string, { type: 'string' | 'boolean', multiple?: boolean }> = Object.fromEntries([
     'input', 'arch', 'version', 'out', 'content-key', 'content-cert', 'init', 'shutdown', 'board', 'boot-key', 'boot-cert',
-    'kernel', 'root', 'generation', 'metadata-key', 'records', 'firmware', 'installed', 'esp', 'rkdeveloptool',
+    'kernel', 'root', 'generation', 'metadata-key', 'records', 'firmware', 'installed', 'esp', 'rkdeveloptool', 'provisioning',
   ].map(name => [name, { type: 'string' }]))
   options['public-key'] = { type: 'string', multiple: true }
   options.help = { type: 'boolean' }
@@ -168,10 +169,11 @@ async function main() {
           || [record.envelope, record.kernelDirectory, record.rootDirectory].some(value => typeof value !== 'string')) throw new Error('Invalid factory deployment record')
         return { envelope: record.envelope, kernelDirectory: resolve(REPO_ROOT, record.kernelDirectory), rootDirectory: resolve(REPO_ROOT, record.rootDirectory) }
       })
-      const mounts = [dirname(output), ...records.flatMap(record => [record.kernelDirectory, record.rootDirectory])]
+      const provisioning = typeof values.provisioning === 'string' && values.provisioning ? resolve(REPO_ROOT, values.provisioning) : undefined
+      const mounts = [dirname(output), ...records.flatMap(record => [record.kernelDirectory, record.rootDirectory]), ...(provisioning ? [dirname(provisioning)] : [])]
       const tb = await Toolbox.open(FILE_IMAGE_TOOLS, { mounts })
       let disk: string
-      try { disk = await assembleFileImage(layout(), records, keys(), path('firmware'), output, tb) }
+      try { disk = await assembleFileImage(layout(), records, keys(), path('firmware'), output, tb, { provisioning }) }
       finally { await tb.close() }
       const filename = factoryImageFilename(value('board'), new Date())
       const image = join(output, filename)

@@ -1,4 +1,4 @@
-import { copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import { copyFileSync, existsSync, lstatSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { artifactFile } from './component-build.ts'
 import { componentId, verifyDeployment, type BootIdentity, type Deployment } from './components.ts'
@@ -22,9 +22,24 @@ export function entryText(deployment: Deployment): string {
   return `title MOS ${deployment.version}\nversion ${deployment.generation}\nsort-key mos\nefi /EFI/mos/kernels/${deployment.kernel.id}.efi\n`
 }
 
-export async function assembleFileImage(layout: FileLayout, deployments: FactoryDeployment[], keys: string[], firmwareDirectory: string, output: string, tb: Toolbox): Promise<string> {
-  if (!['x64', 'virt-arm64', 'cx3576', 's905x5m'].includes(layout.board) || deployments.length !== 2) throw new Error('Factory image requires two deployments')
+/** What a product may add to the factory image beside the deployments. */
+export interface FactoryImageOptions {
+  /**
+   * A factory seed: the boot-time provisioning document, placed at the
+   * root of the boot medium as `mos-provisioning.toml`, exactly where
+   * mica-provisioning-import reads it on first boot. UEFI boards only --
+   * the ESP is the medium the device reads; a FIT board's raw firmware
+   * partition holds no filesystem, so its seed travels on removable media.
+   */
+  provisioning?: string
+}
+
+export const PROVISIONING_DOCUMENT = 'mos-provisioning.toml'
+
+export async function assembleFileImage(layout: FileLayout, deployments: FactoryDeployment[], keys: string[], firmwareDirectory: string, output: string, tb: Toolbox, options: FactoryImageOptions = {}): Promise<string> {
   const fit = layout.backend === 'uboot-fit'
+  if (options.provisioning !== undefined && fit) throw new Error(`Board ${layout.board} boots through a FIT and has no ESP to carry ${PROVISIONING_DOCUMENT}; a factory seed for it travels on removable media`)
+  if (!['x64', 'virt-arm64', 'cx3576', 's905x5m'].includes(layout.board) || deployments.length !== 2) throw new Error('Factory image requires two deployments')
   const firmwareEnvelope = readFileSync(join(firmwareDirectory, 'firmware.json'), 'utf8')
   const manifest = authenticateFirmware(firmwareEnvelope, keys)
   if (manifest.board !== layout.board) throw new Error('Factory firmware board mismatch')
@@ -60,6 +75,10 @@ export async function assembleFileImage(layout: FileLayout, deployments: Factory
     for (const path of [join(esp, 'EFI/BOOT'), join(esp, 'EFI/mos/kernels'), join(esp, 'loader/entries')]) mkdirSync(path, { recursive: true })
     copyFileSync(firmware, join(esp, 'EFI/BOOT', layout.board === 'x64' ? 'BOOTX64.EFI' : 'BOOTAA64.EFI'))
     writeFileSync(join(esp, 'loader/loader.conf'), 'timeout 0\nconsole-mode keep\neditor no\nauto-entries no\nauto-firmware no\n')
+    if (options.provisioning !== undefined) {
+      if (!lstatSync(options.provisioning).isFile()) throw new Error(`Factory seed is not a regular file: ${options.provisioning}`)
+      copyFileSync(options.provisioning, join(esp, PROVISIONING_DOCUMENT))
+    }
     }
     const copyObject = (source: string, target: string, expected: { bytes: number, sha256: string }) => {
       const actual = artifactFile(source)
@@ -95,7 +114,7 @@ export async function assembleFileImage(layout: FileLayout, deployments: Factory
       await tb.must(['truncate', '-s', String(partition.sizeSectors * 512), path])
       if (partition.name === 'ESP') {
         await tb.must(['mkfs.vfat', '--invariant', '-F', '32', '-i', layout.board === 'x64' ? 'C3576101' : 'C3576201', '-n', 'MOSESP', path])
-        for (const name of ['EFI', 'loader']) await tb.must(['mcopy', '-s', '-m', '-i', path, join(esp, name), '::/'])
+        for (const name of ['EFI', 'loader', ...(options.provisioning !== undefined ? [PROVISIONING_DOCUMENT] : [])]) await tb.must(['mcopy', '-s', '-m', '-i', path, join(esp, name), '::/'])
       } else {
         await mke2fs(tb, { image: path, label: partition.name.toLowerCase(), uuid: partition.fsUuid!, blockSize: 4096n,
           bytesPerInode: partition.name === 'DATA' ? 16384 : undefined,
