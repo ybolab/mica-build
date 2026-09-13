@@ -448,7 +448,7 @@ describe('the shipped compose directory and its supplier', () => {
     expect(unsuppliedArgs(stages, supplied)).toEqual([])
     // Named, so that an ARG gaining or losing an empty default is a decision
     // somebody makes here rather than a set that silently changes size.
-    expect(declared).toEqual(['BOARD_RADIOS'])
+    expect(declared).toEqual(['MICA_RADIOS'])
   })
 })
 
