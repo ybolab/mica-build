@@ -4,7 +4,7 @@ set -eu
 exec >/dev/console 2>&1
 fail() {
     echo "FILE_AB_RUNTIME_FAIL: $*"
-    journalctl --no-pager -b -u mica-data-layout -u systemd-repart -u systemd-growfs@mnt-data -u mica-load-extensions -u systemd-random-seed -u mica-health -n 120
+    journalctl --no-pager -b -u mica-data-layout -u systemd-repart -u systemd-growfs@mnt-data -u mica-load-extensions -u systemd-random-seed -u mica-health -u micad -u apid -n 160
     findmnt -rn -M /mnt/data
     systemctl poweroff --force
     exit 1
