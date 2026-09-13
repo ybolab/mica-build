@@ -309,11 +309,13 @@ newer=$(find "$POOL_DIR/pool" -maxdepth 1 -type f -name '*.deb' -newer "$POOL_DI
 # refuses such an image in the candidate and stable channels. A name that is
 # not a locked package is refused: there is nothing to waive.
 LOCAL_PACKAGES=$(bash "$REPO_ROOT/build-env/deb/producers.sh" | awk '{ n = split($4, a, ","); for (i = 1; i <= n; i++) printf "%s ", a[i] }')
-[ -n "$LOCAL_PACKAGES" ] ||
-    { echo "error: build-env/deb/producers.sh named no package, so nothing in the pool could be classified as built here" >&2; exit 1; }
 LOCK_DIR="$REPO_ROOT/deps/packages"
 [ -d "$LOCK_DIR" ] ||
     pool_refusal "$LOCK_DIR does not exist. It holds the package pins -- every archive the assembly imports rather than builds -- and the composer reads it even when it is empty."
+# A tree with no producer imports every archive; then the pins are the whole
+# pool and there is nothing to classify as built here.
+[ -n "$LOCAL_PACKAGES" ] || [ -n "$(find "$LOCK_DIR" -maxdepth 1 -name '*.json' -print -quit)" ] ||
+    { echo "error: build-env/deb/producers.sh named no package and $LOCK_DIR holds no pin, so nothing in the pool could be classified at all" >&2; exit 1; }
 MICA_POOL_UNLOCKED=${MICA_POOL_UNLOCKED:-}
 if [ -n "$MICA_POOL_UNLOCKED" ]; then
     echo "note: MICA_POOL_UNLOCKED waives the lock digest check for:$(printf ' %s' $MICA_POOL_UNLOCKED)"
@@ -435,7 +437,9 @@ fi
 # is right until somebody renames a directory.
 PRODUCER_DIRS=$(bash "$REPO_ROOT/build-env/deb/producers.sh" |
     awk '{ n = split($4, a, ","); for (i = 1; i <= n; i++) printf "%s=%s;", a[i], $2 }')
-[ -n "$PRODUCER_DIRS" ] ||
+# With no producer every row's source is the lock, which is the truth of a
+# tree that imports everything; the pins were required above.
+[ -n "$PRODUCER_DIRS" ] || [ -z "$LOCAL_PACKAGES" ] ||
     { echo "error: build-env/deb/producers.sh named no package, so every row of the composition record would carry '(no producer declares it)' for its source" >&2; exit 1; }
 
 # Only the unchanged validated public set enters the composition.
