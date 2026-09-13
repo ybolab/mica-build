@@ -1,4 +1,4 @@
-.PHONY: build-env help os-apid-api-spec-pins os-apid-api-test os-bare-host-gate os-boot-tools os-build-test os-components os-deb-package-gate os-deb-preflight os-deb-preflight-test os-debian-cache os-debian-install os-debian-test os-debian-verify os-debs os-devkeys os-lock-bump os-pool os-pool-lock-test os-factory-root-gate os-fit-records-test os-host-toolchain-lint os-host-toolchain-lint-test os-image os-install-closure-gate os-layout-lint os-netavark-kernel-test os-quadlet-doc-test os-repart-test os-rootfs os-rootfs-manifest-test os-product-test os-board-name-lint os-board-name-lint-test os-shell-pipefail-lint os-smoke-negative-test os-smoke-test os-verify os-verify-test board-fetch board-fetch-all
+.PHONY: build-env help os-apid-api-spec-pins os-apid-api-test os-bare-host-gate os-boot-tools os-build-test os-components os-deb-package-gate os-deb-preflight os-deb-preflight-test os-debian-cache os-debian-install os-debian-test os-debian-verify os-debs os-devkeys os-lock-bump os-pool os-pool-lock-test os-factory-root-gate os-fit-records-test os-host-toolchain-lint os-host-toolchain-lint-test os-image os-install-closure-gate os-layout-lint os-netavark-kernel-test os-quadlet-doc-test os-repart-test os-rootfs os-rootfs-manifest-test os-product-test os-board-name-lint os-board-name-lint-test product product-verify products board-add os-shell-pipefail-lint os-smoke-negative-test os-smoke-test os-verify os-verify-test board-fetch board-fetch-all
 
 # THE SOURCE DEPENDENCIES, before anything else: build-env/ (mica-build-env)
 # is the substrate every target reaches through, rootfs/debian/ (mica-debian)
@@ -46,6 +46,10 @@ deps-bump:
 
 help:
 	@echo "  os-image            assemble two signed deployments (MICA_BOARD, MICA_IMAGE_RECORDS, MICA_METADATA_PUBLIC_KEYS, MICA_FIRMWARE_PACKAGE, MICA_IMAGE_OUT)"
+	@echo "  product             one product's closure: fetch, compose, sign root/kernel/firmware, two deployments, the image and the update archive into _out/products/<name> (PRODUCT=<name>; reused when its receipt is unchanged)"
+	@echo "  product-verify      verify that product's image against the contract"
+	@echo "  products            product, for every product whose board is a release target"
+	@echo "  board-add           pin a new board's bundle and packages from the latest mica-boards release and write products/<board>-minimal (BOARD=<board>)"
 	@echo "  os-rootfs           compose a product's root (PRODUCT=<name>; products/*/product.env, tools/product.sh --list)"
 	@echo "  os-product-test     every product validates against its board, and each refusal of the product contract fires"
 	@echo "  os-board-name-lint  no board name in the engine: the assembly dispatches on board facts, never on a name (tests/board-name-lint.sh)"
@@ -99,6 +103,28 @@ os-rootfs:
 	MICA_PRODUCT=$(PRODUCT) bash rootfs/build.sh
 os-product-test:
 	bash tests/product-test.sh
+product:
+	@test -n "$(PRODUCT)" || { echo "error: PRODUCT=<name> is required; the products are: $$(bash tools/product.sh --list | tr '\n' ' ')" >&2; exit 1; }
+	bash tools/product-build.sh "$(PRODUCT)"
+product-verify:
+	@test -n "$(PRODUCT)" || { echo "error: PRODUCT=<name> is required" >&2; exit 1; }
+	bash tools/product-build.sh "$(PRODUCT)" --verify
+# Every product whose board is a release target, discovered from products/ and the fetched boards.
+products:
+	@set -e; for p in $$(bash tools/product.sh --list); do \
+	    b="$$(bash tools/product.sh "$$p" | sed -n 's/^BOARD=//p')"; \
+	    grep -qx 'BOARD_RELEASE_TARGET=1' "_out/boards/$$b/board.env" || { echo "products: $$p skipped, board $$b is not a release target"; continue; }; \
+	    bash tools/product-build.sh "$$p"; \
+	done
+board-add:
+	@test -n "$(BOARD)" || { echo "error: BOARD=<board> is required" >&2; exit 1; }
+	bash build-env/deb/lock.sh --bump mica-boards --package "mica-kernel-$(BOARD)" --package "mica-board-$(BOARD)"
+	bash build-env/deb/fetch.sh --arch "$$(python3 -c 'import json,sys; print(list(json.load(open(sys.argv[1]))["targets"])[0])' "deps/packages/mica-kernel-$(BOARD).json")"
+	bash tools/board-pool.sh --fetch "$(BOARD)"
+	@test -d "products/$(BOARD)-minimal" || { mkdir -p "products/$(BOARD)-minimal/meta/updates"; cp meta.example/updates/manifest.json "products/$(BOARD)-minimal/meta/updates/manifest.json"; \
+	    printf '# The $(BOARD) minimal image: the floor and the board package, nothing selectable.\nPRODUCT=$(BOARD)-minimal\nBOARD=$(BOARD)\nPROFILE=dev\nFEATURES=""\nCOMPONENTS=""\nIMAGE_KINDS="disk"\n' > "products/$(BOARD)-minimal/product.env"; \
+	    echo "board-add: wrote products/$(BOARD)-minimal"; }
+	bash tools/product.sh "$(BOARD)-minimal" >/dev/null && echo "board-add: $(BOARD) is pinned, fetched and has its minimal product; next: make product PRODUCT=$(BOARD)-minimal"
 os-board-name-lint:
 	bash tests/board-name-lint.sh
 os-board-name-lint-test:
