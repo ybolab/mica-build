@@ -91,7 +91,7 @@ PLAN-036 open decision (g).
 ### Measured first
 
 `mica-profile` is declared in `Provides` by `mica-profile-dev` and
-`mica-profile-prod` (`rootfs/packages-src/profile/control/`) and by nothing
+`mica-profile-prod` (`mica-system:profile/control/`) and by nothing
 else. Reading the `Depends` field of all ten control templates in the tree —
 the board packages, `micad`, `mica-apid`, the two MQTT packages, `mica-podman`,
 `mos-rauc`, `mica-system`, `mica-ca-trust` and the three radio packages — **no
@@ -116,7 +116,7 @@ that behaves as production, with every existing check green — the exact failur
 different direction.
 
 That is a real runtime relationship, and it would be worth declaring if the
-gate's counter did not exist: it is what `rootfs/packages-src/README.md`
+gate's counter did not exist: it is what `mica-system:README.md`
 already says the `Provides` pair is for — "`mica-profile` is what a package that
 needs 'some profile is installed' depends on" — and today nothing does, so the
 pair is a statement with no reader. `resolve.sh`'s "exactly one profile package"

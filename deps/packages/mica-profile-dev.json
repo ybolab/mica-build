@@ -1,0 +1,19 @@
+{
+  "name": "mica-profile-dev",
+  "repository": "mica-system",
+  "commit": "4cd6a0064d6820f0b1f1caba2bb9b203daf0fbed",
+  "targets": {
+    "amd64": {
+      "version": "0.1.0+git4cd6a0064d68-1",
+      "architecture": "all",
+      "sha256": "d5a8786d43e933f2a7d893dfc770ac3ee0cf76335bfbb38b6d6d3845a6ec1a19",
+      "asset": "mica-profile-dev_0.1.0.git4cd6a0064d68-1_all.deb"
+    },
+    "arm64": {
+      "version": "0.1.0+git4cd6a0064d68-1",
+      "architecture": "all",
+      "sha256": "d5a8786d43e933f2a7d893dfc770ac3ee0cf76335bfbb38b6d6d3845a6ec1a19",
+      "asset": "mica-profile-dev_0.1.0.git4cd6a0064d68-1_all.deb"
+    }
+  }
+}

@@ -8,7 +8,7 @@ COPY --from=board deb/board-x64/copyright deb/board-x64/render.sh /in/
 COPY --from=board deb/board-x64/control/ /in/control/
 COPY --from=board board.env /src/boards/x64/board.env
 COPY --from=board overlay/etc/systemd/system/boot.mount.in /src/boards/x64/overlay/etc/systemd/system/boot.mount.in
-COPY --from=overlay etc/fstab.in /src/rootfs/overlay/etc/fstab.in
+COPY --from=common fstab.in /src/boards/common/fstab.in
 ARG MOS_DEB_VERSION
 ARG MOS_DEB_ARCH
 ARG SOURCE_DATE_EPOCH

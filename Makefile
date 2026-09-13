@@ -1,4 +1,4 @@
-.PHONY: os-trust-domain-test build-env help os-apid-api-spec-pins os-apid-api-test os-bare-host-gate os-boot-tools os-build-test os-components os-cx3576-flash-test os-deb-package-gate os-deb-preflight os-deb-preflight-test os-debian-cache os-debian-install os-debian-test os-debian-verify os-debs os-devkeys os-lock-bump os-pool os-pool-lock-test os-factory-root-gate os-fit-records-test os-gadget-test os-health-test os-host-toolchain-lint os-host-toolchain-lint-test os-image os-install-closure-gate os-layout-lint os-mac-test os-netavark-kernel-test os-quadlet-doc-test os-repart-test os-rootfs-cx3576 os-rootfs-manifest-test os-rootfs-virt-arm64 os-rootfs-x64 os-shadow-test os-shell-pipefail-lint os-smoke-negative-test os-smoke-test os-verify os-verify-test
+.PHONY: os-trust-domain-test build-env help os-apid-api-spec-pins os-apid-api-test os-bare-host-gate os-boot-tools os-build-test os-components os-cx3576-flash-test os-deb-package-gate os-deb-preflight os-deb-preflight-test os-debian-cache os-debian-install os-debian-test os-debian-verify os-debs os-devkeys os-lock-bump os-pool os-pool-lock-test os-factory-root-gate os-fit-records-test os-gadget-test os-host-toolchain-lint os-host-toolchain-lint-test os-image os-install-closure-gate os-layout-lint os-mac-test os-netavark-kernel-test os-quadlet-doc-test os-repart-test os-rootfs-cx3576 os-rootfs-manifest-test os-rootfs-virt-arm64 os-rootfs-x64 os-shell-pipefail-lint os-smoke-negative-test os-smoke-test os-verify os-verify-test
 
 # THE SOURCE DEPENDENCIES, before anything else: build-env/ (mica-build-env)
 # is the substrate every target reaches through, rootfs/debian/ (mica-debian)
@@ -62,8 +62,6 @@ help:
 	@echo "  os-smoke-test       execute every self-built binary inside the factory root, assert its pin (docker)"
 	@echo "  os-smoke-negative-test  break that root three ways and require each to turn the run red (docker)"
 	@echo "  os-factory-root-gate    prove the root the smoke run executes in is the root the device ships (docker)"
-	@echo "  os-health-test      run the health and failure-handler tests"
-	@echo "  os-shadow-test      run the offline tests for the DATA /etc/shadow reconciler"
 	@echo "  os-mac-test         prove the stable-MAC derivation follows the port, not the interface name; drives the by-name defect red"
 	@echo "  os-repart-test      prove first-boot repart growth grows DATA and cannot wipe the loader (privileged docker)"
 	@echo "  os-cx3576-flash-test    drive the cx3576 flash read-back against a stub rkdeveloptool: argv, sector arithmetic, and a hole that must go red before rd"
@@ -158,10 +156,6 @@ os-smoke-negative-test:
 # os-verify. MOS_BOARD selects the board; x64 is the default.
 os-factory-root-gate:
 	bash tests/factory-root-gate/gate.sh _out/$(or $(MOS_BOARD),x64)
-os-health-test:
-	bash tests/health-test.sh
-	bash tests/boot-failure-test.sh
-
 # Drives the real boards/cx3576/hwinit/hwinit-gadget against a fake configfs in
 # a temp dir, from cwd `/` -- the cwd its Type=oneshot service actually has.
 # What it asserts is the property configfs applies and an ordinary filesystem
@@ -185,13 +179,6 @@ os-gadget-test:
 # no docker and no board.
 os-mac-test:
 	bash tests/mac-stable-test.sh
-
-# Drives the real mica-shadow-reconcile against fixtures in a temp dir: the
-# transient-root-password clearing, the mismatch branch that lets a dev image's
-# ROOT_PASSWORD survive a reboot, and the pre-existing append rule. Needs no
-# root and touches no host state.
-os-shadow-test:
-	bash tests/shadow-reconcile-test.sh
 
 # Behavioural check on first-boot growth: a real systemd-repart, with discard
 # enabled, over a copy of each assembled image on a loop device. It proves two
@@ -468,6 +455,7 @@ os-rootfs-manifest-test:
 # Explicit runtime closure and metadata preservation on small offline roots.
 .PHONY: os-rootfs-runtime-test
 os-rootfs-runtime-test:
+	bash build-env/deb/fetch.sh --arch amd64
 	bash tests/rootfs-runtime-test.sh
 
 # Negative and positive tests for the pre-flight above. Its value is a count and

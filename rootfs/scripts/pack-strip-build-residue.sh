@@ -10,7 +10,7 @@
 # the base image, and one is created by RUNNING a container during assembly. So
 # no producer in this repository could own any of them, which is what makes them
 # the finalizer's, and it is the ruling
-# rootfs/packages-src/system/Dockerfile already records for the first.
+# mica-system:system/Dockerfile already records for the first.
 #
 # EACH COUNT IS PRINTED. The composition writes a policy-rc.d and removes it
 # again, and never removes the host keys openssh-server's postinst generates --

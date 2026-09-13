@@ -314,7 +314,7 @@ RUN --mount=type=bind,source=rootfs/scripts,target=/mos-scripts \
 #
 # HERE, in the finalizer, because each is a statement about the assembled root
 # rather than about any one package -- which is the ruling
-# rootfs/packages-src/system/Dockerfile already records for the first
+# mica-system:system/Dockerfile already records for the first
 # ("`rm -f /etc/ssh/ssh_host_*` -> a whole-image finalizer step, not a
 # package"), and which is forced for the second: policy-rc.d comes with the BASE
 # IMAGE, so there is no producer in this repository that could ship or withhold

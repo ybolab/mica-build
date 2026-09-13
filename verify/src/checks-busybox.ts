@@ -18,7 +18,7 @@
 // green first.
 //
 // The counterpart assertions are elsewhere and are deliberately not repeated
-// here: the PRODUCER (rootfs/packages-src/busybox/Dockerfile) asserts its staged
+// here: the PRODUCER (mica-system:busybox/Dockerfile) asserts its staged
 // payload is exactly two files with no link of any kind, which is the stronger
 // statement because no applet link can reach an image without passing through
 // it; and rootfs/scripts/pack-export-boot.sh asserts the EXPORTED initramfs

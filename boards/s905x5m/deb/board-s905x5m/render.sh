@@ -7,7 +7,7 @@ out=${2:?output directory required}
 [ "$LAYOUT_VERSION" = 3 ] && [ "$LAYOUT_PARTITIONS" = 'FIRMWARE SYSTEM DATA' ]
 mkdir -p "$out/repart.d" "$out/systemd-repart.service.d"
 printf -v data_line 'PARTUUID=%s /mnt/data ext4 noatime,prjquota,x-systemd.growfs 0 2' "${DATA_GUID,,}"
-sed "s|@DATA_LINE@|$data_line|g" "$src/rootfs/overlay/etc/fstab.in" > "$out/fstab"
+sed "s|@DATA_LINE@|$data_line|g" "$src/boards/common/fstab.in" > "$out/fstab"
 for entry in FIRMWARE SYSTEM DATA; do
     var=${entry}_TYPECODE; type=${!var}
     var=${entry}_PARTNUM; number=${!var}

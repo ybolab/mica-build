@@ -296,7 +296,7 @@ one named failure, no image and no container. The baseline is asserted GREEN
 first in every case.
 
 Fixtures are built from the SHIPPED inputs, not from an idea of them.
-`/etc/fstab` is rendered from `rootfs/overlay/etc/fstab.in` with the
+`/etc/fstab` is rendered from `boards/common/fstab.in` with the
 board's own GUIDs, because a fixture built from this package's idea of the table
 would test that idea rather than the shipped one, and an `fstab.in` that grew a
 new placeholder would go on passing. The renderer refuses a leftover

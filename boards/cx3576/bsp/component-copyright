@@ -4,7 +4,7 @@ Comment: The copyright file of mica-board-cx3576, installed as
  /usr/share/doc/mica-board-cx3576/copyright.
  .
  It is this board package's OWN file and not the shared
- rootfs/packages-src/copyright, which says in so many words that a producer
+ boards/common/copyright, which says in so many words that a producer
  packaging vendor content does not use it. Four bodies of work ship here and
  each is recorded on its own terms: the repository's rendered configuration,
  hardware-init programs and units; the AIC8800D80 Wi-Fi/Bluetooth firmware;
@@ -14,7 +14,7 @@ Comment: The copyright file of mica-board-cx3576, installed as
  WHERE EACH LICENCE TEXT CAME FROM, stated because a licence record whose
  provenance is unstated cannot be told apart from a guess:
  .
-   Apache-2.0 -- copied verbatim from rootfs/packages-src/copyright, which
+   Apache-2.0 -- copied verbatim from boards/common/copyright, which
    carries this repository's own LICENSE file.
  .
    GPL-2 -- copied verbatim from /usr/share/common-licenses/GPL-2 in the
