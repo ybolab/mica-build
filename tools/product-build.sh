@@ -108,6 +108,22 @@ echo "=== product ${NAME}: components at version ${VERSION} ==="
 bash tools/deploy-pool.sh --lifecycle "${MICA_ARCH}" "${OUT}/lifecycle"
 bash build/run.sh --components root --input "_out/${BOARD}" --arch "${MICA_ARCH}" --version "${VERSION}" --out "${OUT}/root" \
     --content-key "${SIGNING}/verity/signer.key.pem" --content-cert "${SIGNING}/verity/signer.cert.pem"
+# THE PACKAGER, built from the pinned boot/ tree before the kernel component
+# runs in it: a UEFI board's boot-tools image for its EFI architecture, a FIT
+# board's fit-tools image over the board's own mkimage (uboot/tools in the
+# bundle). docker's cache makes an unchanged image free; what this refuses to
+# inherit is a local tag left behind by an older boot/ tree, which packaged
+# with the wrong tool names until the next hand-run make os-boot-tools.
+# build-tools.sh names its target as UEFI names the architecture (X64, AA64),
+# in lower case.
+efi_target() { case "$1" in amd64) echo X64 ;; arm64) echo AA64 ;; *) echo "error: no EFI architecture for $1" >&2; exit 1 ;; esac | tr '[:upper:]' '[:lower:]'; }
+if [ "${BOOT_BACKEND}" = uboot-fit ]; then
+    bash boot/build-tools.sh --target "$(efi_target amd64)"
+    docker build --label ai-agent=true -t ai-agent/mos-fit-tools-amd64 --build-arg MICA_BOOT_TOOLS=ai-agent/mos-boot-tools-amd64 \
+        --build-context "fit-tools=${BOARD_DIR}/uboot/tools" -f boot/Dockerfile.fit boot
+else
+    bash boot/build-tools.sh --target "$(efi_target "${MICA_ARCH}")"
+fi
 bash build/run.sh --components kernel --board "${BOARD}" --input "${BOARD_DIR}/kernel" \
     --init "${OUT}/lifecycle/mica-init" --shutdown "${OUT}/lifecycle/mica-shutdown" --public-key "${PUBLIC_KEY}" --out "${OUT}/kernel" \
     --content-key "${SIGNING}/verity/signer.key.pem" --content-cert "${SIGNING}/verity/signer.cert.pem" \
