@@ -6,7 +6,7 @@ import { REPO_ROOT } from './paths.ts'
 import { parseBoardEnv } from './verify-package.ts'
 
 // The forced kernel command line (CONFIG_CMDLINE) is asserted against
-// board.env in ybolab/mica-cx3576 (tests/kernel-cmdline-test.sh), where the
+// board.env in ybolab/mica-boards (cx3576/tests/kernel-cmdline-test.sh), where the
 // kernel configuration lives; this file holds the two legs the assembly owns.
 const boardCmdline = parseBoardEnv(readFileSync(join(REPO_ROOT, 'boards/cx3576/board.env'), 'utf8'), 'board.env')
   .values.get('BOARD_CMDLINE_ARGS')

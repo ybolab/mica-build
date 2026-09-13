@@ -574,8 +574,7 @@ os-boot-tools:
 # The BSP outputs of a board -- its kernel directory, firmware, copyright and
 # U-Boot -- out of the pinned mica-kernel-<board> archive into
 # _out/boards/<board>/, for the kernel component, the image and the labs.
-# Every board is a repository of its own (ybolab/mica-<board>); this tree
-# builds no kernel. Refuses an archive built against another verity trust
+# The boards live in ybolab/mica-boards; this tree builds no kernel. Refuses an archive built against another verity trust
 # certificate than meta/verity/signer.cert.pem.
 os-board-kernel:
 	@test -n "$(MICA_BOARD)" || { echo "error: MICA_BOARD=<board> is required, e.g. make os-board-kernel MICA_BOARD=x64" >&2; exit 1; }
@@ -624,7 +623,7 @@ os-layout-lint:
 # firmware-io.c compiles the boards' own U-Boot file-boot sources, checked
 # out at their pinned commits by tools/board-pool.sh --source.
 os-fit-records-test:
-	bash tools/board-pool.sh --source cx3576 s905x5m
+	bash tools/board-pool.sh --source
 	bash tests/file-ab-fit/records.sh
 	bash tests/file-ab-fit/firmware-io.sh
 

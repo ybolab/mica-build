@@ -4,14 +4,14 @@
 #   bash tools/board-pool.sh --check              boards/<b>/board.env and evidence.json against every pinned mica-kernel-<b>
 #   bash tools/board-pool.sh --kernel <board>     the BSP outputs into _out/boards/<board>/
 #   bash tools/board-pool.sh --kernels            the same for every pinned board
-#   bash tools/board-pool.sh --source <board>...  the board's source at the pinned commit into _out/src/mica-<board>
+#   bash tools/board-pool.sh --source              the boards' source at the pinned commit into _out/src/mica-boards
 #
 #   reads   _out/debs/<arch>/pool/mica-kernel-<board>_*.deb   (fetched at the pin by build-env/deb/fetch.sh)
 #           meta/verity/signer.cert.pem                        (the trust domain this assembly signs with)
 #   writes  _out/boards/<board>/{kernel,firmware,component-copyright,uboot,board.env,evidence.json,trust}
 #
-# Every board is a repository of its own (ybolab/mica-<board>) that builds
-# its kernel and U-Boot and publishes them, with its board.env, evidence.json,
+# The boards live in one repository (ybolab/mica-boards) that builds each
+# kernel and U-Boot and publishes them, with its board.env, evidence.json,
 # the support image's firmware and the verity trust certificate the kernel
 # embeds, as the archive mica-kernel-<board> under /usr/lib/mica/board/<board>/.
 # This assembly imports that archive through deps/packages/ and never builds
@@ -141,15 +141,13 @@ PY
     [ "${n}" -gt 0 ] || { echo "error: deps/packages pins no mica-kernel-<board> archive, so nothing was extracted" >&2; exit 1; }
     ;;
 --source)
-    shift
-    [ "$#" -gt 0 ] || { echo "usage: bash tools/board-pool.sh --source <board>..." >&2; exit 1; }
-    for board in "$@"; do
-        bash "${REPO_ROOT}/build-env/deb/source.sh" "mica-${board}"
-        [ -d "${REPO_ROOT}/_out/src/mica-${board}/bsp" ] || { echo "error: _out/src/mica-${board}/bsp does not exist at the pinned commit; the labs and the FIT tests read the board's sources out of it" >&2; exit 1; }
+    bash "${REPO_ROOT}/build-env/deb/source.sh" mica-boards
+    for board in cx3576 s905x5m; do
+        [ -d "${REPO_ROOT}/_out/src/mica-boards/${board}/bsp" ] || { echo "error: _out/src/mica-boards/${board}/bsp does not exist at the pinned commit; the labs and the FIT tests read the board's sources out of it" >&2; exit 1; }
     done
     ;;
 *)
-    echo "usage: bash tools/board-pool.sh --check | --kernel <board> | --kernels | --source <board>..." >&2
+    echo "usage: bash tools/board-pool.sh --check | --kernel <board> | --kernels | --source" >&2
     exit 1
     ;;
 esac

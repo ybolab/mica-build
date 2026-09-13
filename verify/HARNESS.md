@@ -509,7 +509,7 @@ from the board's own name and the artefact names from that board's
 polarities (`status-red:on:1:active-low`, `status-blue:off:0:active-high`),
 which have nowhere board-side to be derived from —
 `boards/cx3576/board.env` declares `BOARD_HAS_STATUS_LED=1` and nothing about
-polarity, and the two other statements of those facts live in `mica-cx3576:bsp/` — the
+polarity, and the two other statements of those facts live in `mica-boards:cx3576/bsp/` — the
 dts the kernel build compiles, and that build's Dockerfile — which this package
 does not read, because depending on a BSP tree a checkout does not carry would
 make every run of it conditional on one. The SCOPE is still derived

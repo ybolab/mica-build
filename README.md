@@ -20,7 +20,7 @@ Start with the [documentation portal](docs/README.md) or the
 
 | Path | Purpose |
 |---|---|
-| `boards/` | Each board's `board.env` and `evidence.json`, derived copies of what its repository (`ybolab/mica-<board>`) ships |
+| `boards/` | Each board's `board.env` and `evidence.json`, derived copies of what `ybolab/mica-boards` ships |
 | `boot/` | UKI/FIT, initramfs and explicit development signing inputs |
 | `rootfs/` | Userspace package composition and immutable root packing |
 | `build/` | Signed components, offline archives and complete image assembly |

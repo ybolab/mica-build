@@ -1,13 +1,13 @@
 {
   "name": "mica-s905x5m-bluetooth",
-  "repository": "mica-s905x5m",
-  "commit": "4aa05b936c7a894002440050ebf2e817d697776f",
+  "repository": "mica-boards",
+  "commit": "ec968ea153f78d96ebf4e6c921ae1d9dc44ed42d",
   "targets": {
     "arm64": {
-      "version": "0.1.0+git4aa05b936c7a-1",
+      "version": "0.1.0+gitec968ea153f7-1",
       "architecture": "arm64",
-      "sha256": "f50a81ba1aa93e789d81b3f75a1a13bff907924c2b21af77318b4fde1fdb056d",
-      "asset": "mica-s905x5m-bluetooth_0.1.0.git4aa05b936c7a-1_arm64.deb"
+      "sha256": "f864c2b53c6c5301d93244f6089f12ae8e647486e43c8f31dd7c9bd37eb466c8",
+      "asset": "mica-s905x5m-bluetooth_0.1.0.gitec968ea153f7-1_arm64.deb"
     }
   }
 }

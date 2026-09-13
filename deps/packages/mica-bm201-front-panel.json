@@ -1,13 +1,13 @@
 {
   "name": "mica-bm201-front-panel",
-  "repository": "mica-s905x5m",
-  "commit": "4aa05b936c7a894002440050ebf2e817d697776f",
+  "repository": "mica-boards",
+  "commit": "ec968ea153f78d96ebf4e6c921ae1d9dc44ed42d",
   "targets": {
     "arm64": {
-      "version": "0.1.0+git4aa05b936c7a-1",
+      "version": "0.1.0+gitec968ea153f7-1",
       "architecture": "arm64",
-      "sha256": "70d5250f117216b4a0b0f6ee1392c4746f3e7e2481be8fadc0c69a23deb0881e",
-      "asset": "mica-bm201-front-panel_0.1.0.git4aa05b936c7a-1_arm64.deb"
+      "sha256": "8e2cd22b6861985069ad801efa8069c5a2f89e40a3797a799c46fe64dc7b1379",
+      "asset": "mica-bm201-front-panel_0.1.0.gitec968ea153f7-1_arm64.deb"
     }
   }
 }

@@ -119,7 +119,7 @@ jobs:
       - name: Package build preflight
         run: make os-deb-preflight-test
 
-      # The boards are repositories of their own now (ybolab/mica-<board>);
+      # The boards live in ybolab/mica-boards now;
       # their hwinit and kernel-config checks run there. What this tree
       # still asserts about the kernels it imports runs after the pool:
       - name: The imported kernels carry what netavark needs

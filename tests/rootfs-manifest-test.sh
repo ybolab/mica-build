@@ -328,7 +328,9 @@ REFUSAL_N="${#REFUSAL_LABELS[@]}"
 
 # Every refusal must have its OWN message. One message covering two faults tells
 # an operator that something is wrong and not which thing.
-distinct_n="$(printf '%s\n' "${REFUSAL_TEXTS[@]}" | sort -u | wc -l)"
+# Counted as whole texts: a refusal is several lines once producers.sh notes
+# that the tree declares no producer, and that note is the same in every one.
+distinct_n="$(printf '%s\0' "${REFUSAL_TEXTS[@]}" | sort -zu | tr -cd '\0' | wc -c)"
 if [ "${distinct_n}" -eq "${REFUSAL_N}" ]; then
     pass "${REFUSAL_N} refusals, ${distinct_n} distinct messages"
 else
@@ -360,11 +362,17 @@ fi
 # ---------------------------------------------------------------------------
 
 # Packages that NO legal resolution can name, with the reason each is exempt.
-# Empty today, and it stays a written list rather than a tolerance: a package
+# A written list rather than a tolerance: a package
 # that quietly stops being reachable is a package the composer stops installing,
 # and every check downstream of composition would keep passing over the smaller
 # image.
-declare -A UNREACHABLE_OK=()
+declare -A UNREACHABLE_OK=(
+    [mica-kernel-cx3576]="a kernel archive is a separate signed component: tools/board-pool.sh --kernel unpacks it into the image, APT never installs it"
+    [mica-kernel-s905x5m]="a kernel archive is a separate signed component: tools/board-pool.sh --kernel unpacks it into the image, APT never installs it"
+    [mica-kernel-virt-arm64]="a kernel archive is a separate signed component: tools/board-pool.sh --kernel unpacks it into the image, APT never installs it"
+    [mica-kernel-x64]="a kernel archive is a separate signed component: tools/board-pool.sh --kernel unpacks it into the image, APT never installs it"
+    [mica-lifecycle]="mica-init and mica-shutdown are taken out of the archive by tools/deploy-pool.sh --lifecycle into the image's own root, never installed by APT"
+)
 
 PRODUCER_ROWS="$(bash "${REPO_ROOT}/build-env/deb/producers.sh")"
 DECLARED=""
@@ -375,6 +383,21 @@ while read -r _producer _dir _arches packages _enablement; do
         DECLARED_N=$((DECLARED_N + 1))
     done
 done <<<"${PRODUCER_ROWS}"
+
+# The lock's rows are declared packages too: what deps/packages imports is
+# what the composer installs, exactly as resolve.sh counts it. Each arch has a
+# row, so a package is counted once.
+LOCK_ROWS="$(bash "${REPO_ROOT}/build-env/deb/lock.sh" --rows)"
+while IFS=$'\t' read -r pkg _version _arch _sha256 _repository _commit; do
+    [ -n "${pkg}" ] || continue
+    case " ${DECLARED} " in
+    *" ${pkg} "*) ;;
+    *)
+        DECLARED="${DECLARED}${pkg} "
+        DECLARED_N=$((DECLARED_N + 1))
+        ;;
+    esac
+done <<<"${LOCK_ROWS}"
 
 # The legal space, taken from the manifest tree and the board files rather than
 # from a list written here: a board, profile, radio or feature added to the
@@ -438,9 +461,9 @@ REACHED=$(printf '%s\n' $REACHED | sort -u | tr '\n' ' ')
 REACHED_N=0
 for _pkg in ${REACHED}; do REACHED_N=$((REACHED_N + 1)); done
 
-echo "COUNTS: ${DECLARED_N} packages declared by producers, ${REACHED_N} proven reachable, over ${RESOLUTIONS_N} legal resolutions (${#ALL_BOARDS[@]} boards x ${#ALL_PROFILES[@]} profiles x $((1 << feat_n)) feature subsets)"
+echo "COUNTS: ${DECLARED_N} packages declared by producers and the lock, ${REACHED_N} proven reachable, over ${RESOLUTIONS_N} legal resolutions (${#ALL_BOARDS[@]} boards x ${#ALL_PROFILES[@]} profiles x $((1 << feat_n)) feature subsets)"
 [ "${DECLARED_N}" -gt 0 ] || {
-    echo "error: the producers declared no package, so the reachability check would have compared nothing against nothing and passed" >&2
+    echo "error: neither the producers nor the lock declared a package, so the reachability check would have compared nothing against nothing and passed" >&2
     exit 1
 }
 [ "${REACHED_N}" -gt 0 ] || {
@@ -466,7 +489,7 @@ for pkg in ${DECLARED}; do
     fi
 done
 # A stale exemption is an exemption that hides the next regression.
-for pkg in ${!UNREACHABLE_OK[@]+"${!UNREACHABLE_OK[@]}"}; do
+for pkg in "${!UNREACHABLE_OK[@]}"; do
     case " ${REACHED} " in
     *" ${pkg} "*)
         fail "${pkg} is listed in UNREACHABLE_OK but a legal resolution does name it. Remove the exemption; while it stands, this package's reachability is asserted by nothing"

@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1@sha256:ecfaec9ed6d810b56388c508f4121597bfbba70d41a6dfeee4d8cad5f295fc32
 # check=skip=InvalidDefaultArgInFrom
-# U-Boot's sandbox build at the commit mica-cx3576:bsp/uboot/Dockerfile
+# U-Boot's sandbox build at the commit mica-boards:cx3576/bsp/uboot/Dockerfile
 # builds for the board, so the FIT verification code the proofs drive is the
 # code that ships. The sandbox is a hosted binary: it runs on this container
 # and executes the same image-verification path a board would.

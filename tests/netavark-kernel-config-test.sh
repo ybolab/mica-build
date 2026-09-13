@@ -24,7 +24,7 @@
 #
 # WHERE THAT STEP LIVES IS PER BOARD, which is why the rows below name a file
 # each rather than deriving one. x64 and virt-arm64 still run it inside their
-# kernel Dockerfile; cx3576's moved to mica-cx3576:bsp/kernel/configure.sh
+# kernel Dockerfile; cx3576's moved to mica-boards:cx3576/bsp/kernel/configure.sh
 # under RFCT-345, when that board's build logic came out of its Dockerfile. It is
 # the same loop and this file reads it the same way -- a row still pointing at
 # the Dockerfile after the move would have found no `for option in` and no
