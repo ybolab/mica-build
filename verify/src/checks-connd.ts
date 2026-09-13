@@ -530,6 +530,7 @@ const REGDB_UNIT = 'mica-regdb-reload.service'
 const REGDB_RELOAD_ENABLED: CheckCase = {
   id: 'wifi-regdb-reload-enabled',
   boards: WIFI_BOARDS,
+  features: ['wifi'],
   shell: {
     pass: `${REGDB_UNIT} is in the image and enabled at multi-user.target`,
     fail: [
@@ -571,6 +572,7 @@ const REGDB_RELOAD_ENABLED: CheckCase = {
 const REGDB_RELOAD_TOOL: CheckCase = {
   id: 'wifi-regdb-reload-tool',
   boards: WIFI_BOARDS,
+  features: ['wifi'],
   shell: {
     pass: `${REGDB_UNIT} runs `,
     fail: [
