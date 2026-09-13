@@ -438,10 +438,9 @@ out, refuses a name no feature file matches rather than silently building the
 full image, and refuses to decline a file that is not a feature. **Nothing
 passes it today.** The composition directory contains no feature files at all,
 so a decline reaches the image through the *resolution* instead, as fewer
-package names: `rootfs/build.sh` folds `WITH_CONTAINERS=0`, `WITH_MOSD=0`
-and `MICA_ROOTFS_WITHOUT` into one list and hands it to
-`rootfs/packages/resolve.sh`, which refuses an unmatched feature name for the
-same reason this flag did.
+package names: the product's `FEATURES` (`products/<name>/product.env`,
+read by `tools/product.sh`) is handed to `rootfs/packages/resolve.sh`, which
+refuses an unmatched feature name for the same reason this flag did.
 
 `--mkimage-cx3576`, `--mkimage-uefi --board x64` and `--bundle` are **modes**, each recognised
 only in first position: anywhere else one would be forwarded to `bun test`,

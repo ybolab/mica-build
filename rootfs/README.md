@@ -187,9 +187,9 @@ reconciler rendering into a read-only path fails on device and nowhere else.
 
 ## Image profile (`/usr/lib/mica/profile.conf`)
 
-`MICA_PROFILE=dev` by default; `MICA_PROFILE=prod bash rootfs/build.sh`
-builds the production image from the same tree. The build rejects anything that
-is not exactly `dev` or `prod` in lowercase.
+The product's `PROFILE` (`products/<name>/product.env`), `dev` or `prod`;
+`tools/product.sh` rejects anything else. A production image is a product
+with `PROFILE=prod`, composed from the same tree.
 
 Both profiles disable SSH by default. The immutable profile identifies the
 built userspace policy; it is not an administrator credential or a signing grade.
@@ -298,7 +298,7 @@ package/build reports and the factory root export.
 make os-deb-preflight
 bash build-env/deb/build.sh --producer micad --arch amd64
 bash build-env/deb/repo.sh --arch amd64
-MICA_BOARD=x64 MICA_META_DIR=/absolute/public-defaults bash rootfs/build.sh
+MICA_PRODUCT=x64-dev bash rootfs/build.sh     # the product's meta/ is its public manifest
 ```
 
 This example builds one producer; prepare the complete selected pool through the

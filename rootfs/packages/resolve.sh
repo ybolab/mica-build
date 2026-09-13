@@ -3,7 +3,7 @@
 # the manifests beside this file.
 #
 #   bash rootfs/packages/resolve.sh --board cx3576 --board-dir _out/boards/cx3576/manifests \
-#        --profile dev --radios "wifi bluetooth" --without ""
+#        --profile dev --features "micad mqtt containers wifi bluetooth"
 #   -> mica-apid
 #      mica-board-cx3576
 #      mica-bluetooth
@@ -44,7 +44,7 @@ done
 }
 
 usage() {
-    echo "usage: bash rootfs/packages/resolve.sh --board <board> --board-dir <manifests dir> --profile <profile> --radios \"<radios>\" --without \"<features>\" [--components \"<components>\"]" >&2
+    echo "usage: bash rootfs/packages/resolve.sh --board <board> --board-dir <manifests dir> --profile <profile> --features \"<features>\" [--components \"<components>\"]" >&2
 }
 
 in_list() {
@@ -73,13 +73,11 @@ in_list() {
 BOARD=""
 BOARD_DIR=""
 PROFILE=""
-RADIOS=""
-WITHOUT=""
+FEATURES=""
 COMPONENTS=""
 HAVE_BOARD=0
 HAVE_PROFILE=0
-HAVE_RADIOS=0
-HAVE_WITHOUT=0
+HAVE_FEATURES=0
 while [ "$#" -gt 0 ]; do
     case "$1" in
     --board)
@@ -96,14 +94,9 @@ while [ "$#" -gt 0 ]; do
         HAVE_PROFILE=1
         shift 2
         ;;
-    --radios)
-        RADIOS="${2-}"
-        HAVE_RADIOS=1
-        shift 2
-        ;;
-    --without)
-        WITHOUT="${2-}"
-        HAVE_WITHOUT=1
+    --features)
+        FEATURES="${2-}"
+        HAVE_FEATURES=1
         shift 2
         ;;
     --components)
@@ -118,11 +111,17 @@ while [ "$#" -gt 0 ]; do
         ;;
     esac
 done
+# FEATURES ARE OPT-IN. A product names what it wants (tools/product.sh
+# validates that against the board's BOARD_FEATURES before this script
+# runs); --features "" is the minimal image, the floor and the board
+# package. The argument is required even when empty, so a driver that
+# forgot to pass it cannot silently compose the minimal image where a full
+# one was meant.
 [ -n "${BOARD_DIR}" ] || { echo "error: --board-dir was not given. The board's own manifests (board.pkgs, radio-<r>.pkgs, component-<c>.pkgs) are read out of the fetched board bundle, _out/boards/<board>/manifests; run \`make board-fetch BOARD=<board>\`" >&2; usage; exit 1; }
 [ -d "${BOARD_DIR}" ] || { echo "error: --board-dir ${BOARD_DIR} is not a directory; the board bundle is not fetched (make board-fetch BOARD=${BOARD:-<board>})" >&2; exit 1; }
-for pair in "board:${HAVE_BOARD}" "profile:${HAVE_PROFILE}" "radios:${HAVE_RADIOS}" "without:${HAVE_WITHOUT}"; do
+for pair in "board:${HAVE_BOARD}" "profile:${HAVE_PROFILE}" "features:${HAVE_FEATURES}"; do
     [ "${pair#*:}" = "1" ] || {
-        echo "error: --${pair%%:*} was not given. All four arguments are required; --radios \"\" and --without \"\" are how a build with no radio and no declined feature says so, because an omitted one would resolve to a package set nothing had decided" >&2
+        echo "error: --${pair%%:*} was not given. All three are required; --features \"\" is how the minimal image says so, because an omitted one would resolve to a package set nothing had decided" >&2
         usage
         exit 1
     }
@@ -180,7 +179,7 @@ done <<<"${LOCK_ROWS}"
 declare -A MANIFEST=()
 PROFILES=()
 KNOWN_RADIOS=()
-FEATURES=()
+KNOWN_FEATURES=()
 BOARD_RADIO_MANIFESTS=()
 BOARD_COMPONENT_MANIFESTS=()
 shopt -s nullglob
@@ -219,7 +218,7 @@ for file in "${MANIFEST_FILES[@]}"; do
     common) ;;
     profile-*) PROFILES+=("${base#profile-}") ;;
     radio-*) KNOWN_RADIOS+=("${base#radio-}") ;;
-    feature-*) FEATURES+=("${base#feature-}") ;;
+    feature-*) KNOWN_FEATURES+=("${base#feature-}") ;;
     board-* | component-*)
         echo "error: ${file} is a board manifest in the engine's directory. A board's manifests (board.pkgs, radio-<r>.pkgs, component-<c>.pkgs) live in the board repository under <board>/manifests/ and arrive here in the board bundle; nothing selects this file, so it would never be read into a resolution" >&2
         exit 1
@@ -260,57 +259,38 @@ for file in ${BOARD_MANIFEST_FILES[@]+"${BOARD_MANIFEST_FILES[@]}"}; do
     esac
 done
 
-# Each RADIO NAME is a decline token of its own -- there is no umbrella
-# `radios` feature and no feature-radios.pkgs. --radios is the board's
-# statement of which radios the HARDWARE has; --without <radio> is the build's
-# decision to leave one of them out anyway. The two compose per radio, so
-# `--without bluetooth` keeps Wi-Fi, which the retired umbrella token could
-# not say.
-#
-# A radio and a feature sharing one name would make that token ambiguous in
-# --without, so the collision is refused here rather than resolved by
-# precedence.
+# A radio is a feature like any other in --features: `wifi` selects
+# radio-wifi.pkgs and the board's radio-wifi.pkgs beside it. A radio and a
+# feature sharing one name would make that token ambiguous, so the collision
+# is refused here rather than resolved by precedence.
 for radio in ${KNOWN_RADIOS[@]+"${KNOWN_RADIOS[@]}"}; do
-    ! in_list "${radio}" ${FEATURES[@]+"${FEATURES[@]}"} || {
+    ! in_list "${radio}" ${KNOWN_FEATURES[@]+"${KNOWN_FEATURES[@]}"} || {
         echo "error: ${HERE} holds both feature-${radio}.pkgs and radio-${radio}.pkgs. The name is a --without token in both families, so declining '${radio}' would be ambiguous; one of the two manifests has to be renamed" >&2
         exit 1
     }
-    FEATURES+=("${radio}")
+    KNOWN_FEATURES+=("${radio}")
 done
-mapfile -t FEATURES < <(printf '%s\n' "${FEATURES[@]}" | sort -u)
+mapfile -t KNOWN_FEATURES < <(printf '%s\n' "${KNOWN_FEATURES[@]}" | sort -u)
 
-for feature in ${WITHOUT}; do
-    in_list "${feature}" ${FEATURES[@]+"${FEATURES[@]}"} || {
-        echo "error: --without names the feature '${feature}', which this repository has no such thing as. The features that exist are: ${FEATURES[*]}. They come from the feature-<name>.pkgs and radio-<name>.pkgs manifests in ${HERE}" >&2
+for feature in ${FEATURES}; do
+    in_list "${feature}" ${KNOWN_FEATURES[@]+"${KNOWN_FEATURES[@]}"} || {
+        echo "error: --features names '${feature}', which this repository has no such thing as. The features that exist are: ${KNOWN_FEATURES[*]}. They come from the feature-<name>.pkgs and radio-<name>.pkgs manifests in ${HERE}" >&2
         exit 1
     }
 done
-# The same spelling rootfs/build.sh uses, so "is this feature in the
-# image" reads identically on both sides of the argument list.
-WITHOUT_FEATURES=" ${WITHOUT} "
-declined() { case "${WITHOUT_FEATURES}" in *" $1 "*) return 0 ;; *) return 1 ;; esac; }
+SELECTED=" ${FEATURES} "
+selected() { case "${SELECTED}" in *" $1 "*) return 0 ;; *) return 1 ;; esac; }
 
 [ -n "${BOARD}" ] || { echo "error: --board is empty" >&2; exit 1; }
 in_list "${PROFILE}" ${PROFILES[@]+"${PROFILES[@]}"} || {
     echo "error: --profile is '${PROFILE}', for which ${HERE} holds no profile-${PROFILE}.pkgs. The profiles with a manifest are: ${PROFILES[*]-none}" >&2
     exit 1
 }
-# Radio names are checked even when every radio is declined. A board declaring
-# a radio this repository has never heard of is a broken board file, and a
-# build that happens to decline radios is not the place for that to become
-# invisible.
-for radio in ${RADIOS}; do
-    in_list "${radio}" ${KNOWN_RADIOS[@]+"${KNOWN_RADIOS[@]}"} || {
-        echo "error: --radios names '${radio}', for which ${HERE} holds no radio-${radio}.pkgs. The radios with a manifest are: ${KNOWN_RADIOS[*]-none}" >&2
-        exit 1
-    }
-done
-
 RESOLVED="${MANIFEST[common]:-}"
 RESOLVED="${RESOLVED}${MANIFEST[profile-${PROFILE}]:-}"
 RESOLVED="${RESOLVED}${MANIFEST[board]:-}"
-for radio in ${RADIOS}; do
-    if ! declined "${radio}"; then
+for radio in ${KNOWN_RADIOS[@]+"${KNOWN_RADIOS[@]}"}; do
+    if selected "${radio}"; then
         RESOLVED="${RESOLVED}${MANIFEST[radio-${radio}]:-}${MANIFEST[board-radio-${radio}]:-}"
     fi
 done
@@ -324,10 +304,10 @@ for component in $COMPONENTS; do
     RESOLVED="${RESOLVED}${MANIFEST[$key]}"
 done
 
-for feature in "${FEATURES[@]}"; do
+for feature in "${KNOWN_FEATURES[@]}"; do
     # A radio token has no feature-<name>.pkgs; the loop above already read its
-    # radio-<name>.pkgs, gated on the board declaring it.
-    declined "${feature}" || RESOLVED="${RESOLVED}${MANIFEST[feature-${feature}]:-}"
+    # radio-<name>.pkgs.
+    ! selected "${feature}" || RESOLVED="${RESOLVED}${MANIFEST[feature-${feature}]:-}"
 done
 
 case " $RESOLVED " in

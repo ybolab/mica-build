@@ -259,6 +259,8 @@ jobs:
       # -- it checks the checker. Both boards, 26 assertions.
       - name: Every pinned board's layout against the schema
         run: make os-layout-lint
+      - name: Every product validates against its board; the product contract's refusals fire
+        run: make os-product-test
 
       # The apid API suite's build-time half. HERE and not in offline-suites,
       # for that job's own stated reason: it needs docker. There is no bun on

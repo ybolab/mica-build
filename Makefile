@@ -1,4 +1,4 @@
-.PHONY: build-env help os-apid-api-spec-pins os-apid-api-test os-bare-host-gate os-boot-tools os-build-test os-components os-deb-package-gate os-deb-preflight os-deb-preflight-test os-debian-cache os-debian-install os-debian-test os-debian-verify os-debs os-devkeys os-lock-bump os-pool os-pool-lock-test os-factory-root-gate os-fit-records-test os-host-toolchain-lint os-host-toolchain-lint-test os-image os-install-closure-gate os-layout-lint os-netavark-kernel-test os-quadlet-doc-test os-repart-test os-rootfs-cx3576 os-rootfs-manifest-test os-rootfs-virt-arm64 os-rootfs-x64 os-shell-pipefail-lint os-smoke-negative-test os-smoke-test os-verify os-verify-test board-fetch board-fetch-all
+.PHONY: build-env help os-apid-api-spec-pins os-apid-api-test os-bare-host-gate os-boot-tools os-build-test os-components os-deb-package-gate os-deb-preflight os-deb-preflight-test os-debian-cache os-debian-install os-debian-test os-debian-verify os-debs os-devkeys os-lock-bump os-pool os-pool-lock-test os-factory-root-gate os-fit-records-test os-host-toolchain-lint os-host-toolchain-lint-test os-image os-install-closure-gate os-layout-lint os-netavark-kernel-test os-quadlet-doc-test os-repart-test os-rootfs os-rootfs-manifest-test os-product-test os-shell-pipefail-lint os-smoke-negative-test os-smoke-test os-verify os-verify-test board-fetch board-fetch-all
 
 # THE SOURCE DEPENDENCIES, before anything else: build-env/ (mica-build-env)
 # is the substrate every target reaches through, rootfs/debian/ (mica-debian)
@@ -46,7 +46,8 @@ deps-bump:
 
 help:
 	@echo "  os-image            assemble two signed deployments (MICA_BOARD, MICA_IMAGE_RECORDS, MICA_METADATA_PUBLIC_KEYS, MICA_FIRMWARE_PACKAGE, MICA_IMAGE_OUT)"
-	@echo "  os-rootfs-x64 / os-rootfs-virt-arm64 / os-rootfs-cx3576 compose independent roots"
+	@echo "  os-rootfs           compose a product's root (PRODUCT=<name>; products/*/product.env, tools/product.sh --list)"
+	@echo "  os-product-test     every product validates against its board, and each refusal of the product contract fires"
 	@echo "  os-keys-init        detect or create development keys in meta (MICA_SIGNING_OUTPUT overrides)"
 	@echo "  os-devkeys          create explicit development inputs (MICA_SIGNING_OUTPUT, default meta; refuses existing output)"
 	@echo "  os-layout-lint      check the current three-partition contracts"
@@ -61,7 +62,6 @@ help:
 	@echo "  board-fetch         read a board's bundle -- board.env, manifests, kernel, firmware, U-Boot -- out of its pinned mica-kernel-<board> archive into _out/boards/<board> (BOARD=<board>)"
 	@echo "  board-fetch-all     the same for every pinned board (deps/packages/mica-kernel-*.json); os-pool runs it"
 	@echo "  os-components      build independent components (MICA_COMPONENT_ARGS='root|kernel|firmware|deployment|image|archive ...')"
-	@echo "  os-rootfs-cx3576 compose the independent signed rootfs input"
 	@echo "  os-verify verify the assembled mos image against the mos image contract (docker)"
 	@echo "  os-smoke-test       execute every self-built binary inside the factory root, assert its pin (docker)"
 	@echo "  os-smoke-negative-test  break that root three ways and require each to turn the run red (docker)"
@@ -86,14 +86,17 @@ help:
 	@echo "  os-pool-lock-test   drive fetch.sh and lock.sh against a stub of the release API: every refusal by name (no docker, no network)"
 	@echo "  os-deb-package-gate check the built pools: ownership, fields, reproducibility, enablement (docker)"
 	@echo "  os-install-closure-gate  apt-install both pools into clean roots: closure, ldd, accounts, versions (docker)"
-	@echo "  os-rootfs-manifest-test  resolve the rootfs package set for every board, profile and feature set; prove each refusal and that no producer package is unreachable"
+	@echo "  os-rootfs-manifest-test  resolve every product and every legal feature set of every board; prove each refusal and that no package is unreachable"
 	@echo "  os-quadlet-doc-test run docs/design/containers.md's examples through Quadlet"
 # NEEDS THE arm64 POOL. The root is composed from _out/debs/arm64 now, so this
 # target refuses until `make os-pool` has built it -- by name, rather than by
 # compiling a component on demand. That refusal is the composer's, not this
 # file's; see rootfs/build.sh.
-os-rootfs-cx3576:
-	bash rootfs/build.sh
+os-rootfs:
+	@test -n "$(PRODUCT)" || { echo "error: PRODUCT=<name> is required, e.g. make os-rootfs PRODUCT=x64-dev; the products are: $$(bash tools/product.sh --list | tr '\n' ' ')" >&2; exit 1; }
+	MICA_PRODUCT=$(PRODUCT) bash rootfs/build.sh
+os-product-test:
+	bash tests/product-test.sh
 
 
 # THE IMAGE CONTRACT: read the assembled image back and check it against the
@@ -609,12 +612,6 @@ os-keys-init:
 os-devkeys:
 	bash boot/dev-keys.sh --out "$(MICA_SIGNING_OUTPUT)"
 
-os-rootfs-x64:
-	MICA_BOARD=x64 bash rootfs/build.sh
-
-os-rootfs-virt-arm64:
-	MICA_BOARD=virt-arm64 bash rootfs/build.sh
-
 os-image:
 	@test -n "$(MICA_BOARD)" -a -n "$(MICA_IMAGE_RECORDS)" -a -n "$(MICA_METADATA_PUBLIC_KEYS)" -a -n "$(MICA_FIRMWARE_PACKAGE)" -a -n "$(MICA_IMAGE_OUT)"
 	bash build/run.sh --components image --board "$(MICA_BOARD)" --records "$(MICA_IMAGE_RECORDS)" \
@@ -641,10 +638,7 @@ os-release-gate:
 os-release-verify-test:
 	bash tests/release-verify-test.sh
 
-.PHONY: os-rootfs-s905x5m os-image-s905x5m-sd os-verify-s905x5m-sd
-os-rootfs-s905x5m:
-	MICA_BOARD=s905x5m bash rootfs/build.sh
-
+.PHONY: os-image-s905x5m-sd os-verify-s905x5m-sd
 # The SD system image requires the paired MOS firmware in eMMC boot0.
 os-image-s905x5m-sd:
 	$(MAKE) os-image MICA_BOARD=s905x5m

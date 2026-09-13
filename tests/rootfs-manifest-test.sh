@@ -132,25 +132,14 @@ expect_set() {
 # it: resolve.sh takes its inputs as arguments and re-derives none of them, so
 # this test stands in for the driver rather than letting the resolver read the
 # board file behind it.
-board_radios() {
-    local board="$1"
-    local env_file="${BOARDS_OUT}/${board}/board.env"
-    [ -f "${env_file}" ] || {
-        echo "error: ${env_file} does not exist; the board bundle is not fetched (make board-fetch-all), so this test cannot resolve radios for ${board}" >&2
-        exit 1
-    }
-    (
-        # shellcheck disable=SC1090
-        . "${env_file}"
-        # set -u is inherited: a board.env that declares no BOARD_RADIOS at all
-        # fails here rather than resolving to "this board has none".
-        printf '%s' "${BOARD_RADIOS}"
-    )
+# The features a product selects, read through tools/product.sh, the one
+# reader of products/<name>/product.env.
+product_features() {
+    bash "${REPO_ROOT}/tools/product.sh" "$1" | sed -n 's/^FEATURES="\(.*\)"$/\1/p'
 }
-
-CX_RADIOS="$(board_radios cx3576)"
-X64_RADIOS="$(board_radios x64)"
-VIRT_ARM64_RADIOS="$(board_radios virt-arm64)"
+CX_FEATURES="$(product_features cx3576-dev)"
+X64_FEATURES="$(product_features x64-dev)"
+VIRT_ARM64_FEATURES="$(product_features virt-arm64-dev)"
 
 # mica-busybox is in EVERY set below, including CX_MINIMAL, and that is what
 # rootfs/packages/common.pkgs holding it means: the emergency binary is not
@@ -170,18 +159,18 @@ VA_DEV="mica-apid mica-board-virt-arm64 mica-busybox mica-ca-trust mica-deploy m
 VA_PROD="mica-apid mica-board-virt-arm64 mica-busybox mica-ca-trust mica-deploy mica-mqtt-broker mica-mqttd mica-podman mica-profile-prod mica-system micad"
 CX_MINIMAL="mica-board-cx3576 mica-busybox mica-ca-trust mica-deploy mica-profile-dev mica-system"
 
-expect_set "cx3576 dev, radios '${CX_RADIOS}', nothing declined" "${CX_DEV}" \
-    "${PACKAGES_DIR}" --board cx3576 --board-dir "$(bd cx3576)" --profile dev --radios "${CX_RADIOS}" --without ""
-expect_set "cx3576 prod, radios '${CX_RADIOS}', nothing declined" "${CX_PROD}" \
-    "${PACKAGES_DIR}" --board cx3576 --board-dir "$(bd cx3576)" --profile prod --radios "${CX_RADIOS}" --without ""
-expect_set "x64 dev, radios '${X64_RADIOS}', nothing declined" "${X64_DEV}" \
-    "${PACKAGES_DIR}" --board x64 --board-dir "$(bd x64)" --profile dev --radios "${X64_RADIOS}" --without ""
-expect_set "x64 prod, radios '${X64_RADIOS}', nothing declined" "${X64_PROD}" \
-    "${PACKAGES_DIR}" --board x64 --board-dir "$(bd x64)" --profile prod --radios "${X64_RADIOS}" --without ""
-expect_set "virt-arm64 dev, radios '${VIRT_ARM64_RADIOS}', nothing declined" "${VA_DEV}" \
-    "${PACKAGES_DIR}" --board virt-arm64 --board-dir "$(bd virt-arm64)" --profile dev --radios "${VIRT_ARM64_RADIOS}" --without ""
-expect_set "virt-arm64 prod, radios '${VIRT_ARM64_RADIOS}', nothing declined" "${VA_PROD}" \
-    "${PACKAGES_DIR}" --board virt-arm64 --board-dir "$(bd virt-arm64)" --profile prod --radios "${VIRT_ARM64_RADIOS}" --without ""
+expect_set "cx3576-dev: features '${CX_FEATURES}'" "${CX_DEV}" \
+    "${PACKAGES_DIR}" --board cx3576 --board-dir "$(bd cx3576)" --profile dev --features "${CX_FEATURES}"
+expect_set "cx3576 prod, features '${CX_FEATURES}'" "${CX_PROD}" \
+    "${PACKAGES_DIR}" --board cx3576 --board-dir "$(bd cx3576)" --profile prod --features "${CX_FEATURES}"
+expect_set "x64-dev: features '${X64_FEATURES}'" "${X64_DEV}" \
+    "${PACKAGES_DIR}" --board x64 --board-dir "$(bd x64)" --profile dev --features "${X64_FEATURES}"
+expect_set "x64 prod, features '${X64_FEATURES}'" "${X64_PROD}" \
+    "${PACKAGES_DIR}" --board x64 --board-dir "$(bd x64)" --profile prod --features "${X64_FEATURES}"
+expect_set "virt-arm64-dev: features '${VIRT_ARM64_FEATURES}'" "${VA_DEV}" \
+    "${PACKAGES_DIR}" --board virt-arm64 --board-dir "$(bd virt-arm64)" --profile dev --features "${VIRT_ARM64_FEATURES}"
+expect_set "virt-arm64 prod, features '${VIRT_ARM64_FEATURES}'" "${VA_PROD}" \
+    "${PACKAGES_DIR}" --board virt-arm64 --board-dir "$(bd virt-arm64)" --profile prod --features "${VIRT_ARM64_FEATURES}"
 
 # A radio-less board carries no OTHER board's package and no radio package.
 # Asserted as its own check and not left to the literals above, because the
@@ -193,10 +182,10 @@ expect_set "virt-arm64 prod, radios '${VIRT_ARM64_RADIOS}', nothing declined" "$
 # "the resolver keeps boards apart" from "x64 happens to be the one the
 # resolver was written around", and virt-arm64 is the second board with an
 # empty BOARD_RADIOS.
-for va_pair in "x64:${X64_RADIOS}" "virt-arm64:${VIRT_ARM64_RADIOS}"; do
+for va_pair in "x64:${X64_FEATURES}" "virt-arm64:${VIRT_ARM64_FEATURES}"; do
     va_board="${va_pair%%:*}"
-    va_radios="${va_pair#*:}"
-    run_resolve "${PACKAGES_DIR}" --board "${va_board}" --board-dir "$(bd "${va_board}")" --profile dev --radios "${va_radios}" --without ""
+    va_features="${va_pair#*:}"
+    run_resolve "${PACKAGES_DIR}" --board "${va_board}" --board-dir "$(bd "${va_board}")" --profile dev --features "${va_features}"
     leaked=""
     for pkg in ${resolve_out}; do
         case "${pkg}" in
@@ -208,34 +197,33 @@ for va_pair in "x64:${X64_RADIOS}" "virt-arm64:${VIRT_ARM64_RADIOS}"; do
     if [ -z "${leaked}" ]; then
         pass "${va_board} dev carries no other board package and no radio package"
     else
-        fail "${va_board} dev carries foreign content: ${leaked% }. It declares BOARD_RADIOS='' and has its own board package"
+        fail "${va_board} dev carries foreign content: ${leaked% }. Its product selects no radio and it has its own board package"
     fi
 done
 
-# Declining ONE radio keeps the other: wifi and bluetooth are independent
-# decline tokens, which is the whole point of the split -- the retired umbrella
-# token dropped both together.
+# Selecting ONE radio leaves the other out: wifi and bluetooth are independent
+# features, which is the whole point of the split -- the retired umbrella
+# token carried both together.
 CX_NO_BT="mica-apid mica-board-cx3576 mica-busybox mica-ca-trust mica-deploy mica-mqtt-broker mica-mqttd mica-podman mica-profile-dev mica-system mica-wifi mica-wifi-ap micad"
 CX_NO_WIFI="mica-apid mica-bluetooth mica-board-cx3576 mica-busybox mica-ca-trust mica-deploy mica-mqtt-broker mica-mqttd mica-podman mica-profile-dev mica-system micad"
-expect_set "cx3576 dev, --without bluetooth keeps Wi-Fi" "${CX_NO_BT}" \
-    "${PACKAGES_DIR}" --board cx3576 --board-dir "$(bd cx3576)" --profile dev --radios "${CX_RADIOS}" --without "bluetooth"
-expect_set "cx3576 dev, --without wifi keeps Bluetooth" "${CX_NO_WIFI}" \
-    "${PACKAGES_DIR}" --board cx3576 --board-dir "$(bd cx3576)" --profile dev --radios "${CX_RADIOS}" --without "wifi"
+expect_set "cx3576 dev, features without bluetooth keep Wi-Fi" "${CX_NO_BT}" \
+    "${PACKAGES_DIR}" --board cx3576 --board-dir "$(bd cx3576)" --profile dev --features "micad mqtt containers wifi"
+expect_set "cx3576 dev, features without wifi keep Bluetooth" "${CX_NO_WIFI}" \
+    "${PACKAGES_DIR}" --board cx3576 --board-dir "$(bd cx3576)" --profile dev --features "micad mqtt containers bluetooth"
 # The umbrella token is GONE, not quietly tolerated: a caller still passing
 # --without radios gets the unknown-feature refusal instead of a build that
 # happens to keep both radios.
-run_resolve "${PACKAGES_DIR}" --board cx3576 --board-dir "$(bd cx3576)" --profile dev --radios "${CX_RADIOS}" --without "radios"
+run_resolve "${PACKAGES_DIR}" --board cx3576 --board-dir "$(bd cx3576)" --profile dev --features "radios"
 if [ "${resolve_rc}" -ne 0 ]; then
-    pass "--without radios is refused: the umbrella token no longer exists"
+    pass "--features radios is refused: the umbrella token no longer exists"
 else
-    fail "--without radios still resolves; the umbrella token was to be removed with the producer split"
+    fail "--features radios still resolves; the umbrella token was to be removed with the producer split"
 fi
 
 # Declining every feature drops exactly the feature packages and leaves a legal
 # image set: common, one profile, one board.
-expect_set "cx3576 dev, --without 'micad mqtt containers wifi bluetooth'" "${CX_MINIMAL}" \
-    "${PACKAGES_DIR}" --board cx3576 --board-dir "$(bd cx3576)" --profile dev --radios "${CX_RADIOS}" \
-    --without "micad mqtt containers wifi bluetooth"
+expect_set "cx3576-minimal: --features ''" "${CX_MINIMAL}" \
+    "${PACKAGES_DIR}" --board cx3576 --board-dir "$(bd cx3576)" --profile dev --features "$(product_features cx3576-minimal)"
 dropped=""
 for pkg in ${CX_DEV}; do
     case " ${CX_MINIMAL} " in
@@ -245,9 +233,9 @@ for pkg in ${CX_DEV}; do
 done
 want_dropped="mica-apid mica-bluetooth mica-mqtt-broker mica-mqttd mica-podman mica-wifi mica-wifi-ap micad"
 if [ "${dropped% }" = "${want_dropped}" ]; then
-    pass "declining all five features drops exactly: ${want_dropped}"
+    pass "the minimal image leaves out exactly: ${want_dropped}"
 else
-    fail "declining all five features dropped [${dropped% }], expected [${want_dropped}]"
+    fail "the minimal image left out [${dropped% }], expected [${want_dropped}]"
 fi
 
 # ---------------------------------------------------------------------------
@@ -260,7 +248,7 @@ fi
 PRISTINE="${SCRATCH}/pristine"
 cp -a "${PACKAGES_DIR}" "${PRISTINE}"
 expect_set "the pristine copy under tmp/ resolves identically to the tracked tree" "${CX_DEV}" \
-    "${PRISTINE}" --board cx3576 --board-dir "$(bd cx3576)" --profile dev --radios "${CX_RADIOS}" --without ""
+    "${PRISTINE}" --board cx3576 --board-dir "$(bd cx3576)" --profile dev --features "${CX_FEATURES}"
 
 mutate() {
     local name="$1"
@@ -280,22 +268,22 @@ mutate_board() {
 }
 
 # (a) an unknown feature name in --without.
-expect_refusal "unknown feature in --without" "zigbee" "${PACKAGES_DIR}" \
-    --board cx3576 --board-dir "$(bd cx3576)" --profile dev --radios "${CX_RADIOS}" --without "zigbee"
-run_resolve "${PACKAGES_DIR}" --board cx3576 --board-dir "$(bd cx3576)" --profile dev --radios "${CX_RADIOS}" --without "mqtt"
+expect_refusal "unknown feature in --features" "zigbee" "${PACKAGES_DIR}" \
+    --board cx3576 --board-dir "$(bd cx3576)" --profile dev --features "${CX_FEATURES} zigbee"
+run_resolve "${PACKAGES_DIR}" --board cx3576 --board-dir "$(bd cx3576)" --profile dev --features "micad containers wifi bluetooth"
 if [ "${resolve_rc}" -eq 0 ]; then
-    pass "a legal --without does not trip the unknown-feature refusal"
+    pass "a legal feature list does not trip the unknown-feature refusal"
 else
-    fail "--without mqtt was refused on the tracked tree: ${resolve_err}"
+    fail "a feature list without mqtt was refused on the tracked tree: ${resolve_err}"
 fi
 # The mutation runs the other way for this one, and it is the stronger
 # direction: a NEW feature manifest makes a previously illegal name legal, which
 # a hardcoded list of features could not do.
 dir="$(mutate feature-added)"
 printf '# scratch mutation\nmica-mqttd\n' >"${dir}/feature-zigbee.pkgs"
-run_resolve "${dir}" --board cx3576 --board-dir "$(bd cx3576)" --profile dev --radios "${CX_RADIOS}" --without "zigbee"
+run_resolve "${dir}" --board cx3576 --board-dir "$(bd cx3576)" --profile dev --features "${CX_FEATURES} zigbee"
 if [ "${resolve_rc}" -eq 0 ]; then
-    pass "adding feature-zigbee.pkgs to a copy makes --without zigbee legal there: the feature list is read from the tree"
+    pass "adding feature-zigbee.pkgs to a copy makes --features zigbee legal there: the feature list is read from the tree"
 else
     fail "feature-zigbee.pkgs was added to a copy and --without zigbee was still refused, so the feature list does not come from the manifests: ${resolve_err}"
 fi
@@ -304,18 +292,18 @@ fi
 dir="$(mutate undeclared-package)"
 printf 'mos-not-a-real-package\n' >>"${dir}/common.pkgs"
 expect_refusal "manifest names a package no producer declares" "mos-not-a-real-package" "${dir}" \
-    --board cx3576 --board-dir "$(bd cx3576)" --profile dev --radios "${CX_RADIOS}" --without ""
+    --board cx3576 --board-dir "$(bd cx3576)" --profile dev --features "${CX_FEATURES}"
 
 # (c) both profile packages, and neither.
 dir="$(mutate two-profiles)"
 printf 'mica-profile-prod\n' >>"${dir}/common.pkgs"
 expect_refusal "resolution carries both profile packages" "2 profile packages" "${dir}" \
-    --board cx3576 --board-dir "$(bd cx3576)" --profile dev --radios "${CX_RADIOS}" --without ""
+    --board cx3576 --board-dir "$(bd cx3576)" --profile dev --features "${CX_FEATURES}"
 
 dir="$(mutate no-profile)"
 : >"${dir}/profile-dev.pkgs"
 expect_refusal "resolution carries no profile package" "NO profile package" "${dir}" \
-    --board cx3576 --board-dir "$(bd cx3576)" --profile dev --radios "${CX_RADIOS}" --without ""
+    --board cx3576 --board-dir "$(bd cx3576)" --profile dev --features "${CX_FEATURES}"
 
 # (d) an empty resolution, and one with no board package.
 #
@@ -329,23 +317,23 @@ for f in "${dir}"/*.pkgs; do : >"${f}"; done
 bdir="$(mutate_board empty-resolution cx3576)"
 for f in "${bdir}"/*.pkgs; do : >"${f}"; done
 expect_refusal "empty resolution" "is EMPTY" "${dir}" \
-    --board cx3576 --board-dir "${bdir}" --profile dev --radios "${CX_RADIOS}" --without ""
+    --board cx3576 --board-dir "${bdir}" --profile dev --features "${CX_FEATURES}"
 
 bdir="$(mutate_board no-board-package cx3576)"
 : >"${bdir}/board.pkgs"
 expect_refusal "resolution carries no board package" "NO board package" "${PACKAGES_DIR}" \
-    --board cx3576 --board-dir "${bdir}" --profile dev --radios "${CX_RADIOS}" --without ""
+    --board cx3576 --board-dir "${bdir}" --profile dev --features "${CX_FEATURES}"
 
 # (e) a board manifest in the engine's directory, and a board bundle with no
 # board.pkgs: the two halves of the split, each refused by name.
 dir="$(mutate board-manifest-in-engine)"
 printf 'mica-board-cx3576\n' >"${dir}/board-cx3576.pkgs"
 expect_refusal "a board manifest in the engine directory" "board manifest in the engine" "${dir}" \
-    --board cx3576 --board-dir "$(bd cx3576)" --profile dev --radios "${CX_RADIOS}" --without ""
+    --board cx3576 --board-dir "$(bd cx3576)" --profile dev --features "${CX_FEATURES}"
 bdir="$(mutate_board no-board-manifest cx3576)"
 rm -f "${bdir}/board.pkgs"
 expect_refusal "a board bundle with no board.pkgs" "no board.pkgs" "${PACKAGES_DIR}" \
-    --board cx3576 --board-dir "${bdir}" --profile dev --radios "${CX_RADIOS}" --without ""
+    --board cx3576 --board-dir "${bdir}" --profile dev --features "${CX_FEATURES}"
 
 REFUSAL_N="${#REFUSAL_LABELS[@]}"
 [ "${REFUSAL_N}" -gt 0 ] || {
@@ -439,22 +427,30 @@ mapfile -t ALL_FEATURES < <(printf '%s\n' "${ALL_FEATURES[@]}" | sort -u)
 
 REACHED=""
 RESOLUTIONS_N=0
-feat_n="${#ALL_FEATURES[@]}"
+board_takes() { # board feature: a hardware feature the board declares, or a software one
+    local hw="wifi bluetooth display status-led can usb-gadget audio containers" have
+    case " ${hw} " in *" $2 "*) ;; *) return 0 ;; esac
+    have="$(sed -n 's/^BOARD_FEATURES="\{0,1\}\([^"]*\)"\{0,1\}$/\1/p' "${BOARDS_OUT}/$1/board.env" | head -1)"
+    case " ${have} " in *" $2 "*) return 0 ;; *) return 1 ;; esac
+}
 for board in "${ALL_BOARDS[@]}"; do
-    radios="$(board_radios "${board}")"
+    # The features this board can take: the legal space is their power set.
+    BOARD_FEATURE_LIST=()
+    for f in "${ALL_FEATURES[@]}"; do board_takes "${board}" "${f}" && BOARD_FEATURE_LIST+=("${f}"); done
+    feat_n="${#BOARD_FEATURE_LIST[@]}"
     for profile in "${ALL_PROFILES[@]}"; do
-        # The full power set of declined features, not just "decline none".
-        # "Decline none" alone would prove reachability just as well, and would
-        # also pass over a resolver that ignored --without entirely.
+        # The full power set of the board's features, not just "select all".
+        # "Select all" alone would prove reachability just as well, and would
+        # also pass over a resolver that ignored --features entirely.
         for ((mask = 0; mask < (1 << feat_n); mask++)); do
-            without=""
+            features=""
             for ((i = 0; i < feat_n; i++)); do
-                if (((mask >> i) & 1)); then without="${without}${ALL_FEATURES[i]} "; fi
+                if (((mask >> i) & 1)); then features="${features}${BOARD_FEATURE_LIST[i]} "; fi
             done
             run_resolve "${PACKAGES_DIR}" --board "${board}" --board-dir "$(bd "${board}")" --profile "${profile}" \
-                --radios "${radios}" --without "${without% }"
+                --features "${features% }"
             if [ "${resolve_rc}" -ne 0 ]; then
-                fail "reachability: --board ${board} --profile ${profile} --radios '${radios}' --without '${without% }' was refused, and every one of these is a legal build: ${resolve_err}"
+                fail "reachability: --board ${board} --profile ${profile} --features '${features% }' was refused, and every one of these is a legal build: ${resolve_err}"
                 continue
             fi
             RESOLUTIONS_N=$((RESOLUTIONS_N + 1))
@@ -474,7 +470,7 @@ for board in "${ALL_BOARDS[@]}"; do
         [ -f "$file" ] || continue
         component=${file##*/component-}; component=${component%.pkgs}
         run_resolve "$PACKAGES_DIR" --board "$board" --board-dir "$(bd "$board")" --profile dev \
-            --radios "$(board_radios "$board")" --without "" --components "$component"
+            --features "$(product_features "${board}-dev")" --components "$component"
         if [ "$resolve_rc" -ne 0 ]; then
             fail "component $board/$component is unreachable: $resolve_err"
         else

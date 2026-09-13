@@ -1,8 +1,15 @@
 #!/usr/bin/env bash
-# Build the squashfs + dm-verity arm64 rootfs slot image for cx3576 (A/B layout).
-# Usage: [BOARD_DIR=...] [WITH_MOSD=0|1] [MICA_ROOTFS_NO_CACHE=0|1]
-#        [WITH_CONTAINERS=0|1] [MICA_PROFILE=dev|prod]
-#        [MICA_ROOTFS_WITHOUT="wifi bluetooth mqtt ..."] bash rootfs/build.sh
+# Compose a product's root: the squashfs + dm-verity root image the signed
+# root component takes.
+# Usage: MICA_PRODUCT=<name> [MICA_ROOTFS_NO_CACHE=0|1] bash rootfs/build.sh
+#
+# THE PRODUCT IS THE ONE INPUT. products/<name>/product.env says which board,
+# which profile, which features and components; tools/product.sh reads and
+# validates it against the fetched board bundle and hands the result here.
+# The variables that used to decide these things -- MICA_BOARD, MICA_PROFILE,
+# WITH_MOSD, WITH_CONTAINERS, MICA_ROOTFS_WITHOUT, MICA_ROOTFS_COMPONENTS,
+# MICA_META_DIR -- are refused by name below: an image is a product, declared
+# before the build, not a combination of switches reconstructed after it.
 
 # There is deliberately no ROOT_PASSWORD here. A mos rootfs is a signed,
 # byte-identical squashfs and the pack stage fails any build whose factory
@@ -58,50 +65,27 @@ REPO_ROOT=$(cd "$SCRIPT_DIR/.." && pwd)
 # container actually starting, and containers.conf's values taking effect) have
 # somewhere to be proven before hardware, and virt-arm64 so that the proving can
 # happen on the ARCHITECTURE THE DEVICE RUNS rather than beside it.
-MICA_BOARD=${MICA_BOARD:-cx3576}
-# THE BOARD IS ITS PINNED BUNDLE, fetched into _out/boards/<board>/ by
-# tools/board-pool.sh --fetch (make board-fetch): board.env, the board's
-# package manifests, the kernel directory, the firmware and the U-Boot
-# outputs. There is no committed copy and no list of boards in this file:
-# deps/packages/mica-kernel-<board>.json is where a board exists, and an
-# unknown name is refused here BY NAME, with the pinned boards, rather than
-# much later as a missing path.
-BOARD_DIR=${BOARD_DIR:-"$REPO_ROOT/_out/boards/${MICA_BOARD}"}
+for retired in MICA_BOARD MICA_PROFILE WITH_MOSD WITH_CONTAINERS MICA_ROOTFS_WITHOUT MICA_ROOTFS_COMPONENTS MICA_META_DIR; do
+    [ -z "${!retired:-}" ] || {
+        echo "error: ${retired} is set. It no longer selects anything: the product (MICA_PRODUCT=<name>, products/<name>/product.env) declares the board, the profile, the features, the components and the public manifest, and a switch beside it would be a second statement of one of them" >&2
+        exit 1
+    }
+done
+MICA_PRODUCT="${MICA_PRODUCT:-}"
+[ -n "$MICA_PRODUCT" ] || {
+    echo "error: MICA_PRODUCT is not set. A root is composed for a product; the products are: $(bash "$REPO_ROOT/tools/product.sh" --list | tr '\n' ' ')" >&2
+    exit 1
+}
+# tools/product.sh refuses by name -- an unknown product, an unfetched board,
+# a feature the board lacks -- so nothing is re-checked here.
+PRODUCT_ENV="$(bash "$REPO_ROOT/tools/product.sh" "$MICA_PRODUCT")" || exit 1
+eval "$PRODUCT_ENV"
+MICA_BOARD="$BOARD"
 LAYOUT_ENV="$BOARD_DIR/board.env"
-if [ ! -f "$LAYOUT_ENV" ]; then
-    known=$(bash "$REPO_ROOT/tools/board-pool.sh" --list | tr '\n' ' ')
-    echo "error: MICA_BOARD is '$MICA_BOARD', and $LAYOUT_ENV does not exist." >&2
-    echo "       A board IS its pinned bundle, fetched by \`make board-fetch BOARD=$MICA_BOARD\`; the pinned boards are: ${known:-(none)}" >&2
-    exit 1
-fi
 OUT_DIR="$REPO_ROOT/_out/${MICA_BOARD}"
-# Installed-size budget. A per-board fact for the same reason
-# BOARD_CMDLINE_ARGS is: it protects a rootfs slot, and the slots differ.
-SIZE_BUDGET_MB="${SIZE_BUDGET_MB_OVERRIDE:-}"
-WITH_MOSD=${WITH_MOSD:-1}
-case "$WITH_MOSD" in
-0 | 1) ;;
-*)
-    echo "error: WITH_MOSD is '$WITH_MOSD'; it must be exactly 0 or 1. It selects whether the micad packages are in the resolved set, and anything else here would be read as 'not 1' and silently build an image with no management daemon" >&2
-    exit 1
-    ;;
-esac
-
-# Whether the container engine is in the image at all: the BUILD-time switch
-# (is the engine present), distinct from the RUN-time `container.enabled`
-# setting. On by default; WITH_CONTAINERS=0 in the environment leaves it out.
-# The board no longer decides this -- a board declares `containers` in
-# BOARD_FEATURES when it has room for the engine, and the product recipe
-# (plan 20260913-0416, phase 2) will be the one place that selects it.
-WITH_CONTAINERS=${WITH_CONTAINERS:-1}
-case "$WITH_CONTAINERS" in
-0 | 1) ;;
-*)
-    echo "error: WITH_CONTAINERS is '$WITH_CONTAINERS'; it must be exactly 0 or 1. It selects whether mica-podman is in the resolved set, and anything else here would be read as 'not 1' and the engine would silently not ship" >&2
-    exit 1
-    ;;
-esac
-
+MICA_PROFILE="$PROFILE"
+FACTORY_SEEDED=0
+[ -z "$PROVISIONING" ] || FACTORY_SEEDED=1
 # Cold reproducibility checks need a cache-independent route through the same
 # stages driver as an ordinary build. The driver already implements --no-cache;
 # this explicit opt-in only bridges the rootfs entry point to that existing
@@ -115,34 +99,15 @@ case "${MICA_ROOTFS_NO_CACHE-0}" in
     exit 1
     ;;
 esac
-# The declined features, as one list. WITH_CONTAINERS and WITH_MOSD are the
-# two historical spellings and they fold into it here, so there is one answer
-# to "is this feature in the image" and every consumer below asks the same
-# question. MICA_ROOTFS_WITHOUT is the general form -- a space-separated list of
-# feature names -- and it is what makes the three features with no WITH_*
-# history (wifi, bluetooth, mqtt) reachable from the shipping path at all.
+# FEATURES ARE THE PRODUCT'S SELECTION, opt-in. `selected` is the one
+# question every consumer below asks; FEATURES is what tools/product.sh
+# validated.
+selected() { case " $FEATURES " in *" $1 "*) return 0 ;; *) return 1 ;; esac; }
+echo "product: $MICA_PRODUCT -- board $MICA_BOARD, profile $MICA_PROFILE, features: ${FEATURES:-(none, the minimal image)}${COMPONENTS:+, components: $COMPONENTS}"
 
-# A name nothing matches is not validated here, deliberately: the resolver
-# holds the list of feature names (it reads rootfs/packages/) and refuses an
-# unknown one by name, with the features that do exist. A second copy of that
-# list in this file is the second table this repository keeps deleting.
-MICA_ROOTFS_WITHOUT=${MICA_ROOTFS_WITHOUT:-}
-WITHOUT_FEATURES=" ${MICA_ROOTFS_WITHOUT} "
-[ "$WITH_CONTAINERS" = "1" ] || WITHOUT_FEATURES="${WITHOUT_FEATURES}containers "
-[ "$WITH_MOSD" = "1" ] || WITHOUT_FEATURES="${WITHOUT_FEATURES}micad "
-# `case` and not a substring test with [[ ]]: this file is bash, but the pattern
-# is the same one the POSIX scripts use and one spelling reads the same in both.
-declined() { case "$WITHOUT_FEATURES" in *" $1 "*) return 0 ;; *) return 1 ;; esac; }
-if [ -n "${MICA_ROOTFS_WITHOUT}" ]; then
-    echo "note: MICA_ROOTFS_WITHOUT declines:${MICA_ROOTFS_WITHOUT}"
-fi
-
-# Image profile baked into /usr/lib/mica/profile.conf. micad reads it on first
-# boot and FAILS CLOSED to prod, so the value has to be exactly "dev" or "prod"
-# in lowercase; the Dockerfile rejects anything else. It does NOT select the
-# access.ssh.enabled seed: both profiles seed SSH OFF and neither image ships
-# ssh.service enabled, so the profile currently changes nothing that is seeded.
-MICA_PROFILE=${MICA_PROFILE:-dev}
+# The image profile, /usr/lib/mica/profile.conf, comes from the product
+# (dev or prod, validated there); micad fails closed to prod when the file
+# is missing.
 
 # HOW THE ROOT IS ASSEMBLED, and there is one answer.
 #
@@ -181,7 +146,7 @@ DOCKER_PLATFORM="linux/${MICA_ARCH}"
 # Board console facts. These describe a board's serial console, not its
 # partition layout, so each boards/<board>/board.env carries its own
 # BOARD_CMDLINE_ARGS and this refuses a layout that forgot to.
-SIZE_BUDGET_MB="${SIZE_BUDGET_MB:-${BOARD_SIZE_BUDGET_MB:-}}"
+# The product's budget (tools/product.sh: the board's unless the product lowers it).
 if [ -z "$SIZE_BUDGET_MB" ]; then
     echo "error: $LAYOUT_ENV sets no BOARD_SIZE_BUDGET_MB. Without a budget the root can grow past its slot and the first sign would be an image that does not fit" >&2
     exit 1
@@ -364,14 +329,12 @@ echo "identity: source commit $commit_of_stamp committed $tree_commit_date"
 # turns " containers micad " into "containers micad", which is the spelling
 # its --without takes.
 # shellcheck disable=SC2116,SC2086 # deliberate: collapse the padded list.
-WITHOUT_ARG=$(echo $WITHOUT_FEATURES)
 RESOLVED=$(bash "$REPO_ROOT/rootfs/packages/resolve.sh" \
     --board "$MICA_BOARD" \
     --board-dir "$BOARD_DIR/manifests" \
     --profile "$MICA_PROFILE" \
-    --radios "$BOARD_RADIOS" \
-    --without "$WITHOUT_ARG" \
-    --components "${MICA_ROOTFS_COMPONENTS:-}")
+    --features "$FEATURES" \
+    --components "$COMPONENTS")
 resolved_n=$(printf '%s\n' "$RESOLVED" | { grep -c . || true; })
 [ "$resolved_n" -gt 0 ] ||
     { echo "error: rootfs/packages/resolve.sh printed no package and exited 0" >&2; exit 1; }
@@ -417,15 +380,16 @@ PRODUCER_DIRS=$(bash "$REPO_ROOT/build-env/deb/producers.sh" |
 [ -n "$PRODUCER_DIRS" ] || [ -z "$LOCAL_PACKAGES" ] ||
     { echo "error: build-env/deb/producers.sh named no package, so every row of the composition record would carry '(no producer declares it)' for its source" >&2; exit 1; }
 
-# Only the unchanged validated public set enters the composition.
-META_DIR="${MICA_META_DIR:-$REPO_ROOT/meta}"
+# Only the unchanged validated public set enters the composition: the
+# product's meta/ (its public factory manifest), and the GENERATED marker of
+# the signing workspace when the keys are development-grade.
 bash "$REPO_ROOT/rootfs/scripts/validate-public-meta.sh" "$META_DIR"
 META_STAGE="$(mktemp -d "$OUT_DIR/meta-public.XXXXXX")"
 mkdir -p "$META_STAGE/usr/share/mica/meta/updates"
 manifest="$META_DIR/updates/manifest.json"
 install -m 0644 "$manifest" "$META_STAGE/usr/share/mica/meta/updates/manifest.json"
-if [ -s "$META_DIR/GENERATED" ]; then
-    install -m 0644 "$META_DIR/GENERATED" "$META_STAGE/usr/share/mica/meta/GENERATED"
+if [ -s "${MICA_SIGNING_OUTPUT:-$REPO_ROOT/meta}/GENERATED" ]; then
+    install -m 0644 "${MICA_SIGNING_OUTPUT:-$REPO_ROOT/meta}/GENERATED" "$META_STAGE/usr/share/mica/meta/GENERATED"
 else
     rm -f "$META_STAGE/usr/share/mica/meta/GENERATED"
 fi
@@ -438,7 +402,7 @@ printf '%s\n' "$RESOLVED" > "$COMPOSE_STAGE/packages.txt"
 # these files have to end up IN the image.
 mkdir -p "$COMPOSE_STAGE/meta-public"
 cp -a "$META_STAGE/." "$COMPOSE_STAGE/meta-public/"
-echo "compose: $resolved_n package(s) resolved for $MICA_BOARD/$MICA_PROFILE, declined:${MICA_ROOTFS_WITHOUT:- (none)}"
+echo "compose: $resolved_n package(s) resolved for $MICA_PRODUCT ($MICA_BOARD/$MICA_PROFILE)"
 sed 's/^/  /' "$COMPOSE_STAGE/packages.txt"
 
 # The builder is NAMED rather than inherited -- the same BUILDX_BUILDER
@@ -611,9 +575,12 @@ fi
     echo "# generated from the archives themselves) and out of"
     echo "# build-env/deb/producers.sh; never from a list kept by hand."
     echo "#"
+    printf '#product\t%s\n' "$MICA_PRODUCT"
     printf '#board\t%s\n' "$MICA_BOARD"
     printf '#profile\t%s\n' "$MICA_PROFILE"
-    printf '#declined\t%s\n' "${MICA_ROOTFS_WITHOUT:-(none)}"
+    printf '#features\t%s\n' "${FEATURES:-(none)}"
+    printf '#components\t%s\n' "${COMPONENTS:-(none)}"
+    printf '#factory-seeded\t%s\n' "$FACTORY_SEEDED"
     printf '#pool\t_out/debs/%s, built here at stamp %s, %s imported by deps/packages/\n' "$MICA_ARCH" "$tree_stamp" "$locked_n"
     printf '#unlocked\t%s\n' "${MICA_POOL_UNLOCKED:-(none)}"
     printf '#package\tversion\tarchitecture\tsha256\tsource\tsource-repo\tsource-commit\n'
@@ -736,7 +703,7 @@ echo "installed size: ${total_mb} MB (budget ${SIZE_BUDGET_MB} MB)"
 # MICA_BUILD_COMMIT); the archive carries the full commit and marks a dirty
 # tree in its version stamp, so the record is spelled the way the binary
 # spells it.
-if declined micad; then
+if ! selected micad; then
     echo "micad: declined, so this root carries no micad or mica-apid and no build commit is recorded for it"
 else
     # Out of the lineage record rather than out of the archive again: the

@@ -37,7 +37,7 @@ hosts, and fleet disabled with a null URL.
 
 ## Public root-build input
 
-Point `MICA_META_DIR` at a distributed public-only directory with this shape:
+A product's `meta/` (`products/<name>/meta/`) is a public-only directory with this shape, and this directory is its committed example:
 
 ```text
 updates/manifest.json
