@@ -13,7 +13,7 @@ _out/
 # These exclusions protect secrets; no build or runtime reader uses them as
 # alternate trust inputs. Public examples live in meta.example/.
 .devkeys/
-/meta/
+/meta
 /ca/
 
 # Repository-local scratch, shared with containers as a bind-mount root. All
