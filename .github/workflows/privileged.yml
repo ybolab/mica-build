@@ -73,6 +73,9 @@ concurrency:
   group: privileged-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+  packages: write
 jobs:
   # The container engine's upstream pin freshness check lives in
   # ybolab/mica-podman with the pins it reads.
@@ -216,3 +219,13 @@ jobs:
           done
         env:
           GH_TOKEN: ${{ secrets.MICA_DEPS_TOKEN }}
+
+      # The composed roots, published by this workflow's own token once every
+      # product passed: ghcr.io/ybolab/mica-root/<product>:build-<commit12>.
+      - name: Every product's root as its image
+        run: |
+          set -euo pipefail
+          for p in $(bash tools/product.sh --list); do make product-release PRODUCT="${p}"; done
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          MICA_REGISTRY_USER: ${{ github.actor }}
