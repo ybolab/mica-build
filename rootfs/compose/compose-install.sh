@@ -175,6 +175,10 @@ echo "compose: $(echo ${META_INSTALLED} | wc -w) public-set file(s) installed fr
 # above. The upstream repacks (mica-podman) carry their own upstream
 # version in front of the shared stamp and are expected not to match; the
 # first-party packages are.
+#
+# MICA_RELEASE_LOCAL is the set of packages the composing tree builds itself.
+# When it is empty every package is imported at its own pin and none can carry
+# the composition's version; the version is then the composition's alone.
 identity_version_owner=""
 for p in ${WANT}; do
     v="$(dpkg-query -W -f='${Version}' "${p}" 2>/dev/null || true)"
@@ -182,7 +186,7 @@ for p in ${WANT}; do
     identity_version_owner="${p}"
     break
 done
-[ -n "${identity_version_owner}" ] ||
+[ -n "${identity_version_owner}" ] || [ -z "${MICA_RELEASE_LOCAL:-}" ] ||
     fail "MICA_RELEASE_VERSION is '${MICA_RELEASE_VERSION}' and no package installed into this root carries that version. It is meant to be the version build-env/deb/version.sh printed for the tree the pool was built from, so a value no first-party package here shares means the identity file would state a release this image is not"
 
 install -d -m 0755 /usr/share/mica
@@ -201,7 +205,7 @@ install -d -m 0755 /usr/share/mica
     [ -z "${MICA_RELEASE_UNLOCKED:-}" ] || printf 'UNLOCKED=%s\n' "${MICA_RELEASE_UNLOCKED}"
 } >/usr/share/mica/release-identity.env
 chmod 0644 /usr/share/mica/release-identity.env
-echo "compose: release identity ${MICA_BOARD}/${MICA_PROFILE} at ${MICA_RELEASE_VERSION}, source committed ${MICA_RELEASE_COMMIT_DATE} (the version ${identity_version_owner} carries)${MICA_RELEASE_UNLOCKED:+; UNLOCKED=${MICA_RELEASE_UNLOCKED}}"
+echo "compose: release identity ${MICA_BOARD}/${MICA_PROFILE} at ${MICA_RELEASE_VERSION}, source committed ${MICA_RELEASE_COMMIT_DATE} (${identity_version_owner:+the version ${identity_version_owner} carries}${identity_version_owner:-the version of the composition itself; every package is imported at its pin})${MICA_RELEASE_UNLOCKED:+; UNLOCKED=${MICA_RELEASE_UNLOCKED}}"
 
 # NO INITRAMFS, asserted where the kernel and the root it must mount are
 # finally in one tree together.
