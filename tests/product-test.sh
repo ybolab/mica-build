@@ -87,7 +87,7 @@ d="$(mutate good-optional)"
 printf 'version = 1\n[access.ssh]\nenabled = true\n' >"${d}/x64-dev/defaults.toml"
 printf 'version = 1\n[admin]\npassword = "factory"\n' >"${d}/x64-dev/provisioning.toml"
 if out="$(MICA_PRODUCTS_DIR="${d}" bash tools/product.sh x64-dev)"; then
-    printf '%s\n' "${out}" | grep -q '^DEFAULTS=.*/defaults.toml$' && printf '%s\n' "${out}" | grep -q '^PROVISIONING=.*/provisioning.toml$' \
+    printf '%s\n' "${out}" | grep -c '^DEFAULTS=.*/defaults.toml$' >/dev/null && printf '%s\n' "${out}" | grep -c '^PROVISIONING=.*/provisioning.toml$' >/dev/null \
         && pass "a valid defaults.toml and provisioning.toml are accepted and reported" \
         || fail "the optional files were accepted but not reported: ${out}"
 else
