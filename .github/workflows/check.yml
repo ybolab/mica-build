@@ -241,7 +241,12 @@ jobs:
       # took it to 207; a number in a step name is a number nobody re-runs the
       # job to check, and this campaign has spent whole tasks on counts that
       # broke the moment a suite was widened. run.sh prints the real one.
+      # The token is for tools/micad-pool.sh --source, which os-verify-test runs
+      # first: verify's connd family reads the wifi reconcilers' contract out
+      # of the micad source at its pinned commit, cloned over https with it.
       - name: The verify suite, in the pinned bun container
+        env:
+          GH_TOKEN: ${{ secrets.MICA_DEPS_TOKEN }}
         run: |
           set -euo pipefail
           image="$(bash build-env/from.sh --ref IMAGE_BUN_1)"
