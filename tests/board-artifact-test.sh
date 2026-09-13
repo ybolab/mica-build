@@ -60,9 +60,11 @@ registry_load; registry_token
 while IFS= read -r f; do printf '%s\t%s\t%s\n' "${BUNDLE}/${f}" "application/vnd.mica.board.file" "${f}" >>"${WORK}/layers.tsv"; done < <(cd "${BUNDLE}" && find . -type f -printf '%P\n' | LC_ALL=C sort)
 jq -n --arg commit "${COMMIT}" --arg cert "$(sha256sum "${MICA_VERITY_TRUST_CERT}" | cut -d' ' -f1)" \
     '{"org.opencontainers.image.revision": $commit, "org.opencontainers.image.created": "2026-09-13T10:00:00Z", "mica.source-repo": "mica-boards", "mica.source-commit": $commit, "mica.board": "fixture-board", "mica.arch": "arm64", "mica.verity-cert-sha256": $cert}' >"${WORK}/annotations.json"
-ARTIFACT="$(oci_repo board)"
-DIGEST="$(oci_push "${ARTIFACT}" "$(oci_tag fixture-board "${TAG}")" application/vnd.mica.board "${WORK}/annotations.json" "${WORK}/layers.tsv")"
-[ -n "${DIGEST}" ] && pass "the fixture bundle is pushed as ${ARTIFACT}:${TAG} (${DIGEST:0:19})" || fail "the fixture bundle could not be pushed"
+# The package is the repository that publishes it; the artifact is a tag.
+ARTIFACT="$(oci_repo mica-boards)"; REF="$(oci_tag board fixture-board "${TAG}")"
+[ "${ARTIFACT}:${REF}" = "testorg/mica-boards:board.fixture-board.${TAG}" ] && pass "a board bundle is <owner>/mica-boards:board.<board>.build-<commit12>" || fail "the bundle name is ${ARTIFACT}:${REF}"
+DIGEST="$(oci_push "${ARTIFACT}" "${REF}" application/vnd.mica.board "${WORK}/annotations.json" "${WORK}/layers.tsv")"
+[ -n "${DIGEST}" ] && pass "the fixture bundle is pushed as ${ARTIFACT}:${REF} (${DIGEST:0:19})" || fail "the fixture bundle could not be pushed"
 
 LOG="${WORK}/log"
 if tag="$(bash tools/board-pool.sh --pin fixture-board 2>"${LOG}")" && [ "${tag}" = "${TAG}" ] && [ "$(jq -r .digest "${MICA_BOARD_PINS}/fixture-board.json")" = "${DIGEST}" ] && [ "$(jq -r .arch "${MICA_BOARD_PINS}/fixture-board.json")" = arm64 ]; then

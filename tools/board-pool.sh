@@ -17,8 +17,8 @@
 # (ybolab/mica-boards) that builds each kernel and U-Boot and publishes them,
 # with the board's board.env, evidence.json, package manifests, the support
 # image's firmware and the verity trust certificate the kernel embeds, as
-# the OCI artifact <registry>/mica-board:<board>.build-<commit12>, one layer
-# per bundle file (mica:docs/boards/contract.md section 3). This assembly
+# the OCI artifact <registry>/mica-boards:board.<board>.build-<commit12> (the
+# package is the repository that publishes it), one layer per bundle file (mica:docs/boards/contract.md section 3). This assembly
 # imports that bundle through deps/boards/<board>.json -- the board, the
 # repository, its commit, its architecture and the manifest's digest -- and
 # never builds a kernel; a board exists here exactly when its bundle is
@@ -42,6 +42,7 @@ PINS="${MICA_LOCK_DIR:-${REPO_ROOT}/deps/packages}"
 BOARD_PINS="${MICA_BOARD_PINS:-${REPO_ROOT}/deps/boards}"
 BOARDS_OUT="${MICA_BOARDS_OUT:-${REPO_ROOT}/_out/boards}"
 TRUST_CERT="${MICA_VERITY_TRUST_CERT:-${REPO_ROOT}/meta/verity/signer.cert.pem}"
+BOARDS_REPOSITORY=mica-boards
 # shellcheck disable=SC1091
 . "${REPO_ROOT}/build-env/deb/registry.sh"
 
@@ -74,7 +75,7 @@ fetch_artifact() { # <board> <staging>
     local board="$1" staging="$2" repository commit arch digest artifact status title media ldigest
     IFS=$'\t' read -r _ repository commit arch digest < <(board_pin "${board}") || return 1
     registry_load && registry_token || return 1
-    artifact="$(oci_repo board)"
+    artifact="$(oci_repo "${repository}")"
     status="$(oci_manifest_get "${artifact}" "${digest}" "${work}/manifest.json")"
     case "${status}" in
     200) ;;
@@ -192,17 +193,18 @@ PY
     [ -n "${board}" ] && { [ -z "${3:-}" ] || [ "${3}" = --tag ]; } || { echo "usage: bash tools/board-pool.sh --pin <board> [--tag build-<commit12>]" >&2; exit 1; }
     [[ "${board}" =~ ^[a-z0-9][a-z0-9-]{0,31}$ ]] || { echo "error: '${board}' is not a board name" >&2; exit 1; }
     registry_load && registry_token || exit 1
-    artifact="$(oci_repo board)"
+    artifact="$(oci_repo "${BOARDS_REPOSITORY}")"
     if [ -z "${tag}" ]; then
-        tag="$(newest_tag "${artifact}" "${board}")" || exit 1
-        [ -n "${tag}" ] || { echo "error: ${OCI_HOST}/${artifact} has no ${board}.build-<commit12> artifact; ${board} was never published (mica-boards: make publish)" >&2; exit 1; }
+        tag="$(newest_tag "${artifact}" "board.${board}")" || exit 1
+        [ -n "${tag}" ] || { echo "error: ${OCI_HOST}/${artifact} has no board.${board}.build-<commit12> artifact; ${board} was never published (mica-boards: make publish)" >&2; exit 1; }
     fi
     [[ "${tag}" =~ ^build-[0-9a-f]{12}$ ]] || { echo "error: the tag '${tag}' is not build-<commit12>" >&2; exit 1; }
-    ref="$(oci_tag "${board}" "${tag}")"
+    ref="$(oci_tag board "${board}" "${tag}")"
     status="$(oci_manifest_get "${artifact}" "${ref}" "${work}/manifest.json")"
     [ "${status}" = 200 ] || { echo "error: ${OCI_HOST}/${artifact} has no artifact ${ref} (HTTP ${status})" >&2; exit 1; }
     commit="$(jq -r '.annotations["mica.source-commit"] // empty' "${work}/manifest.json")"
     repository="$(jq -r '.annotations["mica.source-repo"] // empty' "${work}/manifest.json")"
+    [ "${repository}" = "${BOARDS_REPOSITORY}" ] || { echo "error: ${OCI_HOST}/${artifact}:${ref} says mica.source-repo='${repository}'; a package holds only its own repository's artifacts" >&2; exit 1; }
     arch="$(jq -r '.annotations["mica.arch"] // empty' "${work}/manifest.json")"
     [[ "${commit}" =~ ^[0-9a-f]{40}$ ]] && [ "${tag}" = "$(release_tag "${commit}")" ] || { echo "error: ${OCI_HOST}/${artifact}:${ref} says mica.source-commit='${commit}', which is not the commit its tag names" >&2; exit 1; }
     [ "$(jq -r '.annotations["mica.board"] // empty' "${work}/manifest.json")" = "${board}" ] || { echo "error: ${OCI_HOST}/${artifact}:${ref} says mica.board=$(jq -r '.annotations["mica.board"] // "(none)"' "${work}/manifest.json")" >&2; exit 1; }

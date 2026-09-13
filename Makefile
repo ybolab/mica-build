@@ -52,7 +52,7 @@ help:
 	@echo "  products            product, for every product whose board is a release target"
 	@echo "  board-add           pin a new board's bundle artifact (deps/boards) and its packages from the newest mica-boards artifacts, write products/<board>-minimal (BOARD=<board> [BOARD_TAG=build-<commit12>])"
 	@echo "  os-board-artifact-test  tools/board-pool.sh --pin/--fetch against a local registry container: every refusal by name"
-	@echo "  product-release     push a built product's composed root as ghcr.io/ybolab/mica-root/<name>:build-<commit12> (PRODUCT=<name>)"
+	@echo "  product-release     push a built product's composed root as ghcr.io/ybolab/mica-build:root.<name>.build-<commit12> (PRODUCT=<name>)"
 	@echo "  os-rootfs           compose a product's root (PRODUCT=<name>; products/*/product.env, tools/product.sh --list)"
 	@echo "  os-product-test     every product validates against its board, and each refusal of the product contract fires"
 	@echo "  os-board-name-lint  no board name in the engine: the assembly dispatches on board facts, never on a name (tests/board-name-lint.sh)"

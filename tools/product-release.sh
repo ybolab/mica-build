@@ -5,9 +5,10 @@
 #
 #   reads   _out/products/<product>/build/factory-root.oci   (the OCI archive rootfs/build.sh exported)
 #           _out/products/<product>/build/factory-root.txt   (its record: ref, digest, platform)
-#   writes  <registry>/mica-root:<product>.build-<commit12>  -- the image, blob for blob and
-#           manifest for manifest as the archive holds them, so the digest the
-#           record names is the digest the registry serves.
+#   writes  <registry>/mica-build:root.<product>.build-<commit12>  -- the image, blob for
+#           blob and manifest for manifest as the archive holds them, so the digest
+#           the record names is the digest the registry serves. The package is
+#           this repository, so its own CI token owns it.
 #
 # The image is what the smoke runner executed and the factory-root gate
 # compared against the squashfs the device ships; publishing it is publishing
@@ -42,7 +43,7 @@ manifest="$(blob "${manifest_digest}")"
 [ -f "${manifest}" ] || { echo "error: the layout holds no blob for its manifest ${manifest_digest}" >&2; exit 1; }
 recorded="$(sed -n 's/^digest\t//p' "${BUILD}/factory-root.txt" | head -n1)"
 [ -z "${recorded}" ] || [ "${recorded}" = "${manifest_digest}" ] || echo "note: factory-root.txt records ${recorded}; the layout's manifest is ${manifest_digest}"
-artifact="$(oci_repo root)"; ref="$(oci_tag "${NAME}" "${TAG}")"
+artifact="$(oci_repo "${REPO_NAME}")"; ref="$(oci_tag root "${NAME}" "${TAG}")"
 n=0
 while IFS= read -r d; do
     [ -n "${d}" ] || continue

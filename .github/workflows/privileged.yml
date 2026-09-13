@@ -221,7 +221,7 @@ jobs:
           GH_TOKEN: ${{ secrets.MICA_DEPS_TOKEN }}
 
       # The composed roots, published by this workflow's own token once every
-      # product passed: ghcr.io/ybolab/mica-root/<product>:build-<commit12>.
+      # product passed: ghcr.io/ybolab/mica-build:root.<product>.build-<commit12>.
       - name: Every product's root as its image
         run: |
           set -euo pipefail
