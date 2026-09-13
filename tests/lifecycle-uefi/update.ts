@@ -10,9 +10,9 @@ import { parseFileLayout } from '../../build/src/file-layout.ts'
 import { Toolbox } from '../../build/src/toolbox.ts'
 import { Signer } from '../../shared/update-envelope.ts'
 
-const [evidenceArg, certArg, keyArg, generationArg, kind, rootDirArg, kernelDirArg, initArg, shutdownArg] = Bun.argv.slice(2)
-if (!evidenceArg || !certArg || !keyArg || !generationArg || !rootDirArg || !kernelDirArg || !initArg || !shutdownArg || !['root', 'kernel', 'combined', 'bad-health'].includes(kind ?? '')) {
-  throw new Error('Usage: update.ts EVIDENCE CERT KEY GENERATION root|kernel|combined|bad-health ROOT_COMPONENT KERNEL_COMPONENT MICA_INIT MICA_SHUTDOWN')
+const [evidenceArg, certArg, keyArg, generationArg, kind, rootDirArg, kernelDirArg, runkitArg] = Bun.argv.slice(2)
+if (!evidenceArg || !certArg || !keyArg || !generationArg || !rootDirArg || !kernelDirArg || !runkitArg || !['root', 'kernel', 'combined', 'bad-health'].includes(kind ?? '')) {
+  throw new Error('Usage: update.ts EVIDENCE CERT KEY GENERATION root|kernel|combined|bad-health ROOT_COMPONENT KERNEL_COMPONENT MICA_RUNKIT')
 }
 const evidence = resolve(evidenceArg)
 const generation = Number(generationArg)
@@ -35,7 +35,7 @@ try {
   if (kind === 'kernel' || kind === 'combined') {
     const extra = new Signer(generateKeyPairSync('ed25519').privateKey, true).publicKey
     kernelDirectory = join(output, 'kernel')
-    kernel = await packKernel({ board, kernelDirectory: bsp, init: resolve(initArg), shutdown: resolve(shutdownArg),
+    kernel = await packKernel({ board, kernelDirectory: bsp, runkit: resolve(runkitArg),
       publicKeys: [signer.publicKey, extra], systemPartUuid: parseFileLayout(readFileSync(`_out/boards/${board}/board.env`, 'utf8')).partitions[1]!.guid,
       dataPartUuid: parseFileLayout(readFileSync(`_out/boards/${board}/board.env`, 'utf8')).partitions[2]!.guid,
       output: kernelDirectory, contentSigning: signing,

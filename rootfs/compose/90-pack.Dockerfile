@@ -337,7 +337,7 @@ RUN --mount=type=bind,source=rootfs/scripts,target=/mos-scripts \
 # bind-mounts the file during RUN or because it would break dpkg.
 #  - /etc/resolv.conf -> /run, the only writable place with / read-only.
 #  - /etc/machine-id must exist and be empty: systemd cannot write it on a
-#    read-only /etc. mica-init binds the persistent DATA identity over it
+#    read-only /etc. mica-runkit (init) binds the persistent DATA identity over it
 #    before executing systemd.
 #  - /var supplies the initial template for the persistent DATA bind. Protected
 #    state mountpoints exist before systemd creates service mount namespaces.

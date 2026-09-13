@@ -28,26 +28,23 @@ function fixture(script: string, board: string, kind: string) {
   bytes.writeUInt16LE(board === 'x64' ? 62 : 183, 18); bytes.writeUInt32LE(1, 20); bytes.writeUInt16LE(64, 52)
   bytes.writeBigUInt64LE(64n, 32); bytes.writeUInt16LE(56, 54); bytes.writeUInt16LE(1, 56)
   bytes.writeUInt32LE(1, 64); bytes.writeBigUInt64LE(128n, 96)
-  const init = join(work, 'mica-init'), shutdown = join(work, 'mica-shutdown')
-  writeFileSync(init, bytes, { mode: 0o755 })
-  bytes[120] = 7
-  writeFileSync(shutdown, bytes, { mode: 0o755 })
+  const runkit = join(work, 'mica-runkit')
+  writeFileSync(runkit, bytes, { mode: 0o755 })
   const cert = join(work, 'content.cert'), signingKey = join(work, 'content.key')
-  const args = script === 'build.ts' ? [join(work, 'output'), board, kernel, cert, signingKey, init, root, shutdown]
-    : script === 'update.ts' ? [baseline, cert, signingKey, '3', kind, root, kernel, init, shutdown]
-      : [work, baseline, init, cert, signingKey, shutdown, board]
-  return { work, args, init, shutdown, arch: arch as 'amd64' | 'arm64', bytes }
+  const args = script === 'build.ts' ? [join(work, 'output'), board, kernel, cert, signingKey, runkit, root]
+    : script === 'update.ts' ? [baseline, cert, signingKey, '3', kind, root, kernel, runkit]
+      : [work, baseline, runkit, cert, signingKey, board]
+  return { work, args, runkit, arch: arch as 'amd64' | 'arm64', bytes }
 }
 
 for (const [script, board, kind] of callers) {
   for (const scenario of ['valid', 'missing', 'wrong-architecture'] as const) {
     test(`${script} ${board} ${kind}: ${scenario} required native input`, () => {
       const f = fixture(script, board, kind)
-      // trust-rotation.ts names the board last; the native input before it is what goes missing.
-      if (scenario === 'missing') f.args.splice(script === 'trust-rotation.ts' ? -2 : -1, 1)
+      if (scenario === 'missing') f.args.splice(f.args.indexOf(f.runkit), 1)
       if (scenario === 'wrong-architecture') {
         f.bytes.writeUInt16LE(board === 'x64' ? 183 : 62, 18)
-        writeFileSync(f.shutdown, f.bytes)
+        writeFileSync(f.runkit, f.bytes)
       }
       const capture = join(f.work, 'capture.json')
       const child = Bun.spawnSync([process.execPath, '--preload', resolve(import.meta.dir, 'native-input.preload.ts'),
@@ -59,10 +56,10 @@ for (const [script, board, kind] of callers) {
       if (scenario === 'valid') {
         expect(stderr).toContain('NATIVE_INPUT_CAPTURED')
         const result = JSON.parse(readFileSync(capture, 'utf8'))
-        expect(result.input.init).toBe(f.init)
-        expect(result.input.shutdown).toBe(f.shutdown)
-        expect(result.executables).toEqual(kernelExecutables(f.init, f.shutdown, f.arch))
-        expect(result.executables.shutdown.sha256).not.toBe(result.executables.init.sha256)
+        expect(result.input.runkit).toBe(f.runkit)
+        expect(result.input.init).toBeUndefined()
+        expect(result.input.shutdown).toBeUndefined()
+        expect(result.executables).toEqual(kernelExecutables(f.runkit, f.arch))
       } else {
         expect(stderr).toContain(scenario === 'missing' ? 'Usage:' : 'Native lifecycle architecture mismatch')
         expect(existsSync(capture)).toBe(false)

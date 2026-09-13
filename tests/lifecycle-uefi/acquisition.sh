@@ -5,11 +5,10 @@ cd "$(dirname "${BASH_SOURCE[0]}")/../.."
 evidence=${1:?full runtime evidence required}
 certificate=${2:?content certificate required}
 key=${3:?content key required}
-init=${4:?mica-init required}
+runkit=${4:?mica-runkit required}
 board=${5:?board required}
 origin=${6:?running update server origin required}
 token=${7:?admin token file required}
-shutdown=${8:?compiled mica-shutdown required}
 # The board's facts, out of its fetched bundle: the suite boots UEFI boards
 # of either architecture and dispatches on nothing else.
 [ -f "_out/boards/$board/board.env" ] || { echo "error: $board is not a fetched board (make board-fetch BOARD=$board)" >&2; exit 1; }
@@ -28,7 +27,7 @@ root="$evidence/root"
 kernel="$evidence/kernel"
 for spec in '3 root' '4 kernel'; do
     read -r generation kind <<<"$spec"
-    timeout 360s bun tests/lifecycle-uefi/update.ts "$evidence" "$certificate" "$key" "$generation" "$kind" "$root" "$kernel" "$init" "$shutdown"
+    timeout 360s bun tests/lifecycle-uefi/update.ts "$evidence" "$certificate" "$key" "$generation" "$kind" "$root" "$kernel" "$runkit"
     output="$evidence/updates/$generation"
     mv "$evidence/offline" "$output/raw-media"
     mkdir "$evidence/offline"

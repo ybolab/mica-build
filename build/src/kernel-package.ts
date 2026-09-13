@@ -29,8 +29,8 @@ function packageBoot(mode: 'kernel' | 'firmware' | 'fit', input: string, output:
 }
 
 /** Static PIE may have relocations, but never a loader or a needed library. */
-function staticLifecycle(bytes: Buffer, role: 'startup' | 'shutdown') {
-  const refuse = () => { throw new Error(`Invalid static ${role} ELF`) }
+function staticLifecycle(bytes: Buffer) {
+  const refuse = () => { throw new Error('Invalid static lifecycle ELF') }
   const bounded = (value: bigint) => { if (value > BigInt(bytes.length)) refuse(); return Number(value) }
   const start = bounded(bytes.readBigUInt64LE(32)), count = bytes.readUInt16LE(56)
   if (count < 1 || count > 128 || bytes.readUInt16LE(54) !== 56 || start < 64 || start + count * 56 > bytes.length) refuse()
@@ -55,27 +55,29 @@ function staticLifecycle(bytes: Buffer, role: 'startup' | 'shutdown') {
   if (loads === 0) refuse()
 }
 
-/** Required native executables are part of the authenticated kernel identity. */
-export function kernelExecutables(init: string, shutdown: string, arch: 'amd64' | 'arm64') {
-  const inspect = (path: string, role: 'startup' | 'shutdown') => {
+/**
+ * The required native executable is part of the authenticated kernel identity:
+ * mica-runkit, which the initramfs reaches as /init and as exitrd/shutdown.
+ */
+export function kernelExecutables(runkit: string, arch: 'amd64' | 'arm64') {
+  const inspect = (path: string) => {
     if (typeof path !== 'string' || !path) throw new Error('Missing required native lifecycle input')
     const stat = lstatSync(path)
     if (!stat.isFile() || stat.size < 64 || stat.size > 32 * 1024 * 1024 || (stat.mode & 0o7022) !== 0 || (stat.mode & 0o500) !== 0o500) throw new Error('Invalid native lifecycle file or permissions')
     const bytes = readFileSync(path)
     if (!bytes.subarray(0, 7).equals(Buffer.from([0x7f, 69, 76, 70, 2, 1, 1])) || ![2, 3].includes(bytes.readUInt16LE(16)) || bytes.readUInt32LE(20) !== 1 || bytes.readUInt16LE(52) !== 64) throw new Error('Invalid native lifecycle ELF')
     if (bytes.readUInt16LE(18) !== (arch === 'amd64' ? 62 : 183)) throw new Error('Native lifecycle architecture mismatch')
-    staticLifecycle(bytes, role)
+    staticLifecycle(bytes)
     return artifactFile(path)
   }
-  return { init: inspect(init, 'startup'), shutdown: inspect(shutdown, 'shutdown') }
+  return { runkit: inspect(runkit) }
 }
 
 export interface KernelInputs {
   /** A pinned, fetched board: its facts (board.env) decide the packaging. */
   board: string
   kernelDirectory: string
-  init: string
-  shutdown: string
+  runkit: string
   publicKeys: string[]
   systemPartUuid: string
   dataPartUuid: string
@@ -86,10 +88,10 @@ export interface KernelInputs {
 
 /** The kernel producer never opens a user-space rootfs. */
 export async function packKernel(inputs: KernelInputs, tb: Toolbox): Promise<KernelComponent> {
-  const { board, kernelDirectory, init, shutdown, publicKeys, systemPartUuid, dataPartUuid, output, contentSigning, bootSigning } = inputs
+  const { board, kernelDirectory, runkit, publicKeys, systemPartUuid, dataPartUuid, output, contentSigning, bootSigning } = inputs
   const facts = loadBoardFacts(board)
   const { arch, efiArch, kernelImage: kernelName, fit, cmdline } = facts
-  const executables = kernelExecutables(init, shutdown, arch)
+  const executables = kernelExecutables(runkit, arch)
   const bootFile = fit ? 'boot.itb' : 'boot.efi'
   if (existsSync(output)) throw new Error(`Kernel output exists: ${output}`)
   if (publicKeys.length < 1 || publicKeys.length > 8 || publicKeys.some(key => Buffer.from(key, 'base64').length !== 32 || Buffer.from(key, 'base64').toString('base64') !== key)) throw new Error('Invalid metadata trust set')
@@ -152,9 +154,8 @@ export async function packKernel(inputs: KernelInputs, tb: Toolbox): Promise<Ker
       writeFileSync(join(input, 'fit-addresses'), `${fit.addresses.join(' ')}\n`)
     }
     copyFileSync(join(kernelDirectory, 'kernel.release'), join(input, 'kernel.release'))
-    copyFileSync(init, join(input, 'mica-init'))
-    copyFileSync(shutdown, join(input, 'mica-shutdown'))
-    if (canonicalJson(kernelExecutables(join(input, 'mica-init'), join(input, 'mica-shutdown'), arch)) !== canonicalJson(executables)) throw new Error('Native lifecycle inputs changed during packaging')
+    copyFileSync(runkit, join(input, 'mica-runkit'))
+    if (canonicalJson(kernelExecutables(join(input, 'mica-runkit'), arch)) !== canonicalJson(executables)) throw new Error('Native lifecycle inputs changed during packaging')
     packageBoot(fit ? 'fit' : 'kernel', input, boot, bootSigning, efiArch)
     const component: KernelComponent = { schema: 'mos/kernel/v1', id: '', board, arch,
       buildId, release, boot: { format: fit ? 'fit' : 'uki', artifact: artifactFile(join(boot, bootFile)) }, support }

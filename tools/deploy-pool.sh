@@ -1,22 +1,22 @@
 #!/usr/bin/env bash
 # What this tree takes out of the imported mica-deploy archives and source.
 #
-#   bash tools/deploy-pool.sh --lifecycle <amd64|arm64> <dir>   mica-init and mica-shutdown into <dir>
+#   bash tools/deploy-pool.sh --lifecycle <amd64|arm64> <dir>   mica-runkit into <dir>
 #   bash tools/deploy-pool.sh --check                          the contract fixtures against the pinned source
 #
 #   reads   _out/debs/<arch>/pool/mica-lifecycle_*.deb   (fetched at the pin by build-env/deb/fetch.sh)
 #           _out/src/mica-deploy/                        (build-env/deb/source.sh, at the pinned commit)
-#   writes  <dir>/mica-init, <dir>/mica-shutdown         (--lifecycle)
+#   writes  <dir>/mica-runkit                             (--lifecycle)
 #
 # The native boot and deployment tools are built and released by
 # ybolab/mica-deploy; this repository imports mica-deploy (the device-side
-# client, installed into every root) and mica-lifecycle (the two static
-# executables the signed kernel carries) through deps/packages/ and never
+# client, installed into every root) and mica-lifecycle (the static
+# mica-runkit the signed kernel carries) through deps/packages/ and never
 # sees that repository's tree. Two consumers still need something out of it:
 #
-# - build/src/kernel-package.ts packs mica-init and mica-shutdown into the
-#   initramfs and the exit ramdisk, where they are part of the authenticated
-#   kernel identity. --lifecycle reads them out of the pinned archive of the
+# - build/src/kernel-package.ts packs mica-runkit into the initramfs, as /init
+#   and the exit ramdisk's shutdown, where it is part of the authenticated
+#   kernel identity. --lifecycle reads it out of the pinned archive of the
 #   board's architecture (tools/deb-member.py), so the kernel is built from
 #   the binaries the pin names and nothing is compiled here.
 # - tests/component-contracts/ is the contract between build/ (the producer
@@ -51,10 +51,8 @@ case "${1:-}" in
     [ -n "${dir}" ] || { echo "usage: bash tools/deploy-pool.sh --lifecycle <amd64|arm64> <dir>" >&2; exit 1; }
     archive="$(archive_for "${arch}")"
     mkdir -p "${dir}"
-    for b in mica-init mica-shutdown; do
-        python3 "${MEMBER}" "${archive}" "usr/lib/mica/lifecycle/${b}" "${dir}/${b}"
-    done
-    echo "deploy-pool.sh: mica-init and mica-shutdown for ${arch} in ${dir} from ${archive##*/}"
+    python3 "${MEMBER}" "${archive}" usr/lib/mica/lifecycle/mica-runkit "${dir}/mica-runkit"
+    echo "deploy-pool.sh: mica-runkit for ${arch} in ${dir} from ${archive##*/}"
     ;;
 --check)
     bash "${REPO_ROOT}/build-env/deb/source.sh" mica-deploy

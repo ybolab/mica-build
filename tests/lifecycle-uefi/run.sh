@@ -6,7 +6,7 @@
 #   bash tests/lifecycle-uefi/run.sh <product>        (make lifecycle-uefi PRODUCT=<product>)
 #
 # The product names the board, the root, the kernel bundle, the lifecycle
-# binaries and the signing workspace (product-inputs.sh); the board's facts
+# binary and the signing workspace (product-inputs.sh); the board's facts
 # say which emulator the lab boots. Evidence is left under
 # _out/file-runtime.*/ and the path is the last line printed.
 set -euo pipefail
@@ -17,7 +17,7 @@ arch="$(sed -n 's/^MICA_ARCH=//p' "_out/boards/${BOARD}/board.env")"
 bash tests/signed-boot-lab/images.sh --lifecycle >/dev/null
 
 echo "== 1. the acceptance disk (runtime-build.sh) =="
-evidence="$(bash tests/lifecycle-uefi/runtime-build.sh "${ROOT_IMAGE}" "${KERNEL_DIR}" "${CERT}" "${KEY}" "${INIT}" "${BOARD}" "${SHUTDOWN}" | tail -n1)"
+evidence="$(bash tests/lifecycle-uefi/runtime-build.sh "${ROOT_IMAGE}" "${KERNEL_DIR}" "${CERT}" "${KEY}" "${RUNKIT}" "${BOARD}" | tail -n1)"
 [ -d "${evidence}/image" ] || { echo "error: runtime-build.sh left no evidence directory (${evidence})" >&2; exit 1; }
 echo "evidence: ${evidence}"
 
@@ -30,7 +30,7 @@ bash tests/lifecycle-uefi/shutdown-check.sh "${evidence}/runtime.log" poweroff
 echo "PASS: runtime boot and ordered shutdown (${evidence}/runtime.log)"
 
 echo "== 3. component updates over a fresh copy (updates.sh) =="
-bash tests/lifecycle-uefi/updates.sh "${evidence}" "${CERT}" "${KEY}" "${INIT}" "${BOARD}" "${SHUTDOWN}" >"${evidence}/updates.log" 2>&1 || { echo "error: updates.sh failed; see ${evidence}/updates.log" >&2; tail -n 20 "${evidence}/updates.log" >&2; exit 1; }
+bash tests/lifecycle-uefi/updates.sh "${evidence}" "${CERT}" "${KEY}" "${RUNKIT}" "${BOARD}" >"${evidence}/updates.log" 2>&1 || { echo "error: updates.sh failed; see ${evidence}/updates.log" >&2; tail -n 20 "${evidence}/updates.log" >&2; exit 1; }
 echo "PASS: updates (${evidence}/updates.log)"
 
 echo "== 4. faults over fresh copies (faults.sh, inside the lab) =="

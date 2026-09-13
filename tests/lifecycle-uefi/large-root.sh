@@ -6,9 +6,8 @@ root=${1:?current composed root required}
 kernel=${2:?BSP kernel directory required}
 certificate=${3:?content certificate required}
 key=${4:?content key required}
-init=${5:?compiled mica-init required}
-shutdown=${6:?compiled mica-shutdown required}
-board=${7:?board required}
+runkit=${5:?compiled mica-runkit required}
+board=${6:?board required}
 # The board's facts, out of its fetched bundle: the suite boots UEFI boards
 # of either architecture and dispatches on nothing else.
 [ -f "_out/boards/$board/board.env" ] || { echo "error: $board is not a fetched board (make board-fetch BOARD=$board)" >&2; exit 1; }
@@ -16,7 +15,7 @@ board=${7:?board required}
 arch="$(sed -n 's/^MICA_ARCH=//p' "_out/boards/$board/board.env")"
 work=$(mktemp -d "$PWD/_out/large-root.XXXXXX")
 printf 'Evidence: %s\n' "$work"
-bash tests/lifecycle-uefi/runtime-build.sh "$root" "$kernel" "$certificate" "$key" "$init" "$board" "$shutdown" > "$work/small-build.log" 2>&1
+bash tests/lifecycle-uefi/runtime-build.sh "$root" "$kernel" "$certificate" "$key" "$runkit" "$board" > "$work/small-build.log" 2>&1
 small=$(tail -1 "$work/small-build.log")
 mkdir "$work/tree"
 docker run --rm --label ai-agent=true --network traefik -v "$work:/w" -v "$root:/root.img:ro" \
@@ -29,7 +28,7 @@ with open(sys.argv[1], 'xb') as output:
 PY
 docker run --rm --label ai-agent=true --network traefik -v "$work:/w" \
     ai-agent/mos-p2-lab mksquashfs /w/tree /w/large-source.img -noappend -all-root -comp zstd -no-progress > "$work/pack.log"
-bash tests/lifecycle-uefi/runtime-build.sh "$work/large-source.img" "$kernel" "$certificate" "$key" "$init" "$board" "$shutdown" > "$work/large-build.log" 2>&1
+bash tests/lifecycle-uefi/runtime-build.sh "$work/large-source.img" "$kernel" "$certificate" "$key" "$runkit" "$board" > "$work/large-build.log" 2>&1
 large=$(tail -1 "$work/large-build.log")
 for size in small large; do
     evidence=${!size}

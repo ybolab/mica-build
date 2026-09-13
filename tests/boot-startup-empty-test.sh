@@ -3,7 +3,7 @@
 # Run as container PID1; no devices are opened and mount must return EPERM.
 set -euo pipefail
 test "$$" = 1
-binary=${1:?explicit same-source static mica-init required}
+binary=${1:?explicit same-source static mica-runkit required}
 mkdir -p /empty/proc
 cp "$binary" /empty/init
 status=0

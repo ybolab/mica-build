@@ -12,8 +12,8 @@ import { packBootFirmware, packKernel } from '../../build/src/kernel-package.ts'
 import { Toolbox } from '../../build/src/toolbox.ts'
 import { loadBoardFacts } from '../../build/src/board-facts.ts'
 
-const [workArg, baselineArg, initArg, oldCertArg, oldKeyArg, shutdownArg, boardArg] = Bun.argv.slice(2)
-if (!workArg || !baselineArg || !initArg || !oldCertArg || !oldKeyArg || !shutdownArg || !boardArg) throw new Error('Usage: trust-rotation.ts KERNEL_WORK BASELINE MICA_INIT CONTENT_CERT CONTENT_KEY MICA_SHUTDOWN BOARD')
+const [workArg, baselineArg, runkitArg, oldCertArg, oldKeyArg, boardArg] = Bun.argv.slice(2)
+if (!workArg || !baselineArg || !runkitArg || !oldCertArg || !oldKeyArg || !boardArg) throw new Error('Usage: trust-rotation.ts KERNEL_WORK BASELINE MICA_RUNKIT CONTENT_CERT CONTENT_KEY BOARD')
 const board = boardArg
 const facts = loadBoardFacts(board)
 if (facts.backend !== 'systemd-boot') throw new Error(`${board} boots a FIT; this suite boots UEFI boards`)
@@ -36,7 +36,7 @@ try {
   await tb.must(['openssl', 'req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-sha256', '-days', '1', '-subj', '/CN=MOS-boot-rotation-lab', '-keyout', newBoot.key, '-out', newBoot.certificate])
   const kernel = async (name: string, source: string, trust: string[], contentSigning: typeof oldContent, bootSigning: typeof oldBoot) => {
     const directory = join(output, name)
-    await packKernel({ board, kernelDirectory: join(work, source, 'kernel'), init: resolve(initArg), shutdown: resolve(shutdownArg),
+    await packKernel({ board, kernelDirectory: join(work, source, 'kernel'), runkit: resolve(runkitArg),
       publicKeys: trust, systemPartUuid: layout.partitions[1]!.guid, dataPartUuid: layout.partitions[2]!.guid,
       output: directory, contentSigning, bootSigning }, tb)
     return directory

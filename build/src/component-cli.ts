@@ -20,7 +20,7 @@ import { Toolbox } from './toolbox.ts'
 const USAGE = `Usage: bash build/run.sh --components COMMAND [OPTIONS]
   root        --input COMPOSED_ROOT --arch ARCH --version VERSION --out DIR
               --content-key FILE --content-cert FILE
-  kernel      --input BSP_KERNEL --init MICA_INIT --shutdown MICA_SHUTDOWN --public-key BASE64 (repeatable)
+  kernel      --input BSP_KERNEL --runkit MICA_RUNKIT --public-key BASE64 (repeatable)
               --board BOARD --out DIR --content-key FILE --content-cert FILE
               --boot-key FILE --boot-cert FILE
   firmware    --board BOARD --out DIR --metadata-key FILE --generation N --version VERSION
@@ -43,7 +43,7 @@ Image output: mos-BOARD-YYYYMMDD-HHmmss.img (UTC) and SHA256SUMS; prints the ima
 
 async function main() {
   const options: Record<string, { type: 'string' | 'boolean', multiple?: boolean }> = Object.fromEntries([
-    'input', 'arch', 'version', 'out', 'content-key', 'content-cert', 'init', 'shutdown', 'board', 'boot-key', 'boot-cert',
+    'input', 'arch', 'version', 'out', 'content-key', 'content-cert', 'runkit', 'board', 'boot-key', 'boot-cert',
     'kernel', 'root', 'generation', 'metadata-key', 'records', 'firmware', 'installed', 'esp', 'rkdeveloptool', 'provisioning',
   ].map(name => [name, { type: 'string' }]))
   options['public-key'] = { type: 'string', multiple: true }
@@ -138,7 +138,7 @@ async function main() {
       const board = layout()
       const tb = await Toolbox.open(COMPONENT_TOOLS, { mounts: [input, dirname(output)] })
       try {
-        await packKernel({ board: kernelBoard(), kernelDirectory: input, init: path('init'), shutdown: path('shutdown'), publicKeys: keys(), systemPartUuid: board.partitions[1]!.guid, dataPartUuid: board.partitions[2]!.guid,
+        await packKernel({ board: kernelBoard(), kernelDirectory: input, runkit: path('runkit'), publicKeys: keys(), systemPartUuid: board.partitions[1]!.guid, dataPartUuid: board.partitions[2]!.guid,
           output, contentSigning: signing(), bootSigning: bootSigning() }, tb)
       } finally { await tb.close() }
       break

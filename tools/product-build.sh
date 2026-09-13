@@ -132,7 +132,7 @@ else
     bash boot/build-tools.sh --target "$(efi_target "${MICA_ARCH}")"
 fi
 bash build/run.sh --components kernel --board "${BOARD}" --input "${BOARD_DIR}/kernel" \
-    --init "${OUT}/lifecycle/mica-init" --shutdown "${OUT}/lifecycle/mica-shutdown" --public-key "${PUBLIC_KEY}" --out "${OUT}/kernel" \
+    --runkit "${OUT}/lifecycle/mica-runkit" --public-key "${PUBLIC_KEY}" --out "${OUT}/kernel" \
     --content-key "${SIGNING}/verity/signer.key.pem" --content-cert "${SIGNING}/verity/signer.cert.pem" \
     --boot-key "${SIGNING}/boot/signer.key.pem" --boot-cert "${SIGNING}/boot/signer.cert.pem"
 if [ "${BOOT_BACKEND}" = uboot-fit ]; then

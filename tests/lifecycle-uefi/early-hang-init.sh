@@ -1,5 +1,5 @@
 #!/bin/bash
-# Build a signed-fixture init that hangs after the production watchdog arm.
+# Build a signed-fixture mica-runkit whose init hangs after the production watchdog arm.
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/../.."
 out=$(realpath "${1:?existing output directory required}")
@@ -8,7 +8,7 @@ case "$arch" in amd64) target=x86_64-unknown-linux-gnu;; arm64) target=aarch64-u
 test ! -e "$out/source"
 mkdir "$out/source"
 # The source the pinned mica-lifecycle archives were built from, checked out
-# at the locked commit: the fault variant differs from the shipped mica-init
+# at the locked commit: the fault variant differs from the shipped mica-runkit
 # by one injected hang and nothing else.
 bash build-env/deb/source.sh mica-deploy
 src=_out/src/mica-deploy
@@ -16,7 +16,7 @@ cp "$src/Cargo.toml" "$src/Cargo.lock" "$out/source/"
 cp -a "$src/src" "$out/source/src"
 cp -a "$src/lifecycle-sys" "$out/source/lifecycle-sys"
 cp -a "$src/tests" "$out/source/tests"
-python3 - "$out/source/src/bin/mica-init.rs" <<'PY'
+python3 - "$out/source/src/bin/mica-runkit/init.rs" <<'PY'
 from pathlib import Path
 import sys
 p=Path(sys.argv[1]); source=p.read_text()
@@ -34,6 +34,6 @@ timeout -k 20 1200 docker run --rm --label ai-agent=true --network traefik \
     -v "$out:/w" -v "$PWD/_out/cargo/registry:/usr/local/cargo/registry" \
     -v "$PWD/_out/cargo/git:/usr/local/cargo/git" -w /w/source \
     -e CARGO_TARGET_DIR=/w/target --entrypoint /bin/bash "$image" \
-    -c 'set -euo pipefail; cargo build --release --locked --target "$1" --bin mica-init --config "target.$1.rustflags=[\"-C\",\"target-feature=+crt-static\",\"-C\",\"strip=symbols\"]"; cp "/w/target/$1/release/mica-init" /w/mica-init' _ "$target"
-test -s "$out/mica-init"
+    -c 'set -euo pipefail; cargo build --release --locked --target "$1" --bin mica-runkit --config "target.$1.rustflags=[\"-C\",\"target-feature=+crt-static\",\"-C\",\"strip=symbols\"]"; cp "/w/target/$1/release/mica-runkit" /w/mica-runkit' _ "$target"
+test -s "$out/mica-runkit"
 echo "FILE_AB_EARLY_HANG_INIT_READY: $arch"

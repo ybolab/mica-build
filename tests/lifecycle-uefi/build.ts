@@ -11,9 +11,9 @@ import { Toolbox } from '../../build/src/toolbox.ts'
 import { loadBoardFacts } from '../../build/src/board-facts.ts'
 import { Signer } from '../../shared/update-envelope.ts'
 
-const [outputArg, board, kernelArg, certificateArg, keyArg, initArg, rootArg, shutdownArg] = Bun.argv.slice(2)
-if (!outputArg || !board || !kernelArg || !certificateArg || !keyArg || !initArg || !rootArg || !shutdownArg) {
-  throw new Error('Usage: build.ts OUTPUT BOARD BSP_KERNEL CERTIFICATE CONTENT_KEY MICA_INIT FULL_ROOT_TREE MICA_SHUTDOWN')
+const [outputArg, board, kernelArg, certificateArg, keyArg, runkitArg, rootArg] = Bun.argv.slice(2)
+if (!outputArg || !board || !kernelArg || !certificateArg || !keyArg || !runkitArg || !rootArg) {
+  throw new Error('Usage: build.ts OUTPUT BOARD BSP_KERNEL CERTIFICATE CONTENT_KEY MICA_RUNKIT FULL_ROOT_TREE')
 }
 // A UEFI board of either architecture; the suite dispatches on its facts.
 const facts = loadBoardFacts(board!)
@@ -30,7 +30,7 @@ try {
   const bootSigning = { key: join(output, 'db.key.pem'), certificate: join(output, 'db.cert.pem') }
   await tb.must(['openssl', 'req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-sha256', '-days', '1', '-subj', '/CN=file-ab-boot-test', '-keyout', bootSigning.key, '-out', bootSigning.certificate])
   const layout = parseFileLayout(readFileSync(resolve(`_out/boards/${board}/board.env`), 'utf8'))
-  const kernel = await packKernel({ board, kernelDirectory: resolve(kernelArg), init: resolve(initArg), shutdown: resolve(shutdownArg), publicKeys: [signer.publicKey],
+  const kernel = await packKernel({ board, kernelDirectory: resolve(kernelArg), runkit: resolve(runkitArg), publicKeys: [signer.publicKey],
     systemPartUuid: layout.partitions[1]!.guid, dataPartUuid: layout.partitions[2]!.guid, output: join(output, 'kernel'), contentSigning: signing, bootSigning }, tb)
   const content = await packComponent(resolve(rootArg), join(output, 'root'), 'rootfs', signing, tb)
   const rootfs = describeRoot(facts.arch, 'proof', content)

@@ -10,7 +10,7 @@ Images build for x64, virt-arm64, cx3576 and s905x5m; see the
 acceptance use fresh complete images; there are no old-layout readers or migrations.
 
 `micad` owns device management and connectivity. `apid` exposes the authenticated
-API and React dashboard. `mica-init` authenticates the selected deployment before
+API and React dashboard. `mica-runkit`, as init, authenticates the selected deployment before
 systemd starts; `mica-deploy` acquires, installs, confirms and retires deployments.
 
 Start with the [documentation portal](docs/README.md) or the

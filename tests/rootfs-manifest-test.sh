@@ -386,7 +386,7 @@ declare -A UNREACHABLE_OK=(
     [mica-kernel-s905x5m]="a kernel archive is a separate signed component: tools/board-pool.sh --fetch unpacks it into the image, APT never installs it"
     [mica-kernel-virt-arm64]="a kernel archive is a separate signed component: tools/board-pool.sh --fetch unpacks it into the image, APT never installs it"
     [mica-kernel-x64]="a kernel archive is a separate signed component: tools/board-pool.sh --fetch unpacks it into the image, APT never installs it"
-    [mica-lifecycle]="mica-init and mica-shutdown are taken out of the archive by tools/deploy-pool.sh --lifecycle into the image's own root, never installed by APT"
+    [mica-lifecycle]="mica-runkit is taken out of the archive by tools/deploy-pool.sh --lifecycle into the image's own root, never installed by APT"
 )
 
 PRODUCER_ROWS="$(bash "${REPO_ROOT}/build-env/deb/producers.sh")"

@@ -6,9 +6,8 @@ root_image=${1:?root image required}
 kernel=${2:?BSP kernel directory required}
 certificate=${3:?public content certificate required}
 key=${4:?external content signing key required}
-init=${5:?compiled mica-init required}
+runkit=${5:?compiled mica-runkit required}
 board=${6:?board required}
-shutdown=${7:?compiled mica-shutdown required}
 # The board's facts, out of its fetched bundle: the suite boots UEFI boards
 # of either architecture and dispatches on nothing else.
 [ -f "_out/boards/$board/board.env" ] || { echo "error: $board is not a fetched board (make board-fetch BOARD=$board)" >&2; exit 1; }
@@ -29,7 +28,7 @@ install -m 0644 tests/lifecycle-uefi/var-state.service "$scratch/tree/etc/system
 ln -s /etc/systemd/system/test-var-state.service "$scratch/tree/etc/systemd/system/sysinit.target.wants/test-var-state.service"
 install -m 0644 "$certificate" "$scratch/content.cert.pem"
 install -m 0600 "$key" "$scratch/content.key.pem"
-bash tests/lifecycle-uefi/bun.sh tests/lifecycle-uefi/build.ts "$evidence" "$board" "$kernel" "$scratch/content.cert.pem" "$scratch/content.key.pem" "$init" "$scratch/tree" "$shutdown"
+bash tests/lifecycle-uefi/bun.sh tests/lifecycle-uefi/build.ts "$evidence" "$board" "$kernel" "$scratch/content.cert.pem" "$scratch/content.key.pem" "$runkit" "$scratch/tree"
 cat >"$scratch/extension.service" <<'UNIT'
 [Unit]
 Description=Persistent extension acceptance

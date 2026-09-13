@@ -4,10 +4,9 @@ set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/../.."
 source=$(realpath "${1:?current full-runtime evidence required}")
 board=${2:?board required}
-init=$(realpath "${3:?fault-injected init required}")
+runkit=$(realpath "${3:?fault-injected mica-runkit required}")
 cert=$(realpath "${4:?content certificate required}")
 key=$(realpath "${5:?content key required}")
-shutdown=${6:?compiled mica-shutdown required}
 # The board's facts, out of its fetched bundle: the suite boots UEFI boards
 # of either architecture and dispatches on nothing else.
 [ -f "_out/boards/$board/board.env" ] || { echo "error: $board is not a fetched board (make board-fetch BOARD=$board)" >&2; exit 1; }
@@ -21,7 +20,7 @@ for file in root kernel firmware metadata.key.pem metadata.pub db.key.pem db.cer
     cp -a "$source/$file" "$out/$file"
 done
 printf 'Evidence: %s\n' "$work"
-timeout -k 20 700 bun tests/lifecycle-uefi/update.ts "$out" "$cert" "$key" 7 kernel "$out/root" "$out/kernel" "$init" "$shutdown"
+timeout -k 20 700 bun tests/lifecycle-uefi/update.ts "$out" "$cert" "$key" 7 kernel "$out/root" "$out/kernel" "$runkit"
 timeout -k 15 450 docker run --rm --label ai-agent=true --network traefik \
     -v "$out:/w" -v "$PWD/tests/lifecycle-uefi:/harness:ro" ai-agent/mos-p2-lab \
     bash /harness/boot.sh image/disk.img writable 400 "$arch" > "$out/install.log" 2>&1

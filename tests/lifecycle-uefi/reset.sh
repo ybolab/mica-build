@@ -6,9 +6,8 @@ root=$(realpath "${1:?full production root image required}")
 kernel=$(realpath "${2:?BSP kernel directory required}")
 cert=$(realpath "${3:?content certificate required}")
 key=$(realpath "${4:?content key required}")
-init=$(realpath "${5:?production init required}")
+runkit=$(realpath "${5:?production mica-runkit required}")
 board=${6:?board required}
-shutdown=${7:?compiled mica-shutdown required}
 # The board's facts, out of its fetched bundle: the suite boots UEFI boards
 # of either architecture and dispatches on nothing else.
 [ -f "_out/boards/$board/board.env" ] || { echo "error: $board is not a fetched board (make board-fetch BOARD=$board)" >&2; exit 1; }
@@ -57,7 +56,7 @@ RuntimeMaxSec=240
 WantedBy=multi-user.target
 UNIT
     ln -s /etc/systemd/system/reset-acceptance.service "$out/tree/etc/systemd/system/multi-user.target.wants/reset-acceptance.service"
-    timeout -k 20 900 bash tests/lifecycle-uefi/bun.sh tests/lifecycle-uefi/build.ts "$out/boot" "$board" "$kernel" "$cert" "$key" "$init" "$out/tree" "$shutdown" > "$out/build.log" 2>&1
+    timeout -k 20 900 bash tests/lifecycle-uefi/bun.sh tests/lifecycle-uefi/build.ts "$out/boot" "$board" "$kernel" "$cert" "$key" "$runkit" "$out/tree" > "$out/build.log" 2>&1
     truncate -s 4G "$out/boot/image/disk.img"
     for boot in 1 2 3; do
         timeout -k 15 600 docker run --rm --label ai-agent=true --network traefik \
