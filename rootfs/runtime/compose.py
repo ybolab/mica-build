@@ -195,7 +195,7 @@ def generated_rules(engine: selector.Selector, inputs: Path, configured: dict) -
 
     # A generated leaf can need a package-unowned parent. Name only those exact
     # directory inodes, preserving their configured metadata without contents.
-    explicit = {p for c in engine.consumers for r in rules['consumers'][c]['roots'] if r.get('generated') for p in r['paths']}
+    explicit = {p for c in engine.consumers for r in rules['consumers'][engine.declaration_key(c)]['roots'] if r.get('generated') for p in r['paths']}
     parents = set()
     for path in explicit:
         for parent in Path(path).parents:
