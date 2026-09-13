@@ -67,7 +67,13 @@ case "${1:-}" in
         [ -n "${board}" ] || continue
         archive="$(archive_for "${board}")"
         for f in board.env evidence.json; do
-            python3 "${MEMBER}" "${archive}" "usr/lib/mica/board/${board}/${f}" "${work}/${f}"
+            # board.env is what makes a board; evidence.json is a record some
+            # boards carry, compared when either side has it.
+            if [ "${f}" = evidence.json ] && ! python3 "${MEMBER}" "${archive}" "usr/lib/mica/board/${board}/${f}" "${work}/${f}" 2>/dev/null; then
+                [ ! -f "${REPO_ROOT}/boards/${board}/${f}" ] || { echo "error: boards/${board}/${f} exists here but the pinned mica-kernel-${board} archive carries none; a copy of nothing is stale by definition" >&2; exit 1; }
+                continue
+            fi
+            [ "${f}" = evidence.json ] || python3 "${MEMBER}" "${archive}" "usr/lib/mica/board/${board}/${f}" "${work}/${f}"
             cmp -s "${work}/${f}" "${REPO_ROOT}/boards/${board}/${f}" || {
                 echo "error: boards/${board}/${f} is not the ${f} the pinned mica-kernel-${board} archive carries (see the diff below). The copy is derived from the pin; after a lock bump copy the archive's file over it and commit both" >&2
                 diff -u "${REPO_ROOT}/boards/${board}/${f}" "${work}/${f}" >&2 || true
@@ -122,7 +128,7 @@ while at + 60 <= len(data):
 if not found:
     raise SystemExit(f'error: {archive} carries no data.tar member')
 PY
-    for f in kernel/config kernel/kernel.release kernel/modules.tar board.env evidence.json; do
+    for f in kernel/config kernel/kernel.release kernel/modules.tar board.env; do
         [ -e "${dest}/${f}" ] || { echo "error: ${dest}/${f} is missing after extraction; the archive does not carry the kernel directory this assembly expects" >&2; exit 1; }
     done
     ;;

@@ -1,0 +1,13 @@
+{
+  "name": "mica-kernel-cx3576",
+  "repository": "mica-cx3576",
+  "commit": "06c56d97ab6f08523921afbf35bda3b7bf89a08b",
+  "targets": {
+    "arm64": {
+      "version": "0.1.0+git06c56d97ab6f-1",
+      "architecture": "arm64",
+      "sha256": "46a28bea3e9c8099ac429a3f457327b9f6f1e2be722f761a65de8a7e8d719147",
+      "asset": "mica-kernel-cx3576_0.1.0.git06c56d97ab6f-1_arm64.deb"
+    }
+  }
+}

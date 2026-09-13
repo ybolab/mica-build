@@ -1,0 +1,13 @@
+{
+  "name": "mica-board-cx3576",
+  "repository": "mica-cx3576",
+  "commit": "06c56d97ab6f08523921afbf35bda3b7bf89a08b",
+  "targets": {
+    "arm64": {
+      "version": "0.1.0+git06c56d97ab6f-1",
+      "architecture": "arm64",
+      "sha256": "f45aaef682e127986e383bf56c5b1134b12760d58c3e429f1418d120533ef6c4",
+      "asset": "mica-board-cx3576_0.1.0.git06c56d97ab6f-1_arm64.deb"
+    }
+  }
+}
