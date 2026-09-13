@@ -1,8 +1,8 @@
 {
   "name": "mica-build-env",
   "repository": "mica-build-env",
-  "commit": "a743f839452125f44cb0a9bce74399dafd7c7c13",
+  "commit": "f9e9c5749efe76f02f05e6f2f302f3f0ea5c4a62",
   "path": "build-env",
-  "asset": "mica-build-env-a743f8394521.tar.gz",
-  "sha256": "15ef8178d2f9a064c72fe827d0d7a28bd4084f08a733126e0e8d0751fbd3721f"
+  "asset": "mica-build-env-f9e9c5749efe.tar.gz",
+  "sha256": "3aead60eb3169ff5a9218613b854781c34d1b4fe46572f80789a12242fdfddc0"
 }

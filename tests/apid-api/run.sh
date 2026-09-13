@@ -14,20 +14,20 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
-# WHICH BOARD. Resolved once, here, and exported so that src/qemu.ts reads the
-# same value rather than defaulting independently -- two halves that each
-# picked a board could disagree, and the disagreement would present as "image
-# missing" for a board nobody asked about.
-#
-# x64 is the default because it is the board this harness has always booted and
-# the one with a KVM-capable host; virt-arm64 is the same suite on the
-# architecture the device runs. Any UEFI board works: nothing below knows a
-# board name.
-MICA_BOARD="${MICA_BOARD:-x64}"
+# WHICH PRODUCT. The suite boots a built product (make product PRODUCT=<name>):
+# its board, its image and the boot signer all follow from the name, so a run
+# is keyed by one variable and no half of it can pick a board on its own.
+# MICA_BOARD is derived here and exported so that src/qemu.ts reads the same
+# value rather than defaulting independently. Any UEFI board works: nothing
+# below knows a board name. MICA_QEMU_IMAGE and MICA_QEMU_BOOT_CERT stay as
+# explicit overrides for an acceptance run over a copied release image.
+MICA_PRODUCT="${MICA_PRODUCT:?product name required (make products lists them)}"
+eval "$(bash "${REPO_ROOT}/tools/product.sh" "${MICA_PRODUCT}")"
+MICA_BOARD="${BOARD}"
 export MICA_BOARD
-BOARD_ENV="${REPO_ROOT}/_out/boards/${MICA_BOARD}/board.env"
+BOARD_ENV="${BOARD_DIR}/board.env"
 if [ ! -f "${BOARD_ENV}" ]; then
-    echo "FAIL: MICA_BOARD is '${MICA_BOARD}' and ${BOARD_ENV} does not exist; a board IS its fetched bundle (make board-fetch BOARD=${MICA_BOARD})" >&2
+    echo "FAIL: product ${MICA_PRODUCT} is on ${MICA_BOARD} and ${BOARD_ENV} does not exist; a board IS its fetched bundle (make board-fetch BOARD=${MICA_BOARD})" >&2
     exit 1
 fi
 
@@ -39,8 +39,12 @@ fi
 . "${BOARD_ENV}"
 
 OUT_DIR="${REPO_ROOT}/_out/${MICA_BOARD}"
-IMG="${MICA_QEMU_IMAGE:?explicit complete factory image required}"
-BOOT_CERT="${MICA_QEMU_BOOT_CERT:?explicit public boot certificate required}"
+PRODUCT_OUT="${REPO_ROOT}/_out/products/${MICA_PRODUCT}"
+# The image is the one the product's SHA256SUMS names; the boot signer is the
+# signing workspace's public certificate, the one make product enrolled.
+IMG="${MICA_QEMU_IMAGE:-${PRODUCT_OUT}/image/$(awk 'NR == 1 { print $2 }' "${PRODUCT_OUT}/image/SHA256SUMS" 2>/dev/null || true)}"
+BOOT_CERT="${MICA_QEMU_BOOT_CERT:-${REPO_ROOT}/${MICA_SIGNING_OUTPUT:-meta}/boot/signer.cert.pem}"
+[ -f "${IMG}" ] || { echo "FAIL: ${IMG} does not exist; build the product first (make product PRODUCT=${MICA_PRODUCT})" >&2; exit 1; }
 IMG="$(readlink -f "$IMG")"
 BOOT_CERT="$(readlink -f "$BOOT_CERT")"
 RUN_DIR="${OUT_DIR}/.qemu"

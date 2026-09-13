@@ -2,8 +2,8 @@
 import { spawn, spawnSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { seedArguments, seedDataImage } from "../../../../../build/src/seed-data.ts";
-import { parseFileLayout } from "../../../../../build/src/file-layout.ts";
+import { seedArguments, seedDataImage } from "../../../build/src/seed-data.ts";
+import { loadBoardFacts } from "../../../build/src/board-facts.ts";
 
 interface QemuArch {
   readonly binary: string;
@@ -35,7 +35,7 @@ export function requireSignedInputs(image: string | undefined, certificate: stri
   if (append !== undefined) throw new Error("Kernel command-line overrides are forbidden; seed DATA test units instead");
 }
 
-const REPO_ROOT = path.resolve(import.meta.dir, "../../../../..");
+const REPO_ROOT = path.resolve(import.meta.dir, "../../..");
 const MIB = 1048576;
 function integer(value: string | undefined, fallback: number): number {
   const result = Number(value ?? fallback);
@@ -70,11 +70,13 @@ exec ${arch.binary} -machine ${arch.machine} -cpu max -m "$MEM" -smp 2 \\
 async function main(): Promise<void> {
   const env = process.env;
   requireSignedInputs(env.MICA_QEMU_IMAGE, env.MICA_QEMU_BOOT_CERT, env.MICA_QEMU_APPEND);
-  const board = env.MICA_BOARD ?? "x64";
-  if (board !== "x64" && board !== "virt-arm64") throw new Error("QEMU acceptance requires x64 or virt-arm64");
-  const layout = parseFileLayout(fs.readFileSync(path.join(REPO_ROOT, "boards", board, "board.env"), "utf8"));
-  if (layout.backend !== "systemd-boot") throw new Error("Expected the current signed UEFI layout");
-  const arch = qemuArchFor(board === "x64" ? "amd64" : "arm64", board);
+  const board = env.MICA_BOARD;
+  if (!board) throw new Error("MICA_BOARD is required; run.sh derives it from MICA_PRODUCT");
+  // The board is its fetched bundle (_out/boards/<board>/board.env); the
+  // emulator, machine and firmware follow its facts, never its name.
+  const facts = loadBoardFacts(board);
+  if (facts.backend !== "systemd-boot") throw new Error(`${board} boots a FIT; QEMU acceptance boots UEFI boards`);
+  const arch = qemuArchFor(facts.arch, board);
   const image = path.resolve(env.MICA_QEMU_IMAGE!);
   const certificate = path.resolve(env.MICA_QEMU_BOOT_CERT!);
   if (!fs.lstatSync(image).isFile() || !fs.lstatSync(certificate).isFile()) throw new Error("Boot inputs must be regular files");

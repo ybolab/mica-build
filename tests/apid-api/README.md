@@ -20,7 +20,8 @@ readiness deadline stays at 900 s and is not trimmed to fit these numbers.
 
 ### Both boards, measured the same way
 
-Since PLAN-085 the harness boots either UEFI board, selected by `MICA_BOARD`.
+Since PLAN-085 the harness boots either UEFI board; the board is the one the
+product named by `MICA_PRODUCT` is on.
 Wall clock from the `docker run` to the `APID_LISTENING` line, fresh disk,
 5 s polling, 2026-09-06:
 
