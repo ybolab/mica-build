@@ -1,19 +1,19 @@
 {
   "name": "mica-mqttd",
   "repository": "micad",
-  "commit": "3ea7e297ab6f9529d71567676165be1bf60684ca",
+  "commit": "6211503847b96aecce479af99a6ffb37b554774b",
   "targets": {
     "amd64": {
-      "version": "0.1.0+git3ea7e297ab6f-1",
+      "version": "0.1.0+git6211503847b9-1",
       "architecture": "amd64",
-      "sha256": "c12a8093451c8da98622706b00893cbd563cb4fffa0e59ac7f3cc2dfdec104b3",
-      "asset": "mica-mqttd_0.1.0.git3ea7e297ab6f-1_amd64.deb"
+      "sha256": "ee8a99fb22bb1e719fc5a242b4ca95aec3a8e0a3610def4dde41984b34a655c6",
+      "asset": "mica-mqttd_0.1.0.git6211503847b9-1_amd64.deb"
     },
     "arm64": {
-      "version": "0.1.0+git3ea7e297ab6f-1",
+      "version": "0.1.0+git6211503847b9-1",
       "architecture": "arm64",
-      "sha256": "4b5d88bea50bf737eaa6350b44e5b59c3218f664875e012fa3d9eed804efa95f",
-      "asset": "mica-mqttd_0.1.0.git3ea7e297ab6f-1_arm64.deb"
+      "sha256": "e8e44b0df3deb623cd242421e749536b620861aca54b2addf012573c762521a2",
+      "asset": "mica-mqttd_0.1.0.git6211503847b9-1_arm64.deb"
     }
   }
 }

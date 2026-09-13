@@ -1,19 +1,19 @@
 {
   "name": "micad",
   "repository": "micad",
-  "commit": "3ea7e297ab6f9529d71567676165be1bf60684ca",
+  "commit": "6211503847b96aecce479af99a6ffb37b554774b",
   "targets": {
     "amd64": {
-      "version": "0.1.0+git3ea7e297ab6f-1",
+      "version": "0.1.0+git6211503847b9-1",
       "architecture": "amd64",
-      "sha256": "4a3437a6f5a01f8ebc18f0f10862b8fdb56ae909422daf18431cc2108494912d",
-      "asset": "micad_0.1.0.git3ea7e297ab6f-1_amd64.deb"
+      "sha256": "c449f38727b2587aabd8c410089758f5911f96c4366efcdf240bb9aa284fc6ed",
+      "asset": "micad_0.1.0.git6211503847b9-1_amd64.deb"
     },
     "arm64": {
-      "version": "0.1.0+git3ea7e297ab6f-1",
+      "version": "0.1.0+git6211503847b9-1",
       "architecture": "arm64",
-      "sha256": "6d0038ba6ac0b1120b16e3faf2b3b9523d37da16ee4dbad8d9237d82bc59ac0b",
-      "asset": "micad_0.1.0.git3ea7e297ab6f-1_arm64.deb"
+      "sha256": "06d4561f3015a8544edd162a11b8e6c54be9c419c2cce7936dfd48e1ed236317",
+      "asset": "micad_0.1.0.git6211503847b9-1_arm64.deb"
     }
   }
 }
