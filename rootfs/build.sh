@@ -462,7 +462,7 @@ trap 'rm -f "$log"' EXIT
 # manifest -- the check mica-podman:build.sh needs is about localhost tags, which
 # carry exactly one architecture, and this file uses none.
 mapfile -t FROM_ARGS < <("$REPO_ROOT/build-env/from.sh" \
-    MICA_IMAGE_BUN=IMAGE_BUN_1 \
+    MICA_IMAGE_BUN=IMAGE_MICA_BUILD_BASE \
     MICA_IMAGE_DEBIAN_BOOKWORM=IMAGE_DEBIAN_BOOKWORM)
 # mapfile cannot fail, so its status says nothing about the process inside the
 # substitution; an empty array is what a refusal looks like from here, and it

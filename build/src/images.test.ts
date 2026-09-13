@@ -24,8 +24,8 @@ function fakeResolver(body: string): { path: string, cleanup: () => void } {
 }
 
 describe('a key that is there resolves to the digest that is recorded', () => {
-  test('IMAGE_BUN_1, IMAGE_ALPINE_3_21 and IMAGE_DEBIAN_TRIXIE are digests', async () => {
-    for (const key of ['IMAGE_BUN_1', 'IMAGE_ALPINE_3_21', 'IMAGE_DEBIAN_TRIXIE']) {
+  test('IMAGE_MICA_BUILD_BASE, IMAGE_ALPINE_3_21 and IMAGE_DEBIAN_TRIXIE are digests', async () => {
+    for (const key of ['IMAGE_MICA_BUILD_BASE', 'IMAGE_ALPINE_3_21', 'IMAGE_DEBIAN_TRIXIE']) {
       const ref = await resolveImage(key)
       // The shape from.sh enforces, asserted here too -- not to re-validate it,
       // but because every toolset in this package puts this string after
@@ -72,8 +72,8 @@ describe('every failure names the key', () => {
   })
 
   test('a resolver that is not there says so about the PATH, with the key still in hand', async () => {
-    await expect(resolveImage('IMAGE_BUN_1', '/no/such/from.sh'))
-      .rejects.toThrow(/\/no\/such\/from\.sh does not exist.*including IMAGE_BUN_1/s)
+    await expect(resolveImage('IMAGE_MICA_BUILD_BASE', '/no/such/from.sh'))
+      .rejects.toThrow(/\/no\/such\/from\.sh does not exist.*including IMAGE_MICA_BUILD_BASE/s)
   })
 
   test('a resolver that exits 0 and prints NOTHING is refused, not passed on', async () => {
@@ -83,21 +83,21 @@ describe('every failure names the key', () => {
     // the cause.
     const f = fakeResolver('exit 0')
     try {
-      await expect(resolveImage('IMAGE_BUN_1', f.path)).rejects.toThrow(/exited 0 for IMAGE_BUN_1 and printed nothing/)
+      await expect(resolveImage('IMAGE_MICA_BUILD_BASE', f.path)).rejects.toThrow(/exited 0 for IMAGE_MICA_BUILD_BASE and printed nothing/)
     } finally { f.cleanup() }
   })
 
   test('a resolver that prints only whitespace is the same failure', async () => {
     const f = fakeResolver('printf "   \\n"')
     try {
-      await expect(resolveImage('IMAGE_BUN_1', f.path)).rejects.toThrow(/printed nothing/)
+      await expect(resolveImage('IMAGE_MICA_BUILD_BASE', f.path)).rejects.toThrow(/printed nothing/)
     } finally { f.cleanup() }
   })
 
   test('a resolver that fails hands back ITS OWN words rather than a summary', async () => {
     const f = fakeResolver('echo "the sentence from.sh would have written" >&2; exit 3')
     try {
-      await expect(resolveImage('IMAGE_BUN_1', f.path))
+      await expect(resolveImage('IMAGE_MICA_BUILD_BASE', f.path))
         .rejects.toThrow(/exit 3.*the sentence from\.sh would have written/s)
     } finally { f.cleanup() }
   })
@@ -107,11 +107,11 @@ describe('every failure names the key', () => {
     // produced a script that never runs at all.
     const f = fakeResolver('echo alpine:3.21@sha256:0000000000000000000000000000000000000000000000000000000000000000')
     try {
-      expect(await resolveImage('IMAGE_BUN_1', f.path)).toBe(
+      expect(await resolveImage('IMAGE_MICA_BUILD_BASE', f.path)).toBe(
         'alpine:3.21@sha256:0000000000000000000000000000000000000000000000000000000000000000',
       )
       // ...and a stand-in answer never reaches the memo the real one fills.
-      expect(await resolveImage('IMAGE_BUN_1')).not.toContain('0000000000000000')
+      expect(await resolveImage('IMAGE_MICA_BUILD_BASE')).not.toContain('0000000000000000')
     } finally { f.cleanup() }
   })
 })
@@ -123,7 +123,7 @@ describe('the answer is the resolver\'s, not a re-derivation of it', () => {
     // a second reader of images.env -- a grep, a parser, a copy of the digest --
     // it could agree with from.sh today and not tomorrow; this is the assertion
     // that the value came THROUGH from.sh rather than merely matching it.
-    for (const key of ['IMAGE_ALPINE_3_21', 'IMAGE_DEBIAN_TRIXIE', 'IMAGE_BUN_1']) {
+    for (const key of ['IMAGE_ALPINE_3_21', 'IMAGE_DEBIAN_TRIXIE', 'IMAGE_MICA_BUILD_BASE']) {
       const direct = (await $`bash ${FROM_SH} --ref ${key}`.quiet()).stdout.toString().trim()
       expect(`${key}=${await resolveImage(key)}`).toBe(`${key}=${direct}`)
     }

@@ -300,7 +300,7 @@ run_step 2 make os-host-toolchain-lint
 
 # Rung 3. Both of these reach for bun, which this host does not have and must
 # not need: verify/run.sh takes its container route, and what runs is the bun
-# pinned as IMAGE_BUN_1. This is the rung that proves a judge's container route
+# pinned as IMAGE_MICA_BUILD_BASE. This is the rung that proves a judge's container route
 # is sufficient on its own -- PLAN-080 section 3.1's ruling, executed.
 run_step 3 make os-layout-lint
 run_step 3 make os-verify-test

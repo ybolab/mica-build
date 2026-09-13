@@ -11,7 +11,7 @@
 #
 # The seam for the tool-less host: exactly one function below, run_bun, decides
 # how bun is invoked, with two routes -- a bun binary on the host, or the
-# digest-pinned bun container recorded as IMAGE_BUN_1 in build-env/images.env.
+# digest-pinned bun container recorded as IMAGE_MICA_BUILD_BASE in build-env/images.env.
 # A caller passes an argv and reads an exit status and cannot tell which route it
 # got, which makes a host with no bun a supported host.
 #
@@ -75,9 +75,9 @@ defect. Same docker requirement as --smoke, for the same reason plus one: it
 builds images.
 
 A host with no bun runs the same steps in the bun container pinned by digest as
-IMAGE_BUN_1 in build-env/images.env. That route is taken automatically; it
+IMAGE_MICA_BUILD_BASE in build-env/images.env. That route is taken automatically; it
 needs docker, and it is announced on the first line of output so a run is never
-ambiguous about which bun produced it. For --verify the image is IMAGE_BUN_1
+ambiguous about which bun produced it. For --verify the image is IMAGE_MICA_BUILD_BASE
 plus the docker client pinned as IMAGE_DOCKER_CLI_28, built here on demand --
 see verify/Dockerfile.
 
@@ -208,7 +208,7 @@ fi
 # --verify drives docker itself: src/tools.ts takes the pinned alpine whenever
 # the host lacks sgdisk/mtools/debugfs/unsquashfs/veritysetup, which on a
 # tool-less host is always. Inside the bun container that is docker-in-docker,
-# and IMAGE_BUN_1 carries no docker client -- not curl, wget, nc, python3 or
+# and IMAGE_MICA_BUILD_BASE carries no docker client -- not curl, wget, nc, python3 or
 # socat either, and mounting the daemon socket does not help because what is
 # missing is the CLIENT. So verify/Dockerfile is the pinned bun image plus
 # the client out of IMAGE_DOCKER_CLI_28.
@@ -226,7 +226,7 @@ DOCKER_SOCK=""
 if needs_docker && [ "${ROUTE}" = container ]; then
     command -v docker >/dev/null 2>&1 || {
         echo "error: --${MODE} on a host with no bun needs docker, and there is none (${WHY})." >&2
-        echo "       It runs bun in the image pinned as IMAGE_BUN_1 and reads the image under test" >&2
+        echo "       It runs bun in the image pinned as IMAGE_MICA_BUILD_BASE and reads the image under test" >&2
         echo "       with the tools in IMAGE_ALPINE_3_21; both need a container runtime to be it." >&2
         echo "       --smoke needs it for a second, stronger reason: it EXECUTES the shipped binaries" >&2
         echo "       inside the factory root, and there is no route to that without a runtime." >&2
@@ -266,14 +266,14 @@ else
         echo "error: no bun on this host, and no docker to run the pinned one in." >&2
         echo "       verify needs one of the two. Either install bun, or set MICA_VERIFY_BUN to a" >&2
         echo "       bun binary, or install docker -- the bun this tree runs is recorded as" >&2
-        echo "       IMAGE_BUN_1 in build-env/images.env and needs a container runtime to be it." >&2
+        echo "       IMAGE_MICA_BUILD_BASE in build-env/images.env and needs a container runtime to be it." >&2
         exit 1
     }
 
     # ONE resolver, the tree's own. from.sh validates that the key exists, is a
     # digest and not a tag, and is well formed, and it says so naming the key
     # and the file -- so none of that is restated here.
-    BUN_IMAGE="$(bash "${REPO_ROOT}/build-env/from.sh" --ref IMAGE_BUN_1)" || exit 1
+    BUN_IMAGE="$(bash "${REPO_ROOT}/build-env/from.sh" --ref IMAGE_MICA_BUILD_BASE)" || exit 1
 
     # A digest that is well formed and WRONG is the one failure from.sh cannot
     # see: it checks the shape of a reference, not that a registry has it. Left
@@ -284,7 +284,7 @@ else
     if ! docker image inspect "${BUN_IMAGE}" >/dev/null 2>&1; then
         echo "verify: ${BUN_IMAGE} is not in the local image store; pulling it"
         docker pull -q "${BUN_IMAGE}" >/dev/null 2>&1 || {
-            echo "error: IMAGE_BUN_1=${BUN_IMAGE} could not be obtained." >&2
+            echo "error: IMAGE_MICA_BUILD_BASE=${BUN_IMAGE} could not be obtained." >&2
             echo "       That key in build-env/images.env is this tree's record of which bun it runs." >&2
             echo "       The reference is well formed -- from.sh just checked that -- so what failed is" >&2
             echo "       the lookup: either no image has that digest, or this host cannot reach the" >&2
@@ -295,7 +295,7 @@ else
 
     # --- and, for the docker-driving modes only, the same bun WITH a client ---
     # Everything above stays exactly as it is: the suite and the lint run in
-    # IMAGE_BUN_1 unchanged, which is the image CI exercises on every push. Only
+    # IMAGE_MICA_BUILD_BASE unchanged, which is the image CI exercises on every push. Only
     # the verifier and the smoke runner need a client, because only they drive
     # docker.
     if needs_docker; then

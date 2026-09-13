@@ -162,7 +162,7 @@ jobs:
   #
   # WHICH BUN CI RUNS IS THE PIN DECISION, and the decision is: none. No bun is
   # installed here. The runner has none of its own, so verify/run.sh takes
-  # its container route and runs the bun pinned by digest as IMAGE_BUN_1 in
+  # its container route and runs the bun pinned by digest as IMAGE_MICA_BUILD_BASE in
   # build-env/images.env -- the same bun a developer without one gets, and
   # the same one on every push regardless of what a runner image happens to
   # ship. Installing bun instead would have meant either a floating
@@ -200,7 +200,7 @@ jobs:
           set -euo pipefail
           command -v docker >/dev/null 2>&1 || {
             echo "error: no docker on this runner. verify runs bun in the container pinned as" >&2
-            echo "       IMAGE_BUN_1 in build-env/images.env, and there is no other bun here." >&2
+            echo "       IMAGE_MICA_BUILD_BASE in build-env/images.env, and there is no other bun here." >&2
             exit 1
           }
           docker version --format 'docker {{.Server.Version}}'
@@ -244,7 +244,7 @@ jobs:
           GH_TOKEN: ${{ secrets.MICA_DEPS_TOKEN }}
         run: |
           set -euo pipefail
-          image="$(bash build-env/from.sh --ref IMAGE_BUN_1)"
+          image="$(bash build-env/from.sh --ref IMAGE_MICA_BUILD_BASE)"
           make os-verify-test 2>&1 | tee /tmp/os-verify.log
           grep -qF "in ${image} (no bun on this host)" /tmp/os-verify.log || {
             echo "error: the suite passed, but not in the pinned container." >&2
@@ -382,7 +382,7 @@ jobs:
       - name: Update server quality gate in the pinned Bun container
         run: |
           set -euo pipefail
-          image="$(bash build-env/from.sh --ref IMAGE_BUN_1)"
+          image="$(bash build-env/from.sh --ref IMAGE_MICA_BUILD_BASE)"
           docker run --rm --label ai-agent=true \
             -v "$PWD:/source:ro" --tmpfs /check:exec \
             --workdir /check --entrypoint /bin/bash "$image" -c '

@@ -229,7 +229,7 @@ product-repart-test:
 # verify/run.sh finds bun, installs the dev dependencies if they are absent,
 # typechecks and runs the suite -- and turns a run that asserted nothing red,
 # which bun does not: `bun test` exits 0 on a test file that declares no tests.
-# A host with no bun runs all of that in the container pinned as IMAGE_BUN_1 in
+# A host with no bun runs all of that in the container pinned as IMAGE_MICA_BUILD_BASE in
 # build-env/images.env, automatically and with the route announced; CI
 # installs no bun, so that is the route it takes.
 os-verify-test:
@@ -620,7 +620,7 @@ os-apid-api-test:
 # needs no boot; the full black-box suite remains the runtime check.
 #
 # Needs bun OR docker: it runs on a host bun when there is one and in the bun
-# pinned as IMAGE_BUN_1 otherwise, and says which. MICA_APID_CONTAINER=1 forces
+# pinned as IMAGE_MICA_BUILD_BASE otherwise, and says which. MICA_APID_CONTAINER=1 forces
 # the pinned container.
 os-apid-api-spec-pins:
 	bash tests/apid-api/spec-pins.sh

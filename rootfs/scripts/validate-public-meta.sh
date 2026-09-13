@@ -90,7 +90,7 @@ command -v "$docker_cli" >/dev/null || {
     echo "error: public metadata validation requires the configured Docker CLI: $docker_cli" >&2
     exit 1
 }
-bun_image=$(bash "$repo_root/build-env/from.sh" --ref IMAGE_BUN_1)
+bun_image=$(bash "$repo_root/build-env/from.sh" --ref IMAGE_MICA_BUILD_BASE)
 "$docker_cli" run --rm --label ai-agent=true --network traefik -i "$bun_image" bun -e '
 const filename = "updates/manifest.json"
 const fail = (path, reason) => {

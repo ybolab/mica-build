@@ -8,7 +8,7 @@ git_dir=$(git --no-optional-locks rev-parse --absolute-git-dir)
 common_dir=$(git --no-optional-locks rev-parse --path-format=absolute --git-common-dir)
 git_dir=$(cd "$git_dir" && pwd -P)
 common_dir=$(cd "$common_dir" && pwd -P)
-bun=$(bash build-env/from.sh --ref IMAGE_BUN_1)
+bun=$(bash build-env/from.sh --ref IMAGE_MICA_BUILD_BASE)
 cli=$(bash build-env/from.sh --ref IMAGE_DOCKER_CLI_28)
 stamp=$(printf '%s\n%s\n%s\n' "$bun" "$cli" "$(sha256sum verify/Dockerfile)" | sha256sum | cut -c1-16)
 image="ai-agent/mos-acceptance-bun:$stamp"

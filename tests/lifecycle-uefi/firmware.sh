@@ -11,7 +11,7 @@ board=${2:?board required}
 arch="$(sed -n 's/^MICA_ARCH=//p' "_out/boards/$board/board.env")"
 test -f "$evidence/updates/6/fallback.log"
 test ! -d "$evidence/loader-replacement"
-bun_image=$(bash build-env/from.sh --ref IMAGE_BUN_1)
+bun_image=$(bash build-env/from.sh --ref IMAGE_MICA_BUILD_BASE)
 docker build --label ai-agent=true -t ai-agent/mos-firmware-lab \
     --build-arg "MICA_BUN_IMAGE=$bun_image" --build-arg MICA_LAB_IMAGE=ai-agent/mos-p2-lab \
     -f tests/lifecycle-uefi/Dockerfile.maintenance tests/lifecycle-uefi

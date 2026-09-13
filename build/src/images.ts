@@ -33,7 +33,7 @@ export async function resolveImage(key: string, resolver: string = FROM_SH): Pro
   const hit = resolver === FROM_SH ? cache.get(key) : undefined
   if (hit !== undefined) return hit
 
-  // Checked rather than left to bash. `bash /gone/from.sh --ref IMAGE_BUN_1`
+  // Checked rather than left to bash. `bash /gone/from.sh --ref IMAGE_MICA_BUILD_BASE`
   // fails with "No such file or directory" and the only proper noun in that
   // sentence is the path -- which a reader who asked for an image KEY reads as
   // a statement about the key.

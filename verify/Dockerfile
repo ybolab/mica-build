@@ -11,7 +11,7 @@
 # is needed. verify/run.sh builds this on demand instead, once, and only when
 # it has both to take the container route and to run `--verify`.
 #
-# IMAGE_BUN_1 alone cannot carry the verifier: verify drives docker itself --
+# IMAGE_MICA_BUILD_BASE alone cannot carry the verifier: verify drives docker itself --
 # src/tools.ts reads the image with sgdisk, mtools, debugfs, unsquashfs and
 # veritysetup out of IMAGE_ALPINE_3_21 -- and the pinned bun image carries no
 # docker client, so inside it every route ends at `docker: command not found`.

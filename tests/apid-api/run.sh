@@ -129,7 +129,7 @@ PHASES="${MICA_APID_PHASES:-}"
 # major-version tag upstream repoints onto every 1.x release, and this harness
 # is what decides whether apid's API is judged conformant, so the default is the
 # digest build-env/images.env records. MICA_APID_BUN_IMAGE overrides it.
-BUN_IMAGE="${MICA_APID_BUN_IMAGE:-$(bash "${REPO_ROOT}/build-env/from.sh" --ref IMAGE_BUN_1)}"
+BUN_IMAGE="${MICA_APID_BUN_IMAGE:-$(bash "${REPO_ROOT}/build-env/from.sh" --ref IMAGE_MICA_BUILD_BASE)}"
 KEEP_DISK="${MICA_APID_KEEP_DISK:-0}"
 
 # The daemon socket is MOUNTED into the container the boot engine runs in, so it

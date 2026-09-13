@@ -34,7 +34,7 @@ RUN_SECONDS="${RUN_SECONDS:-600}"
 QEMU_TIMEOUT="${QEMU_TIMEOUT:-1200}"
 NET="${NET:-traefik}"
 
-BUN_IMAGE="$(bash "$REPO/build-env/from.sh" --ref IMAGE_BUN_1)"
+BUN_IMAGE="$(bash "$REPO/build-env/from.sh" --ref IMAGE_MICA_BUILD_BASE)"
 CLI_IMAGE="$(bash "$REPO/build-env/from.sh" --ref IMAGE_DOCKER_CLI_28)"
 PORT_IMAGE="localhost/mos-verify-bun:$(printf '%s\n%s\n' "$BUN_IMAGE" "$CLI_IMAGE" | sha256sum | cut -c1-16)"
 

@@ -33,7 +33,7 @@ if [ -n "$BUN" ]; then
     run_bun() { (cd "$HERE" && "$BUN" "$@"); }
     echo "build: $($BUN --version) at $BUN"
 else
-    bun_image=$(bash "$REPO_ROOT/build-env/from.sh" --ref IMAGE_BUN_1)
+    bun_image=$(bash "$REPO_ROOT/build-env/from.sh" --ref IMAGE_MICA_BUILD_BASE)
     cli_image=$(bash "$REPO_ROOT/build-env/from.sh" --ref IMAGE_DOCKER_CLI_28)
     stamp=$(printf '%s\n%s\n%s\n' "$bun_image" "$cli_image" "$(sha256sum "$HERE/Dockerfile")" | sha256sum | cut -c1-16)
     tools_image="ai-agent/mica-build-bun:$stamp"
