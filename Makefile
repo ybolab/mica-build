@@ -1,4 +1,4 @@
-.PHONY: build-env help os-apid-api-spec-pins os-apid-api-test os-bare-host-gate os-boot-tools os-build-test os-components os-deb-package-gate os-deb-preflight os-deb-preflight-test os-debian-cache os-debian-install os-debian-test os-debian-verify os-debs os-devkeys os-lock-bump os-pool os-pool-lock-test os-factory-root-gate os-fit-records-test os-host-toolchain-lint os-host-toolchain-lint-test os-image os-install-closure-gate os-layout-lint os-netavark-kernel-test os-quadlet-doc-test os-repart-test os-rootfs os-rootfs-manifest-test os-product-test os-shell-pipefail-lint os-smoke-negative-test os-smoke-test os-verify os-verify-test board-fetch board-fetch-all
+.PHONY: build-env help os-apid-api-spec-pins os-apid-api-test os-bare-host-gate os-boot-tools os-build-test os-components os-deb-package-gate os-deb-preflight os-deb-preflight-test os-debian-cache os-debian-install os-debian-test os-debian-verify os-debs os-devkeys os-lock-bump os-pool os-pool-lock-test os-factory-root-gate os-fit-records-test os-host-toolchain-lint os-host-toolchain-lint-test os-image os-install-closure-gate os-layout-lint os-netavark-kernel-test os-quadlet-doc-test os-repart-test os-rootfs os-rootfs-manifest-test os-product-test os-board-name-lint os-board-name-lint-test os-shell-pipefail-lint os-smoke-negative-test os-smoke-test os-verify os-verify-test board-fetch board-fetch-all
 
 # THE SOURCE DEPENDENCIES, before anything else: build-env/ (mica-build-env)
 # is the substrate every target reaches through, rootfs/debian/ (mica-debian)
@@ -48,6 +48,8 @@ help:
 	@echo "  os-image            assemble two signed deployments (MICA_BOARD, MICA_IMAGE_RECORDS, MICA_METADATA_PUBLIC_KEYS, MICA_FIRMWARE_PACKAGE, MICA_IMAGE_OUT)"
 	@echo "  os-rootfs           compose a product's root (PRODUCT=<name>; products/*/product.env, tools/product.sh --list)"
 	@echo "  os-product-test     every product validates against its board, and each refusal of the product contract fires"
+	@echo "  os-board-name-lint  no board name in the engine: the assembly dispatches on board facts, never on a name (tests/board-name-lint.sh)"
+	@echo "  os-board-name-lint-test  ...and that lint goes red on a planted literal"
 	@echo "  os-keys-init        detect or create development keys in meta (MICA_SIGNING_OUTPUT overrides)"
 	@echo "  os-devkeys          create explicit development inputs (MICA_SIGNING_OUTPUT, default meta; refuses existing output)"
 	@echo "  os-layout-lint      check the current three-partition contracts"
@@ -93,10 +95,14 @@ help:
 # compiling a component on demand. That refusal is the composer's, not this
 # file's; see rootfs/build.sh.
 os-rootfs:
-	@test -n "$(PRODUCT)" || { echo "error: PRODUCT=<name> is required, e.g. make os-rootfs PRODUCT=x64-dev; the products are: $$(bash tools/product.sh --list | tr '\n' ' ')" >&2; exit 1; }
+	@test -n "$(PRODUCT)" || { echo "error: PRODUCT=<name> is required, e.g. make os-rootfs PRODUCT=<board>-dev; the products are: $$(bash tools/product.sh --list | tr '\n' ' ')" >&2; exit 1; }
 	MICA_PRODUCT=$(PRODUCT) bash rootfs/build.sh
 os-product-test:
 	bash tests/product-test.sh
+os-board-name-lint:
+	bash tests/board-name-lint.sh
+os-board-name-lint-test:
+	bash tests/board-name-lint.sh --test
 
 
 # THE IMAGE CONTRACT: read the assembled image back and check it against the
@@ -123,9 +129,10 @@ os-verify:
 # binaries built for the BOARD, so the host must be able to run that platform --
 # which on cx3576 means binfmt_misc. It refuses rather than skipping when the
 # image is absent, and refuses before concluding anything when the host cannot
-# execute it. MICA_BOARD selects the board; x64 is the default.
+# execute it. MICA_BOARD selects the board; there is no default.
 os-smoke-test:
-	bash verify/run.sh --smoke
+	@test -n "$(MICA_BOARD)" || { echo "error: MICA_BOARD=<board> is required; the smoke run executes _out/<board>/factory-root.oci" >&2; exit 1; }
+	MICA_BOARD=$(MICA_BOARD) bash verify/run.sh --smoke --board $(MICA_BOARD)
 
 # The three negative tests, which are a check on the check above.
 #
@@ -142,7 +149,8 @@ os-smoke-test:
 # front of every rootfs build would make "the smoke run passed" mean two
 # different things depending on which invocation produced it.
 os-smoke-negative-test:
-	bash verify/run.sh --smoke-negative
+	@test -n "$(MICA_BOARD)" || { echo "error: MICA_BOARD=<board> is required; the negative runs break _out/<board>/factory-root.oci" >&2; exit 1; }
+	MICA_BOARD=$(MICA_BOARD) bash verify/run.sh --smoke-negative --board $(MICA_BOARD)
 
 # The assumption every smoke result rests on and nothing else checks: that the
 # OCI image the smoke run executes in is byte-for-byte the tree the device
@@ -153,9 +161,10 @@ os-smoke-negative-test:
 # It compares the two trees four ways and then BREAKS each comparison in turn
 # and requires each to go red. Needs docker (neither side is readable on the
 # build host -- no unsquashfs, no getcap) and a built rootfs, like
-# os-verify. MICA_BOARD selects the board; x64 is the default.
+# os-verify. MICA_BOARD selects the board; there is no default.
 os-factory-root-gate:
-	bash tests/factory-root-gate/gate.sh _out/$(or $(MICA_BOARD),x64)
+	@test -n "$(MICA_BOARD)" || { echo "error: MICA_BOARD=<board> is required; the gate reads _out/<board>" >&2; exit 1; }
+	bash tests/factory-root-gate/gate.sh _out/$(MICA_BOARD)
 # Behavioural check on first-boot growth: a real systemd-repart, with discard
 # enabled, over a copy of each assembled image on a loop device. It proves two
 # things the image contract cannot — that growth does not wipe the Rockchip
@@ -581,7 +590,7 @@ os-boot-tools:
 # The boards live in ybolab/mica-boards; this tree builds no kernel. Refuses an archive built against another verity trust
 # certificate than meta/verity/signer.cert.pem.
 board-fetch:
-	@test -n "$(BOARD)" || { echo "error: BOARD=<board> is required, e.g. make board-fetch BOARD=x64" >&2; exit 1; }
+	@test -n "$(BOARD)" || { echo "error: BOARD=<board> is required, the pinned boards are: $$(bash tools/board-pool.sh --list | tr '\n' ' ')" >&2; exit 1; }
 	bash tools/board-pool.sh --fetch "$(BOARD)"
 board-fetch-all:
 	bash tools/board-pool.sh --fetch-all
@@ -638,11 +647,4 @@ os-release-gate:
 os-release-verify-test:
 	bash tests/release-verify-test.sh
 
-.PHONY: os-image-s905x5m-sd os-verify-s905x5m-sd
-# The SD system image requires the paired MOS firmware in eMMC boot0.
-os-image-s905x5m-sd:
-	$(MAKE) os-image MICA_BOARD=s905x5m
-
-os-verify-s905x5m-sd:
-	$(MAKE) os-verify MICA_BOARD=s905x5m
 

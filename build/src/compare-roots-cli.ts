@@ -18,7 +18,7 @@ const USAGE = `usage: bash build/run.sh --compare-roots [--sanctions FILE] DIR_A
 
 Compares two ALREADY-EXTRACTED root trees and reports the difference set,
 classified against a written sanction ledger. This is the instrument behind
-PLAN-036 section 6's last paragraph: x64 built through both the rootfs stage
+PLAN-036 section 6's last paragraph: one board built through both the rootfs stage
 chain and the package composer, their unpacked trees compared, every difference
 either sanctioned in writing or reported.
 

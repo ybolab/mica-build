@@ -1,3 +1,4 @@
+import { loadBoardFacts } from './board-facts.ts'
 import { spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { closeSync, fsyncSync, lstatSync, mkdirSync, openSync, readFileSync, realpathSync, renameSync, writeFileSync } from 'node:fs'
@@ -39,9 +40,10 @@ function save(path: string, bytes: Buffer) {
 /** Offline maintenance only: the guest is stopped, or RockUSB owns the board. */
 export function maintainFirmware(options: FirmwareMaintenance): Firmware {
   const envelope = read(join(options.input, 'firmware.json'), 16384)
-  const candidate = authenticateFirmware(envelope.toString('utf8'), options.keys)
+  const facts = loadBoardFacts(options.board)
+  const candidate = authenticateFirmware(envelope.toString('utf8'), options.keys, facts)
   const installedEnvelope = read(options.installed, 16384)
-  const installed = authenticateFirmware(installedEnvelope.toString('utf8'), options.keys)
+  const installed = authenticateFirmware(installedEnvelope.toString('utf8'), options.keys, facts)
   if (candidate.board !== options.board || installed.board !== options.board) throw new Error('Firmware maintenance board mismatch')
   if (candidate.target.format === 'amlogic-boot0') throw new Error('Amlogic boot0 maintenance requires the board recovery package')
   const efi = candidate.target.format === 'efi'

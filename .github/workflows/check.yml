@@ -138,6 +138,10 @@ jobs:
       # because it stopped matching anything looks exactly like a gate that is
       # green because the tree is clean. The second step is what says the first
       # can still fail, and a failure in it names which control went quiet.
+      - name: No board name in the engine
+        run: make os-board-name-lint
+      - name: ...and that lint can still go red
+        run: make os-board-name-lint-test
       - name: No compiler or assembler runs on the host
         run: make os-host-toolchain-lint
 

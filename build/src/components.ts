@@ -128,8 +128,11 @@ export function parseDeployment(payload: string): Deployment {
   requireValue(canonicalJson(raw) === payload, 'noncanonical or duplicate JSON fields')
   const d = object(raw, ['schema', 'board', 'arch', 'generation', 'version', 'dataPolicy', 'kernel', 'rootfs'])
   requireValue(d.schema === 'mos/deployment/v1' && d.dataPolicy === 'unchanged', 'unsupported deployment schema or DATA policy')
-  const boards: Record<string, string> = { x64: 'amd64', 'virt-arm64': 'arm64', cx3576: 'arm64', s905x5m: 'arm64' }
-  requireValue(typeof d.board === 'string' && Object.hasOwn(boards, d.board) && boards[d.board] === d.arch, 'board/architecture mismatch')
+  // The envelope names its board and architecture; which board has which
+  // architecture is the board's fact (board.env), checked where the facts are
+  // at hand (the assembler, the verifier), not a table here.
+  text(d.board, NAME)
+  requireValue(d.arch === 'amd64' || d.arch === 'arm64', 'board/architecture mismatch')
   integer(d.generation)
   text(d.version, NAME)
   const k = object(d.kernel, ['schema', 'id', 'board', 'arch', 'buildId', 'release', 'boot', 'support'])
@@ -142,7 +145,7 @@ export function parseDeployment(payload: string): Deployment {
   text(k.release, NAME)
   text(r.version, NAME)
   const boot = object(k.boot, ['format', 'artifact'])
-  requireValue(boot.format === (d.board === 'x64' || d.board === 'virt-arm64' ? 'uki' : 'fit'), 'wrong boot format')
+  requireValue(boot.format === 'uki' || boot.format === 'fit', 'wrong boot format')
   artifact(boot.artifact)
   validateVerityImage(k.support)
   validateVerityImage(r.content)

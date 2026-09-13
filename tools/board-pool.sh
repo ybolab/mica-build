@@ -141,9 +141,16 @@ PY
     ;;
 --source)
     bash "${REPO_ROOT}/build-env/deb/source.sh" mica-boards
-    for board in cx3576 s905x5m; do
+    # Every pinned board that boots a FIT: the labs compile its U-Boot file-boot sources.
+    n=0
+    while IFS= read -r board; do
+        [ -n "${board}" ] || continue
+        [ -f "${REPO_ROOT}/_out/boards/${board}/board.env" ] || { echo "error: ${board} is pinned and not fetched (make board-fetch BOARD=${board})" >&2; exit 1; }
+        grep -qx 'BOOT_BACKEND=uboot-fit' "${REPO_ROOT}/_out/boards/${board}/board.env" || continue
         [ -d "${REPO_ROOT}/_out/src/mica-boards/${board}/bsp" ] || { echo "error: _out/src/mica-boards/${board}/bsp does not exist at the pinned commit; the labs and the FIT tests read the board's sources out of it" >&2; exit 1; }
-    done
+        n=$((n + 1))
+    done < <(pinned_boards)
+    [ "${n}" -gt 0 ] || { echo "error: no pinned board boots a FIT, so no U-Boot source was checked out; the FIT labs would run over nothing" >&2; exit 1; }
     ;;
 *)
     echo "usage: bash tools/board-pool.sh --list | --fetch <board> | --fetch-all | --source" >&2

@@ -2,6 +2,7 @@ import { copyFileSync, existsSync, lstatSync, mkdirSync, readFileSync, renameSyn
 import { dirname, join } from 'node:path'
 import { artifactFile } from './component-build.ts'
 import { componentId, verifyDeployment, type BootIdentity, type Deployment } from './components.ts'
+import { loadBoardFacts } from './board-facts.ts'
 import { checkCapacity, checkSystemFilesystemCapacity, type FileLayout } from './file-layout.ts'
 import { writeFirmwareRegion } from './fit-environment.ts'
 import { authenticateFirmware } from './firmware.ts'
@@ -39,14 +40,15 @@ export const PROVISIONING_DOCUMENT = 'mos-provisioning.toml'
 export async function assembleFileImage(layout: FileLayout, deployments: FactoryDeployment[], keys: string[], firmwareDirectory: string, output: string, tb: Toolbox, options: FactoryImageOptions = {}): Promise<string> {
   const fit = layout.backend === 'uboot-fit'
   if (options.provisioning !== undefined && fit) throw new Error(`Board ${layout.board} boots through a FIT and has no ESP to carry ${PROVISIONING_DOCUMENT}; a factory seed for it travels on removable media`)
-  if (!['x64', 'virt-arm64', 'cx3576', 's905x5m'].includes(layout.board) || deployments.length !== 2) throw new Error('Factory image requires two deployments')
+  if (deployments.length !== 2) throw new Error('Factory image requires two deployments')
+  const facts = loadBoardFacts(layout.board)
+  if (facts.backend !== layout.backend) throw new Error('Factory boot backend mismatch')
   const firmwareEnvelope = readFileSync(join(firmwareDirectory, 'firmware.json'), 'utf8')
-  const manifest = authenticateFirmware(firmwareEnvelope, keys)
+  const manifest = authenticateFirmware(firmwareEnvelope, keys, facts)
   if (manifest.board !== layout.board) throw new Error('Factory firmware board mismatch')
-  const firmware = join(firmwareDirectory, layout.board === 's905x5m' ? 'u-boot.bin.signed' : fit ? 'u-boot-rockchip.bin' : layout.board === 'x64' ? 'BOOTX64.EFI' : 'BOOTAA64.EFI')
+  const firmware = join(firmwareDirectory, facts.firmware.format === 'efi' ? facts.firmware.loaderName : facts.firmware.binName)
   const artifact = artifactFile(firmware)
   if (artifact.bytes !== manifest.artifact.bytes || artifact.sha256 !== manifest.artifact.sha256) throw new Error('Factory firmware integrity mismatch')
-  if (fit !== ['cx3576', 's905x5m'].includes(layout.board)) throw new Error('Factory boot backend mismatch')
   if (existsSync(output)) throw new Error(`Image output exists: ${output}`)
   const records = deployments.map(input => {
     const identity = JSON.parse(readFileSync(join(input.kernelDirectory, 'boot.json'), 'utf8')).identity as BootIdentity
@@ -63,7 +65,8 @@ export async function assembleFileImage(layout: FileLayout, deployments: Factory
   const work = `${output}.building`
   mkdirSync(work)
   try {
-    if (layout.board === 's905x5m') {
+    if (facts.firmware.format === 'amlogic-boot0') {
+      // The boot0 payload executes from eMMC, outside the image: it travels beside it.
       copyFileSync(firmware, join(work, 'firmware.bin'))
       writeFileSync(join(work, 'firmware.json'), firmwareEnvelope)
     }
@@ -73,7 +76,7 @@ export async function assembleFileImage(layout: FileLayout, deployments: Factory
     for (const path of [join(system, 'deployments'), data]) mkdirSync(path, { recursive: true })
     if (!fit) {
     for (const path of [join(esp, 'EFI/BOOT'), join(esp, 'EFI/mos/kernels'), join(esp, 'loader/entries')]) mkdirSync(path, { recursive: true })
-    copyFileSync(firmware, join(esp, 'EFI/BOOT', layout.board === 'x64' ? 'BOOTX64.EFI' : 'BOOTAA64.EFI'))
+    copyFileSync(firmware, join(esp, 'EFI/BOOT', facts.firmware.format === 'efi' ? facts.firmware.loaderName : ''))
     writeFileSync(join(esp, 'loader/loader.conf'), 'timeout 0\nconsole-mode keep\neditor no\nauto-entries no\nauto-firmware no\n')
     if (options.provisioning !== undefined) {
       if (!lstatSync(options.provisioning).isFile()) throw new Error(`Factory seed is not a regular file: ${options.provisioning}`)
@@ -113,7 +116,7 @@ export async function assembleFileImage(layout: FileLayout, deployments: Factory
       }
       await tb.must(['truncate', '-s', String(partition.sizeSectors * 512), path])
       if (partition.name === 'ESP') {
-        await tb.must(['mkfs.vfat', '--invariant', '-F', '32', '-i', layout.board === 'x64' ? 'C3576101' : 'C3576201', '-n', 'MOSESP', path])
+        await tb.must(['mkfs.vfat', '--invariant', '-F', '32', '-i', facts.espVolumeId!, '-n', 'MOSESP', path])
         for (const name of ['EFI', 'loader', ...(options.provisioning !== undefined ? [PROVISIONING_DOCUMENT] : [])]) await tb.must(['mcopy', '-s', '-m', '-i', path, join(esp, name), '::/'])
       } else {
         await mke2fs(tb, { image: path, label: partition.name.toLowerCase(), uuid: partition.fsUuid!, blockSize: 4096n,

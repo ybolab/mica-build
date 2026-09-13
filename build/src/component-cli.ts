@@ -1,3 +1,4 @@
+import { loadBoardFacts } from './board-facts.ts'
 import { parseArgs } from 'node:util'
 import { createPrivateKey } from 'node:crypto'
 import { copyFileSync, existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
@@ -20,17 +21,17 @@ const USAGE = `Usage: bash build/run.sh --components COMMAND [OPTIONS]
   root        --input COMPOSED_ROOT --arch ARCH --version VERSION --out DIR
               --content-key FILE --content-cert FILE
   kernel      --input BSP_KERNEL --init MICA_INIT --shutdown MICA_SHUTDOWN --public-key BASE64 (repeatable)
-              --board x64|virt-arm64|cx3576|s905x5m --out DIR --content-key FILE --content-cert FILE
+              --board BOARD --out DIR --content-key FILE --content-cert FILE
               --boot-key FILE --boot-cert FILE
-  firmware    --board x64|virt-arm64|cx3576|s905x5m --out DIR --metadata-key FILE --generation N --version VERSION
+  firmware    --board BOARD --out DIR --metadata-key FILE --generation N --version VERSION
               UEFI: --boot-key FILE --boot-cert FILE; FIT boards: --input BOARD_LOADER
   firmware-maintain --board BOARD --input FIRMWARE_PACKAGE --installed SIGNED_RECEIPT
               --public-key BASE64 (repeatable) --out RECOVERY_DIR
-              UEFI: --esp OFFLINE_MOUNT; cx3576: --rkdeveloptool EXECUTABLE
+              UEFI: --esp OFFLINE_MOUNT; a rockchip-loader board: --rkdeveloptool EXECUTABLE
   deployment  --kernel DIR --root DIR --generation N --version VERSION
               --metadata-key FILE --out FILE
   image       --records FILE --public-key BASE64 (repeatable) --firmware DIR
-              --board x64|virt-arm64|cx3576|s905x5m --out DIR
+              --board BOARD --out DIR
               [--provisioning FILE]  a factory seed (mos-provisioning.toml on the ESP; UEFI boards only)
   archive     --input DEPLOYMENT --kernel DIR --root DIR
               --public-key BASE64 (repeatable) --out FILE.mosupd
@@ -66,11 +67,8 @@ async function main() {
     return list.map(item => { if (typeof item !== 'string') throw new Error('Invalid public key'); return item })
   }
   const layout = () => parseFileLayout(readFileSync(join(REPO_ROOT, '_out', 'boards', value('board'), 'board.env'), 'utf8'))
-  const kernelBoard = () => {
-    const board = value('board')
-    if (board !== 'x64' && board !== 'virt-arm64' && board !== 'cx3576' && board !== 's905x5m') throw new Error('Unsupported kernel board')
-    return board
-  }
+  // A pinned, fetched board: loadBoardFacts refuses anything else by name.
+  const kernelBoard = () => loadBoardFacts(value('board')).board
   mkdirSync(dirname(output), { recursive: true })
   switch (positionals[0]) {
     case 'firmware-maintain': {
@@ -148,7 +146,7 @@ async function main() {
     case 'firmware': {
       const board = kernelBoard()
       const metadata = { output, metadataKey: path('metadata-key'), generation: Number(value('generation')), version: value('version') }
-      packBootFirmware(board === 'cx3576' || board === 's905x5m' ? { ...metadata, board, input: path('input') } : { ...metadata, board, bootSigning: bootSigning() })
+      packBootFirmware(loadBoardFacts(board).backend === 'uboot-fit' ? { ...metadata, board, input: path('input') } : { ...metadata, board, bootSigning: bootSigning() })
       break
     }
     case 'deployment': {

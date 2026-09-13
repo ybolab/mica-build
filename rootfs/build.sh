@@ -138,7 +138,7 @@ echo "product: $MICA_PRODUCT -- board $MICA_BOARD, profile $MICA_PROFILE, featur
 # downstream -- the package pool it composes from, the docker platform it
 # builds for, the emulation it may need -- follows from this line.
 if [ -z "${MICA_ARCH:-}" ]; then
-    echo "error: $LAYOUT_ENV sets no MICA_ARCH. The architecture is a board fact and is deliberately not derived from the board name -- 'virt-arm64' and 'cx3576' are both arm64 and 'x64' is amd64, so a name-based guess would be a guess. Without it this build would choose a package pool and a docker platform for a board that has not said which it is" >&2
+    echo "error: $LAYOUT_ENV sets no MICA_ARCH. The architecture is a board fact and is deliberately not derived from the board name -- two arm64 boards and one amd64 board share nothing in their names that says so, and a name-based guess would be a guess. Without it this build would choose a package pool and a docker platform for a board that has not said which it is" >&2
     exit 1
 fi
 DOCKER_PLATFORM="linux/${MICA_ARCH}"

@@ -1,3 +1,4 @@
+import { loadBoardFacts } from './board-facts.ts'
 import { closeSync, copyFileSync, existsSync, fsyncSync, openSync, readFileSync, statSync, truncateSync, writeFileSync, writeSync } from 'node:fs'
 import type { FileLayout } from './file-layout.ts'
 
@@ -28,15 +29,16 @@ export function encodeFitEnvironment(records: FitBootRecord[], flag: number): Bu
 
 export function writeFirmwareRegion(layout: FileLayout, loader: string, records: FitBootRecord[], output: string): void {
   const ranges = layout.firmware, partition = layout.partitions[0]!
-  if (!ranges || layout.backend !== 'uboot-fit' || !['cx3576', 's905x5m'].includes(layout.board)) throw new Error('Expected supported FIT firmware geometry')
+  if (!ranges || layout.backend !== 'uboot-fit') throw new Error('Expected supported FIT firmware geometry')
   if (existsSync(output)) throw new Error('Firmware output exists')
-  if (layout.board === 'cx3576') {
+  const fw = loadBoardFacts(layout.board).firmware
+  if (fw.format === 'rockchip-loader') {
     const size = statSync(loader).size
-    if (!ranges.loaderSizeSectors || size <= 4 || size > ranges.loaderSizeSectors * 512) throw new Error('Invalid firmware size')
-    if (readFileSync(loader).subarray(0, 4).toString('ascii') !== 'RKNS') throw new Error('Invalid Rockchip loader header')
+    if (!ranges.loaderSizeSectors || size <= fw.magic.length || size > ranges.loaderSizeSectors * 512) throw new Error('Invalid firmware size')
+    if (readFileSync(loader).subarray(0, fw.magic.length).toString('ascii') !== fw.magic) throw new Error('Invalid Rockchip loader header')
     copyFileSync(loader, output)
   } else {
-    // S7D firmware executes from eMMC boot0, outside the SD system image.
+    // An amlogic-boot0 payload executes from eMMC boot0, outside the system image.
     writeFileSync(output, '', { flag: 'wx' })
   }
   const copies = [encodeFitEnvironment(records, 0), encodeFitEnvironment(records, 1)]

@@ -1,3 +1,4 @@
+import { loadBoardFacts } from './board-facts.ts'
 import { existsSync, readFileSync, realpathSync, statSync } from 'node:fs'
 import { resolve, join } from 'node:path'
 import { parseArgs } from 'node:util'
@@ -43,9 +44,7 @@ export async function sourceIdentity(checkout = REPO_ROOT) {
   } finally { await tb.close() }
 }
 function releaseBoard(board: string) {
-  if (!['x64', 'virt-arm64', 'cx3576'].includes(board)) throw new Error('Unsupported release board')
-  const env = readFileSync(join(REPO_ROOT, '_out', 'boards', board, 'board.env'), 'utf8')
-  if (!/^BOARD_RELEASE_TARGET=1$/m.test(env)) throw new Error(`Board ${board} has no release publication target`)
+  if (!loadBoardFacts(board).releaseTarget) throw new Error(`Board ${board} has no release publication target`)
 }
 export async function main(argv = Bun.argv.slice(2)) {
   const strings = ['board', 'version', 'image', 'update', 'firmware', 'package-manifest', 'runtime-report', 'baked-meta', 'notes', 'out', 'channel', 'profile', 'evidence', 'dir']

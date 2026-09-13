@@ -1,3 +1,4 @@
+import { loadBoardFacts } from './board-facts.ts'
 import { expect, test } from 'bun:test'
 import { generateKeyPairSync } from 'node:crypto'
 import golden from '../../tests/component-contracts/firmware.json'
@@ -9,14 +10,14 @@ test('S905X5M firmware binds a framed eMMC boot0 payload, never a GPT write', ()
   const value = { ...fixture(), board: 's905x5m',
     target: { format: 'amlogic-boot0', payloadOffset: 512, maxBytes: 4193792 } }
   value.id = componentId(value)
-  expect(canonicalJson(parseFirmware(canonicalJson(value)))).toBe(canonicalJson(value))
+  expect(canonicalJson(parseFirmware(canonicalJson(value), loadBoardFacts('s905x5m')))).toBe(canonicalJson(value))
   for (const change of [
     { payloadOffset: 0 }, { payloadOffset: 32768 }, { maxBytes: 4194304 },
     { format: 'amlogic-boot1' }, { device: '/dev/mmcblk0' },
   ]) {
     const bad = { ...value, target: { ...value.target, ...change } }
     bad.id = componentId(bad)
-    expect(() => parseFirmware(canonicalJson(bad))).toThrow()
+    expect(() => parseFirmware(canonicalJson(bad), loadBoardFacts('s905x5m'))).toThrow()
   }
 })
 
@@ -48,10 +49,12 @@ test('firmware metadata cannot select SYSTEM, the environment, or arbitrary EFI 
     { artifact: { bytes: 16744449, sha256: 'a'.repeat(64) } },
     { board: 'unknown' }, { arch: 'amd64' }, { generation: 0 }, { online: true },
   ]
+  // Judged against the board's facts: a target that is not exactly what
+  // board.env declares is refused, however well-formed.
   for (const change of changes) {
     const value = { ...fixture(), ...change }
     value.id = componentId(value)
-    expect(() => parseFirmware(canonicalJson(value))).toThrow()
+    expect(() => parseFirmware(canonicalJson(value), loadBoardFacts('cx3576'))).toThrow()
   }
   for (const target of [
     { format: 'efi', partition: 2, path: 'EFI/BOOT/BOOTX64.EFI' },
@@ -59,7 +62,7 @@ test('firmware metadata cannot select SYSTEM, the environment, or arbitrary EFI 
     { format: 'efi', partition: 1, path: 'EFI/BOOT/BOOTAA64.EFI' },
   ]) {
     const value = { ...fixture('x64'), target }; value.id = componentId(value)
-    expect(() => parseFirmware(canonicalJson(value))).toThrow()
+    expect(() => parseFirmware(canonicalJson(value), loadBoardFacts('x64'))).toThrow()
   }
 })
 

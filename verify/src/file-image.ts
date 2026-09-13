@@ -4,6 +4,7 @@ import { artifactFile } from '../../build/src/component-build.ts'
 import { authenticatePayload, componentId, parseDeployment, type Artifact, type VerityImage } from '../../build/src/components.ts'
 import type { FileLayout } from '../../build/src/file-layout.ts'
 import { encodeFitEnvironment } from '../../build/src/fit-environment.ts'
+import { loadBoardFacts } from '../../build/src/board-facts.ts'
 import { authenticateFirmware } from '../../build/src/firmware.ts'
 import { debugfsRun, e2fsckClean, ext4List, ext4Super, extractRange, fatCopyOut, fatList, fatReadFile,
   readBytes, readGpt, sgdiskVerify, squashfsExtract, verityVerify, type GptTable } from './image.ts'
@@ -142,7 +143,7 @@ export async function verifyFactoryImage(layout: FileLayout, image: string, publ
     requireFact(await fatReadFile(tools, esp, 'loader/loader.conf') === 'timeout 0\nconsole-mode keep\neditor no\nauto-entries no\nauto-firmware no\n', 'Unexpected boot selection policy')
   }
   report('factory boot selection and exactly three attempts per deployment')
-  const firmware = authenticateFirmware(readFileSync(await dump(data, '/meta/firmware.json'), 'utf8'), publicKeys)
+  const firmware = authenticateFirmware(readFileSync(await dump(data, '/meta/firmware.json'), 'utf8'), publicKeys, loadBoardFacts(layout.board))
   requireFact(firmware.board === layout.board, 'Firmware receipt board mismatch')
   if (firmware.target.format === 'rockchip-loader') {
     const loader = extractRange(image, firmware.target.diskOffset, firmware.artifact.bytes, join(workDir, 'loader'))

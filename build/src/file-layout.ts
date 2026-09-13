@@ -51,14 +51,19 @@ export function parseFileLayout(source: string): FileLayout {
   let firmware: FileLayout['firmware']
   if (fit) {
     firmware = { envOffsets: [number('UENV_A_OFFSET_BYTES'), number('UENV_B_OFFSET_BYTES')], envSize: number('UENV_SIZE_BYTES') }
-    const amlogic = get('LAYOUT_BOARD') === 's905x5m'
+    // The firmware format says whether the loader lives on the system disk
+    // (rockchip-loader, in the protected range) or outside it (amlogic-boot0).
+    const format = get('FIRMWARE_FORMAT')
+    if (format !== 'rockchip-loader' && format !== 'amlogic-boot0') throw new Error('Unsupported FIT firmware format')
+    const amlogic = format === 'amlogic-boot0'
     if (!amlogic) {
       const loaderBytes = number('UBOOT_MAX_BYTES')
       firmware.loaderStartSector = number('UBOOT_SEEK_SECTOR')
       firmware.loaderSizeSectors = loaderBytes / 512
-      if (get('LAYOUT_BOARD') !== 'cx3576' || firmware.loaderStartSector !== 64
+      if (firmware.loaderStartSector !== 64
         || !Number.isSafeInteger(firmware.loaderSizeSectors) || 64 * 512 + loaderBytes !== firmware.envOffsets[0]) throw new Error('Invalid protected loader range')
-    } else if (env.values.has('UBOOT_SEEK_SECTOR') || env.values.has('UBOOT_MAX_BYTES')) {
+    } else if (env.values.has('UBOOT_SEEK_SECTOR')) {
+      // UBOOT_MAX_BYTES bounds the boot0 payload; a seek sector would put it on the disk.
       throw new Error('Amlogic hardware bootloader cannot occupy the system disk')
     }
     if (firmware.envOffsets[0] !== (amlogic ? 120 : 16) * 1048576

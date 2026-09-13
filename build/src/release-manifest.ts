@@ -1,3 +1,4 @@
+import { loadBoardFacts } from './board-facts.ts'
 import { createHash } from 'node:crypto'
 import { spawnSync } from 'node:child_process'
 import { closeSync, copyFileSync, existsSync, lstatSync, mkdirSync, openSync, readFileSync, readdirSync, readSync, writeFileSync } from 'node:fs'
@@ -22,7 +23,7 @@ type Source = { commit: string, dirty: boolean }
 type Artifact = { filename: string, role: string, bytes: number, sha256: string }
 export interface ReleaseManifest {
   schema: 'mos/release/v1'
-  board: 'x64' | 'virt-arm64' | 'cx3576'
+  board: string
   version: string
   channel: ReleaseChannel
   profile: 'dev' | 'prod'
@@ -79,7 +80,7 @@ function sums(artifacts: Artifact[]): string {
 function manifest(value: unknown): ReleaseManifest {
   const m = object(value, ['schema', 'board', 'version', 'channel', 'profile', 'source', 'bootAssurance', 'developmentDomains', 'artifacts'])
   requireValue(m.schema === 'mos/release/v1', 'unsupported schema')
-  requireValue(['x64', 'virt-arm64', 'cx3576'].includes(m.board as string), 'unsupported board')
+  requireValue(typeof m.board === 'string' && /^[a-z0-9][a-z0-9-]{0,31}$/.test(m.board), 'unsupported board')
   requireValue(typeof m.version === 'string' && /^[A-Za-z0-9][A-Za-z0-9._+-]{0,127}$/.test(m.version), 'invalid version')
   requireValue(CHANNELS.includes(m.channel as ReleaseChannel) && ['dev', 'prod'].includes(m.profile as string), 'channel or profile')
   const source = object(m.source, ['commit', 'dirty'])
@@ -467,7 +468,7 @@ function derived(dir: string, m: Omit<ReleaseManifest, 'artifacts'>, image: stri
   const files = releaseFiles(image)
   const inventory = read(join(dir, 'package-manifest.tsv'))
   const rows = packages(inventory)
-  const runtime = shippedRuntime(join(dir, 'rootfs-report.runtime.json'), inventory, m.board === 'x64' ? 'amd64' : 'arm64', root, read(join(dir, 'baked-meta.json')), read(join(dir, 'development-marker.txt')), m.source)
+  const runtime = shippedRuntime(join(dir, 'rootfs-report.runtime.json'), inventory, loadBoardFacts(m.board).arch, root, read(join(dir, 'baked-meta.json')), read(join(dir, 'development-marker.txt')), m.source)
   const images: unknown = JSON.parse(read(join(dir, 'builder-images.json')))
   requireValue(images !== null && typeof images === 'object' && !Array.isArray(images)
     && Object.keys(images).length > 0 && Object.entries(images).every(([k, v]) => /^(IMAGE|LOCAL)_[A-Z0-9_]+$/.test(k) && typeof v === 'string' && v), 'builder image records')
@@ -529,11 +530,11 @@ export function gateRelease(dir: string, keys: readonly string[]) {
   requireValue(m.channel === 'development' || developmentDomains.length === 0, 'development keys cannot use customer channels')
   requireValue(evidence(JSON.parse(read(join(dir, 'board-evidence.json'))), m.board) === m.bootAssurance, 'evidence assurance differs')
   const runtime = record(readRuntime(join(dir, 'rootfs-report.runtime.json')).provenance)
-  const lineage = sourceLineage(runtime.source_lineage, m.source, m.board === 'x64' ? 'amd64' : 'arm64', record(runtime.capture_sha256))
+  const lineage = sourceLineage(runtime.source_lineage, m.source, loadBoardFacts(m.board).arch, record(runtime.capture_sha256))
   requireValue(m.channel === 'development' || lineage.unlocked.length === 0, 'unlocked packages cannot use customer channels')
   const deployment = verifyArchive(join(dir, 'update.mosupd'), keys)
   requireValue(deployment.board === m.board && deployment.version === m.version, 'update board or version differs')
-  const firmware = authenticateFirmware(read(join(dir, 'firmware.json'), 16384), keys)
+  const firmware = authenticateFirmware(read(join(dir, 'firmware.json'), 16384), keys, loadBoardFacts(m.board))
   requireValue(firmware.board === m.board, 'firmware board differs')
   requireValue(regular(join(dir, 'firmware.bin')).size === firmware.artifact.bytes
     && fileSha256(join(dir, 'firmware.bin')) === firmware.artifact.sha256, 'firmware digest or length')
@@ -556,7 +557,10 @@ export function assembleRelease(inputs: ReleaseInputs) {
   const bootAssurance = evidence(JSON.parse(read(inputs.evidence)), inputs.board)
   const deployment = verifyArchive(inputs.update, inputs.keys)
   requireValue(deployment.board === inputs.board && deployment.version === inputs.version, 'update board or version differs')
-  const arch = inputs.board === 'x64' ? 'amd64' : 'arm64'
+  // The release target is the gate's question (release-cli releaseBoard); a
+  // non-publication board still assembles its acceptance release here.
+  const facts = loadBoardFacts(inputs.board)
+  const arch = facts.arch
   const runtime = shippedRuntime(inputs.runtimeReport, read(inputs.packages), arch, deployment.rootfs.content, read(join(inputs.meta, 'updates/manifest.json')), marker, inputs.source)
   requireValue(inputs.channel === 'development' || runtime.unlocked.length === 0, 'unlocked packages cannot use customer channels')
   // The pins the tree holds at the source commit are the pins the composer must
@@ -566,7 +570,7 @@ export function assembleRelease(inputs: ReleaseInputs) {
   const m: ReleaseManifest = { schema: 'mos/release/v1', board: inputs.board, version: inputs.version, channel: inputs.channel,
     profile: inputs.profile, source: inputs.source, bootAssurance, developmentDomains, artifacts: [] }
   const files = { [image]: inputs.image, 'update.mosupd': inputs.update, 'firmware.json': join(inputs.firmware, 'firmware.json'),
-    'firmware.bin': join(inputs.firmware, inputs.board === 'cx3576' ? 'u-boot-rockchip.bin' : inputs.board === 'x64' ? 'BOOTX64.EFI' : 'BOOTAA64.EFI'), 'package-manifest.tsv': inputs.packages,
+    'firmware.bin': join(inputs.firmware, facts.firmware.format === 'efi' ? facts.firmware.loaderName : facts.firmware.binName), 'package-manifest.tsv': inputs.packages,
     'rootfs-report.runtime.json': inputs.runtimeReport, 'baked-meta.json': join(inputs.meta, 'updates/manifest.json'), 'board-evidence.json': inputs.evidence, 'release-notes.md': inputs.notes }
   for (const path of Object.values(files)) regular(path)
   mkdirSync(inputs.out)
