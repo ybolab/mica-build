@@ -362,7 +362,8 @@ export const ROOT_CHECKS: readonly CheckCase[] = [
     run: async ctx => {
       const root = await packedRoot(ctx)
       if (entry(root, '/')?.isDirectory() !== true) throw new Error(`${root} is not an actual unpacked-image directory`)
-      const paths = ['/usr/bin/micad', '/usr/bin/apid', '/usr/bin/mica-deploy']
+      // The native binaries the product ships: micad and apid with the micad feature, mica-deploy always.
+      const paths = ['/usr/bin/micad', '/usr/bin/apid', '/usr/bin/mica-deploy'].filter(p => (REQUIRED_FEATURES[p] ?? []).every(f => ctx.product.features.has(f)))
       const examined: string[] = [], endpoints: string[] = []
       let byteCount = 0
       const result = (ok: boolean, reason: string) => [verdict('file-root-native-endpoints', ok,
