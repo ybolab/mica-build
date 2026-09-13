@@ -13,7 +13,7 @@ const records = [
 test('S905X5M factory records do not place a bootloader in vendor-owned user storage', () => {
   const directory = mkdtempSync(join(REPO_ROOT, '.tmp/s905-region-'))
   try {
-    const layout = parseFileLayout(readFileSync(join(REPO_ROOT, 'boards/s905x5m/board.env'), 'utf8'))
+    const layout = parseFileLayout(readFileSync(join(REPO_ROOT, '_out/boards/s905x5m/board.env'), 'utf8'))
     const loader = join(directory, 'external-boot0.bin'), output = join(directory, 'firmware.img')
     writeFileSync(loader, Buffer.alloc(4096, 42))
     writeFirmwareRegion(layout, loader, records, output)
@@ -41,7 +41,7 @@ test('factory environment matches native firmware and the independent CRC fixtur
 test('FIRMWARE assembly places only loader and two counters inside protected ranges', () => {
   const directory = mkdtempSync(join(REPO_ROOT, '.tmp/fit-region-'))
   try {
-    const layout = parseFileLayout(readFileSync(join(REPO_ROOT, 'boards/cx3576/board.env'), 'utf8'))
+    const layout = parseFileLayout(readFileSync(join(REPO_ROOT, '_out/boards/cx3576/board.env'), 'utf8'))
     const loader = join(directory, 'loader.bin'), output = join(directory, 'firmware.img')
     const payload = Buffer.alloc(4096, 42)
     payload.write('RKNS')

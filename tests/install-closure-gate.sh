@@ -920,15 +920,15 @@ for arch in "${ARCHES[@]}"; do
     # authority on which architecture a board is, and a table here would be a
     # second one.
     case "$arch" in amd64) board=x64;; arm64) board=cx3576;; esac
-    test "$(sed -n 's/^MICA_ARCH=//p' "$REPO_ROOT/boards/$board/board.env")" = "$arch"
-    radios="$(sed -n 's/^BOARD_RADIOS="\(.*\)"$/\1/p' "${REPO_ROOT}/boards/${board}/board.env" | head -n1)"
+    test "$(sed -n 's/^MICA_ARCH=//p' "$REPO_ROOT/_out/boards/$board/board.env")" = "$arch"
+    radios="$(sed -n 's/^BOARD_RADIOS="\(.*\)"$/\1/p' "${REPO_ROOT}/_out/boards/${board}/board.env" | head -n1)"
 
     # `dev`, and it is the profile whose promise a missing profile package
     # silently reverses: micad fails closed to prod, so a dev resolution that
     # lost its profile package is the composition that looks green and ships
     # with SSH off. Installing the profile the failure mode is about is the
     # useful half of the pair.
-    mapfile -t PKG_SET < <(bash "${RESOLVE_SH}" --board "${board}" --profile dev --radios "${radios}" --without "")
+    mapfile -t PKG_SET < <(bash "${RESOLVE_SH}" --board "${board}" --board-dir "${REPO_ROOT}/_out/boards/${board}/manifests" --profile dev --radios "${radios}" --without "")
     [ "${#PKG_SET[@]}" -gt 0 ] || {
         echo "error: rootfs/packages/resolve.sh yielded no package for --board ${board} --profile dev --radios '${radios}' (see its message above)" >&2
         exit 1
@@ -941,7 +941,7 @@ for arch in "${ARCHES[@]}"; do
     # actually says, and the resolver's own refusals -- an empty resolution, one
     # with no board package -- are the ones that must fire if declining this
     # feature is not a configuration the manifests can express.
-    mapfile -t PKG_SET_DECLINED < <(bash "${RESOLVE_SH}" --board "${board}" --profile dev --radios "${radios}" --without "mqtt")
+    mapfile -t PKG_SET_DECLINED < <(bash "${RESOLVE_SH}" --board "${board}" --board-dir "${REPO_ROOT}/_out/boards/${board}/manifests" --profile dev --radios "${radios}" --without "mqtt")
     [ "${#PKG_SET_DECLINED[@]}" -gt 0 ] || {
         echo "error: rootfs/packages/resolve.sh yielded no package for --board ${board} --profile dev --without mqtt (see its message above). That would mean the manifests cannot express a mqtt-declined image at all, which is the configuration this root exists to install" >&2
         exit 1

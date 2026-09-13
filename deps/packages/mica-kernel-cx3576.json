@@ -1,13 +1,13 @@
 {
   "name": "mica-kernel-cx3576",
   "repository": "mica-boards",
-  "commit": "ec968ea153f78d96ebf4e6c921ae1d9dc44ed42d",
+  "commit": "f4ad2684729f1361b470899fe849ae132c0a4a11",
   "targets": {
     "arm64": {
-      "version": "0.1.0+gitec968ea153f7-1",
+      "version": "0.1.0+gitf4ad2684729f-1",
       "architecture": "arm64",
-      "sha256": "38d22fff3773eeacfbc98149e5515c95f89cb43d5a8abb948ba93fce006c4caf",
-      "asset": "mica-kernel-cx3576_0.1.0.gitec968ea153f7-1_arm64.deb"
+      "sha256": "cf34c4caf946485d2eaf3eb1099e5d828a0248b78b959b282609a8713f4d25b4",
+      "asset": "mica-kernel-cx3576_0.1.0.gitf4ad2684729f-1_arm64.deb"
     }
   }
 }

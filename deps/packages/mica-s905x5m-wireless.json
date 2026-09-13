@@ -1,13 +1,13 @@
 {
   "name": "mica-s905x5m-wireless",
   "repository": "mica-boards",
-  "commit": "ec968ea153f78d96ebf4e6c921ae1d9dc44ed42d",
+  "commit": "f4ad2684729f1361b470899fe849ae132c0a4a11",
   "targets": {
     "arm64": {
-      "version": "0.1.0+gitec968ea153f7-1",
+      "version": "0.1.0+gitf4ad2684729f-1",
       "architecture": "arm64",
-      "sha256": "e17ef304d9ccd9b1d150ef7ea4455990af213fd8f6125d6a5e301d026f21bb0a",
-      "asset": "mica-s905x5m-wireless_0.1.0.gitec968ea153f7-1_arm64.deb"
+      "sha256": "52c01b66ba03da0dbcf1ca53faff340099e03c12426cc107065dce4353c38366",
+      "asset": "mica-s905x5m-wireless_0.1.0.gitf4ad2684729f-1_arm64.deb"
     }
   }
 }

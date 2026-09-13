@@ -21,7 +21,7 @@ import { readFileSync } from 'node:fs'
 import { loadBoard, type Board } from './board.ts'
 import { boardEnvPath, requireShippedBoards } from './paths.ts'
 
-/** Every board under `boards/`, modelled once at module load. */
+/** Every pinned board, read out of its fetched bundle, modelled once at module load. */
 export const SHIPPED: readonly Board[] = requireShippedBoards().filter(name => !/^BOARD_RELEASE_TARGET=0$/m.test(readFileSync(boardEnvPath(name), 'utf8'))).map(name => loadBoard(boardEnvPath(name)))
 
 /** The names of the shipped boards satisfying `predicate`, for a `boards:` list. */

@@ -25,9 +25,9 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 # board name.
 MICA_BOARD="${MICA_BOARD:-x64}"
 export MICA_BOARD
-BOARD_ENV="${REPO_ROOT}/boards/${MICA_BOARD}/board.env"
+BOARD_ENV="${REPO_ROOT}/_out/boards/${MICA_BOARD}/board.env"
 if [ ! -f "${BOARD_ENV}" ]; then
-    echo "FAIL: MICA_BOARD is '${MICA_BOARD}' and ${BOARD_ENV} does not exist; a board IS its board.env" >&2
+    echo "FAIL: MICA_BOARD is '${MICA_BOARD}' and ${BOARD_ENV} does not exist; a board IS its fetched bundle (make board-fetch BOARD=${MICA_BOARD})" >&2
     exit 1
 fi
 

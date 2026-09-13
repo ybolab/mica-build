@@ -64,7 +64,7 @@ async function main() {
     if (!Array.isArray(list) || !list.length) throw new Error('At least one --public-key is required')
     return list.map(item => { if (typeof item !== 'string') throw new Error('Invalid public key'); return item })
   }
-  const layout = () => parseFileLayout(readFileSync(join(REPO_ROOT, 'boards', value('board'), 'board.env'), 'utf8'))
+  const layout = () => parseFileLayout(readFileSync(join(REPO_ROOT, '_out', 'boards', value('board'), 'board.env'), 'utf8'))
   const kernelBoard = () => {
     const board = value('board')
     if (board !== 'x64' && board !== 'virt-arm64' && board !== 'cx3576' && board !== 's905x5m') throw new Error('Unsupported kernel board')

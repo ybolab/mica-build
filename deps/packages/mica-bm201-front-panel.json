@@ -1,13 +1,13 @@
 {
   "name": "mica-bm201-front-panel",
   "repository": "mica-boards",
-  "commit": "ec968ea153f78d96ebf4e6c921ae1d9dc44ed42d",
+  "commit": "f4ad2684729f1361b470899fe849ae132c0a4a11",
   "targets": {
     "arm64": {
-      "version": "0.1.0+gitec968ea153f7-1",
+      "version": "0.1.0+gitf4ad2684729f-1",
       "architecture": "arm64",
-      "sha256": "8e2cd22b6861985069ad801efa8069c5a2f89e40a3797a799c46fe64dc7b1379",
-      "asset": "mica-bm201-front-panel_0.1.0.gitec968ea153f7-1_arm64.deb"
+      "sha256": "2293dcd5198969daeacc45432cbb66ff91aacad199392708c2472ed870c1ccaa",
+      "asset": "mica-bm201-front-panel_0.1.0.gitf4ad2684729f-1_arm64.deb"
     }
   }
 }

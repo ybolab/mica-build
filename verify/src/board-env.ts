@@ -1,6 +1,6 @@
 // A board definition, read as DATA.
 //
-// `boards/<board>/board.env` is the single source of truth for a board and
+// `_out/boards/<board>/board.env`, out of the fetched board bundle, is the single source of truth for a board and
 // every other consumer reads it by `source`-ing it, which executes it: a key
 // whose value is `$(rm -rf /)` is not a lint finding, it is a command that has
 // already run by the time a checker looks at the parsed result. Nothing here

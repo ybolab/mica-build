@@ -9,7 +9,7 @@ import { Toolbox } from '../../build/src/toolbox.ts'
 
 const [board, input] = Bun.argv.slice(2)
 if (!board || !input) throw new Error('Usage: seed-refusals.ts BOARD FACTORY_IMAGE')
-const layout = parseFileLayout(readFileSync(resolve(`boards/${board}/board.env`), 'utf8'))
+const layout = parseFileLayout(readFileSync(resolve(`_out/boards/${board}/board.env`), 'utf8'))
 const work = mkdtempSync(resolve('_out/seed-refusals.')), image = join(work, 'disk.img')
 const data = join(work, 'data.img'), source = join(work, 'source')
 writeFileSync(source, 'seed acceptance\n')

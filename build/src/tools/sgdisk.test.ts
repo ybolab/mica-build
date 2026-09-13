@@ -31,7 +31,7 @@ afterAll(async () => {
 }, OPEN_TIMEOUT_MS)
 
 function layout(board: string): FileLayout {
-  return parseFileLayout(readFileSync(join(REPO_ROOT, 'boards', board, 'board.env'), 'utf8'))
+  return parseFileLayout(readFileSync(join(REPO_ROOT, '_out', 'boards', board, 'board.env'), 'utf8'))
 }
 function specs(g: FileLayout): GptPartitionSpec[] {
   return g.partitions.map(p => ({ partnum: BigInt(p.number), startSector: BigInt(p.startSector), sizeSectors: BigInt(p.sizeSectors),

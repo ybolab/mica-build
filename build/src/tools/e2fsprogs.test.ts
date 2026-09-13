@@ -28,7 +28,7 @@ let work = ''
 
 /** DATA filesystem settings from the current board definition. */
 function dataSpec(image: string, seedDir?: string) {
-  const env = parseBoardEnv(readFileSync(join(REPO_ROOT, 'boards/cx3576/board.env'), 'utf8'), 'board.env').values
+  const env = parseBoardEnv(readFileSync(join(REPO_ROOT, '_out/boards/cx3576/board.env'), 'utf8'), 'board.env').values
   return { image, label: env.get('DATA_FS_LABEL')!, uuid: env.get('DATA_FS_UUID')!,
     blockSize: BigInt(env.get('EXT4_BLOCK_SIZE')!), features: env.get('EXT4_FEATURES')!, fakeTime: env.get('E2FSPROGS_FAKE_TIME')!, seedDir }
 }

@@ -116,7 +116,7 @@ export async function packKernel(inputs: KernelInputs, tb: Toolbox): Promise<Ker
     const firmware = fit ? join(work, 'firmware') : undefined
     if (firmware) {
       mkdirSync(firmware)
-      const boardEnv = parseBoardEnv(readFileSync(join(REPO_ROOT, 'boards', board, 'board.env'), 'utf8'), 'board.env')
+      const boardEnv = parseBoardEnv(readFileSync(join(REPO_ROOT, '_out', 'boards', board, 'board.env'), 'utf8'), 'board.env')
       const files = boardEnv.values.get('BOARD_FIRMWARE_FILES')!.split(' ')
       for (const file of files) {
         if (!/^\/usr\/lib\/firmware\/[a-zA-Z0-9_.-]+$/.test(file)) throw new Error('Invalid board firmware path')

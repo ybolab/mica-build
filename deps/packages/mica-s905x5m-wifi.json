@@ -1,13 +1,13 @@
 {
   "name": "mica-s905x5m-wifi",
   "repository": "mica-boards",
-  "commit": "ec968ea153f78d96ebf4e6c921ae1d9dc44ed42d",
+  "commit": "f4ad2684729f1361b470899fe849ae132c0a4a11",
   "targets": {
     "arm64": {
-      "version": "0.1.0+gitec968ea153f7-1",
+      "version": "0.1.0+gitf4ad2684729f-1",
       "architecture": "arm64",
-      "sha256": "3a8b9b37dd9807ccea36609f84ba47ccf0189ce92b9dd5169af319059be9e07b",
-      "asset": "mica-s905x5m-wifi_0.1.0.gitec968ea153f7-1_arm64.deb"
+      "sha256": "b8a6bc97d6561bfb472ade38dadc09f8d23d018456487451e33671b9e49ee3a4",
+      "asset": "mica-s905x5m-wifi_0.1.0.gitf4ad2684729f-1_arm64.deb"
     }
   }
 }

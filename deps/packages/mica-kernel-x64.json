@@ -1,13 +1,13 @@
 {
   "name": "mica-kernel-x64",
   "repository": "mica-boards",
-  "commit": "ec968ea153f78d96ebf4e6c921ae1d9dc44ed42d",
+  "commit": "f4ad2684729f1361b470899fe849ae132c0a4a11",
   "targets": {
     "amd64": {
-      "version": "0.1.0+gitec968ea153f7-1",
+      "version": "0.1.0+gitf4ad2684729f-1",
       "architecture": "amd64",
-      "sha256": "de4a506d0ef611098b08ca3e950e074fe3ebacb55d79eba76b918a805a291639",
-      "asset": "mica-kernel-x64_0.1.0.gitec968ea153f7-1_amd64.deb"
+      "sha256": "1b1975ee446a0e3b529dc51978bc1c9ecafbb34a44f2f85f36647d7654e94f0e",
+      "asset": "mica-kernel-x64_0.1.0.gitf4ad2684729f-1_amd64.deb"
     }
   }
 }

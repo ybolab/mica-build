@@ -237,6 +237,10 @@ jobs:
       # The token is for tools/micad-pool.sh --source, which os-verify-test runs
       # first: verify's connd family reads the wifi reconcilers' contract out
       # of the mica-core source at its pinned commit, cloned over https with it.
+      - name: The package pools at their pins, and every board's bundle out of them
+        run: make os-pool
+        env:
+          GH_TOKEN: ${{ secrets.MICA_DEPS_TOKEN }}
       - name: The verify suite, in the pinned bun container
         env:
           GH_TOKEN: ${{ secrets.MICA_DEPS_TOKEN }}
@@ -253,7 +257,7 @@ jobs:
 
       # The shipped board definitions themselves, which the suite does not check
       # -- it checks the checker. Both boards, 26 assertions.
-      - name: Both shipped board layouts against the schema
+      - name: Every pinned board's layout against the schema
         run: make os-layout-lint
 
       # The apid API suite's build-time half. HERE and not in offline-suites,

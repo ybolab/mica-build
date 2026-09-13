@@ -13,7 +13,7 @@ import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
 import {
   ascendTo, BOARDS_DIR, boardEnvPath, PACKAGE_DIR, REPO_ROOT,
-  requireShippedBoards, shippedBoards, SRC_DIR,
+  pinnedBoards, requireShippedBoards, shippedBoards, SRC_DIR,
 } from './paths.ts'
 
 describe('every ascent is anchored, and the neighbours miss', () => {
@@ -31,7 +31,7 @@ describe('every ascent is anchored, and the neighbours miss', () => {
 
   test('the repository root: 2 up, and neither 1 nor 3', () => {
     expect(existsSync(join(REPO_ROOT, 'Makefile'))).toBe(true)
-    expect(existsSync(join(REPO_ROOT, 'boards'))).toBe(true)
+    expect(existsSync(join(REPO_ROOT, 'deps', 'packages'))).toBe(true)
     expect(() => ascendTo(SRC_DIR, 1, 'Makefile', 'x')).toThrow()
     expect(() => ascendTo(SRC_DIR, 3, 'Makefile', 'x')).toThrow()
   })
@@ -39,21 +39,21 @@ describe('every ascent is anchored, and the neighbours miss', () => {
   test('a miscount names the path it computed, the marker and the count', () => {
     let msg = ''
     try {
-      ascendTo(SRC_DIR, 1, 'boards', 'the repository root')
+      ascendTo(SRC_DIR, 1, 'deps', 'the repository root')
     } catch (e) {
       msg = (e as Error).message
     }
     expect(msg).toContain('the repository root')
     expect(msg).toContain('climbing 1 level')
     expect(msg).toContain(PACKAGE_DIR)
-    expect(msg).toContain('boards')
+    expect(msg).toContain('deps')
   })
 })
 
 describe('the board definitions the package reads', () => {
-  test('boards/ holds every shipped board, at the names the Makefile uses', () => {
-    expect(BOARDS_DIR).toBe(join(REPO_ROOT, 'boards'))
-    for (const board of ['cx3576', 'virt-arm64', 'x64']) {
+  test('_out/boards holds every pinned board, fetched out of its bundle', () => {
+    expect(BOARDS_DIR).toBe(join(REPO_ROOT, '_out', 'boards'))
+    for (const board of pinnedBoards()) {
       expect(`${board}: ${existsSync(boardEnvPath(board))}`).toBe(`${board}: true`)
     }
   })

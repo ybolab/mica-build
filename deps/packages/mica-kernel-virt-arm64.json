@@ -1,13 +1,13 @@
 {
   "name": "mica-kernel-virt-arm64",
   "repository": "mica-boards",
-  "commit": "ec968ea153f78d96ebf4e6c921ae1d9dc44ed42d",
+  "commit": "f4ad2684729f1361b470899fe849ae132c0a4a11",
   "targets": {
     "arm64": {
-      "version": "0.1.0+gitec968ea153f7-1",
+      "version": "0.1.0+gitf4ad2684729f-1",
       "architecture": "arm64",
-      "sha256": "6f86a4ba9b566d884fa5b5311fa48d6b21ea9eeefc9b1fe530ceca7121cfa7df",
-      "asset": "mica-kernel-virt-arm64_0.1.0.gitec968ea153f7-1_arm64.deb"
+      "sha256": "8b3208b5d055bd60b27d2e06c7f999b04cdb7e4ac5218229936d77744272b41c",
+      "asset": "mica-kernel-virt-arm64_0.1.0.gitf4ad2684729f-1_arm64.deb"
     }
   }
 }

@@ -6,7 +6,7 @@ import { parseFileLayout } from '../../build/src/file-layout.ts'
 import { authenticateFactoryRecords, checkFactoryGpt } from './file-image.ts'
 import type { GptTable } from './image.ts'
 
-const layout = parseFileLayout(readFileSync(`${import.meta.dir}/../../boards/x64/board.env`, 'utf8'))
+const layout = parseFileLayout(readFileSync(`${import.meta.dir}/../../_out/boards/x64/board.env`, 'utf8'))
 const partitions = layout.partitions.map(p => ({ number: p.number, firstSector: p.startSector,
   lastSector: p.startSector + p.sizeSectors - 1, sizeSectors: p.sizeSectors,
   typeGuid: p.type, uniqueGuid: p.guid, name: p.name, attributeFlags: '0000000000000000' }))

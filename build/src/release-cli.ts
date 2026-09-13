@@ -44,7 +44,7 @@ export async function sourceIdentity(checkout = REPO_ROOT) {
 }
 function releaseBoard(board: string) {
   if (!['x64', 'virt-arm64', 'cx3576'].includes(board)) throw new Error('Unsupported release board')
-  const env = readFileSync(join(REPO_ROOT, 'boards', board, 'board.env'), 'utf8')
+  const env = readFileSync(join(REPO_ROOT, '_out', 'boards', board, 'board.env'), 'utf8')
   if (!/^BOARD_RELEASE_TARGET=1$/m.test(env)) throw new Error(`Board ${board} has no release publication target`)
 }
 export async function main(argv = Bun.argv.slice(2)) {
@@ -81,7 +81,7 @@ export async function main(argv = Bun.argv.slice(2)) {
     channel: (values.channel ?? 'development') as ReleaseInputs['channel'], profile: (values.profile ?? 'dev') as ReleaseInputs['profile'],
     source: await sourceIdentity(), builderImages, lock: join(REPO_ROOT, 'deps/packages'),
     image: path('image'), update: path('update'), firmware: path('firmware'), packages: path('package-manifest'), runtimeReport, meta: path('baked-meta'), notes: path('notes'),
-    evidence: values.evidence ? path('evidence') : join(REPO_ROOT, 'boards', board, 'evidence.json'), keys })
+    evidence: values.evidence ? path('evidence') : join(REPO_ROOT, '_out', 'boards', board, 'evidence.json'), keys })
   console.log(`RELEASE_GATE_PASS board=${report.manifest.board} artifacts=${report.artifactsChecked}`)
 }
 if (import.meta.main) {

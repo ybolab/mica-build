@@ -1,4 +1,4 @@
-.PHONY: build-env help os-apid-api-spec-pins os-apid-api-test os-bare-host-gate os-boot-tools os-build-test os-components os-deb-package-gate os-deb-preflight os-deb-preflight-test os-debian-cache os-debian-install os-debian-test os-debian-verify os-debs os-devkeys os-lock-bump os-pool os-pool-lock-test os-factory-root-gate os-fit-records-test os-host-toolchain-lint os-host-toolchain-lint-test os-image os-install-closure-gate os-layout-lint os-netavark-kernel-test os-quadlet-doc-test os-repart-test os-rootfs-cx3576 os-rootfs-manifest-test os-rootfs-virt-arm64 os-rootfs-x64 os-shell-pipefail-lint os-smoke-negative-test os-smoke-test os-verify os-verify-test os-board-kernel
+.PHONY: build-env help os-apid-api-spec-pins os-apid-api-test os-bare-host-gate os-boot-tools os-build-test os-components os-deb-package-gate os-deb-preflight os-deb-preflight-test os-debian-cache os-debian-install os-debian-test os-debian-verify os-debs os-devkeys os-lock-bump os-pool os-pool-lock-test os-factory-root-gate os-fit-records-test os-host-toolchain-lint os-host-toolchain-lint-test os-image os-install-closure-gate os-layout-lint os-netavark-kernel-test os-quadlet-doc-test os-repart-test os-rootfs-cx3576 os-rootfs-manifest-test os-rootfs-virt-arm64 os-rootfs-x64 os-shell-pipefail-lint os-smoke-negative-test os-smoke-test os-verify os-verify-test board-fetch board-fetch-all
 
 # THE SOURCE DEPENDENCIES, before anything else: build-env/ (mica-build-env)
 # is the substrate every target reaches through, rootfs/debian/ (mica-debian)
@@ -58,7 +58,8 @@ help:
 	@echo "  os-debian-test      test the Debian runtime cache boundary"
 	@echo "image (signed component files on SYSTEM with unified DATA):"
 	@echo "  os-boot-tools       build the pinned signed UKI/systemd-boot packager (boot/, the mica-boot pin)"
-	@echo "  os-board-kernel     read a board's kernel, firmware and U-Boot out of its pinned mica-kernel-<board> archive into _out/boards/<board> (MICA_BOARD)"
+	@echo "  board-fetch         read a board's bundle -- board.env, manifests, kernel, firmware, U-Boot -- out of its pinned mica-kernel-<board> archive into _out/boards/<board> (BOARD=<board>)"
+	@echo "  board-fetch-all     the same for every pinned board (deps/packages/mica-kernel-*.json); os-pool runs it"
 	@echo "  os-components      build independent components (MICA_COMPONENT_ARGS='root|kernel|firmware|deployment|image|archive ...')"
 	@echo "  os-rootfs-cx3576 compose the independent signed rootfs input"
 	@echo "  os-verify verify the assembled mos image against the mos image contract (docker)"
@@ -312,7 +313,7 @@ os-pool: os-deb-preflight
 	$(MAKE) os-debs
 	bash tools/podman-pool.sh --check
 	bash tools/deploy-pool.sh --check
-	bash tools/board-pool.sh --check
+	bash tools/board-pool.sh --fetch-all
 
 # fetch.sh and lock.sh against a stub of the release API that requires the
 # token: a replaced asset, a lying lock row, a missing asset, an unreleased
@@ -466,7 +467,7 @@ os-quadlet-doc-test:
 os-netavark-kernel-test:
 	bash build-env/deb/fetch.sh --arch amd64
 	bash build-env/deb/fetch.sh --arch arm64
-	bash tools/board-pool.sh --kernels
+	bash tools/board-pool.sh --fetch-all
 	bash tests/netavark-kernel-config-test.sh
 
 # The builder image every component build stands on, built from a base pinned by
@@ -576,9 +577,11 @@ os-boot-tools:
 # _out/boards/<board>/, for the kernel component, the image and the labs.
 # The boards live in ybolab/mica-boards; this tree builds no kernel. Refuses an archive built against another verity trust
 # certificate than meta/verity/signer.cert.pem.
-os-board-kernel:
-	@test -n "$(MICA_BOARD)" || { echo "error: MICA_BOARD=<board> is required, e.g. make os-board-kernel MICA_BOARD=x64" >&2; exit 1; }
-	bash tools/board-pool.sh --kernel "$(MICA_BOARD)"
+board-fetch:
+	@test -n "$(BOARD)" || { echo "error: BOARD=<board> is required, e.g. make board-fetch BOARD=x64" >&2; exit 1; }
+	bash tools/board-pool.sh --fetch "$(BOARD)"
+board-fetch-all:
+	bash tools/board-pool.sh --fetch-all
 
 # Explicit component inputs and signing material are supplied as CLI arguments.
 os-components:

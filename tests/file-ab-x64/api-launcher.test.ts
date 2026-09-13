@@ -12,7 +12,7 @@ for (const board of ['x64', 'virt-arm64']) {
       const socket = createServer()
       try {
         for (const path of ['tests/apid-api/run.sh', 'tests/apid-api/src/qemu.ts',
-          'tests/apid-api/src/main.ts', `boards/${board}/board.env`, 'build-env/from.sh', 'build-env/images.env']) {
+          'tests/apid-api/src/main.ts', `_out/boards/${board}/board.env`, 'build-env/from.sh', 'build-env/images.env']) {
           mkdirSync(dirname(join(work, path)), { recursive: true })
           copyFileSync(join(repo, path), join(work, path))
           expect(readFileSync(join(work, path))).toEqual(readFileSync(join(repo, path)))

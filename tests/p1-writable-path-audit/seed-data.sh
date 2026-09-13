@@ -10,7 +10,7 @@ mkdir -p "$S"
 # ~/.ssh/authorized_keys, and /root is a bind of /mos/root, which lives on DATA.
 set -euo pipefail
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-BOARD_ENV="$REPO/boards/x64/board.env"
+BOARD_ENV="$REPO/_out/boards/x64/board.env"
 # shellcheck source=/dev/null
 . "$BOARD_ENV"
 OUT_DIR="$REPO/_out/x64"

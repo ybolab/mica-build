@@ -1,13 +1,13 @@
 {
   "name": "mica-kernel-s905x5m",
   "repository": "mica-boards",
-  "commit": "ec968ea153f78d96ebf4e6c921ae1d9dc44ed42d",
+  "commit": "f4ad2684729f1361b470899fe849ae132c0a4a11",
   "targets": {
     "arm64": {
-      "version": "0.1.0+gitec968ea153f7-1",
+      "version": "0.1.0+gitf4ad2684729f-1",
       "architecture": "arm64",
-      "sha256": "1eef24083ec79dd359bc4e922b3ae460eee97c9fe45bca2c3b8edb67d8ea87b7",
-      "asset": "mica-kernel-s905x5m_0.1.0.gitec968ea153f7-1_arm64.deb"
+      "sha256": "805cc694e54fc1dfc0210ace872a7bbfe71a299baac02b6d266d732c65a3edb3",
+      "asset": "mica-kernel-s905x5m_0.1.0.gitf4ad2684729f-1_arm64.deb"
     }
   }
 }

@@ -211,11 +211,11 @@ D-Bus grant. Optional feature selection is resolved before root composition.
 ## Board hardware init
 
 Board-agnostic mechanism, and the content is filed per board: the units and
-their scripts come from `boards/<board>/hwinit/` (six of each on cx3576; x64
+their scripts come from `mica-boards:<board>/hwinit/` (six of each on cx3576; x64
 has no such directory and stages an empty one), and the board-specific facts
 they read — module names, sysfs paths, UART device, CAN defaults, MAC seed,
 gadget IDs — come from conf files staged from `BOARD_DIR/init/`, falling back to
-the in-repo `boards/<board>/bsp/init/`, into `/etc/mica/`. Both are package
+the board's `bsp/init/`, into `/etc/mica/`. Both are package
 payload now: `mos-board-<board>` installs the programs, the units and the confs
 that `BOARD_HWINIT_CONFS` names, and refuses a fact no script reads or a script
 with no unit to run it. Every unit is condition-gated on

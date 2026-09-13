@@ -20,7 +20,7 @@ const DATA_BLOCK = 4096n
 const HASH_BLOCK = 4096n
 const PAYLOAD_BYTES = 4 * 1048576
 /** The salt both boards pin, out of the definitions rather than written down here. */
-const SALT = parseBoardEnv(readFileSync(join(REPO_ROOT, 'boards/cx3576/board.env'), 'utf8'), 'board.env').values.get('VERITY_SALT')!
+const SALT = parseBoardEnv(readFileSync(join(REPO_ROOT, '_out/boards/cx3576/board.env'), 'utf8'), 'board.env').values.get('VERITY_SALT')!
 const UUID = '5ac35760-0002-4000-8000-0000000001ff'
 
 let tb: Toolbox
@@ -70,7 +70,7 @@ describe('the argv shape', () => {
 
   test('the salt comes out of the board definition and is the same on both boards', () => {
     expect(SALT).toMatch(/^[0-9a-f]{64}$/)
-    expect(parseBoardEnv(readFileSync(join(REPO_ROOT, 'boards/x64/board.env'), 'utf8'), 'board.env').values.get('VERITY_SALT')!).toBe(SALT)
+    expect(parseBoardEnv(readFileSync(join(REPO_ROOT, '_out/boards/x64/board.env'), 'utf8'), 'board.env').values.get('VERITY_SALT')!).toBe(SALT)
   })
 
   test('a salt that is not hex is refused: veritysetup would draw a RANDOM one', () => {

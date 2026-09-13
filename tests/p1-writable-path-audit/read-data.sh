@@ -12,7 +12,7 @@ set -euo pipefail
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 S="${P1_WORK:-$REPO/.tmp/p1-writable-path-audit}"
 mkdir -p "$S"
-BOARD_ENV="$REPO/boards/${MICA_BOARD:-x64}/board.env"
+BOARD_ENV="$REPO/_out/boards/${MICA_BOARD:-x64}/board.env"
 # shellcheck source=/dev/null
 . "$BOARD_ENV"
 QDIR="$REPO/_out/${MICA_BOARD:-x64}/.qemu"

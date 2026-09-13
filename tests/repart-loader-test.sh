@@ -8,7 +8,7 @@ root_image=$(realpath "${3:?matching composed root image required}")
 case "$board" in x64|virt-arm64|cx3576|s905x5m) ;; *) echo 'unsupported board' >&2; exit 1;; esac
 [ -f "$image" ] && [ -f "$root_image" ]
 command -v docker >/dev/null
-. "boards/$board/board.env"
+. "_out/boards/$board/board.env"
 [ "$LAYOUT_VERSION" = 3 ] && [ "$DATA_PARTNUM" = 3 ]
 work=$(mktemp -d "$PWD/_out/data-growth.XXXXXX")
 printf 'Evidence: %s\n' "$work"

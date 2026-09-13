@@ -37,10 +37,13 @@ export const PACKAGE_DIR: string = ascendTo(SRC_DIR, 1, 'package.json', 'the ver
 /** The repository root, anchored on the Makefile that routes every target. */
 export const REPO_ROOT: string = ascendTo(SRC_DIR, 2, 'Makefile', 'the repository root')
 
-/** `boards`. */
-export const BOARDS_DIR: string = join(REPO_ROOT, 'boards')
+/** `_out/boards`: the fetched board bundles (tools/board-pool.sh --fetch). */
+export const BOARDS_DIR: string = join(REPO_ROOT, '_out', 'boards')
 
-/** `boards/<board>/board.env`. */
+/** `deps/packages`: the pins, among them `mica-kernel-<board>.json` for every board. */
+export const PINS_DIR: string = join(REPO_ROOT, 'deps', 'packages')
+
+/** `_out/boards/<board>/board.env`, out of the fetched bundle. */
 export function boardEnvPath(board: string): string {
   return join(BOARDS_DIR, board, 'board.env')
 }
@@ -68,7 +71,7 @@ export function boardEnvPath(board: string): string {
  */
 export function shippedBoards(dir: string = BOARDS_DIR): string[] {
   return readdirSync(dir, { withFileTypes: true })
-    .filter(e => e.isDirectory() && existsSync(join(dir, e.name, 'board.env')))
+    .filter(e => e.isDirectory() && !e.name.startsWith('.') && existsSync(join(dir, e.name, 'board.env')))
     .map(e => e.name)
     .sort()
 }
@@ -83,8 +86,28 @@ export function shippedBoards(dir: string = BOARDS_DIR): string[] {
  * a discovery used as a checker's input refuses to return nothing, by name,
  * rather than leaving the caller to decide to notice.
  */
-export function requireShippedBoards(dir: string = BOARDS_DIR): string[] {
+/**
+ * The boards this tree pins: `deps/packages/mica-kernel-<board>.json`, one
+ * per board. A board exists here exactly when its bundle is pinned; its
+ * definition is read out of the fetched bundle under BOARDS_DIR.
+ */
+export function pinnedBoards(dir: string = PINS_DIR): string[] {
+  return readdirSync(dir)
+    .flatMap(name => { const match = /^mica-kernel-(.+)\.json$/.exec(name); return match ? [match[1]!] : [] })
+    .sort()
+}
+
+export function requireShippedBoards(dir: string = BOARDS_DIR, pins: string = PINS_DIR): string[] {
   const boards = shippedBoards(dir)
+  // The real tree: the fetched set and the pinned set must be one set, or
+  // a pinned board nobody fetched is a board every loop below silently skips.
+  if (dir === BOARDS_DIR) {
+    const pinned = pinnedBoards(pins)
+    const missing = pinned.filter(b => !boards.includes(b))
+    const stale = boards.filter(b => !pinned.includes(b))
+    if (missing.length > 0) throw new Error(`the pinned board(s) ${missing.join(', ')} are not fetched under ${dir}; run: make board-fetch-all`)
+    if (stale.length > 0) throw new Error(`${dir} holds ${stale.join(', ')}, which no pin under ${pins} names; run: make board-fetch-all`)
+  }
   if (boards.length === 0) {
     throw new Error(
       `no board defines a board.env under ${dir}, so every check that iterates the shipped boards `

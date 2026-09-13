@@ -35,8 +35,8 @@ try {
     const extra = new Signer(generateKeyPairSync('ed25519').privateKey, true).publicKey
     kernelDirectory = join(output, 'kernel')
     kernel = await packKernel({ board, kernelDirectory: bsp, init: resolve(initArg), shutdown: resolve(shutdownArg),
-      publicKeys: [signer.publicKey, extra], systemPartUuid: parseFileLayout(readFileSync(`boards/${board}/board.env`, 'utf8')).partitions[1]!.guid,
-      dataPartUuid: parseFileLayout(readFileSync(`boards/${board}/board.env`, 'utf8')).partitions[2]!.guid,
+      publicKeys: [signer.publicKey, extra], systemPartUuid: parseFileLayout(readFileSync(`_out/boards/${board}/board.env`, 'utf8')).partitions[1]!.guid,
+      dataPartUuid: parseFileLayout(readFileSync(`_out/boards/${board}/board.env`, 'utf8')).partitions[2]!.guid,
       output: kernelDirectory, contentSigning: signing,
       bootSigning: { key: join(evidence, 'db.key.pem'), certificate: join(evidence, 'db.cert.pem') } }, tb)
   }

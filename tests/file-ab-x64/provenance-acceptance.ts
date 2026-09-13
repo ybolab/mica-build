@@ -21,9 +21,9 @@ export async function acceptProvenance(inputs: ReleaseInputs, checkout = REPO_RO
   if (source.dirty || canonicalJson(source) !== canonicalJson(inputs.source)) {
     throw new Error('Acceptance inputs must match the actual clean frozen source')
   }
-  const boardEnv = readFileSync(join(checkout, 'boards/virt-arm64/board.env'), 'utf8')
+  const boardEnv = readFileSync(join(checkout, '_out/boards/virt-arm64/board.env'), 'utf8')
   if (!/^BOARD_RELEASE_TARGET=0$/m.test(boardEnv)) throw new Error('Expected the committed non-publication board policy')
-  if (!readFileSync(inputs.evidence).equals(readFileSync(join(checkout, 'boards/virt-arm64/evidence.json')))) {
+  if (!readFileSync(inputs.evidence).equals(readFileSync(join(checkout, '_out/boards/virt-arm64/evidence.json')))) {
     throw new Error('Acceptance must preserve the committed board evidence bytes')
   }
   const builderImages = Object.fromEntries(readFileSync(join(checkout, 'build-env/images.env'), 'utf8').split('\n')

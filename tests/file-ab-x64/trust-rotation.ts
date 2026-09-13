@@ -26,7 +26,7 @@ writeFileSync(join(output, 'metadata-next.pem'), newKey.export({ type: 'pkcs8', 
 for (const name of ['db.cert.pem', 'db.key.pem']) copyFileSync(join(baseline, name), join(output, name))
 const oldBoot = { certificate: join(output, 'db.cert.pem'), key: join(output, 'db.key.pem') }
 const newBoot = { certificate: join(output, 'db-next.cert.pem'), key: join(output, 'db-next.key.pem') }
-const layout = parseFileLayout(readFileSync('boards/x64/board.env', 'utf8'))
+const layout = parseFileLayout(readFileSync('_out/boards/x64/board.env', 'utf8'))
 const tb = await Toolbox.open(COMPONENT_TOOLS, { mounts: [work, baseline] })
 try {
   await tb.must(['openssl', 'req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-sha256', '-days', '1', '-subj', '/CN=MOS-boot-rotation-lab', '-keyout', newBoot.key, '-out', newBoot.certificate])

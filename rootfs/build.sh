@@ -46,7 +46,8 @@
 #     copied into the image. Not written when micad is declined; see below.
 # rootfs/README.md, "Outputs to _out/<board>/", is the table version of this.
 
-# Every layout constant is read from boards/cx3576/board.env.
+# Every layout constant is read from the board's board.env, out of the
+# fetched board bundle under _out/boards/<board>/.
 set -euo pipefail
 
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -58,37 +59,21 @@ REPO_ROOT=$(cd "$SCRIPT_DIR/.." && pwd)
 # somewhere to be proven before hardware, and virt-arm64 so that the proving can
 # happen on the ARCHITECTURE THE DEVICE RUNS rather than beside it.
 MICA_BOARD=${MICA_BOARD:-cx3576}
-LAYOUT_ENV="$REPO_ROOT/boards/${MICA_BOARD}/board.env"
-
-# THE BOARD IS ITS DEFINITION FILE, and the refusal says so.
-#
-# This used to be a `case` mapping each board name to an architecture, whose
-# default arm named the known boards in prose. Two things were wrong with it.
-# The list was a second place to add a board, and the tree has a standing rule
-# against those -- verify/src/paths.ts discovers boards by listing boards/*/
-# for exactly this reason, because a literal is what a new board gets left out
-# of. And the architecture it assigned was a SECOND STATEMENT of a fact
-# boards/<board>/board.env already makes: the file sourced below sets MICA_ARCH
-# itself, to the same value, so the two agreed only because nobody had changed
-# one of them.
-#
-# What the `case` also did, and what is kept, is REFUSE AN UNKNOWN BOARD BY
-# NAME. Without it a typo becomes a missing-file error much later, about a path
-# rather than about the board, in a state the reader then has to reconstruct.
-# The refusal now asks the question that actually decides the answer -- is
-# there a definition for this board -- and lists what it found.
+# THE BOARD IS ITS PINNED BUNDLE, fetched into _out/boards/<board>/ by
+# tools/board-pool.sh --fetch (make board-fetch): board.env, the board's
+# package manifests, the kernel directory, the firmware and the U-Boot
+# outputs. There is no committed copy and no list of boards in this file:
+# deps/packages/mica-kernel-<board>.json is where a board exists, and an
+# unknown name is refused here BY NAME, with the pinned boards, rather than
+# much later as a missing path.
+BOARD_DIR=${BOARD_DIR:-"$REPO_ROOT/_out/boards/${MICA_BOARD}"}
+LAYOUT_ENV="$BOARD_DIR/board.env"
 if [ ! -f "$LAYOUT_ENV" ]; then
-    known=$(cd "$REPO_ROOT/boards" && for d in */; do
-        [ -f "${d}board.env" ] && printf '%s ' "${d%/}"
-    done)
+    known=$(bash "$REPO_ROOT/tools/board-pool.sh" --list | tr '\n' ' ')
     echo "error: MICA_BOARD is '$MICA_BOARD', and $LAYOUT_ENV does not exist." >&2
-    echo "       A board IS its board.env; boards with one here: ${known:-(none)}" >&2
+    echo "       A board IS its pinned bundle, fetched by \`make board-fetch BOARD=$MICA_BOARD\`; the pinned boards are: ${known:-(none)}" >&2
     exit 1
 fi
-# The board's BSP outputs, out of the pinned mica-kernel-<board> archive
-# (tools/board-pool.sh --kernel): containers.env lives there when the board
-# declares one.
-BOARD_DIR=${BOARD_DIR:-"$REPO_ROOT/_out/boards/${MICA_BOARD}"}
 OUT_DIR="$REPO_ROOT/_out/${MICA_BOARD}"
 # Installed-size budget. A per-board fact for the same reason
 # BOARD_CMDLINE_ARGS is: it protects a rootfs slot, and the slots differ.
@@ -102,23 +87,12 @@ case "$WITH_MOSD" in
     ;;
 esac
 
-# Whether the container engine is in the image at all.
-#
-# BOARD-LEVEL, because it is a board decision: the engine costs ~107 MB
-# installed and a board with a tighter rootfs slot, or no use for containers,
-# should not carry it. The board opts OUT by shipping a containers.env saying
-# so; absent means ON, which is the cx3576 default the user asked for.
-#
-# An explicit WITH_CONTAINERS in the environment beats the board file, so a
-# one-off build can go either way without editing the board.
-#
-# This is the BUILD-time switch: is the engine present. The RUN-time switch --
-# `container.enabled` in the settings tree, driven from apid -- is a different
-# question: whether an engine that IS present may be used.
-if [ -z "${WITH_CONTAINERS:-}" ] && [ -f "$BOARD_DIR/containers.env" ]; then
-    # shellcheck disable=SC1091
-    . "$BOARD_DIR/containers.env"
-fi
+# Whether the container engine is in the image at all: the BUILD-time switch
+# (is the engine present), distinct from the RUN-time `container.enabled`
+# setting. On by default; WITH_CONTAINERS=0 in the environment leaves it out.
+# The board no longer decides this -- a board declares `containers` in
+# BOARD_FEATURES when it has room for the engine, and the product recipe
+# (plan 20260913-0416, phase 2) will be the one place that selects it.
 WITH_CONTAINERS=${WITH_CONTAINERS:-1}
 case "$WITH_CONTAINERS" in
 0 | 1) ;;
@@ -188,7 +162,7 @@ MICA_PROFILE=${MICA_PROFILE:-dev}
 # Existence was already refused, by name and with the board list, right after
 # MICA_BOARD was read -- a second check here would be a second message for one
 # condition, and the earlier one is the better message.
-# shellcheck source=../boards/cx3576/board.env
+# shellcheck source=/dev/null
 . "$LAYOUT_ENV"
 
 # The architecture, from the board definition and from nowhere else.
@@ -393,6 +367,7 @@ echo "identity: source commit $commit_of_stamp committed $tree_commit_date"
 WITHOUT_ARG=$(echo $WITHOUT_FEATURES)
 RESOLVED=$(bash "$REPO_ROOT/rootfs/packages/resolve.sh" \
     --board "$MICA_BOARD" \
+    --board-dir "$BOARD_DIR/manifests" \
     --profile "$MICA_PROFILE" \
     --radios "$BOARD_RADIOS" \
     --without "$WITHOUT_ARG" \

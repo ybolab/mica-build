@@ -1,13 +1,13 @@
 {
   "name": "mica-board-cx3576",
   "repository": "mica-boards",
-  "commit": "ec968ea153f78d96ebf4e6c921ae1d9dc44ed42d",
+  "commit": "f4ad2684729f1361b470899fe849ae132c0a4a11",
   "targets": {
     "arm64": {
-      "version": "0.1.0+gitec968ea153f7-1",
+      "version": "0.1.0+gitf4ad2684729f-1",
       "architecture": "arm64",
-      "sha256": "c60f3a6f7f77c0c72132febceae658ab2c4b7590bcc281f99b466e158582e0f6",
-      "asset": "mica-board-cx3576_0.1.0.gitec968ea153f7-1_arm64.deb"
+      "sha256": "8d0b33a279f14fd4f97065d0afcc6285e9359085e3c02704b9c00b031e679349",
+      "asset": "mica-board-cx3576_0.1.0.gitf4ad2684729f-1_arm64.deb"
     }
   }
 }

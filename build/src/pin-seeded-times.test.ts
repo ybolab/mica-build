@@ -26,7 +26,7 @@ import { FILE_IMAGE_TOOLS } from './file-image.ts'
 import { debugfsApply, dumpe2fsFull, dumpe2fsHeader, mke2fs } from './tools/e2fsprogs.ts'
 import { truncate } from './tools/dd.ts'
 
-const env = parseBoardEnv(readFileSync(join(REPO_ROOT, 'boards/cx3576/board.env'), 'utf8'), 'board.env').values
+const env = parseBoardEnv(readFileSync(join(REPO_ROOT, '_out/boards/cx3576/board.env'), 'utf8'), 'board.env').values
 const FILE_MTIME = env.get('FILE_MTIME')!          // @1577836800
 const PINNED_EPOCH = 1577836800
 

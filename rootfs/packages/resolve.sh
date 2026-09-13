@@ -2,8 +2,8 @@
 # The package-set resolver: WHAT a build installs, from the build's inputs and
 # the manifests beside this file.
 #
-#   bash rootfs/packages/resolve.sh --board cx3576 --profile dev \
-#        --radios "wifi bluetooth" --without ""
+#   bash rootfs/packages/resolve.sh --board cx3576 --board-dir _out/boards/cx3576/manifests \
+#        --profile dev --radios "wifi bluetooth" --without ""
 #   -> mica-apid
 #      mica-board-cx3576
 #      mica-bluetooth
@@ -14,7 +14,11 @@
 # two resolutions is a diff of the images they compose. Every refusal goes to
 # stderr and exits non-zero.
 #
-# The manifests are read from THIS directory. The producer set is read at run
+# The engine's manifests (common, profile-*, feature-*, radio-*) are read from
+# THIS directory; the board's (board.pkgs, radio-<r>.pkgs, component-<c>.pkgs)
+# from --board-dir, the manifests/ of the fetched board bundle
+# (tools/board-pool.sh --fetch): what a board installs travels with the
+# board. The producer set is read at run
 # time from `bash build-env/deb/producers.sh` -- the only authority on which
 # packages exist -- in the repository this directory sits in, located by walking
 # up to the Makefile rather than by counting `..` levels. That is what lets a
@@ -40,7 +44,7 @@ done
 }
 
 usage() {
-    echo "usage: bash rootfs/packages/resolve.sh --board <board> --profile <profile> --radios \"<radios>\" --without \"<features>\" [--components \"<components>\"]" >&2
+    echo "usage: bash rootfs/packages/resolve.sh --board <board> --board-dir <manifests dir> --profile <profile> --radios \"<radios>\" --without \"<features>\" [--components \"<components>\"]" >&2
 }
 
 in_list() {
@@ -52,8 +56,7 @@ in_list() {
 }
 
 # EVERY INPUT IS AN ARGUMENT, AND NONE OF THEM IS RE-DERIVED HERE. This script
-# does not read boards/<board>/board.env, boards/<board>/bsp/containers.env
-# or WITH_MOSD/WITH_CONTAINERS/MICA_ROOTFS_WITHOUT/MICA_PROFILE out of the
+# does not read _out/boards/<board>/board.env or WITH_MOSD/WITH_CONTAINERS/MICA_ROOTFS_WITHOUT/MICA_PROFILE out of the
 # environment, and it must not learn to: rootfs/build.sh already owns
 # every one of those decisions -- which board file is read, which environment
 # variable beats which file, how the historical WITH_* spellings fold into the
@@ -68,6 +71,7 @@ in_list() {
 # that has a radio -- a build that succeeds and a device that cannot see a
 # network.
 BOARD=""
+BOARD_DIR=""
 PROFILE=""
 RADIOS=""
 WITHOUT=""
@@ -81,6 +85,10 @@ while [ "$#" -gt 0 ]; do
     --board)
         BOARD="${2-}"
         HAVE_BOARD=1
+        shift 2
+        ;;
+    --board-dir)
+        BOARD_DIR="${2-}"
         shift 2
         ;;
     --profile)
@@ -110,6 +118,8 @@ while [ "$#" -gt 0 ]; do
         ;;
     esac
 done
+[ -n "${BOARD_DIR}" ] || { echo "error: --board-dir was not given. The board's own manifests (board.pkgs, radio-<r>.pkgs, component-<c>.pkgs) are read out of the fetched board bundle, _out/boards/<board>/manifests; run \`make board-fetch BOARD=<board>\`" >&2; usage; exit 1; }
+[ -d "${BOARD_DIR}" ] || { echo "error: --board-dir ${BOARD_DIR} is not a directory; the board bundle is not fetched (make board-fetch BOARD=${BOARD:-<board>})" >&2; exit 1; }
 for pair in "board:${HAVE_BOARD}" "profile:${HAVE_PROFILE}" "radios:${HAVE_RADIOS}" "without:${HAVE_WITHOUT}"; do
     [ "${pair#*:}" = "1" ] || {
         echo "error: --${pair%%:*} was not given. All four arguments are required; --radios \"\" and --without \"\" are how a build with no radio and no declined feature says so, because an omitted one would resolve to a package set nothing had decided" >&2
@@ -168,15 +178,17 @@ done <<<"${LOCK_ROWS}"
 # board is a typo that fails one board's build and not the other's, and the run
 # that would have caught it is the run nobody makes.
 declare -A MANIFEST=()
-BOARDS=()
 PROFILES=()
 KNOWN_RADIOS=()
 FEATURES=()
-SCOPED_MANIFESTS=()
-for file in "${MANIFEST_FILES[@]}"; do
-    base="$(basename "${file}" .pkgs)"
-    names=""
-    lineno=0
+BOARD_RADIO_MANIFESTS=()
+BOARD_COMPONENT_MANIFESTS=()
+shopt -s nullglob
+BOARD_MANIFEST_FILES=("${BOARD_DIR}"/*.pkgs)
+shopt -u nullglob
+# read_manifest <file> <key>: one package per line, every one declared.
+read_manifest() {
+    local file="$1" key="$2" names="" lineno=0 line
     while IFS= read -r line || [ -n "${line}" ]; do
         lineno=$((lineno + 1))
         line="${line%%#*}"
@@ -194,38 +206,58 @@ for file in "${MANIFEST_FILES[@]}"; do
         }
         names="${names}$1 "
     done <"${file}"
-    MANIFEST["${base}"]="${names}"
+    MANIFEST["${key}"]="${names}"
+}
+for file in "${MANIFEST_FILES[@]}"; do
+    base="$(basename "${file}" .pkgs)"
+    read_manifest "${file}" "${base}"
 
     # The family is the filename's prefix, and an unrecognised one is refused
     # rather than ignored: a manifest nothing selects is a package set that
     # never reaches an image and never fails a build either.
     case "${base}" in
     common) ;;
-    board-radio-* | component-*) SCOPED_MANIFESTS+=("${base}") ;;
-    board-*) BOARDS+=("${base#board-}") ;;
     profile-*) PROFILES+=("${base#profile-}") ;;
     radio-*) KNOWN_RADIOS+=("${base#radio-}") ;;
     feature-*) FEATURES+=("${base#feature-}") ;;
+    board-* | component-*)
+        echo "error: ${file} is a board manifest in the engine's directory. A board's manifests (board.pkgs, radio-<r>.pkgs, component-<c>.pkgs) live in the board repository under <board>/manifests/ and arrive here in the board bundle; nothing selects this file, so it would never be read into a resolution" >&2
+        exit 1
+        ;;
     *)
-        echo "error: ${file} belongs to no manifest family. A manifest is named common.pkgs, board-<board>.pkgs, profile-<profile>.pkgs, radio-<radio>.pkgs or feature-<feature>.pkgs; nothing selects any other name, so this file would never be read into a resolution" >&2
+        echo "error: ${file} belongs to no manifest family. An engine manifest is named common.pkgs, profile-<profile>.pkgs, radio-<radio>.pkgs or feature-<feature>.pkgs; nothing selects any other name, so this file would never be read into a resolution" >&2
         exit 1
         ;;
     esac
 done
 
-# A scoped manifest extends one existing board; it never defines another board.
-for scoped in ${SCOPED_MANIFESTS[@]+"${SCOPED_MANIFESTS[@]}"}; do
-    matched=0
-    for board in "${BOARDS[@]}"; do
-        case "$scoped" in
-        board-radio-"$board"-*)
-            radio=${scoped#board-radio-"$board"-}
-            in_list "$radio" "${KNOWN_RADIOS[@]}" && matched=1
-            ;;
-        component-"$board"-?*) matched=1 ;;
-        esac
-    done
-    [ "$matched" = 1 ] || { echo "error: $scoped has no matching board/radio declaration" >&2; exit 1; }
+# THE BOARD'S MANIFESTS, out of its bundle: board.pkgs is the board, a
+# radio-<r>.pkgs adds the board's transport packages to a radio the engine
+# knows, a component-<c>.pkgs is an optional component a build names. Every
+# file is parsed and cross-checked whether or not this resolution reads it.
+[ -f "${BOARD_DIR}/board.pkgs" ] || {
+    echo "error: ${BOARD_DIR} holds no board.pkgs. The board bundle carries the board's package manifest (mica:docs/boards/contract.md section 3); a board with none composes a root with no board package, which cannot boot" >&2
+    exit 1
+}
+for file in ${BOARD_MANIFEST_FILES[@]+"${BOARD_MANIFEST_FILES[@]}"}; do
+    base="$(basename "${file}" .pkgs)"
+    case "${base}" in
+    board) read_manifest "${file}" "board" ;;
+    radio-*)
+        radio="${base#radio-}"
+        in_list "${radio}" ${KNOWN_RADIOS[@]+"${KNOWN_RADIOS[@]}"} || { echo "error: ${file} names the radio '${radio}', for which ${HERE} holds no radio-${radio}.pkgs. The radios the engine knows are: ${KNOWN_RADIOS[*]-none}" >&2; exit 1; }
+        read_manifest "${file}" "board-radio-${radio}"
+        BOARD_RADIO_MANIFESTS+=("${radio}")
+        ;;
+    component-?*)
+        read_manifest "${file}" "${base}"
+        BOARD_COMPONENT_MANIFESTS+=("${base#component-}")
+        ;;
+    *)
+        echo "error: ${file} belongs to no board manifest family (board.pkgs, radio-<radio>.pkgs, component-<component>.pkgs); nothing selects this name" >&2
+        exit 1
+        ;;
+    esac
 done
 
 # Each RADIO NAME is a decline token of its own -- there is no umbrella
@@ -258,10 +290,7 @@ done
 WITHOUT_FEATURES=" ${WITHOUT} "
 declined() { case "${WITHOUT_FEATURES}" in *" $1 "*) return 0 ;; *) return 1 ;; esac; }
 
-in_list "${BOARD}" ${BOARDS[@]+"${BOARDS[@]}"} || {
-    echo "error: --board is '${BOARD}', for which ${HERE} holds no board-${BOARD}.pkgs. The boards with a manifest are: ${BOARDS[*]-none}" >&2
-    exit 1
-}
+[ -n "${BOARD}" ] || { echo "error: --board is empty" >&2; exit 1; }
 in_list "${PROFILE}" ${PROFILES[@]+"${PROFILES[@]}"} || {
     echo "error: --profile is '${PROFILE}', for which ${HERE} holds no profile-${PROFILE}.pkgs. The profiles with a manifest are: ${PROFILES[*]-none}" >&2
     exit 1
@@ -279,17 +308,17 @@ done
 
 RESOLVED="${MANIFEST[common]:-}"
 RESOLVED="${RESOLVED}${MANIFEST[profile-${PROFILE}]:-}"
-RESOLVED="${RESOLVED}${MANIFEST[board-${BOARD}]:-}"
+RESOLVED="${RESOLVED}${MANIFEST[board]:-}"
 for radio in ${RADIOS}; do
     if ! declined "${radio}"; then
-        RESOLVED="${RESOLVED}${MANIFEST[radio-${radio}]:-}${MANIFEST[board-radio-${BOARD}-${radio}]:-}"
+        RESOLVED="${RESOLVED}${MANIFEST[radio-${radio}]:-}${MANIFEST[board-radio-${radio}]:-}"
     fi
 done
 
 for component in $COMPONENTS; do
-    key="component-${BOARD}-${component}"
+    key="component-${component}"
     [ -n "${MANIFEST[$key]+present}" ] || {
-        echo "error: component '$component' is unavailable for board '$BOARD'" >&2
+        echo "error: component '$component' is unavailable for board '$BOARD'; ${BOARD_DIR} holds: ${BOARD_COMPONENT_MANIFESTS[*]-none}" >&2
         exit 1
     }
     RESOLVED="${RESOLVED}${MANIFEST[$key]}"
@@ -350,16 +379,13 @@ done
 
 # A resolution with no board package has no kernel, no device tree and no
 # rendered layout: it composes a root that cannot boot on anything.
-BOARD_PACKAGES=""
-for name in ${BOARDS[@]+"${BOARDS[@]}"}; do
-    BOARD_PACKAGES="${BOARD_PACKAGES}${MANIFEST[board-${name}]:-}"
-done
+BOARD_PACKAGES="${MANIFEST[board]:-}"
 BOARD_IN_SET_N=0
 for pkg in ${RESOLVED}; do
     in_list "${pkg}" ${BOARD_PACKAGES} && BOARD_IN_SET_N=$((BOARD_IN_SET_N + 1))
 done
 [ "${BOARD_IN_SET_N}" -gt 0 ] || {
-    echo "error: the resolution for --board ${BOARD} --profile ${PROFILE} carries NO board package. board-${BOARD}.pkgs named none, so the image would have no kernel, no device tree and none of the layout files rendered from boards/${BOARD}/board.env -- an artifact that composes and cannot boot" >&2
+    echo "error: the resolution for --board ${BOARD} --profile ${PROFILE} carries NO board package. ${BOARD_DIR}/board.pkgs named none, so the image would have none of the layout files rendered from the board's board.env -- an artifact that composes and cannot boot" >&2
     exit 1
 }
 

@@ -19,6 +19,7 @@ import {
   makeWorkDir,
   PACKAGE_DIR,
   REPO_ROOT,
+  pinnedBoards,
   requireShippedBoards,
   shippedBoards,
   SRC_DIR,
@@ -41,7 +42,7 @@ describe('every ascent is anchored, and the neighbours miss', () => {
 
   test('the repository root: 2 up, and neither 1 nor 3', () => {
     expect(existsSync(join(REPO_ROOT, 'Makefile'))).toBe(true)
-    expect(existsSync(join(REPO_ROOT, 'boards'))).toBe(true)
+    expect(existsSync(join(REPO_ROOT, 'deps', 'packages'))).toBe(true)
     expect(() => ascendTo(SRC_DIR, 1, 'Makefile', 'x')).toThrow()
     expect(() => ascendTo(SRC_DIR, 3, 'Makefile', 'x')).toThrow()
   })
@@ -64,14 +65,14 @@ describe('every ascent is anchored, and the neighbours miss', () => {
   test('a miscount names the path it computed, the marker and the count', () => {
     let msg = ''
     try {
-      ascendTo(SRC_DIR, 1, 'boards', 'the repository root')
+      ascendTo(SRC_DIR, 1, 'deps', 'the repository root')
     } catch (e) {
       msg = (e as Error).message
     }
     expect(msg).toContain('the repository root')
     expect(msg).toContain('climbing 1 level')
     expect(msg).toContain(PACKAGE_DIR)
-    expect(msg).toContain('boards')
+    expect(msg).toContain('deps')
   })
 })
 
@@ -80,14 +81,16 @@ describe('the boards are discovered, not written down', () => {
     const found = shippedBoards()
     // Asserted as a SET rather than as ">= 2": a discovery that returned the
     // right count of the wrong names would satisfy a count.
-    expect(found).toEqual(['cx3576', 's905x5m', 'virt-arm64', 'x64'])
+    // The pins are the board list; the fetched bundles must agree with them.
+    expect(found).toEqual(pinnedBoards())
+    expect(found.length).toBeGreaterThan(1)
     for (const board of found) {
       expect(`${board}: ${existsSync(boardEnvPath(board))}`).toBe(`${board}: true`)
     }
   })
 
-  test('boards/ is where the ascent says, and a board that is not there is not a path that is', () => {
-    expect(BOARDS_DIR).toBe(join(REPO_ROOT, 'boards'))
+  test('_out/boards is where the fetched bundles are, and a board that is not there is not a path that is', () => {
+    expect(BOARDS_DIR).toBe(join(REPO_ROOT, '_out', 'boards'))
     expect(existsSync(boardEnvPath('no-such-board'))).toBe(false)
     expect(shippedBoards()).not.toContain('no-such-board')
   })

@@ -21,15 +21,21 @@ The filename is what selects a manifest. The supported families are below; a fil
 none of them is refused rather than ignored — a manifest nothing reads is a
 package set that never reaches an image and never fails a build either.
 
-| File | Read when |
-| --- | --- |
-| `common.pkgs` | always |
-| `profile-<profile>.pkgs` | `--profile <profile>`; exactly one |
-| `board-<board>.pkgs` | `--board <board>`; exactly one |
-| `radio-<radio>.pkgs` | `--radios` names `<radio>` and `--without` does **not** |
-| `board-radio-<board>-<radio>.pkgs` | selected board and non-declined radio; adds board-specific transport packages |
-| `component-<board>-<component>.pkgs` | explicitly named in `--components`; default-off |
-| `feature-<feature>.pkgs` | `--without` does **not** name `<feature>` |
+| File | Where | Read when |
+| --- | --- | --- |
+| `common.pkgs` | here | always |
+| `profile-<profile>.pkgs` | here | `--profile <profile>`; exactly one |
+| `radio-<radio>.pkgs` | here | `--radios` names `<radio>` and `--without` does **not** |
+| `feature-<feature>.pkgs` | here | `--without` does **not** name `<feature>` |
+| `board.pkgs` | the board bundle | always; the board package |
+| `radio-<radio>.pkgs` | the board bundle | selected board and non-declined radio; adds the board's transport packages |
+| `component-<component>.pkgs` | the board bundle | explicitly named in `--components`; default-off |
+
+The board's manifests live in the board repository (`mica-boards:<board>/manifests/`)
+and reach this tree inside the board bundle, under `_out/boards/<board>/manifests/`
+after `make board-fetch BOARD=<board>`; `--board-dir` names that directory. A
+`board-*.pkgs` or `component-*.pkgs` in this directory is refused: what a board
+installs travels with the board.
 
 The `--without` tokens are the `feature-*.pkgs` basenames plus the
 `radio-*.pkgs` basenames: each radio is its own decline token, so
@@ -48,16 +54,17 @@ will be asked to run.
 
 ```sh
 bash rootfs/packages/resolve.sh \
-    --board cx3576 --profile dev --radios "wifi bluetooth" --without ""
+    --board cx3576 --board-dir _out/boards/cx3576/manifests \
+    --profile dev --radios "wifi bluetooth" --without ""
 ```
 
-All four arguments are required; `--radios ""` and `--without ""` are how a
+All five arguments are required; `--radios ""` and `--without ""` are how a
 build says "none". Output is one package name per line, `LC_ALL=C` sorted and
 deduplicated, so two runs over one set of inputs are byte-identical and a diff
 of two resolutions is a diff of the images.
 
 **Every input is an argument and none is re-derived.** `resolve.sh` does not
-read `boards/<board>/board.env`, `boards/<board>/bsp/containers.env`, or
+read `_out/boards/<board>/board.env`, or
 `WITH_MOSD` / `WITH_CONTAINERS` / `MICA_ROOTFS_WITHOUT` / `MICA_PROFILE` from the
 environment. `rootfs/build.sh` already owns every one of those decisions —
 which board file is read, which environment variable beats which file, how the
@@ -70,8 +77,8 @@ this directory owns the manifest set.
 
 Each has its own message, naming what was wrong and what the legal values are:
 
-- an unknown feature in `--without`, an unknown `--board`, `--profile` or
-  `--radios` entry;
+- an unknown feature in `--without`, an unknown `--profile` or `--radios`
+  entry, a `--board-dir` with no `board.pkgs`;
 - a manifest line naming a package no producer declares;
 - a manifest line naming more than one package;
 - a manifest whose filename belongs to no family;

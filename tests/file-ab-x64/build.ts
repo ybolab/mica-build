@@ -25,7 +25,7 @@ try {
   writeFileSync(join(output, 'metadata.pub'), signer.publicKey)
   const bootSigning = { key: join(output, 'db.key.pem'), certificate: join(output, 'db.cert.pem') }
   await tb.must(['openssl', 'req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-sha256', '-days', '1', '-subj', '/CN=file-ab-boot-test', '-keyout', bootSigning.key, '-out', bootSigning.certificate])
-  const layout = parseFileLayout(readFileSync(resolve(`boards/${board}/board.env`), 'utf8'))
+  const layout = parseFileLayout(readFileSync(resolve(`_out/boards/${board}/board.env`), 'utf8'))
   const kernel = await packKernel({ board, kernelDirectory: resolve(kernelArg), init: resolve(initArg), shutdown: resolve(shutdownArg), publicKeys: [signer.publicKey],
     systemPartUuid: layout.partitions[1]!.guid, dataPartUuid: layout.partitions[2]!.guid, output: join(output, 'kernel'), contentSigning: signing, bootSigning }, tb)
   const content = await packComponent(resolve(rootArg), join(output, 'root'), 'rootfs', signing, tb)

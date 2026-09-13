@@ -1,13 +1,13 @@
 {
   "name": "mica-board-s905x5m",
   "repository": "mica-boards",
-  "commit": "ec968ea153f78d96ebf4e6c921ae1d9dc44ed42d",
+  "commit": "f4ad2684729f1361b470899fe849ae132c0a4a11",
   "targets": {
     "arm64": {
-      "version": "0.1.0+gitec968ea153f7-1",
+      "version": "0.1.0+gitf4ad2684729f-1",
       "architecture": "arm64",
-      "sha256": "a56606da802b1ce4c1c5bac24d81f86fab392b0349bb300587f4f201efbb81b7",
-      "asset": "mica-board-s905x5m_0.1.0.gitec968ea153f7-1_arm64.deb"
+      "sha256": "e9edca98d4232fe008dacd466853ccd5adfcce1e90ff4962a1c3aae5eeb96d15",
+      "asset": "mica-board-s905x5m_0.1.0.gitf4ad2684729f-1_arm64.deb"
     }
   }
 }

@@ -110,7 +110,7 @@ beforeEach(() => {
     source: { commit: 'a'.repeat(40), dirty: false }, builderImages: { IMAGE_TEST: 'example@sha256:' + 'a'.repeat(64) },
     image: join(work, IMAGE), update: join(work, 'update.mosupd'), firmware: join(work, 'firmware'),
     packages: join(work, 'packages.tsv'), meta: join(work, 'meta'), notes: join(work, 'notes.md'),
-    evidence: new URL('../../boards/x64/evidence.json', import.meta.url).pathname, keys }
+    evidence: new URL('../../_out/boards/x64/evidence.json', import.meta.url).pathname, keys }
 })
 afterEach(() => rmSync(work, { recursive: true, force: true }))
 
@@ -255,7 +255,7 @@ function copyReleaseCli(root: string, destination: string) {
     }
   }
   for (const name of ['build/src/release-cli.ts', 'Makefile', 'build/package.json', 'verify/package.json',
-    'build-env/from.sh', 'build-env/images.env', 'boards/x64/board.env', 'boards/x64/evidence.json']) copy(name)
+    'build-env/from.sh', 'build-env/images.env', '_out/boards/x64/board.env', '_out/boards/x64/evidence.json']) copy(name)
 }
 
 test.each(['ordinary', 'linked'])('shipped release CLI and documented verification commands execute (%s checkout)', async (kind) => {
@@ -481,9 +481,9 @@ test('runtime report preserves epoch nanoseconds and refuses one-nanosecond dive
 async function virtAcceptanceFixture() {
   const repo = new URL('../../', import.meta.url).pathname
   const checkout = join(work, 'frozen-checkout')
-  mkdirSync(join(checkout, 'boards/virt-arm64'), { recursive: true })
+  mkdirSync(join(checkout, '_out/boards/virt-arm64'), { recursive: true })
   mkdirSync(join(checkout, 'build-env'))
-  for (const path of ['boards/virt-arm64/board.env', 'boards/virt-arm64/evidence.json', 'build-env/images.env']) {
+  for (const path of ['_out/boards/virt-arm64/board.env', '_out/boards/virt-arm64/evidence.json', 'build-env/images.env']) {
     writeFileSync(join(checkout, path), readFileSync(join(repo, path)))
   }
   let compositionTree = '', compositionEpoch = 0
@@ -518,7 +518,7 @@ async function virtAcceptanceFixture() {
   renameSync(join(inputs.firmware, 'BOOTX64.EFI'), join(inputs.firmware, 'BOOTAA64.EFI'))
   const image = join(work, 'mos-virt-arm64-20260911-020000.img')
   renameSync(inputs.image, image)
-  Object.assign(inputs, { board: 'virt-arm64', image, evidence: join(checkout, 'boards/virt-arm64/evidence.json') })
+  Object.assign(inputs, { board: 'virt-arm64', image, evidence: join(checkout, '_out/boards/virt-arm64/evidence.json') })
   runtimeFixture('arm64')
   const report = runtime(), lineage = report.provenance.source_lineage
   // The frozen checkout is the source; the fixture's packages become imports
@@ -559,7 +559,7 @@ test('non-publication acceptance uses the same valid candidate that both normal 
   expect(gate.status).not.toBe(0)
   expect(gate.stderr).toContain('Board virt-arm64 has no release publication target')
   expect(gate.stdout).not.toContain('RELEASE_GATE_PASS')
-  expect(readFileSync(join(repo, 'boards/virt-arm64/board.env'), 'utf8')).toMatch(/^BOARD_RELEASE_TARGET=0$/m)
+  expect(readFileSync(join(repo, '_out/boards/virt-arm64/board.env'), 'utf8')).toMatch(/^BOARD_RELEASE_TARGET=0$/m)
 }, OPEN_TIMEOUT_MS)
 
 test('non-publication acceptance refuses false source, dirty checkout, policy widening and reused evidence', async () => {
