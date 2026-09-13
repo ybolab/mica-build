@@ -22,8 +22,8 @@ endif
 
 # Fetch every source dependency at its pin (deps/sources/*.json); a no-op
 # when each directory already carries its pin. `make deps-check` reads the
-# releases without downloading; `make deps-bump DEP=<repository>` rewrites
-# one pin from that repository's newest build-* release.
+# public source artifacts without downloading; `make deps-bump DEP=<repository>`
+# rewrites one pin from that repository's newest source.build-* artifact.
 .PHONY: deps deps-check deps-bump
 deps:
 	bash tools/deps.sh fetch

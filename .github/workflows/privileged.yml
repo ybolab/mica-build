@@ -199,8 +199,6 @@ jobs:
       # board pinned tomorrow is covered by its products/ recipe.
       - name: Fetch the source dependencies at their pins
         run: make deps
-        env:
-          GH_TOKEN: ${{ secrets.MICA_DEPS_TOKEN }}
 
       - name: The trust material the products are signed with (development, this lane proves the pipeline)
         run: make os-devkeys
