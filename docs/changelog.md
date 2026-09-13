@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-09-13 03:50 [progress]
+
+`git.ds.cc` is back: the Gitea mirrors are in step with GitHub. `mica-build`
+was renamed to `mica`, `mica-debian` and `mica-system` were created, and
+`main` of `mica`, `mica-build-env` and `mica-debian` was pushed to the `gitea`
+remote of each checkout; every Mica OS repository now has the same name on
+both forges, GitHub being `origin`.
+
 ## 2026-09-13 03:20 [decision]
 
 Package pins are JSON, one file per package under `deps/packages/`, in the

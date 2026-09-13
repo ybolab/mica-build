@@ -138,4 +138,22 @@ Implementing Phase 1 (the mechanism inside this tree); approved 2026-09-12.
   smoke 12/12, the archives now saying `Mos-Source-Repo: mica`.
   `git.ds.cc` stayed unreachable, so `make os-deb-preflight`'s reachability
   check was bypassed (`make -o os-deb-preflight os-debs`) and the Gitea
-  mirrors of the three repositories are still pending.
+  mirrors of the three repositories were pushed when the host came back
+  (2026-09-13 03:50; `mica-build` renamed to `mica`, `mica-debian` and
+  `mica-system` created there).
+- 2026-09-13 (user, three decisions in one night): archives are published
+  by workflows as GitHub Release assets (`build-<commit12>` per commit), not
+  through a package registry; repositories are linked by source pins
+  (`deps/sources/*.json`, fetched by the vendored `tools/deps.sh`), not
+  submodules; package pins are JSON files under `deps/packages/` in the
+  shape of the Debian pins. Landed as `199cf440`, `a2fc5bf9`, `7512a8fa`,
+  `e2faf366` (release transport and its round trip), `4cd6b975` (source
+  pins) and `fe7bbcbb` (package pins); `mica-build-env` and `mica-debian`
+  publish their source as releases (`606029005142`, `f9937fac4922`) and are
+  pinned at those. Verified: `tests/pool-lock-test.sh` 21/21 against a stub
+  of the release API, `source_lineage_test.py` 14 (source pin and package
+  pin refusals by file), `release-manifest.test.ts` 71, `make docs-verify`,
+  `make os-host-toolchain-lint` 418/418, `make os-debian-test`, the
+  `mos-podman` round trip through a real release (`build-199cf440684e`:
+  published, pinned, deleted locally, fetched by `make os-pool`, x64
+  composed with smoke 12/12).
