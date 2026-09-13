@@ -1,0 +1,13 @@
+{
+  "name": "mica-board-s905x5m",
+  "repository": "mica-s905x5m",
+  "commit": "4aa05b936c7a894002440050ebf2e817d697776f",
+  "targets": {
+    "arm64": {
+      "version": "0.1.0+git4aa05b936c7a-1",
+      "architecture": "arm64",
+      "sha256": "3d504fd581a0f052b1b16a987339104635d8a45b9dba1275bae484f0ae2911a0",
+      "asset": "mica-board-s905x5m_0.1.0.git4aa05b936c7a-1_arm64.deb"
+    }
+  }
+}

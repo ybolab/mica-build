@@ -51,14 +51,14 @@ help:
 	@echo "  os-devkeys          create explicit development inputs (MICA_SIGNING_OUTPUT, default meta; refuses existing output)"
 	@echo "  os-layout-lint      check the current three-partition contracts"
 	@echo "  os-fit-records-test verify bounded native FIT record parsing"
-	@echo "  s905x5m-<t>         build the s905x5m BSP (kernel|uboot|userland|uboot-package)"
 	@echo "mos build targets:"
 	@echo "  os-debian-cache     cache the fixed Debian runtime base (MICA_ARCH=amd64|arm64)"
 	@echo "  os-debian-verify    verify the runtime cache without network access"
 	@echo "  os-debian-install   install the cached base with dpkg (MICA_ROOT=<empty directory>)"
 	@echo "  os-debian-test      test the Debian runtime cache boundary"
 	@echo "image (signed component files on SYSTEM with unified DATA):"
-	@echo "  os-boot-tools      build the pinned signed UKI/systemd-boot packager"
+	@echo "  os-boot-tools       build the pinned signed UKI/systemd-boot packager (boot/, the mica-boot pin)"
+	@echo "  os-board-kernel     read a board's kernel, firmware and U-Boot out of its pinned mica-kernel-<board> archive into _out/boards/<board> (MICA_BOARD)"
 	@echo "  os-components      build independent components (MICA_COMPONENT_ARGS='root|kernel|firmware|deployment|image|archive ...')"
 	@echo "  os-rootfs-cx3576 compose the independent signed rootfs input"
 	@echo "  os-verify verify the assembled mos image against the mos image contract (docker)"
@@ -87,9 +87,6 @@ help:
 	@echo "  os-install-closure-gate  apt-install both pools into clean roots: closure, ldd, accounts, versions (docker)"
 	@echo "  os-rootfs-manifest-test  resolve the rootfs package set for every board, profile and feature set; prove each refusal and that no producer package is unreachable"
 	@echo "  os-quadlet-doc-test run docs/design/containers.md's examples through Quadlet"
-	@echo "  cx3576-<t>          delegate target <t> to boards/cx3576/bsp (uboot|kernel|rootfs|image|clean)"
-	@echo "  x64-<t>             delegate target <t> to boards/x64/bsp (kernel|kernel-config|clean); no bootloader is built, the firmware is one"
-	@echo "  virt-arm64-<t>      delegate target <t> to boards/virt-arm64/bsp (kernel|kernel-config|clean); the QEMU aarch64 board, same shape as x64"
 # NEEDS THE arm64 POOL. The root is composed from _out/debs/arm64 now, so this
 # target refuses until `make os-pool` has built it -- by name, rather than by
 # compiling a component on demand. That refusal is the composer's, not this
