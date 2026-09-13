@@ -336,7 +336,7 @@ test('container storage requires its own enabled bind outside var', async () => 
 })
 
 const NATIVE_ENDPOINT_CHECK = 'file-root-native-endpoints'
-const NATIVE_PATHS = ['/usr/bin/micad', '/usr/bin/apid', '/usr/bin/mica-deploy']
+const NATIVE_PATHS = ['/usr/bin/micad', '/usr/bin/mica-deploy']
 
 function nativeElf(payload = 'clean native fixture'): Buffer {
   // ELF64 executable with one loadable segment; no toolchain or execution needed.
@@ -368,6 +368,8 @@ function nativeFiles(f: ReturnType<typeof fixture>): number {
     f.file(path, content)
     bytes += content.byteLength
   }
+  rmSync(join(f.root, 'usr/bin/apid'), { force: true })
+  symlinkSync('micad', join(f.root, 'usr/bin/apid'))
   return bytes
 }
 
@@ -379,11 +381,11 @@ async function expectNativeRefusal(f: ReturnType<typeof fixture>, path: string, 
   return result.message
 }
 
-test('native endpoint check requires all three clean ELFs and reports exact scan evidence', async () => {
+test('native endpoint check requires both clean ELFs and reports exact scan evidence', async () => {
   const f = fixture(), bytes = nativeFiles(f)
   const result = await f.checkResult(NATIVE_ENDPOINT_CHECK)
   expect(result.verdict, result.message).toBe('pass')
-  expect(result.message).toContain('scannedFiles=3')
+  expect(result.message).toContain('scannedFiles=2')
   expect(result.message).toContain(`scannedBytes=${bytes}`)
   expect(result.message).toContain(`examinedPaths=${NATIVE_PATHS.join(',')}`)
 })
@@ -412,7 +414,7 @@ test.each(NATIVE_PATHS)('compiled endpoint in %s is found in raw non-UTF-8 bytes
   expect(message).not.toContain('DO_NOT_ECHO_ENDPOINT')
   expect(message).not.toContain('DO_NOT_ECHO_TOKEN')
   expect(message).not.toContain('https://')
-  expect(message).toContain('scannedFiles=3')
+  expect(message).toContain('scannedFiles=2')
   expect(message).toMatch(/scannedBytes=[1-9][0-9]*/)
   expect(message).toContain(`examinedPaths=${NATIVE_PATHS.join(',')}`)
 })
@@ -430,16 +432,16 @@ test.each([
   'https://\u66f4\u65b0.example/v1/manifest.json',
 ])('native endpoint check does not exempt network location %s', async (url) => {
   const f = fixture(); nativeFiles(f)
-  f.file('/usr/bin/apid', nativeElf(url))
-  await expectNativeRefusal(f, '/usr/bin/apid', 'endpoint')
+  f.file('/usr/bin/micad', nativeElf(url))
+  await expectNativeRefusal(f, '/usr/bin/micad', 'endpoint')
 })
 
-test('native scan includes only the three current first-party inputs', async () => {
+test('native scan includes only the two current first-party inputs', async () => {
   const f = fixture(), bytes = nativeFiles(f)
   f.file('/usr/bin/third-party', nativeElf('https://updates.example/v1/manifest.json'))
   const result = await f.checkResult(NATIVE_ENDPOINT_CHECK)
   expect(result.verdict, result.message).toBe('pass')
-  expect(result.message).toContain('scannedFiles=3')
+  expect(result.message).toContain('scannedFiles=2')
   expect(result.message).toContain(`scannedBytes=${bytes}`)
   expect(result.message).not.toContain('third-party')
 })
@@ -490,9 +492,23 @@ test('native special file is refused before reading can block', async () => {
 
 test('native directory is refused before reading', async () => {
   const f = fixture(); nativeFiles(f)
+  rmSync(join(f.root, 'usr/bin/mica-deploy'))
+  mkdirSync(join(f.root, 'usr/bin/mica-deploy'))
+  await expectNativeRefusal(f, '/usr/bin/mica-deploy', 'regular')
+})
+
+// apid is micad reached by another name: one binary, scanned once.
+test.each([
+  ['a regular file', (root: string) => writeFileSync(join(root, 'usr/bin/apid'), nativeElf())],
+  ['absent', (_root: string) => {}],
+  ['a link to an absolute micad', (root: string) => symlinkSync('/usr/bin/micad', join(root, 'usr/bin/apid'))],
+  ['a link to another binary', (root: string) => symlinkSync('mica-deploy', join(root, 'usr/bin/apid'))],
+  ['a directory', (root: string) => mkdirSync(join(root, 'usr/bin/apid'))],
+])('apid as %s is refused: it must be the link apid -> micad', async (_shape, make) => {
+  const f = fixture(); nativeFiles(f)
   rmSync(join(f.root, 'usr/bin/apid'))
-  mkdirSync(join(f.root, 'usr/bin/apid'))
-  await expectNativeRefusal(f, '/usr/bin/apid', 'regular')
+  make(f.root)
+  await expectNativeRefusal(f, '/usr/bin/apid', 'must be the symlink apid -> micad')
 })
 
 test.each(['usr', 'usr/bin'])('native parent %s cannot redirect the scan outside the unpacked image', async (parent) => {
@@ -515,7 +531,7 @@ test('an unpacked-root symlink cannot pass native input verification', async () 
 
 test('native scheme fragments and relative API routes do not name a network location', async () => {
   const f = fixture(); nativeFiles(f)
-  f.file('/usr/bin/apid', nativeElf('https://\0http://\0ws://\0wss://\0mqtt://\0mqtts://\0/api/v1/update'))
+  f.file('/usr/bin/micad', nativeElf('https://\0http://\0ws://\0wss://\0mqtt://\0mqtts://\0/api/v1/update'))
   expect(await f.check(NATIVE_ENDPOINT_CHECK)).toBe('pass')
 })
 
@@ -574,7 +590,7 @@ test('native endpoint check accepts a complete ELF32 executable', async () => {
   f.file('/usr/bin/micad', bytes)
   const result = await f.checkResult(NATIVE_ENDPOINT_CHECK)
   expect(result.verdict, result.message).toBe('pass')
-  expect(result.message).toContain('scannedFiles=3')
+  expect(result.message).toContain('scannedFiles=2')
 })
 
 
@@ -592,62 +608,62 @@ const EMBEDDED_UI_NON_ENDPOINTS = [
 
 test.each(EMBEDDED_UI_NON_ENDPOINTS)('exact embedded UI literal %s is not an update or fleet endpoint', async (literal) => {
   const f = fixture(); nativeFiles(f)
-  f.file('/usr/bin/apid', nativeElf(literal))
+  f.file('/usr/bin/micad', nativeElf(literal))
   expect(await f.check(NATIVE_ENDPOINT_CHECK)).toBe('pass')
 })
 
 test.each(EMBEDDED_UI_NON_ENDPOINTS)('an endpoint beside the exact UI literal %s is still refused', async (literal) => {
   const f = fixture(); nativeFiles(f)
   const neighbor = `${literal}${literal.endsWith('/') ? '' : '/'}updates`
-  f.file('/usr/bin/apid', nativeElf(`${literal}\0${neighbor}`))
-  await expectNativeRefusal(f, '/usr/bin/apid', 'endpoint')
+  f.file('/usr/bin/micad', nativeElf(`${literal}\0${neighbor}`))
+  await expectNativeRefusal(f, '/usr/bin/micad', 'endpoint')
 })
 
-test.each(EMBEDDED_UI_NON_ENDPOINTS)('the exact UI literal %s is not exempt in micad or mica-deploy', async (literal) => {
-  for (const path of ['/usr/bin/micad', '/usr/bin/mica-deploy']) {
-    const f = fixture(); nativeFiles(f)
-    f.file(path, nativeElf(literal))
-    await expectNativeRefusal(f, path, 'endpoint')
-  }
+test.each(EMBEDDED_UI_NON_ENDPOINTS)('the exact UI literal %s is not exempt in mica-deploy', async (literal) => {
+  const f = fixture(); nativeFiles(f)
+  f.file('/usr/bin/mica-deploy', nativeElf(literal))
+  await expectNativeRefusal(f, '/usr/bin/mica-deploy', 'endpoint')
 })
 
 test('invalid UTF-8 after a bare scheme is not a network authority', async () => {
   const f = fixture(); nativeFiles(f)
-  f.file('/usr/bin/apid', Buffer.concat([nativeElf(), Buffer.from('https://'), Buffer.from([0xc0, 0xc0, 0])]))
+  f.file('/usr/bin/micad', Buffer.concat([nativeElf(), Buffer.from('https://'), Buffer.from([0xc0, 0xc0, 0])]))
   expect(await f.check(NATIVE_ENDPOINT_CHECK)).toBe('pass')
-  f.file('/usr/bin/apid', Buffer.concat([nativeElf(), Buffer.from('https://updates.example/v1/manifest.json'), Buffer.from([0xc0, 0])]))
-  await expectNativeRefusal(f, '/usr/bin/apid', 'endpoint')
+  f.file('/usr/bin/micad', Buffer.concat([nativeElf(), Buffer.from('https://updates.example/v1/manifest.json'), Buffer.from([0xc0, 0])]))
+  await expectNativeRefusal(f, '/usr/bin/micad', 'endpoint')
 })
 
 
 test('replacement characters cannot truncate an endpoint into an exact UI exemption', async () => {
   const f = fixture(); nativeFiles(f)
-  f.file('/usr/bin/apid', nativeElf('https://react.dev/errors/\ufffdupdates'))
-  await expectNativeRefusal(f, '/usr/bin/apid', 'endpoint')
-  f.file('/usr/bin/apid', Buffer.concat([nativeElf('http://localhost'), Buffer.from('http://localhost'), Buffer.from([0xff]), Buffer.from('/updates')]))
-  await expectNativeRefusal(f, '/usr/bin/apid', 'endpoint')
+  f.file('/usr/bin/micad', nativeElf('https://react.dev/errors/\ufffdupdates'))
+  await expectNativeRefusal(f, '/usr/bin/micad', 'endpoint')
+  f.file('/usr/bin/micad', Buffer.concat([nativeElf('http://localhost'), Buffer.from('http://localhost'), Buffer.from([0xff]), Buffer.from('/updates')]))
+  await expectNativeRefusal(f, '/usr/bin/micad', 'endpoint')
 })
 
+// Attested in the rebuilt x86_64 and aarch64 release binaries of micad (the
+// merged micad + apid) and mica-deploy: each message with each text that
+// actually follows it there.
+const RUSTLS_EOF = 'peer closed connection without sending TLS close_notify: https://docs.rs/rustls/latest/rustls/manual/_03_howto/index.html#unexpected-eof'
+const CLAP_BUG = 'Fatal internal error. Please consider filing a bug report at https://github.com/clap-rs/clap/issues'
 const NATIVE_DIAGNOSTIC_CASES: Array<[string, string, string]> = [
   ['/usr/bin/micad', 'Invalid address. See https://dbus.freedesktop.org/doc/dbus-specification.html#addresses', 'mid > len'],
+  ['/usr/bin/micad', 'Invalid address. See https://dbus.freedesktop.org/doc/dbus-specification.html#addresses', 'DBUS_SYSTEM_BUS_ADDRESSunix:path=/var/run/dbus/system_bus_socketDBUS_SESSION_BUS_ADDRESSXDG_RUNTIME_DIRtracing::span::activecalled `Result::unwrap()` on an `Err` value'],
   ['/usr/bin/micad', 'Invalid member name. See https://dbus.freedesktop.org/doc/dbus-specification.html#message-protocol-names-member', 'Invalid interface name. See https://dbus.freedesktop.org/doc/dbus-specification.html#message-protocol-names-interface'],
   ['/usr/bin/micad', 'Invalid interface name. See https://dbus.freedesktop.org/doc/dbus-specification.html#message-protocol-names-interface', 'Invalid well-known name. See https://dbus.freedesktop.org/doc/dbus-specification.html#message-protocol-names-bus'],
   ['/usr/bin/micad', 'Invalid well-known name. See https://dbus.freedesktop.org/doc/dbus-specification.html#message-protocol-names-bus', 'Invalid error name. See https://dbus.freedesktop.org/doc/dbus-specification.html#message-protocol-names-error'],
   ['/usr/bin/micad', 'Invalid error name. See https://dbus.freedesktop.org/doc/dbus-specification.html#message-protocol-names-error', 'org.freedesktop.DBusInvalid unique name. See https://dbus.freedesktop.org/doc/dbus-specification.html#message-protocol-names-bus'],
   ['/usr/bin/micad', 'Invalid unique name. See https://dbus.freedesktop.org/doc/dbus-specification.html#message-protocol-names-bus', 'BusName::UniqueBusName::WellKnownOwnedErrorNameOwnedUniqueNameInvalid bus name. See https://dbus.freedesktop.org/doc/dbus-specification.html#message-protocol-names-bus'],
   ['/usr/bin/micad', 'Invalid bus name. See https://dbus.freedesktop.org/doc/dbus-specification.html#message-protocol-names-bus', 'mid > len'],
-  ['/usr/bin/apid', 'peer closed connection without sending TLS close_notify: https://docs.rs/rustls/latest/rustls/manual/_03_howto/index.html#unexpected-eof', 'internal error: entered unreachable code'],
-  ['/usr/bin/apid', 'Invalid address. See https://dbus.freedesktop.org/doc/dbus-specification.html#addresses', 'mid > len'],
-  ['/usr/bin/apid', 'Invalid member name. See https://dbus.freedesktop.org/doc/dbus-specification.html#message-protocol-names-member', 'Invalid interface name. See https://dbus.freedesktop.org/doc/dbus-specification.html#message-protocol-names-interface'],
-  ['/usr/bin/apid', 'Invalid interface name. See https://dbus.freedesktop.org/doc/dbus-specification.html#message-protocol-names-interface', 'Invalid error name. See https://dbus.freedesktop.org/doc/dbus-specification.html#message-protocol-names-error'],
-  ['/usr/bin/apid', 'Invalid error name. See https://dbus.freedesktop.org/doc/dbus-specification.html#message-protocol-names-error', 'org.freedesktop.DBusInvalid unique name. See https://dbus.freedesktop.org/doc/dbus-specification.html#message-protocol-names-bus'],
-  ['/usr/bin/apid', 'Invalid unique name. See https://dbus.freedesktop.org/doc/dbus-specification.html#message-protocol-names-bus', 'BusName::UniqueBusName::WellKnownOwnedErrorNameOwnedUniqueNameInvalid bus name. See https://dbus.freedesktop.org/doc/dbus-specification.html#message-protocol-names-bus'],
-  ['/usr/bin/apid', 'Invalid bus name. See https://dbus.freedesktop.org/doc/dbus-specification.html#message-protocol-names-bus', 'mid > len'],
-  ['/usr/bin/apid', 'Node.js ES modules are not directly supported, see https://docs.rs/getrandom#nodejs-es-module-support', 'Errorinternal_codedescriptionunknown_code\0'],
-  ['/usr/bin/mica-deploy', 'Fatal internal error. Please consider filing a bug report at https://github.com/clap-rs/clap/issues', ''],
-  ['/usr/bin/mica-deploy', 'Fatal internal error. Please consider filing a bug report at https://github.com/clap-rs/clap/issues', 'a Display implementation returned an error unexpectedly'],
-  ['/usr/bin/mica-deploy', 'Fatal internal error. Please consider filing a bug report at https://github.com/clap-rs/clap/issues', 'falseTryFromIntErrora Display implementation returned an error unexpectedly'],
-  ['/usr/bin/mica-deploy', 'Fatal internal error. Please consider filing a bug report at https://github.com/clap-rs/clap/issues', 'internal error: entered unreachable code'],
+  ['/usr/bin/micad', RUSTLS_EOF, 'internal error: entered unreachable code'],
+  ['/usr/bin/micad', RUSTLS_EOF, 'is not valid for any names (according to its subjectAltName extension)'],
+  ['/usr/bin/micad', 'Node.js ES modules are not directly supported, see https://docs.rs/getrandom#nodejs-es-module-support', 'Errorinternal_codedescriptionunknown_code\0'],
+  ['/usr/bin/mica-deploy', CLAP_BUG, ''],
+  ['/usr/bin/mica-deploy', CLAP_BUG, 'a Display implementation returned an error unexpectedly'],
+  ['/usr/bin/mica-deploy', CLAP_BUG, 'falseTryFromIntErrora Display implementation returned an error unexpectedly'],
+  ['/usr/bin/mica-deploy', CLAP_BUG, 'internal error: entered unreachable code'],
+  ['/usr/bin/mica-deploy', RUSTLS_EOF, 'internal error: entered unreachable code'],
 ]
 
 test.each(NATIVE_DIAGNOSTIC_CASES)('exact diagnostic and attested adjacent text in %s remain non-endpoints: %s', async (path, message, adjacent) => {
@@ -656,7 +672,7 @@ test.each(NATIVE_DIAGNOSTIC_CASES)('exact diagnostic and attested adjacent text 
     f.file(path, nativeElf(payload))
     const result = await f.checkResult(NATIVE_ENDPOINT_CHECK)
     expect(result.verdict, result.message).toBe('pass')
-    expect(result.message).toContain('scannedFiles=3')
+    expect(result.message).toContain('scannedFiles=2')
   }
 })
 
@@ -686,14 +702,16 @@ test.each(NATIVE_DIAGNOSTIC_CASES)('an injected endpoint adjacent to a diagnosti
   }
 })
 
-test.each(NATIVE_DIAGNOSTIC_CASES)('a diagnostic in the wrong native binary is refused: %s / %s', async (path, message, adjacent) => {
+// A diagnostic both binaries carry (rustls, in each) is not in the wrong one anywhere.
+const otherBinary = (path: string) => path === '/usr/bin/mica-deploy' ? '/usr/bin/micad' : '/usr/bin/mica-deploy'
+test.each(NATIVE_DIAGNOSTIC_CASES.filter(([path, message, adjacent]) => !NATIVE_DIAGNOSTIC_CASES.some(([p, m, a]) => p === otherBinary(path) && m === message && a === adjacent)))('a diagnostic in the wrong native binary is refused: %s / %s', async (path, message, adjacent) => {
   const f = fixture(); nativeFiles(f)
-  const other = path === '/usr/bin/mica-deploy' ? '/usr/bin/micad' : '/usr/bin/mica-deploy'
+  const other = otherBinary(path)
   f.file(other, nativeElf(`${message}${adjacent}`))
   await expectNativeRefusal(f, other, 'endpoint')
 })
 
-test.each(['/usr/bin/micad', '/usr/bin/apid'])('the exact D-Bus introspection DTD in %s is a namespace only', async (path) => {
+test.each(['/usr/bin/micad'])('the exact D-Bus introspection DTD in %s is a namespace only', async (path) => {
   const f = fixture(); nativeFiles(f)
   const dtd = 'http://www.freedesktop.org/standards/dbus/1.0/introspect.dtd'
   f.file(path, nativeElf(dtd))

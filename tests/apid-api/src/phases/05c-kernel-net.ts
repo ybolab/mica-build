@@ -10,7 +10,7 @@
  * squashfs, and that is the limit of what an offline reader can say: a config
  * symbol is a claim about what was COMPILED, and `modules.dep` is a claim about
  * what was PACKED. Neither answers whether the running kernel hands back a
- * device. Only `ip link add` on a live guest does, and this harness is the only
+ * device. Only creating one on a live guest does, and this harness is the only
  * thing in the tree that has one -- it already prepares a disk, boots it, puts
  * journald on the serial line and captures the console. Teaching verify to
  * boot QEMU would be a second copy of all of that.

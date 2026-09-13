@@ -272,24 +272,6 @@ function seedFirewall(root: string, file: WriteFile): void {
     '# Settings for units distributed with systemd itself.\n'
     + 'enable systemd-networkd.service\ndisable systemd-time-wait-sync.service\n')
 
-  file('/usr/sbin/xtables-nft-multi', 'ELF ... xtables-nft-multi\n')
-  chmodSync(join(root, '/usr/sbin/xtables-nft-multi'), 0o755)
-  file('/usr/sbin/xtables-legacy-multi', 'ELF ... xtables-legacy-multi\n')
-  chmodSync(join(root, '/usr/sbin/xtables-legacy-multi'), 0o755)
-
-  mkdirSync(join(root, '/etc/alternatives'), { recursive: true })
-  for (const [name, variant] of [
-    ['iptables', 'iptables-nft'],
-    ['iptables-save', 'iptables-nft-save'],
-    ['iptables-restore', 'iptables-nft-restore'],
-  ] as const) {
-    symlinkSync('xtables-nft-multi', join(root, '/usr/sbin', variant))
-    symlinkSync(`/usr/sbin/${variant}`, join(root, '/etc/alternatives', name))
-    symlinkSync(`/etc/alternatives/${name}`, join(root, '/usr/sbin', name))
-  }
-  for (const name of ['iptables-legacy', 'iptables-legacy-save', 'iptables-legacy-restore']) {
-    symlinkSync('xtables-legacy-multi', join(root, '/usr/sbin', name))
-  }
 }
 
 function seedConnd(root: string, board: Board, file: WriteFile): void {

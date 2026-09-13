@@ -923,50 +923,6 @@ class SelectionTest(unittest.TestCase):
             self.assertEqual((self.out / path[1:]).read_bytes(), (self.root / path[1:]).read_bytes())
         self.assertEqual(self.command('verify').returncode, 0)
 
-    def iproute_without_python(self):
-        entries = ['/usr/bin/ip', '/usr/bin/lnstat', '/usr/bin/nstat', '/usr/bin/rdma', '/usr/bin/ss',
-                   '/usr/sbin/arpd', '/usr/sbin/bridge', '/usr/sbin/dcb', '/usr/sbin/devlink', '/usr/sbin/genl',
-                   '/usr/sbin/rtacct', '/usr/sbin/rtmon', '/usr/sbin/tc', '/usr/sbin/tipc', '/usr/sbin/vdpa',
-                   '/usr/bin/ctstat', '/usr/bin/rtstat', '/usr/sbin/ip']
-        policy = json.loads(SELECTOR.with_name('consumers.json').read_text())
-        rule = next(r for r in policy['consumers']['mica-system']['roots']
-                    if r.get('packages') == ['iproute2'] and r['kind'] == 'executable')
-        self.rules['consumers']['mica-system']['roots'].append(rule)
-        self.rules['consumers']['mica-system']['roots'].append({'paths': ['/usr/bin/env'], 'kind': 'executable', 'reason': 'retained environment tool'})
-        for path in entries:
-            self.write(path, elf(), 0o755)
-        self.write('/usr/bin/routel', b'#! /usr/bin/env python3\nimport json\n', 0o755)
-        self.write('/usr/bin/env', elf(), 0o755)
-        self.write('/usr/share/doc/iproute2/copyright', b'iproute fixture license\n')
-        self.capture_ownership()
-        owned = [*entries, '/usr/bin/routel', '/usr/share/doc/iproute2/copyright']
-        system = self.db / 'mica-system.list'
-        system.write_text(''.join(p + '\n' for p in system.read_text().splitlines() if p not in owned))
-        (self.db / 'iproute2.list').write_text('\n'.join(owned) + '\n')
-        with self.manifest.open('a') as stream:
-            stream.write('iproute2\t6.15.0-1\tamd64\n')
-        return entries
-
-    def test_iproute_omits_only_routel_without_python(self):
-        entries = self.iproute_without_python()
-        rows = {r['path']: r for r in self.selected()['files']}
-        self.assertNotIn('/usr/bin/routel', rows)
-        self.assertFalse((self.out / 'usr/bin/python3').exists())
-        for path in entries:
-            self.assertEqual((self.out / path[1:]).read_bytes(), (self.root / path[1:]).read_bytes())
-            self.assertEqual([o['package'] for o in rows[path]['origins']], ['iproute2'])
-        self.assertEqual(self.command('verify').returncode, 0)
-
-    def test_iproute_other_script_interpreter_still_refuses(self):
-        self.iproute_without_python()
-        self.write('/usr/bin/nstat', b'#!/usr/bin/env absent-interpreter\n', 0o755)
-        self.refuse('missing env command: absent-interpreter')
-
-    def test_iproute_missing_retained_entry_still_refuses(self):
-        self.iproute_without_python()
-        (self.root / 'usr/bin/ss').unlink()
-        self.refuse('/usr/bin/ss')
-
     def retained_named_resources(self):
         policy = json.loads(SELECTOR.with_name('consumers.json').read_text())
         roots = [r for r in policy['consumers']['mica-system']['roots'] if r['kind'] == 'resource' and r.get('packages') in

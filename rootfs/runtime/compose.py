@@ -293,11 +293,6 @@ def compose(args: argparse.Namespace) -> None:
             # Dangling symlinks and unsupported executables must already refuse
             # through the selector. Check every surviving operator entry too.
             if at.is_symlink() or (at.is_file() and at.stat().st_mode & 0o111):
-                # The sole user-selected operator omission has an exact package owner.
-                if path == '/usr/bin/routel' and engine.owners.get(path) == {'iproute2'}:
-                    require(not at.is_symlink() and at.is_file(), 'excluded routel must be a regular iproute2 file')
-                    require(path not in files, 'excluded routel was selected')
-                    continue
                 require(path in files, f'operator executable omitted: {path}')
     debug = debug_records(selector.host_path(args.debug), files)
     provenance = {}

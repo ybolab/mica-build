@@ -101,57 +101,6 @@ class CompositionTest(unittest.TestCase):
                             rules=self.f.rules_path, arch='amd64', epoch=1000000000,
                             debug=self.debug, report=self.f.report)
 
-    def iproute_capture(self):
-        entries = self.f.iproute_without_python()
-        shutil.copytree(self.f.db, self.inputs / 'info', dirs_exist_ok=True)
-        shutil.copyfile(self.f.manifest, self.inputs / 'manifest.tsv')
-        with (self.inputs / 'upstream.tsv').open('a') as stream:
-            stream.write('iproute2\t6.15.0-1\tamd64\t' + 'e' * 64 + '\thttps://example.invalid/iproute2.deb\tmica-system\n')
-        with (self.inputs / 'sources.tsv').open('a') as stream:
-            stream.write('iproute2\tiproute2\t6.15.0-1\n')
-        self.f.rules_path.write_text(json.dumps(self.f.rules))
-        self.capture()
-        return entries
-
-    def test_routel_exclusion_composes_and_preserves_other_operators(self):
-        entries = self.iproute_capture()
-        r = self.compose(); self.assertEqual(r.returncode, 0, r.stderr)
-        report = json.loads(self.f.report.read_text())
-        self.assertNotIn('/usr/bin/routel', {row['path'] for row in report['files']})
-        self.assertFalse((self.f.out / 'usr/bin/python3').exists())
-        for path in entries:
-            self.assertEqual((self.f.out / path[1:]).read_bytes(), (self.f.root / path[1:]).read_bytes())
-            self.assertEqual(report['provenance']['files'][path]['archives'][0]['package'], 'iproute2')
-        self.assertEqual(self.f.command('verify').returncode, 0)
-
-    def test_routel_exclusion_wrong_owner_refuses(self):
-        self.iproute_capture()
-        owner = self.inputs / 'info/iproute2.list'
-        owner.write_text(owner.read_text().replace('/usr/bin/routel\n', ''))
-        with (self.inputs / 'info/unused.list').open('a') as stream:
-            stream.write('/usr/bin/routel\n')
-        r = self.compose(); self.assertNotEqual(r.returncode, 0)
-        self.assertIn('operator executable omitted: /usr/bin/routel', r.stderr)
-
-    def test_routel_exclusion_does_not_allow_another_omitted_tool(self):
-        self.iproute_capture()
-        self.f.write('/usr/bin/unexpected-iproute', elf(), 0o755)
-        with (self.inputs / 'info/iproute2.list').open('a') as stream:
-            stream.write('/usr/bin/unexpected-iproute\n')
-        (self.inputs / 'configured.json').unlink()
-        self.capture()
-        r = self.compose(); self.assertNotEqual(r.returncode, 0)
-        self.assertIn('operator executable omitted: /usr/bin/unexpected-iproute', r.stderr)
-
-    def test_routel_exclusion_rejects_symlink_substitution(self):
-        self.iproute_capture()
-        (self.f.root / 'usr/bin/routel').unlink()
-        self.f.link('/usr/bin/routel', 'ip')
-        (self.inputs / 'configured.json').unlink()
-        self.capture()
-        r = self.compose(); self.assertNotEqual(r.returncode, 0)
-        self.assertIn('excluded routel must be a regular iproute2 file', r.stderr)
-
     def podman_alias(self):
         declared = json.loads((REPO / 'rootfs/runtime/consumers.json').read_text())['consumers']['mica-podman']
         entries = declared['roots'][0]['paths']

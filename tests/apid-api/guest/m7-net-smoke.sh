@@ -5,8 +5,10 @@
 # This runs INSIDE the guest. `verify`'s two kernel checks read
 # `/boot/config-*` and the module indexes out of an unpacked squashfs, which is
 # a claim about what the image CONTAINS; nothing offline can answer whether the
-# running kernel will actually hand back a device. `ip link add` is the only
+# running kernel will actually hand back a device. Creating one is the only
 # thing that asks that question, and it has to be asked where the kernel is.
+# The image carries no `ip`: the devices are declared to systemd-networkd as
+# runtime .netdev files and removed with `networkctl delete`.
 #
 # Every conclusion is one `M7-SMOKE: <id> PASS|FAIL <detail>` line on the
 # console, which is the harness's only channel into this guest: the image keeps
@@ -70,16 +72,6 @@ wait_for() {
 
 state_is_mounted() { mountpoint -q "${STATE_DIR}"; }
 
-# Any interface that is not the loopback, up or down. A VLAN's parent has to
-# EXIST; it does not have to be up, and it does not have to carry a route --
-# `ip link add link <parent> ... type vlan` is accepted on a down parent. An
-# earlier form of this looked for the default route, which is a fact about
-# DHCP having completed and not about the kernel supporting VLANs.
-first_real_link() {
-    ip -o link show 2>/dev/null |
-        awk -F': ' '$2 != "lo" && $2 != "" {print $2; found=1; exit} END {exit !found}'
-}
-
 say "BEGIN $(uname -r)"
 
 if wait_for 60 state_is_mounted; then
@@ -99,47 +91,69 @@ for m in 8021q bridge wireguard; do
     fi
 done
 
-# 2. The links. A VLAN needs a declared parent, so the parent is DISCOVERED
-# rather than written down: a name in this file would make the check fail on a
-# guest whose NIC is enumerated differently, which is a fact about the host's
-# QEMU and not about the kernel under test.
-#
-# Nothing here disturbs the parent. A VLAN is a new device hanging off it, the
-# bridge takes no ports, and the tunnel is created from nothing -- enslaving the
-# parent to the bridge would drop the port forward and take the rest of the
-# suite with it.
-wait_for 30 first_real_link || true
-PARENT=$(first_real_link || true)
-
-VLAN_DEV="${PARENT}.${VLAN_ID}"
+# 2. The links, declared as runtime networkd files (/run/systemd/network) and
+# deleted again. Nothing here disturbs the NIC: the bridge takes no ports, the
+# VLAN hangs off that bridge rather than off the uplink (a VLAN= line in the
+# uplink's .network would reconfigure it and drop the port forward the rest of
+# the suite needs), and the tunnel is created from nothing.
+RUNTIME_NET=/run/systemd/network
+VLAN_DEV="${BRIDGE_DEV}.${VLAN_ID}"
+mkdir -p "${RUNTIME_NET}"
 
 link_check() {
-    local id="$1" dev="$2"; shift 2
-    local out
-    if ! out=$("$@" 2>&1); then
-        fail "$id" "ip link add ${dev} failed: ${out}"
-        return
-    fi
-    if out=$(ip -o link show dev "${dev}" 2>&1); then
-        pass "$id" "${out}"
+    local id="$1" dev="$2" out
+    if ! out=$(networkctl reload 2>&1); then
+        fail "$id" "networkctl reload failed: ${out}"
+    elif wait_for 15 test -e "/sys/class/net/${dev}"; then
+        pass "$id" "$(networkctl list --no-pager --no-legend "${dev}" 2>&1)"
     else
-        # `ip link add` exited 0 and the device is not there. Reported as its
-        # own sentence because the repair is not the same one: the command
-        # succeeding and the device not existing is a kernel that accepted the
-        # netlink message and created nothing.
-        fail "$id" "ip link add ${dev} exited 0 but the device is absent: ${out}"
+        # networkd took the declaration and the kernel handed back no device.
+        fail "$id" "${dev} was declared to systemd-networkd and did not appear within 15s: $(journalctl -b -u systemd-networkd --no-pager -n 5 2>&1 | tr '\n' ' ')"
     fi
-    ip link del "${dev}" >/dev/null 2>&1
 }
 
-if [ -z "${PARENT}" ]; then
-    fail link-vlan "no non-loopback interface appeared within 30s, so there is no parent to declare a VLAN on"
+cat >"${RUNTIME_NET}/10-m7-smoke-bridge.netdev" <<EOF
+[NetDev]
+Name=${BRIDGE_DEV}
+Kind=bridge
+EOF
+link_check link-bridge "${BRIDGE_DEV}"
+
+cat >"${RUNTIME_NET}/10-m7-smoke-bridge.network" <<EOF
+[Match]
+Name=${BRIDGE_DEV}
+
+[Network]
+VLAN=${VLAN_DEV}
+EOF
+cat >"${RUNTIME_NET}/10-m7-smoke-vlan.netdev" <<EOF
+[NetDev]
+Name=${VLAN_DEV}
+Kind=vlan
+
+[VLAN]
+Id=${VLAN_ID}
+EOF
+if [ -e "/sys/class/net/${BRIDGE_DEV}" ]; then
+    link_check link-vlan "${VLAN_DEV}"
 else
-    link_check link-vlan "${VLAN_DEV}" \
-        ip link add link "${PARENT}" name "${VLAN_DEV}" type vlan id "${VLAN_ID}"
+    fail link-vlan "the parent ${BRIDGE_DEV} does not exist (see link-bridge), so there is nothing to declare a VLAN on"
 fi
-link_check link-bridge "${BRIDGE_DEV}" ip link add name "${BRIDGE_DEV}" type bridge
-link_check link-wireguard "${WG_DEV}" ip link add dev "${WG_DEV}" type wireguard
+
+# networkd ignores a WireGuard netdev without a private key; any 32 bytes are one.
+cat >"${RUNTIME_NET}/10-m7-smoke-wg.netdev" <<EOF
+[NetDev]
+Name=${WG_DEV}
+Kind=wireguard
+
+[WireGuard]
+PrivateKey=$(head -c 32 /dev/urandom | base64)
+EOF
+link_check link-wireguard "${WG_DEV}"
+
+rm -f "${RUNTIME_NET}"/10-m7-smoke-*
+networkctl reload >/dev/null 2>&1
+networkctl delete "${VLAN_DEV}" "${BRIDGE_DEV}" "${WG_DEV}" >/dev/null 2>&1
 
 # 3. The traversal check handed forward.
 #

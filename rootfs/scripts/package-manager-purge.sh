@@ -146,7 +146,7 @@ for gone in dpkg dpkg-query apt apt-get perl; do
         echo "error: ${gone} survived the package-manager purge; the packed root still carries a way to install software" >&2; exit 1
     fi
 done
-for kept in bash sh ls cp mv rm sed awk grep find systemctl sshd ssh scp curl ip; do
+for kept in bash sh ls cp mv rm sed awk grep find systemctl sshd ssh scp; do
     command -v "${kept}" >/dev/null 2>&1 ||
         { echo "error: the purge removed ${kept}, which the image needs at runtime" >&2; exit 1; }
 done
