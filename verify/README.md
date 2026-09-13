@@ -228,7 +228,7 @@ with `--rm --network none`.
 ### One list, two readers
 
 No version string is written down in this package. Every pin is read, at run
-time, out of the file that owns it: `pkgs/podman/versions.env`,
+time, out of the file that owns it: `mica-podman:versions.env`,
 `pkgs/rauc/versions.env`, and `pkgs/micad/<crate>/Cargo.toml` for the four
 binaries this repository writes. That is the whole of what makes the third
 acceptance clause true — *bumping a pin without rebuilding the artifact turns

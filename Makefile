@@ -1,4 +1,4 @@
-.PHONY: os-trust-domain-test os-file-transaction-faults build-env help os-apid-api-spec-pins os-apid-api-test os-apid-ui-build-contract-test os-bare-host-gate os-boot-tools os-build-test os-components os-cx3576-flash-test os-dbus-policy-test os-deb-package-gate os-deb-preflight os-deb-preflight-test os-debian-cache os-debian-install os-debian-test os-debian-verify os-debs os-devkeys os-lock-bump os-pool os-pool-lock-test os-factory-root-gate os-fit-records-test os-gadget-test os-health-test os-host-toolchain-lint os-host-toolchain-lint-test os-image os-install-closure-gate os-layout-lint os-mac-test os-netavark-kernel-test os-quadlet-doc-test os-repart-test os-rootfs-cx3576 os-rootfs-manifest-test os-rootfs-virt-arm64 os-rootfs-x64 os-rust-gate os-shadow-test os-shell-pipefail-lint os-smoke-negative-test os-smoke-test os-verify os-verify-test podman podman-pins podman-pins-test
+.PHONY: os-trust-domain-test os-file-transaction-faults build-env help os-apid-api-spec-pins os-apid-api-test os-apid-ui-build-contract-test os-bare-host-gate os-boot-tools os-build-test os-components os-cx3576-flash-test os-dbus-policy-test os-deb-package-gate os-deb-preflight os-deb-preflight-test os-debian-cache os-debian-install os-debian-test os-debian-verify os-debs os-devkeys os-lock-bump os-pool os-pool-lock-test os-factory-root-gate os-fit-records-test os-gadget-test os-health-test os-host-toolchain-lint os-host-toolchain-lint-test os-image os-install-closure-gate os-layout-lint os-mac-test os-netavark-kernel-test os-quadlet-doc-test os-repart-test os-rootfs-cx3576 os-rootfs-manifest-test os-rootfs-virt-arm64 os-rootfs-x64 os-rust-gate os-shadow-test os-shell-pipefail-lint os-smoke-negative-test os-smoke-test os-verify os-verify-test
 
 # THE SOURCE DEPENDENCIES, before anything else: build-env/ (mica-build-env)
 # is the substrate every target reaches through, rootfs/debian/ (mica-debian)
@@ -73,9 +73,6 @@ help:
 	@echo "  os-bare-host-gate   climb PLAN-080 section 4's ladder for real: clone HEAD into the pinned docker-cli image and build from it (docker)"
 	@echo "  os-verify-test      run the verify bun+TypeScript suite (typecheck + bun test)"
 	@echo "  os-build-test       run the build bun+TypeScript suite: board geometry and the toolset wrappers (docker)"
-	@echo "  podman              build the container engine from source into pkgs/podman/out-\$$MOS_ARCH"
-	@echo "  podman-pins         ask the six pinned upstreams for their newest release; red when a pin is behind (network)"
-	@echo "  podman-pins-test    drive that check against recorded upstream responses, both directions (no network)"
 	@echo "  os-netavark-kernel-test  assert every board kernel config carries the symbols netavark programs rules against"
 	@echo "  build-env           build the pinned builder images localhost/mos-build-{base,c,deb,go,openssl,rust,rust-check}:<arch>"
 	@echo "  os-rust-gate        run both Rust workspaces' hack/check.sh (fmt, clippy -D warnings, nextest, doctests, cargo-deny) in the pinned gate image (docker)"
@@ -375,6 +372,7 @@ os-pool: os-deb-preflight
 	bash build-env/deb/fetch.sh --arch amd64
 	bash build-env/deb/fetch.sh --arch arm64
 	$(MAKE) os-debs
+	bash tools/podman-pool.sh --check
 
 # fetch.sh and lock.sh against a stub of the release API that requires the
 # token: a replaced asset, a lying lock row, a missing asset, an unreleased
@@ -495,7 +493,8 @@ os-rootfs-runtime-test:
 # first spelling of that guard reported every input present having skipped a
 # producer entirely, and it was found by hand rather than by a check. No docker
 # and no pool: this runs the pre-flight, the two hooks that answer it, and the
-# podman versions stamp, against fixtures it builds and removes.
+# producer input accounting, against fixtures it builds and removes (the
+# podman stamp half of it lives in ybolab/mica-podman now).
 os-deb-preflight-test:
 	bash tests/deb-preflight-test.sh
 
@@ -509,29 +508,12 @@ os-deb-preflight-test:
 os-quadlet-doc-test:
 	bash tests/quadlet-doc-test.sh
 
-# The container engine, built from upstream source into seven aarch64 binaries.
-# Same arrangement as the board artifact builds -- a Dockerfile whose last stage
-# is FROM scratch, exported with -o. Dynamically linked against the image's
-# glibc except catatonit, which is copied into containers and must not depend on
-# this image's libc; pkgs/podman/README.md has the reasoning.
-podman:
-	bash pkgs/podman/build.sh
-
-# Is any of those seven binaries built from a source tree upstream has moved
-# past? versions.env is the upgrade interface and this is what says there is
-# something to bump: it READS the file and never writes it, opens no pull
-# request and bumps nothing, because recording a hash is an act rather than a
-# copy from an upstream page nobody re-checked. Needs the network, so it runs
-# in the weekly privileged lane rather than the fast one.
-podman-pins:
-	bash pkgs/podman/check-pins.sh
-
-# The check on that check, against upstream responses recorded in
-# tests/podman-pins/. Offline, and it drives the red directions too -- most
-# of all catatonit, whose upstream has been quiet since 2024, where "correctly
-# pinned" and "never actually compared" produce the same green.
-podman-pins-test:
-	bash tests/podman-pins-test.sh
+# The container engine is built and released by ybolab/mica-podman and
+# imported here through deps/packages/mica-podman.json; tools/podman-pool.sh
+# keeps deps/packages/mica-podman.versions.env (what the smoke register, the
+# install-closure gate and the netavark kernel check compare against) equal
+# to what the pinned archives carry, and extracts the aarch64 quadlet
+# tests/quadlet-doc-test.sh runs.
 
 # The kernel side of the same engine. netavark writes nftables rules -- masquerade,
 # dnat, `fib daddr type local` -- into one inet table, and a board kernel built

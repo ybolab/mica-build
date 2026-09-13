@@ -708,9 +708,9 @@ measuring them gets both wrong.
 Bumping a `versions.env` pin without rebuilding the artifact turns the run red,
 naming both sides:
 
-    # pkgs/podman/versions.env: CRUN_VERSION=1.29.1  ->  1.29.2   (nothing rebuilt)
+    # mica-podman:versions.env: CRUN_VERSION=1.29.1  ->  1.29.2   (nothing rebuilt)
     $ bash verify/run.sh --smoke --board x64
-    FAIL  crun  /usr/bin/crun  exit 0 but reports 1.29.1, and pkgs/podman/versions.env pins
+    FAIL  crun  /usr/bin/crun  exit 0 but reports 1.29.1, and mica-podman:versions.env pins
                 CRUN_VERSION=1.29.2 (expected 1.29.2). Its --version line was
                 "crun version 1.29.1". Either the pin was bumped without rebuilding the
                 artifact, or the artifact was built from something other than the pin.
@@ -844,7 +844,7 @@ dates it against **that board's own** artefacts:
 | input | derived from |
 |---|---|
 | `_out/<board>/rootfs-verity.img` | `ctx.outDir`, which is the board under test |
-| `pkgs/podman/out-<arch>/podman` | that board's own `MOS_ARCH` |
+| `mica-podman:out-<arch>/podman` | that board's own `MOS_ARCH` |
 
 mtime, not a hash: the inputs are a squashfs and a directory of binaries, and
 what is being caught is "you forgot to re-run the build".
@@ -877,7 +877,7 @@ check's would.
 
 The original implementation had a defect: its two inputs were written
 down as the literals `_out/cx3576/rootfs-verity.img` and
-`pkgs/podman/out-arm64/podman`, so an x64 run's freshness was decided by arm64
+`mica-podman:out-arm64/podman`, so an x64 run's freshness was decided by arm64
 artefacts — it passed a stale x64 image and refused a fresh one whenever the
 arm64 tree happened to be newer. A board-agnostic mtime comparison is the bug,
 not the fix, so `src/checks-freshness.test.ts` plants that tree: x64's own

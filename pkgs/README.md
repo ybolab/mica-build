@@ -10,7 +10,7 @@ whose last stage is `FROM scratch`, exported with `-o` into a gitignored
 `out-<arch>/`, so nothing writes into a rootfs; upstream is pinned in
 `versions.env`, with the reason for building rather than installing recorded
 there. `rauc/build.sh` says it outright — "same driver shape as
-pkgs/podman/build.sh, and for the same reason". The Rust ones are cargo
+mica-podman:build.sh, and for the same reason". The Rust ones are cargo
 workspaces built in the pinned image from `build-env/`.
 
 `rauc-sign/` is the member that stretches the rule. It is half build-host

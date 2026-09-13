@@ -200,7 +200,7 @@ describe('the engine is installed', () => {
 describe('the engine is INERT', () => {
   test('podman.socket under a unit directory fails, and it is named', async () => {
     // Socket-activated: the root REST API comes up on first connection, so
-    // "disabled" is not a defence. pkgs/podman does not run `make install.systemd`,
+    // "disabled" is not a defence. mica-podman does not run `make install.systemd`,
     // so anything named podman* under a unit directory arrived by a path
     // nobody intended.
     const fx = await mutated('container-engine-no-units',

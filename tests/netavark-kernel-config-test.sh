@@ -51,7 +51,7 @@
 # the gate: the board's own loop, or the shared fragment both loops enforce.
 #
 # WHERE THE LIST COMES FROM. Every entry cites a line of netavark that programs
-# the rule needing it, read from the tag pkgs/podman/versions.env pins.
+# the rule needing it, read from the tag mica-podman:versions.env pins.
 # Assertion 3 requires that pin to still be the version the citations were read
 # against -- a citation into a version nobody ships is decoration.
 set -euo pipefail
@@ -64,7 +64,7 @@ REPO_ROOT="$(cd "${HERE}/.." && pwd)"
 BOARD_CONFIGS="s905x5m:boards/s905x5m/bsp/kernel/config/kernel-s905x5m.config cx3576:boards/cx3576/bsp/kernel/config/kernel-cx3576z.config virt-arm64:boards/virt-arm64/bsp/kernel/config/virt-arm64.config x64:boards/x64/bsp/kernel/config/x64.config"
 BOARD_CONFIG_GATES="s905x5m:boards/s905x5m/bsp/kernel/Dockerfile cx3576:boards/cx3576/bsp/kernel/configure.sh virt-arm64:boards/virt-arm64/bsp/kernel/Dockerfile x64:boards/x64/bsp/kernel/Dockerfile"
 FRAGMENT="${REPO_ROOT}/boards/common/mos-required.fragment"
-VERSIONS_ENV="${REPO_ROOT}/pkgs/podman/versions.env"
+VERSIONS_ENV="${REPO_ROOT}/deps/packages/mica-podman.versions.env"
 
 # The netavark the citations below were read against.
 CITED_NETAVARK=v2.1.0
@@ -202,7 +202,7 @@ echo
 echo "--- 3. the citations point at the netavark this tree ships"
 pinned="$(sed -n 's/^NETAVARK_VERSION=\(.*\)$/\1/p' "${VERSIONS_ENV}")"
 if [ "${pinned}" = "${CITED_NETAVARK}" ]; then
-    pass "pkgs/podman/versions.env still pins netavark ${CITED_NETAVARK}"
+    pass "mica-podman:versions.env still pins netavark ${CITED_NETAVARK}"
 else
     fail "versions.env pins netavark ${pinned:-nothing}, but the citations above were read from ${CITED_NETAVARK}. Re-read src/firewall/nft.rs at the new tag and move the list and CITED_NETAVARK together."
 fi

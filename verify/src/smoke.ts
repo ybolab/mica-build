@@ -1,6 +1,6 @@
 // The smoke runner: execute every self-built artifact inside the root that ships
-// it and require the version it reports to be the one pkgs/podman/versions.env,
-// pkgs/podman/versions.env or the crate manifest pins. Execution and version
+// it and require the version it reports to be the one mica-podman:versions.env,
+// mica-podman:versions.env or the crate manifest pins. Execution and version
 // identity, not behaviour; the QEMU boot tests and the ldd/NEEDED checks keep
 // functional coverage. Everything below takes an `Exec`, so the suite reaches
 // every verdict from the failing side with fabricated output and no image,

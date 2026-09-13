@@ -203,7 +203,7 @@ const ENGINE_CHECKS: readonly CheckCase[] = [
           ? 'the image contains no podman systemd unit of any name; the engine is inert by '
             + 'construction rather than by masking, so there is no mask list to keep in step with '
             + 'upstream'
-          : `the image contains podman systemd units:${units.join(' ')} . pkgs/podman `
+          : `the image contains podman systemd units:${units.join(' ')} . mica-podman `
             + `does not run 'make install.systemd', so anything named podman* under a unit directory `
             + `arrived by a path nobody intended -- and podman.socket in particular is `
             + `SOCKET-ACTIVATED, so being disabled is not enough`,

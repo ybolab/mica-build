@@ -2,7 +2,7 @@
 //!
 //! What this switch operates is not a service. The engine is daemonless:
 //! `podman run` forks `conmon`, which execs `crun`, and nothing stays resident;
-//! pkgs/podman does not run upstream's `make install.systemd`, so the image
+//! mica-podman does not run upstream's `make install.systemd`, so the image
 //! contains no podman unit at all -- no `podman.socket` to leave masked and no
 //! service to leave stopped.
 //!

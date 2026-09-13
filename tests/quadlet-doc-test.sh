@@ -9,7 +9,7 @@
 # drops one, renames a section, and the examples go on looking correct to every
 # reader, because nothing in a markdown file can fail. So the examples are
 # extracted from the document and run through the real generator -- the arm64
-# binary in pkgs/podman/out-arm64, under emulation, the one the device runs.
+# binary in mica-podman:out-arm64, under emulation, the one the device runs.
 
 # The marker is an HTML comment, `<!-- quadlet: NAME -->`, immediately before
 # the fenced block. Invisible when the document is rendered, unambiguous to
@@ -24,11 +24,11 @@ REPO_ROOT="$(cd "${HERE}/.." && pwd)"
 # test because the documentation lives in ybolab/mica; a drift between the two
 # is a diff to review, not a silent divergence.
 DOC="${REPO_ROOT}/tests/quadlet-doc/containers.md"
-QUADLET="${MOS_QUADLET_BIN:-${REPO_ROOT}/pkgs/podman/out-arm64/quadlet}"
+QUADLET="${MOS_QUADLET_BIN:-${REPO_ROOT}/_out/debs/arm64/mica-podman/quadlet}"
 
 [ -f "${DOC}" ] || { echo "error: ${DOC} not found" >&2; exit 1; }
 [ -f "${QUADLET}" ] || {
-    echo "error: ${QUADLET} not found. This test runs the generator the image ships, not a description of it; build it with 'make podman'" >&2
+    echo "error: ${QUADLET} not found. This test runs the generator the image ships, not a description of it; 'make os-pool' extracts it from the pinned mica-podman archive" >&2
     exit 1
 }
 
@@ -87,7 +87,7 @@ fi
 
 # --- run the real generator
 # In a container, because the binary is aarch64 and this host is not. Same
-# builder selection as pkgs/podman/build.sh: buildx's docker-container driver
+# builder selection as mica-podman:build.sh: buildx's docker-container driver
 # bundles QEMU, so no host binfmt registration is needed.
 BUILDER_ARGS=()
 if [ -z "${BUILDX_BUILDER:-}" ] && ! docker buildx inspect 2>/dev/null | grep -c 'linux/arm64' >/dev/null; then
@@ -107,7 +107,7 @@ cp "${QUADLET}" "${WORK}/quadlet"
 # is refused rather than falling back to something.
 
 # It matters for this test specifically because what runs in the container is
-# the quadlet binary out of pkgs/podman/out-arm64, generating systemd units that
+# the quadlet binary out of mica-podman:out-arm64, generating systemd units that
 # are then asserted against docs/design/containers.md. It is dynamically
 # linked, so the base decides the glibc it loads against, and a base that
 # drifted would surface as a documentation test failing about unit content.
@@ -116,7 +116,7 @@ mapfile -t FROM_ARGS < <(bash "${REPO_ROOT}/build-env/from.sh" \
 # mapfile cannot fail, so its status says nothing about the process inside the
 # substitution; an empty array is what a refusal looks like from here, and an
 # empty array would build with no --build-arg and no FROM at all. Same check,
-# and for the same reason, as pkgs/podman/build.sh's.
+# and for the same reason, as mica-podman:build.sh's.
 [ "${#FROM_ARGS[@]}" -eq 2 ] || {
     echo "error: build-env/from.sh did not yield the base image (see its message above); this build would have run with an empty FROM" >&2
     exit 1

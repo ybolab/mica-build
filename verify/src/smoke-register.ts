@@ -5,7 +5,7 @@
 // every `pin` is a function that reads the value from the file that owns it at
 // run time (smoke-pins.ts), and `pinCoverageFaults` checks the set in both
 // directions from the smoke runner itself, so an eighth binary added to
-// `pkgs/podman/` cannot leave this register reporting a full green over seven of
+// `mica-podman:` cannot leave this register reporting a full green over seven of
 // eight.
 //
 // The installed paths are measured. Five of the seven container binaries are NOT
@@ -157,7 +157,7 @@ export const ARTIFACTS: readonly Artifact[] = [
     contract: { kind: 'version', argv: ['--version'] },
   },
 
-  // The container engine, built from source by pkgs/podman/.
+  // The container engine, built from source by mica-podman:.
   {
     name: 'podman',
     path: '/usr/bin/podman',

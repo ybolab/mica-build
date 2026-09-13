@@ -36,7 +36,7 @@
 #
 #   3  BOTH ARCHITECTURES. arm64 is the half nothing had ever apt-installed. It
 #      runs under the emulated buildkit executor, because this host has no
-#      binfmt registration -- the same route pkgs/podman/build.sh and
+#      binfmt registration -- the same route mica-podman:build.sh and
 #      build-env/deb/build.sh take, and the one verify's smoke runner
 #      calls "the emulated buildkit route" when it reports `executor-limited`.
 #      That verdict is REUSED here rather than a second vocabulary invented for
@@ -78,7 +78,7 @@ REPO_ROOT="$(pwd)"
 FROM_SH="${REPO_ROOT}/build-env/from.sh"
 RESOLVE_SH="${REPO_ROOT}/rootfs/packages/resolve.sh"
 VERSION_SH="${REPO_ROOT}/build-env/deb/version.sh"
-PODMAN_VERSIONS="${REPO_ROOT}/pkgs/podman/versions.env"
+PODMAN_VERSIONS="${REPO_ROOT}/deps/packages/mica-podman.versions.env"
 DIST="${REPO_ROOT}/_out/debs"
 for p in "${FROM_SH}" "${VERSION_SH}" "${PODMAN_VERSIONS}"; do
     [ -e "${p}" ] || {
@@ -209,7 +209,7 @@ COMPONENTS="${WORK}/components.tsv"
 # The direction that catches a component nobody asked about. The rows above name
 # the binaries; the two versions.env files name the pins the tree actually
 # carries, and every one of those has to be claimed by at least one row. Without
-# it, adding an eighth binary under pkgs/podman/ -- with its pin, its hash and
+# it, adding an eighth binary under mica-podman: -- with its pin, its hash and
 # its install line -- would leave this gate reporting a full green over seven of
 # eight, which is the drift verify/src/smoke-pins.ts exists to refuse in its
 # own register.

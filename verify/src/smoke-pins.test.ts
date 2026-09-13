@@ -10,7 +10,7 @@
 // The positive controls are the shipped files. Every negative case below is a
 // fabricated fixture, and a suite of nothing but fabricated fixtures proves
 // only that the reader handles files nobody has. So each group also reads the
-// REAL pkgs/podman/versions.env and crate manifests,
+// REAL mica-podman:versions.env and crate manifests,
 // and asserts the search space is non-empty before concluding anything about
 // what is in it.
 

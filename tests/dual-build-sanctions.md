@@ -656,7 +656,7 @@ rather than a hypothetical one:
 - **Architecture-dependent package selection and dependency closure.** Every ELF
   in a cx3576 root is a different build -- micad, apid, mica-mqttd and
   mica-mqtt-broker from the aarch64 rust target, the seven engine binaries from
-  `pkgs/podman/out-arm64`, rauc from `pkgs/rauc/out-arm64` -- and under the
+  `mica-podman:out-arm64`, rauc from `pkgs/rauc/out-arm64` -- and under the
   composer APT resolves the local and Debian dependency closure per
   architecture. A composition that resolves correctly for amd64 and wrongly for
   arm64 produces two trees this gate never saw.

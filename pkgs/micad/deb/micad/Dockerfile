@@ -77,7 +77,7 @@ RUN set -eu; \
             --version "${MOS_DEB_VERSION}" --arch "${MOS_DEB_ARCH}" --out /out
 
 # The export stage, the shape pkgs/mica-deploy/Dockerfile and
-# pkgs/podman/Dockerfile end in: `-o type=local` writes this stage's
+# mica-podman:Dockerfile end in: `-o type=local` writes this stage's
 # filesystem into _out/debs/<arch>/pool/ and nothing here installs into a root.
 FROM scratch AS out
 COPY --from=pack /out/ /

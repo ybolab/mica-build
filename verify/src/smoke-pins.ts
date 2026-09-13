@@ -26,9 +26,12 @@ import { REPO_ROOT } from './paths.ts'
 
 /**
  * The container engine's pins -- podman, quadlet, crun, conmon, netavark,
- * aardvark-dns, catatonit.
+ * aardvark-dns, catatonit. The engine is built by ybolab/mica-podman and
+ * imported through deps/packages/mica-podman.json; this file is the copy of
+ * the archive's /usr/share/mica-podman/versions.env that tools/podman-pool.sh
+ * writes beside the pin and `make os-pool` holds equal to it.
  */
-export const PODMAN_VERSIONS_ENV: string = join(REPO_ROOT, 'pkgs', 'podman', 'versions.env')
+export const PODMAN_VERSIONS_ENV: string = join(REPO_ROOT, 'deps', 'packages', 'mica-podman.versions.env')
 
 
 /** Every `versions.env` a pin is read out of, so coverage can be asserted over all of them. */
@@ -59,7 +62,7 @@ export interface Pin {
  * Strip the `v` that a git TAG carries and a `--version` output does not.
  *
  * Measured, not assumed, and the two spellings live side by side in ONE file:
- * `pkgs/podman/versions.env` writes `PODMAN_VERSION=v5.8.6` and
+ * `mica-podman:versions.env` writes `PODMAN_VERSION=v5.8.6` and
  * `CRUN_VERSION=1.29.1`, because the pins are upstream TAG names and upstream
  * does not agree with itself about the prefix. The binaries agree with each
  * other instead -- `podman version 5.8.6` and `crun version 1.29.1` both print
@@ -92,7 +95,7 @@ export function readVersionsEnv(file: string): ReadonlyMap<string, string> {
  * `smoke-register.ts` names the artifacts; this names the pins
  * the tree actually carries, and `smoke-register.test.ts` requires the second
  * set to be covered by the first. Without it, adding an eighth binary to
- * `pkgs/podman/` -- with its pin, its hash and its install line -- would leave the
+ * `mica-podman:` -- with its pin, its hash and its install line -- would leave the
  * smoke runner reporting a full green over seven, and a run that got greener by
  * looking at less is the exact defect this package exists to make visible in
  * other people's checkers.

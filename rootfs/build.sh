@@ -460,7 +460,7 @@ echo "compose: $resolved_n package(s) resolved for $MOS_BOARD/$MOS_PROFILE, decl
 sed 's/^/  /' "$COMPOSE_STAGE/packages.txt"
 
 # The builder is NAMED rather than inherited -- the same BUILDX_BUILDER
-# register as pkgs/mica-deploy/build.sh and pkgs/podman/build.sh, and the same
+# register as pkgs/mica-deploy/build.sh and mica-podman:build.sh, and the same
 # selection. BUILDX_BUILDER wins, because a caller who names a builder has made
 # a decision. With nothing named, `default` is the docker driver on every
 # docker installation, and it reaches linux/${MOS_ARCH} exactly when the host
@@ -505,7 +505,7 @@ trap 'rm -f "$log"' EXIT
 # before a forty-minute build starts rather than at the FROM line that consumes
 # them. NO --arch: both are IMAGE_ keys, which images.env pins as MULTI-
 # ARCHITECTURE index digests precisely so that a cross build picks the right
-# manifest -- the check pkgs/podman/build.sh needs is about localhost tags, which
+# manifest -- the check mica-podman:build.sh needs is about localhost tags, which
 # carry exactly one architecture, and this file uses none.
 mapfile -t FROM_ARGS < <("$REPO_ROOT/build-env/from.sh" \
     MOS_IMAGE_BUN=IMAGE_BUN_1 \
