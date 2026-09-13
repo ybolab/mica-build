@@ -207,6 +207,27 @@ class SelectionTest(unittest.TestCase):
         self.assertEqual(os.readlink(self.out / 'etc/systemd/system-generators/systemd-ssh-generator'), '/dev/null')
         self.assertEqual(self.command('verify').returncode, 0)
 
+    def test_declaration_family(self):
+        # A declaration keyed `mica-board-*` covers every mica-board-<b>: the
+        # member's own name is not in the file, and in the family's rules the
+        # key stands for the member.
+        f = self
+        f.write('/etc/mica/board.conf', b'board fact\n')
+        f.write('/usr/share/doc/mica-board-fixture/copyright', b'board license\n')
+        (f.db / 'mica-board-fixture.list').write_text('/etc/mica\n/etc/mica/board.conf\n/usr/share/doc/mica-board-fixture\n/usr/share/doc/mica-board-fixture/copyright\n')
+        f.manifest.write_text(f.manifest.read_text() + 'mica-board-fixture\t1\tall\n')
+        f.packages.write_text('mica-system\nmica-board-fixture\n')
+        f.rules['consumers']['mica-board-*'] = {
+            'roots': [{'paths': ['/etc/mica/*.conf'], 'kind': 'resource', 'reason': 'board facts', 'packages': ['mica-board-*']}],
+            'runtime_links': []}
+        report = f.selected()
+        self.assertTrue((f.out / 'etc/mica/board.conf').exists())
+        self.assertIn('mica-board-fixture', json.dumps(report))
+        shutil.rmtree(f.out); f.out.mkdir(); f.report.unlink()
+        f.packages.write_text('mica-system\nmica-boardless\n')
+        f.manifest.write_text(f.manifest.read_text() + 'mica-boardless\t1\tall\n')
+        f.refuse('no runtime declaration: mica-boardless')
+
     def test_arm64_offline(self):
         for p in self.root.rglob('*'):
             if not p.is_symlink() and p.is_file() and p.read_bytes().startswith(b'\x7fELF'):
@@ -986,7 +1007,12 @@ class SelectionTest(unittest.TestCase):
         repo = SELECTOR.parents[2]
         policy = json.loads(SELECTOR.with_name('consumers.json').read_text())
         consumers = {line for line in (repo / 'rootfs/debian/consumers.pkgs').read_text().splitlines() if line and not line.startswith('#')}
-        self.assertEqual(set(policy['consumers']), consumers)
+        # The two registries know the same consumers, where a family entry
+        # `<prefix>-*` in either covers a member named in the other.
+        def covered(name, names):
+            return name in names or any(k.endswith('-*') and name.startswith(k[:-1]) and len(name) > len(k) - 1 for k in names)
+        self.assertEqual({n for n in policy['consumers'] if not covered(n, consumers)}, set())
+        self.assertEqual({n for n in consumers if not covered(n, set(policy['consumers']))}, set())
         for name, consumer in policy['consumers'].items():
             self.assertTrue(consumer['roots'], name)
         system = policy['consumers']['mica-system']

@@ -216,21 +216,9 @@
       ],
       "runtime_links": []
     },
-    "mica-board-x64": {
+    "mica-board-*": {
       "roots": [
-        {"paths": ["/etc/systemd/system/*.service", "/etc/systemd/system/*.mount", "/etc/systemd/system/*.d/*.conf", "/etc/systemd/system/*.wants/*", "/etc/systemd/*.conf.d/*.conf", "/etc/systemd/network/*", "/etc/systemd/system-generators/*", "/usr/lib/systemd/system/*.service", "/usr/lib/systemd/system/*.socket", "/usr/lib/systemd/system-preset/*.preset", "/usr/lib/systemd/network/*", "/usr/lib/tmpfiles.d/*.conf", "/etc/tmpfiles.d/*.conf", "/usr/lib/sysusers.d/*.conf", "/usr/lib/udev/rules.d/*.rules", "/etc/udev/rules.d/*.rules", "/etc/mica/*.conf", "/etc/dbus-1/system.d/*.conf", "/usr/share/dbus-1/system.d/*.conf", "/usr/share/dbus-1/system-services/*.service", "/usr/share/dbus-1/interfaces/*.xml", "/usr/share/doc/*/copyright", "/etc/fstab", "/etc/repart.d/*.conf", "/usr/bin/*", "/usr/lib/mica/hwinit-*", "/usr/lib/mica/mos-*", "/usr/lib/mica/*/*.conf", "/usr/lib/mica/*/*.sh", "/usr/share/mica/*.png"], "kind": "resource", "reason": "selected board storage, console, branding, component/radio initialization and policy", "packages": ["mica-board-x64"]}
-      ],
-      "runtime_links": []
-    },
-    "mica-board-virt-arm64": {
-      "roots": [
-        {"paths": ["/etc/systemd/system/*.service", "/etc/systemd/system/*.mount", "/etc/systemd/system/*.d/*.conf", "/etc/systemd/system/*.wants/*", "/etc/systemd/*.conf.d/*.conf", "/etc/systemd/network/*", "/etc/systemd/system-generators/*", "/usr/lib/systemd/system/*.service", "/usr/lib/systemd/system/*.socket", "/usr/lib/systemd/system-preset/*.preset", "/usr/lib/systemd/network/*", "/usr/lib/tmpfiles.d/*.conf", "/etc/tmpfiles.d/*.conf", "/usr/lib/sysusers.d/*.conf", "/usr/lib/udev/rules.d/*.rules", "/etc/udev/rules.d/*.rules", "/etc/mica/*.conf", "/etc/dbus-1/system.d/*.conf", "/usr/share/dbus-1/system.d/*.conf", "/usr/share/dbus-1/system-services/*.service", "/usr/share/dbus-1/interfaces/*.xml", "/usr/share/doc/*/copyright", "/etc/fstab", "/etc/repart.d/*.conf", "/usr/bin/*", "/usr/lib/mica/hwinit-*", "/usr/lib/mica/mos-*", "/usr/lib/mica/*/*.conf", "/usr/lib/mica/*/*.sh", "/usr/share/mica/*.png"], "kind": "resource", "reason": "selected board storage, console, branding, component/radio initialization and policy", "packages": ["mica-board-virt-arm64"]}
-      ],
-      "runtime_links": []
-    },
-    "mica-board-cx3576": {
-      "roots": [
-        {"paths": ["/etc/systemd/system/*.service", "/etc/systemd/system/*.mount", "/etc/systemd/system/*.d/*.conf", "/etc/systemd/system/*.wants/*", "/etc/systemd/*.conf.d/*.conf", "/etc/systemd/network/*", "/etc/systemd/system-generators/*", "/usr/lib/systemd/system/*.service", "/usr/lib/systemd/system/*.socket", "/usr/lib/systemd/system-preset/*.preset", "/usr/lib/systemd/network/*", "/usr/lib/tmpfiles.d/*.conf", "/etc/tmpfiles.d/*.conf", "/usr/lib/sysusers.d/*.conf", "/usr/lib/udev/rules.d/*.rules", "/etc/udev/rules.d/*.rules", "/etc/mica/*.conf", "/etc/dbus-1/system.d/*.conf", "/usr/share/dbus-1/system.d/*.conf", "/usr/share/dbus-1/system-services/*.service", "/usr/share/dbus-1/interfaces/*.xml", "/usr/share/doc/*/copyright", "/etc/fstab", "/etc/repart.d/*.conf", "/usr/bin/*", "/usr/lib/mica/hwinit-*", "/usr/lib/mica/mos-*", "/usr/lib/mica/*/*.conf", "/usr/lib/mica/*/*.sh", "/usr/share/mica/*.png"], "kind": "resource", "reason": "selected board storage, console, branding, component/radio initialization and policy", "packages": ["mica-board-cx3576"]}
+        {"paths": ["/etc/systemd/system/*.service", "/etc/systemd/system/*.mount", "/etc/systemd/system/*.d/*.conf", "/etc/systemd/system/*.wants/*", "/etc/systemd/*.conf.d/*.conf", "/etc/systemd/network/*", "/etc/systemd/system-generators/*", "/usr/lib/systemd/system/*.service", "/usr/lib/systemd/system/*.socket", "/usr/lib/systemd/system-preset/*.preset", "/usr/lib/systemd/network/*", "/usr/lib/tmpfiles.d/*.conf", "/etc/tmpfiles.d/*.conf", "/usr/lib/sysusers.d/*.conf", "/usr/lib/udev/rules.d/*.rules", "/etc/udev/rules.d/*.rules", "/etc/mica/*.conf", "/etc/dbus-1/system.d/*.conf", "/usr/share/dbus-1/system.d/*.conf", "/usr/share/dbus-1/system-services/*.service", "/usr/share/dbus-1/interfaces/*.xml", "/usr/share/doc/*/copyright", "/etc/fstab", "/etc/repart.d/*.conf", "/usr/bin/*", "/usr/lib/mica/hwinit-*", "/usr/lib/mica/mos-*", "/usr/lib/mica/*/*.conf", "/usr/lib/mica/*/*.sh", "/usr/share/mica/*.png"], "kind": "resource", "reason": "selected board storage, console, branding, component/radio initialization and policy", "packages": ["mica-board-*"]}
       ],
       "runtime_links": []
     },

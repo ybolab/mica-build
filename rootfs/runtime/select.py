@@ -217,7 +217,7 @@ class Selector:
             name = line.split('#', 1)[0].strip()
             if name:
                 require(name not in self.consumers, f'duplicate selected consumer: {name}')
-                require(name in self.declarations['consumers'], f'no runtime declaration: {name}')
+                require(self.declaration_key(name) is not None, f'no runtime declaration: {name}')
                 require(name in self.packages, f'selected consumer not installed: {name}')
                 require(name in self.ownership_packages, f'missing ownership list: {name}')
                 self.consumers.append(name)
@@ -420,10 +420,25 @@ class Selector:
             return []
         return [normalized(self.expand(part, source)) for part in value.split(':')]
 
+    def declaration_key(self, consumer: str):
+        """The declaration a consumer is under: its own name, or a family's.
+
+        A declaration keyed `<prefix>-*` covers every package `<prefix><name>`
+        (the board packages, one per board, are one declaration), so a new
+        member is composed with no edit here; in the family's rules the key
+        itself stands for the member."""
+        if consumer in self.declarations['consumers']:
+            return consumer
+        families = [k for k in self.declarations['consumers']
+                    if k.endswith('-*') and consumer.startswith(k[:-1]) and len(consumer) > len(k) - 1]
+        require(len(families) <= 1, f'consumer in several declaration families: {consumer}')
+        return families[0] if families else None
+
     def select(self) -> dict:
         roots = []
         for consumer in self.consumers:
-            declaration = self.declarations['consumers'][consumer]
+            key = self.declaration_key(consumer)
+            declaration = self.declarations['consumers'][key]
             require(set(declaration) == {'roots', 'runtime_links'} and declaration['roots'], f'invalid consumer declaration: {consumer}')
             for link in declaration['runtime_links']:
                 require(set(link) == {'path', 'target', 'generator', 'ordering', 'test', 'requires'} and
@@ -445,6 +460,7 @@ class Selector:
                     require(p == normalized(p) and '**' not in p, f'ambiguous root pattern: {p}')
                 if rule.get('packages'):
                     require(rule.get('packages') and not rule.get('generated'), f'owned rule needs packages: {consumer}')
+                    rule = dict(rule, packages=[consumer if p == key else p for p in rule['packages']])
                     for package in rule['packages']:
                         require(package in self.packages, f'root package not installed: {package}')
                         require(package in self.ownership_packages, f'missing ownership list: {package}')
